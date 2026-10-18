@@ -36,6 +36,8 @@ uv = "latest"
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 
 [vars]
+# Resolve the installed config symlink back to this checkout.
+dotfiles_root = "{{ config_source | canonicalize | dirname | dirname }}"
 # Task tool requests do not honor floating-version locks; keep the bootstrap pin explicit.
 bootstrap_python = "3.14.7"
 
@@ -47,7 +49,7 @@ run = "python"
 
 [tasks.pi-install]
 description = "Build and install jyn514/pi from upstream main"
-dir = "{{cwd}}"
+dir = "{{vars.dotfiles_root}}"
 tools.python = "{{vars.bootstrap_python}}"
 run = "python libexec/setup/install_pi.py"
 

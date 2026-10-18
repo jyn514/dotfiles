@@ -23,8 +23,12 @@ class MisePythonScopeTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self.directory = Path(self.tempdir.name)
+        self.checkout = self.directory / "dotfiles with spaces"
+        source = self.checkout / "config/mise.toml"
+        source.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "config/mise.toml", source)
         self.config = self.directory / "config.toml"
-        shutil.copyfile(ROOT / "config/mise.toml", self.config)
+        self.config.symlink_to(source)
         shutil.copyfile(ROOT / "config/mise.lock", self.directory / "mise.lock")
         config = tomllib.loads(self.config.read_text())
         lock = tomllib.loads((self.directory / "mise.lock").read_text())
@@ -55,9 +59,9 @@ class MisePythonScopeTests(unittest.TestCase):
     def install_python(self, version: str) -> Path:
         return self.install_wrapper(self.data / "installs/python" / version / "bin/python")
 
-    def run_mise(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def run_mise(self, *arguments: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [MISE, *arguments], cwd=self.directory, env=self.env,
+            [MISE, *arguments], cwd=cwd or self.directory, env=self.env,
             capture_output=True, text=True, check=False, timeout=30,
         )
 
@@ -126,12 +130,17 @@ class MisePythonScopeTests(unittest.TestCase):
                         native_resolution = resolutions[0]
                     self.assertEqual([native_resolution, str(node_bin / "node")], resolutions)
 
-    def test_pi_install_selects_bootstrap_python_and_preserves_callers_directory(self) -> None:
-        installer = self.directory / "libexec/setup/install_pi.py"
+    def test_pi_install_finds_checkout_from_symlinked_config_in_any_directory(self) -> None:
+        installer = self.checkout / "libexec/setup/install_pi.py"
         installer.parent.mkdir(parents=True)
         # Replace the installer only in disposable storage; never run a real installation.
         installer.write_text(REPORT + "\n")
-        self.assert_report(self.run_mise("run", "pi-install"), self.bootstrap, [])
+        for cwd in (self.checkout, installer.parent, self.directory):
+            with self.subTest(cwd=cwd):
+                self.assert_report(self.run_mise("run", "pi-install", cwd=cwd), self.bootstrap, [])
+        installer.write_text("raise SystemExit(7)\n")
+        result = self.run_mise("run", "pi-install")
+        self.assertEqual(7, result.returncode, result.stdout + result.stderr)
 
     def test_changing_bootstrap_version_updates_both_tasks_without_consumer_edits(self) -> None:
         original = tomllib.loads(self.config.read_text())["vars"]["bootstrap_python"]
@@ -140,7 +149,7 @@ class MisePythonScopeTests(unittest.TestCase):
         ))
         alternate = self.install_python("3.13.0")
         self.assert_report(self.run_mise("run", "bootstrap-python", "--", "-c", REPORT), alternate, [])
-        installer = self.directory / "libexec/setup/install_pi.py"
+        installer = self.checkout / "libexec/setup/install_pi.py"
         installer.parent.mkdir(parents=True)
         installer.write_text(REPORT + "\n")
         self.assert_report(self.run_mise("run", "pi-install"), alternate, [])

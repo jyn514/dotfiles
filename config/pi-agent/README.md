@@ -44,7 +44,7 @@ being changed; a test dependency update does not update the running application.
 
 | Component | Owner | How an update reaches it |
 | --- | --- | --- |
-| Host Pi executable | [Installer](../../libexec/setup/install_pi.py) | `mise run pi-install` rebuilds and installs the fork. See the [sandbox installation guide](../../tools/codex-sandbox/README.md#purpose). |
+| Host Pi executable | [Installer](../../libexec/setup/install_pi.py) | `mise run pi-install` rebuilds and installs the fork from any working directory. See the [sandbox installation guide](../../tools/codex-sandbox/README.md#purpose). |
 | Guest tool worker | [Sandbox operator guide](../../tools/codex-sandbox/README.md#purpose) | Fresh sandboxes use the installed host Pi commit; existing workers require the documented restart. |
 | Libraries used by dotfiles tests | [Manifest](../../package.json) and [lockfile](../../package-lock.json) | Update the manifest and lockfile, then install locked dependencies through the [testing guide](../../dev/README.md#testing-and-probes). |
 | Dotfiles' local extensions | [Extension bundle](pi-extensions/README.md) | Setup links new files; `/reload` loads code changes in Pi. |

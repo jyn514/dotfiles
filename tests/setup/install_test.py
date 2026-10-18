@@ -552,7 +552,6 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
         self.assertIn("Some mise tools failed to install; continuing", setup)
         self.assertIn("install_pi || return", setup)
-        self.assertEqual("{{cwd}}", config["tasks"]["pi-install"]["dir"])
 
     def test_user_tools_no_longer_bootstrap_homebrew(self) -> None:
         setup = (ROOT / "setup").read_text()
