@@ -9,6 +9,14 @@ For Python tests, use `dev/pytest [ARGS...]`; it applies this isolation and sele
 a working pytest with the repository's required plugins, using pinned `uvx`
 dependencies when necessary.
 
+For performance benchmarks of the user's installed setup, run the intended entrypoint outside this wrapper.
+Preserve the actual HOME, XDG directories, PATH, configuration, session data, and daemon state for both baseline and candidate measurements.
+An isolated copy of session files does not reproduce configuration loading, command resolution, or an existing daemon.
+Label isolated measurements as such; do not use them to claim the user's startup latency.
+Record first-run and warm timings separately, and include process startup, repair work, and cleanup in end-to-end measurements.
+Keep correctness tests and disposable mutation probes isolated even when the performance benchmark needs real configuration.
+The [configured sandbox startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup) is one such real-configuration benchmark.
+
 For wrapper or launcher probes, pass the intended entrypoint by path rather than a bare command name.
 Isolation can substitute native tools for bare names; for example, `bb` may select native Babashka rather than this repository's dispatcher.
 
