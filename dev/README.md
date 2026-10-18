@@ -102,6 +102,7 @@ Otherwise it uses `uv` and the pinned requirements in `install/test.txt`, or pri
 Python tests and the native-suite adapters in `tests/native/` share the existing pytest-xdist scheduler: eight workers and `--dist loadfile`.
 Use `--jobs N` or `TEST_JOBS` to change the worker count.
 Each adapter runs its existing native command with a separate private HOME and XDG state; native frameworks still discover and run their own cases.
+`bunfig.toml` excludes `target/**` from Bun discovery so retained benchmark sources do not run as tests.
 Separate adapter files let xdist overlap whole suites, not individual native test cases.
 Native failures use pytest's exit status and include the native command's captured output in the failure report.
 Other test items follow pytest's normal failure policy; a failed pytest run stops subsequent repository checks and opt-in integrations.

@@ -13,6 +13,10 @@ Before editing, record the baseline command, environment, metric, narrowest repr
 
 Before the first measurement, choose an evidence directory that survives session/environment resets and benchmark cleanup. Save exact runner, query, and analysis sources alongside raw per-run results there, preserving the source version for each run. Temporary copies, terminal output, or hashes alone cannot recover lost evidence.
 
+Prefer the runner's discovery roots or exclusions to keep captured test sources outside the measured workload.
+Do not assume Git-ignored directories are excluded; check the runner's discovery behavior.
+Use archives or non-test suffixes only as a fallback, preserving original paths and file bytes for reconstruction.
+
 Keep disposable build outputs separate from evidence. Before cleanup, verify that retained sources and raw results suffice to recompute reported measurements.
 
 ## Choose the simplest measurement
