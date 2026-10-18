@@ -3,6 +3,7 @@ FROM oven/bun:1.3.14-alpine AS bun
 FROM node:24-alpine3.22 AS sandbox
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=ghcr.io/jdx/mise:2026.10.14 /usr/local/bin/mise /usr/local/bin/mise
 
 RUN apk add --no-cache \
       cargo rustfmt python3 py3-pip \
@@ -44,6 +45,7 @@ ENV PATH="/opt/test-venv/bin:$PATH" \
     PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 
 RUN /opt/test-venv/bin/python -c 'from docker.utils.build import Pattern' \
+    && mise --version \
     && sqlite3 --version \
     && xdg-mime --version \
     && "$DOTFILES_TEST_JAVA_REAL" -version \
