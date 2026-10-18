@@ -28,9 +28,132 @@ class CodexImportTests(unittest.TestCase):
         self.environment = dict(os.environ, CODEX_HOME=str(self.home),
                                 PATH=f"{self.fake_bin}:{os.environ['PATH']}")
 
-    def run_command(self):
-        return subprocess.run([str(COMMAND)], env=self.environment, capture_output=True,
+    def run_command(self, *arguments):
+        return subprocess.run([str(COMMAND), *arguments], env=self.environment, capture_output=True,
                               text=True, timeout=40)
+
+    def receipt_fixture(self):
+        connection = sqlite3.connect(self.home / "state_5.sqlite")
+        self.addCleanup(connection.close)
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE threads (rollout_path TEXT PRIMARY KEY, archived INTEGER)")
+        directory = self.home / "sessions/2026/01/01"
+        directory.mkdir(parents=True)
+        indexed = directory / "rollout-indexed.jsonl"
+        indexed.write_text("indexed session\n")
+        ignored = directory / "rollout-ignored.jsonl"
+        ignored.write_text("native scanner excludes this file\n")
+        connection.execute("INSERT INTO threads VALUES (?, 0)", (str(indexed),))
+        connection.commit()
+        return connection, indexed, ignored
+
+    def assert_full_then_fast(self):
+        result = self.run_command()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Session import complete.", result.stdout)
+        calls = (self.home / "requests.jsonl").read_bytes()
+        result = self.run_command()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("Session index is current.\n", result.stdout)
+        self.assertEqual("", result.stderr)
+        self.assertEqual(calls, (self.home / "requests.jsonl").read_bytes())
+
+    def test_receipt_reads_wal_and_allows_indexed_session_to_keep_growing(self):
+        connection, indexed, ignored = self.receipt_fixture()
+        self.assert_full_then_fast()
+        indexed.write_text("active session appended another turn\n")
+        self.assertEqual("Session index is current.\n", self.run_command().stdout)
+        # Rows added by another live Codex process do not invalidate existing coverage.
+        added = indexed.with_name("rollout-created-by-live-process.jsonl")
+        added.write_text("already imported by its writer\n")
+        connection.execute("INSERT INTO threads VALUES (?, 0)", (str(added),))
+        connection.commit()
+        self.assertEqual("Session index is current.\n", self.run_command().stdout)
+
+    def test_new_changed_archived_and_removed_files_require_repair(self):
+        _, indexed, ignored = self.receipt_fixture()
+        self.assert_full_then_fast()
+        added = ignored.with_name("rollout-newly-synced.jsonl")
+        added.write_text("newly synced, not yet indexed\n")
+        self.assert_full_then_fast()
+        ignored.write_text("changed previously excluded file\n")
+        self.assert_full_then_fast()
+        archived = self.home / "archived_sessions"
+        archived.mkdir()
+        added.rename(archived / added.name)
+        self.assert_full_then_fast()
+        ignored.unlink()
+        self.assert_full_then_fast()
+
+    def test_database_loss_configuration_and_binary_changes_require_repair(self):
+        connection, indexed, _ = self.receipt_fixture()
+        self.assert_full_then_fast()
+        connection.execute("DELETE FROM threads")
+        connection.commit()
+        self.assert_full_then_fast()
+        (self.home / "config.toml").write_text('model = "another-model"\n')
+        self.assert_full_then_fast()
+        # Change which executable PATH resolves, without editing the shared fixture.
+        fixture = Path(__file__).parent / "fixtures/codex-import-cli"
+        (self.fake_bin / "codex").unlink()
+        # A real new executable target must invalidate the binary fingerprint.
+        subprocess.run(["cp", str(fixture), str(self.fake_bin / "codex")], check=True)
+        subprocess.run(["cmp", str(fixture), str(self.fake_bin / "codex")], check=True)
+        self.assert_full_then_fast()
+
+    def test_changes_during_scan_and_unavailable_index_never_become_fast_hits(self):
+        connection, _, ignored = self.receipt_fixture()
+        self.environment["CODEX_IMPORT_TEST_CHANGE_DURING_SCAN"] = str(ignored)
+        self.assertEqual(0, self.run_command().returncode)
+        del self.environment["CODEX_IMPORT_TEST_CHANGE_DURING_SCAN"]
+        self.assert_full_then_fast()
+        connection.execute("DROP TABLE threads")
+        connection.commit()
+        for _ in range(2):
+            result = self.run_command()
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("Session import complete.", result.stdout)
+            self.assertFalse((self.home / "codex-import-receipt.json").exists())
+
+    def test_failed_forced_scan_invalidates_receipt_and_allows_retry(self):
+        self.receipt_fixture()
+        self.assert_full_then_fast()
+        self.environment["CODEX_IMPORT_TEST_MODE"] = "rpc-error"
+        result = self.run_command("--force")
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.home / "codex-import-receipt.json").exists())
+        del self.environment["CODEX_IMPORT_TEST_MODE"]
+        self.assert_full_then_fast()
+        (self.home / "codex-import-receipt.json").write_text("invalid receipt")
+        self.assert_full_then_fast()
+
+    def test_unknown_layout_custom_database_and_unwritable_receipt_fall_back(self):
+        self.receipt_fixture()
+        self.assert_full_then_fast()
+        newer = self.home / "state_6.sqlite"
+        newer.touch()
+        result = self.run_command()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Session import complete.", result.stdout)
+        self.assertIn("unsupported Codex state database layout", result.stderr)
+        newer.unlink()
+        self.assert_full_then_fast()
+        config = self.home / "config.toml"
+        config.write_text('sqlite_home = "/a/different/state/directory"\n')
+        result = self.run_command()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("custom sqlite_home", result.stderr)
+        config.unlink()
+        self.assert_full_then_fast()
+        receipt = self.home / "codex-import-receipt.json"
+        receipt.unlink()
+        receipt.mkdir()
+        result = self.run_command()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Session import complete.", result.stdout)
+        self.assertIn("warning: receipt unavailable", result.stderr)
+        receipt.rmdir()
+        self.assert_full_then_fast()
 
     def test_pages_both_archives_with_live_writer_and_without_resetting_state(self):
         database = self.home / "state_5.sqlite"
@@ -144,15 +267,27 @@ class CodexImportTests(unittest.TestCase):
         # Remove unloaded rows so startup backfill cannot satisfy the repair assertion.
         with sqlite3.connect(self.home / "state_5.sqlite") as db:
             db.execute("DELETE FROM threads WHERE id != ?", (ids[0],))
-        for _ in range(2):
+        # Current-session listing omits rollouts without user events; archived
+        # listing includes them. Keep this receipt case in the current directory.
+        ignored_id = str(uuid.uuid4())
+        ignored = self.home / "sessions/2026/01/01" / f"rollout-2026-01-01T10-00-00-{ignored_id}.jsonl"
+        ignored_events = json.loads(json.dumps(events[:2]))
+        ignored_events[0]["payload"]["id"] = ignored_id
+        ignored.write_text("".join(json.dumps(dict(event, timestamp=stamp)) + "\n" for event in ignored_events))
+        originals[ignored] = ignored.read_bytes()
+        for iteration in range(2):
             result = self.run_command()
             self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("Session import complete." if iteration == 0 else "Session index is current.", result.stdout)
             with sqlite3.connect(self.home / "state_5.sqlite") as db:
                 self.assertEqual(set(ids), {row[0] for row in db.execute("SELECT id FROM threads")})
                 self.assertEqual(marker, db.execute("SELECT * FROM backfill_state").fetchall())
             for path, original in originals.items():
                 self.assertEqual(original, path.read_bytes())
         self.assertEqual([], list(self.home.glob("state_5.before-reimport.*")))
+        forced = self.run_command("--force")
+        self.assertEqual(0, forced.returncode, forced.stderr)
+        self.assertIn("Session import complete.", forced.stdout)
         self.assertIsNone(active.poll())
         self.assertEqual(ids[0], rpc(3, "thread/read", {"threadId": ids[0]})["thread"]["id"])
 

@@ -45,6 +45,16 @@ case ${1:-} in
 	debug)
 		[ "${2:-}" = prompt-input ] || use_profile=0 ;;
 esac
+if [ "$use_profile" = 1 ]; then
+	case ${1:-} in
+		exec|review|mcp|mcp-server|sandbox|debug|--help|-h|--version|-V) ;;
+		*)
+			if ! CODEX_HOME="$CODEX_HOME" "$DOTFILES/bin/codex-import" > /dev/null; then
+				printf '%s\n' 'codex wrapper: warning: session import failed; continuing startup.' >&2
+			fi
+			;;
+	esac
+fi
 set -- -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
 if [ "$use_profile" = 1 ]; then
 	set -- --profile dotfiles "$@"

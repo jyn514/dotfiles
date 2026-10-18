@@ -3,14 +3,19 @@ set -eu
 
 case ${1:-} in
 	-h|--help)
-		printf '%s\n' 'usage: codex-import' \
+		printf '%s\n' 'usage: codex-import [--force]' \
 			'Repairs the session index through Codex thread/list while other sessions run.' \
+			'Reuses a completed-scan receipt when index coverage and unindexed files are unchanged.' \
+			'Use --force to retry a full repair even when the receipt matches.' \
 			'Scans current and archived sessions across providers and sources.' \
 			'Uses CODEX_HOME (default: ~/.codex). Requires codex and python3.'
 		exit 0
 		;;
 esac
-[ "$#" -eq 0 ] || { printf '%s\n' 'usage: codex-import' >&2; exit 2; }
+case $#:${1:-} in
+	0:|1:--force) ;;
+	*) printf '%s\n' 'usage: codex-import [--force]' >&2; exit 2 ;;
+esac
 
 codex_home=${CODEX_HOME:-"$HOME/.codex"}
 [ -d "$codex_home" ] || {
@@ -20,4 +25,4 @@ codex_home=${CODEX_HOME:-"$HOME/.codex"}
 command_path=$(realpath "$0")
 root=$(dirname -- "$command_path")/..
 export CODEX_HOME="$codex_home"
-exec python3 "$root/libexec/codex-import.py"
+exec python3 "$root/libexec/codex-import.py" "$@"

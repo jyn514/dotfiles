@@ -17,6 +17,8 @@ for line in sys.stdin:
     if message["method"] == "initialize":
         reply["result"] = {}
     elif message["method"] == "thread/list":
+        if changed := os.environ.get("CODEX_IMPORT_TEST_CHANGE_DURING_SCAN"):
+            Path(changed).write_text("changed while native scan was running\n")
         mode = os.environ.get("CODEX_IMPORT_TEST_MODE")
         if mode == "exit":
             sys.exit(7)

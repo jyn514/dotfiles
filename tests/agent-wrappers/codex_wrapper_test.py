@@ -13,6 +13,58 @@ WRAPPER = ROOT / "bin/codex"
 
 
 class CodexWrapperTests(unittest.TestCase):
+    def test_maintenance_help_and_noninteractive_commands_do_not_import(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            (fake_bin / "codex").symlink_to(Path(__file__).parent / "fixtures/codex-import-launcher")
+            home = root / ".codex"
+            home.mkdir()
+            (home / "developer-instructions.md").write_text("")
+            environment = os.environ | {
+                "HOME": str(root), "CODEX_HOME": str(home), "DOTFILES_SANDBOX": "1",
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            for arguments in (["--help"], ["--version"], ["doctor"], ["exec", "prompt"],
+                              ["mcp", "list"], ["debug", "prompt-input"]):
+                with self.subTest(arguments=arguments):
+                    log = home / "launches.jsonl"
+                    log.unlink(missing_ok=True)
+                    result = subprocess.run([str(WRAPPER), *arguments], env=environment,
+                                            text=True, capture_output=True)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("", result.stderr)
+                    self.assertEqual(1, len(log.read_text().splitlines()))
+
+    def test_startup_repairs_before_launch_and_warns_without_changing_exit_status(self):
+        for mode in ("success", "rpc-error"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                fake_bin = root / "bin"
+                fake_bin.mkdir()
+                (fake_bin / "codex").symlink_to(Path(__file__).parent / "fixtures/codex-import-launcher")
+                home = root / ".codex"
+                home.mkdir()
+                (home / "developer-instructions.md").write_text("")
+                environment = os.environ | {
+                    "HOME": str(root), "CODEX_HOME": str(home), "DOTFILES_SANDBOX": "1",
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    "CODEX_IMPORT_TEST_MODE": mode, "CODEX_TEST_EXIT_STATUS": "23",
+                }
+                result = subprocess.run([str(WRAPPER), "resume"], env=environment,
+                                        text=True, capture_output=True)
+                self.assertEqual(23, result.returncode, result.stderr)
+                self.assertEqual("interactive started\n", result.stdout)
+                launches = [json.loads(line) for line in (home / "launches.jsonl").read_text().splitlines()]
+                self.assertEqual(["app-server", "--stdio"], launches[0])
+                self.assertEqual("resume", launches[1][-1])
+                self.assertEqual(2, len(launches))
+                if mode == "rpc-error":
+                    self.assertIn("warning: session import failed; continuing startup", result.stderr)
+                else:
+                    self.assertNotIn("continuing startup", result.stderr)
+
     def test_native_commands_bypass_interactive_setup(self) -> None:
         commands = [
             ["app-server", "--listen", "stdio://"],
@@ -123,6 +175,7 @@ class CodexWrapperTests(unittest.TestCase):
             codex = fake_bin / "codex"
             codex.write_text(
                 '#!/bin/sh\n'
+                f'if [ "${{1:-}}" = app-server ]; then exec "{ROOT}/tests/agent-wrappers/fixtures/codex-import-cli" "$@"; fi\n'
                 'printf "%s\\n" "$@"\n'
                 'printf "PATH=%s\\n" "$PATH"\n'
                 'printf "\\n[tui.model_availability_nux]\\n\\\"gpt-test\\\" = 1\\n" '

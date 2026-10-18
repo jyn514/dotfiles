@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Record native startup and delegate maintenance to the protocol fixture."""
+import json
+import os
+from pathlib import Path
+import sys
+
+with (Path(os.environ["CODEX_HOME"]) / "launches.jsonl").open("a") as output:
+    output.write(json.dumps(sys.argv[1:]) + "\n")
+if sys.argv[1:] == ["app-server", "--stdio"]:
+    fixture = Path(__file__).resolve().with_name("codex-import-cli")
+    os.execv(fixture, [str(fixture), *sys.argv[1:]])
+print("interactive started")
+sys.exit(int(os.environ.get("CODEX_TEST_EXIT_STATUS", "0")))
