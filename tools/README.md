@@ -11,11 +11,14 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`agent-split`](agent-split/) performs deterministic, patch-level `jj split` operations with `bb agent-split`. It rewrites history; start with the [operator guide](agent-split/README.md), then consult the [design and safety contract](agent-split/design.typ).
 - [`codex-archive-old`](codex-archive-old/) implements `codex-archive-old [--days N] [--apply]`, listing or archiving stale interactive Codex sessions through the app-server protocol.
 - [`codex-config`](codex-config/) moves Codex-generated project trust, model-availability, and hook-state tables from the tracked dotfiles profile into the untracked user config before launch and after exit.
-- [`codex-import`](../bin/codex-import) repairs missing synced sessions in Codex's local index. Before stopping the daemon or changing the database, it checks whether a local session holds a writer lock, including idle loaded sessions and `--no-daemon` sessions; stale unlocked files do not block it. The check uses Codex 0.159.2's internal `thread-writer-locks/*.lock` protocol and fails if locks cannot be inspected. It checks sessions in the selected home, so do not start new sessions during import.
-
-  After the check, it stops the daemon, backs up `state_5.sqlite` with SQLite's backup API, resets the import marker, and runs a temporary `codex app-server --stdio` with closed stdin to import immediately. It verifies completion before returning; no session or persistent daemon is started. On import failure it exits nonzero, keeps the backup, and tells you to retry `codex-import`.
-
-  It uses `CODEX_HOME` (default `~/.codex`) and requires `codex`, `sqlite3`, and `python3`; backups stay beside the database. Reimport reads all rollouts and may replace index metadata, while leaving transcripts unchanged.
+- [`codex-import`](../bin/codex-import) repairs missing synced sessions in Codex's local index while other Codex sessions run.
+  It starts a temporary `codex app-server --stdio` and pages through `thread/list` with scan-and-repair enabled for current and archived sessions, across providers and source kinds.
+  It leaves the persistent daemon running and does not resume sessions, reset the backfill marker, or edit SQLite directly.
+  Codex owns the index repairs; transcripts stay unchanged.
+  Completion reports the number of sessions listed, not the number newly imported or a guarantee that every rollout parsed successfully.
+  On failure, completed page repairs may remain; retry `codex-import`.
+  It uses `CODEX_HOME` (default `~/.codex`) and requires `codex` and `python3`.
+  The scan-and-repair behavior was verified with Codex 0.162.1; it depends on Codex's implementation of `thread/list`.
 - [`codex-sandbox`](codex-sandbox/) launches Pi or Codex in an isolated container with trusted Git, Jujutsu, authentication, editor, and optional Zulip or nested Docker bridges. Its internal Codex profile helper keeps reusable OAuth credentials outside agent containers; generic authenticated HTTP broker machinery has been deleted. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
 - [`jj-proxy`](jj-proxy/) exposes restricted Jujutsu operations to untrusted containers without writable repository metadata. Start with the [operator guide](jj-proxy/README.md); the [design](jj-proxy/design.typ) covers its policy and threat model.
 - [`pi-link`](pi-link/) is a local fork of alvivar's live-session messaging extension, with message IDs and optional reply references in the transcript.
