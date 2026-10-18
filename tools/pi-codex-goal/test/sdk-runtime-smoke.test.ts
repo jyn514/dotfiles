@@ -142,14 +142,14 @@ test("SDK completion report includes its calling response exactly once", async (
     assert.equal(providerPrompt.match(/Before extending repeated similar batches of work/g)?.length, 1,
       "model-created goals receive one scout instruction through the native provider prompt, not one per goal tool");
     assert.match(providerPrompt, /Apply this scouting procedure only while a goal is active/);
-    assert.match(providerPrompt, /progress snapshot organized by each governing goal condition/);
-    assert.match(providerPrompt, /Include core product\/source and observed output evidence/);
-    assert.match(providerPrompt, /Which important part of the goal has little demonstrated progress/);
-    assert.match(providerPrompt, /four focused read\/search tool calls, no further delegation or changes/);
-    assert.match(providerPrompt, /Reserve at least one of those four lookups for an example of the main activity the product supports/);
-    assert.match(providerPrompt, /scout select its example from existing material without screening for poor results/);
-    assert.match(providerPrompt, /what the intended user can actually do, what remains difficult or unsupported/);
-    assert.match(providerPrompt, /Do not forward conversation history, your proposed next task, accumulated rationale, or a preferred answer/);
+    assert.match(providerPrompt, /Use a configured fresh-context scout template when available/);
+    assert.match(providerPrompt, /follow its caller contract instead of restating its procedure/);
+    assert.match(providerPrompt, /Supply only the literal goal, constraint\/acceptance references, and product\/output\/current-work evidence paths/);
+    assert.match(providerPrompt, /omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
+    assert.match(providerPrompt, /If no scout template is available/);
+    assert.match(providerPrompt, /without claiming independence/);
+    assert.doesNotMatch(providerPrompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);
+    assert.doesNotMatch(providerPrompt, /goal-scout|pi-codex-subagents\/agents/);
     const updateGoal = runner.getToolDefinition("update_goal");
     assert.ok(updateGoal);
     assert.match(updateGoal.description, /whole goal/);

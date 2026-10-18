@@ -33,20 +33,11 @@ const BLOCKED_GOAL_GUIDELINE =
 const BOUNDED_SCOUT_GUIDELINE = [
   "Apply this scouting procedure only while a goal is active.",
   "Before extending repeated similar batches of work, make one bounded search for a more valuable next task, even when the batches succeed.",
-  "If a fresh-context subagent tool is available, delegate directly from existing task state to one read-only scout; do not start a separate planning or project-scan workflow to prepare it.",
-  "Give it only the literal goal, governing constraints and ordered acceptance conditions, a short factual progress snapshot organized by each governing goal condition, and evidence paths.",
-  "For each condition, state the observed result and supporting evidence; distinguish verified outcomes, unmet work and unknowns, rather than substituting recent batch activity or passing checks for user-facing quality.",
-  "Include core product/source and observed output evidence, not only recent task ledgers and verification receipts.",
-  "Do not forward conversation history, your proposed next task, accumulated rationale, or a preferred answer.",
-  "Limit the scout to four focused read/search tool calls, no further delegation or changes, and a result of at most 200 words.",
-  "Reserve at least one of those four lookups for an example of the main activity the product supports, not its build or validation process; inspect it before recommending a task.",
-  "Have the scout select its example from existing material without screening for poor results.",
-  "Ask what the intended user can actually do, what remains difficult or unsupported, and, if that is not measured, what bounded check would resolve it.",
-  "Ask: Which important part of the goal has little demonstrated progress? Find one bounded investigation that could reveal whether it deserves priority over continuing current work.",
-  "Request a concrete action with supporting evidence, likely benefit, uncertainty and a stopping condition; no grounded alternative found is acceptable.",
+  "Use a configured fresh-context scout template when available; follow its caller contract instead of restating its procedure.",
+  "Supply only the literal goal, constraint/acceptance references, and product/output/current-work evidence paths; omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale.",
+  "If no scout template is available, make a read-only search yourself using at most four read/search calls: inspect an existing product-use example and identify one evidence-grounded investigation or report none, without claiming independence.",
   "Compare its finding with continuing the current work, including implementation, verification and coordination costs, then choose an actual next action; a scout report alone is not progress.",
   "The parent retains task-selection authority and must preserve milestone order, acceptance conditions, approvals and explicit holds.",
-  "If no fresh-context subagent tool is available, do the same bounded search directly without claiming independence.",
   "Do not scout after every tool call or repeat an unchanged search without new evidence.",
 ].join(" ");
 

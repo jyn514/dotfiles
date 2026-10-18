@@ -78,34 +78,29 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
 }
 
 for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
-  test(`${kind} prompt requests a bounded independent scout before extending repeated successful batches`, () => {
+  test(`${kind} prompt delegates scout procedure to an optional template and keeps parent decisions`, () => {
     // Regression: putting scouting only in the full start prompt leaves model-created
     // goals and compact resumes following the old work-selection procedure.
     assert.match(prompt, /Apply this scouting procedure only while a goal is active/);
     assert.match(prompt, /Before extending repeated similar batches of work/);
     assert.match(prompt, /even when the batches succeed/);
-    assert.match(prompt, /If a fresh-context subagent tool is available, delegate directly from existing task state/);
-    assert.match(prompt, /do not start a separate planning or project-scan workflow to prepare it/);
-    assert.match(prompt, /progress snapshot organized by each governing goal condition/);
-    assert.match(prompt, /distinguish verified outcomes, unmet work and unknowns/);
-    assert.match(prompt, /rather than substituting recent batch activity or passing checks for user-facing quality/);
-    assert.match(prompt, /Include core product\/source and observed output evidence, not only recent task ledgers/);
-    assert.match(prompt, /Which important part of the goal has little demonstrated progress/);
-    assert.match(prompt, /one bounded investigation that could reveal whether it deserves priority/);
-    assert.match(prompt, /Do not forward conversation history, your proposed next task, accumulated rationale, or a preferred answer/);
-    assert.match(prompt, /four focused read\/search tool calls, no further delegation or changes/);
-    assert.match(prompt, /Reserve at least one of those four lookups for an example of the main activity the product supports/);
-    assert.match(prompt, /not its build or validation process; inspect it before recommending a task/);
-    assert.match(prompt, /scout select its example from existing material without screening for poor results/);
-    assert.match(prompt, /what the intended user can actually do, what remains difficult or unsupported/);
-    assert.match(prompt, /if that is not measured, what bounded check would resolve it/);
-    assert.match(prompt, /at most 200 words/);
-    assert.match(prompt, /no grounded alternative found is acceptable/);
+    assert.match(prompt, /Use a configured fresh-context scout template when available/);
+    assert.match(prompt, /follow its caller contract instead of restating its procedure/);
+    assert.match(prompt, /Supply only the literal goal, constraint\/acceptance references, and product\/output\/current-work evidence paths/);
+    assert.match(prompt, /omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
+    assert.match(prompt, /If no scout template is available/);
+    assert.match(prompt, /at most four read\/search calls/);
+    assert.match(prompt, /inspect an existing product-use example/);
+    assert.match(prompt, /or report none/);
+    assert.match(prompt, /without claiming independence/);
+    // Worker policy belongs to the configured template, whose name and report
+    // budget can change without editing this independently distributed package.
+    assert.doesNotMatch(prompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);
+    assert.doesNotMatch(prompt, /goal-scout|pi-codex-subagents\/agents/);
     assert.match(prompt, /implementation, verification and coordination costs/);
     assert.match(prompt, /a scout report alone is not progress/);
     assert.match(prompt, /parent retains task-selection authority/);
     assert.match(prompt, /preserve milestone order, acceptance conditions, approvals and explicit holds/);
-    assert.match(prompt, /do the same bounded search directly without claiming independence/);
     assert.match(prompt, /Do not scout after every tool call or repeat an unchanged search without new evidence/);
   });
 }
