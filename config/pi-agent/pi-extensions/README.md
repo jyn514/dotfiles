@@ -12,6 +12,13 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+`pi-notify.ts` sends an OSC 777 desktop notification when an interactive run settles.
+Inside tmux, it also sends a standalone bell so tmux can mark background windows with a bell alert.
+The desktop notification uses DCS passthrough and requires `set -g allow-passthrough on` (already in this repository's tmux config).
+With `on`, tmux forwards desktop notifications only from visible panes; `all` also permits hidden panes.
+The outer terminal must support OSC 777 for desktop notifications; tmux's bell alert does not require that support.
+Run `/reload` after changing the extension, then finish a turn to test delivery in the host terminal.
+
 The footer adapts Pi's `custom-footer.ts` example. Its second line shows context
 percentage/capacity and cumulative price, with model and thinking level on the
 right. It omits `(auto)`, `(sub)`, and token/cache statistics. Context turns yellow
