@@ -89,7 +89,6 @@
       "$HOME/.agents/shared.md": "config/agents/shared-agents.md",
       "$HOME/.agents/irc.md": "config/agents/irc.md",
       "$HOME/.agents/contest-dialect.md": "config/agents/contest-dialect.md",
-      "$HOME/.agents/coordination-dialect.md": "config/agents/coordination-dialect.md",
       "$HOME/.agents/sandbox/AGENTS.md": "config/agents/sandbox-AGENTS.md",
       "$HOME/.agents/skills": "skills",
       "$HOME/.julia/config/startup.jl": "config/startup.jl",

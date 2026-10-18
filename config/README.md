@@ -43,7 +43,7 @@ Reload the harness's instructions after changing a route.
 These references are not `@` includes or registered skills, so their rules stay out of the startup prompt.
 Work ownership, test isolation, and the stop condition for rejected designs stay in the shared instructions.
 History inspection procedures belong to [jj-workflow](../skills/jj-workflow/SKILL.md).
-Read [Coordination Dialect](agents/coordination-dialect.md) before delegation for subagent routing and coordination conventions.
+See [subagent routing](pi-agent/README.md#subagent-routing) for choosing a Pi agent template.
 
 ## Pi
 

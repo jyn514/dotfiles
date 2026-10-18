@@ -205,11 +205,6 @@ Hold only the conflicting mutations, not unrelated file edits or the entire agen
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
 
-### Before delegation
-
-Before your first delegation, read [coordination-dialect.md](~/.agents/coordination-dialect.md) for subagent routing and coordination conventions.
-Use its fields when structure helps; otherwise use English.
-
 ### When diagnosing a failure
 
 Before recommending recovery actions, read the owning project's recovery documentation.

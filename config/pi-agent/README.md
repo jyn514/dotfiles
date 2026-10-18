@@ -17,15 +17,16 @@ Settings load that package's extension and skill, and new sessions connect autom
 Install its locked dependencies before reloading Pi; `/link-disconnect` opts a session out and persists across reload and resume.
 The sandbox exposes the package read-only at the same agent-directory path, so guest tools can read its bundled skill.
 
-The `luna` and `parent` agent templates instruct children to read
-`~/.agents/coordination-dialect.md` once before their first task. Use a named
-template for each child (`parent` for generic delegation); task prompts do not
-need to repeat the instruction or copy the dialect.
-
 See the [extension bundle](pi-extensions/README.md) for loading, reloading,
 compaction, side conversations, and asynchronous questions. Follow the
 [development guide](../../dev/README.md#testing-and-probes) before running tests
 or probes.
+
+## Subagent routing
+
+Exact allowlisted skills may route a subagent through the `luna` template.
+Absent, unknown, or mixed skill sets inherit the parent model.
+Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
 ## Installation and update routes
 
