@@ -131,7 +131,9 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             except BaseException as error:
                 errors.append(error)
 
+        mount_probe = mock.Mock()
         with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
+                                               'probe_jj_mounts': mount_probe,
                                                'IMAGE_PREFIX': 'renamed-runtime'}), \
                 mock.patch('sys.argv', ['integration', '--expected-revision', revision]), \
                 mock.patch('subprocess.run', side_effect=cleanup):
@@ -153,6 +155,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             expected = subprocess.CalledProcessError if failure.endswith('command') else RuntimeError
             self.assertIsInstance(errors[0], expected)
         self.assertTrue(cleaned.is_set())
+        mount_probe.assert_called_once_with(tags['jj'][0])
 
     def test_bake_preserves_revisions_aliases_and_the_shared_jj_dependency(self):
         build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
@@ -213,7 +216,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             build(None, tags)
 
     def test_jj_only_runs_without_pi_revision_and_cleans_only_its_own_alias(self):
-        for failure in (None, 'build', 'probe', 'output'):
+        for failure in (None, 'build', 'mounts', 'probe', 'output'):
             with self.subTest(failure=failure):
                 main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
                 tags = {}
@@ -240,7 +243,9 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                     marker = 'failed' if failure == 'output' else 'jj-colocated-ok'
                     return 'a' * 64 + '  /trusted/bin/jj\n' + marker + '\n'
 
-                with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run}), \
+                mount_probe = mock.Mock(side_effect=error if failure == 'mounts' else None)
+                with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
+                                                       'probe_jj_mounts': mount_probe}), \
                         mock.patch('sys.argv', ['integration', '--jj-only']), \
                         mock.patch('subprocess.run') as cleanup:
                     if failure is None:
@@ -250,7 +255,12 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                             main()
                 cleanup.assert_called_once()
                 self.assertEqual(['docker', 'image', 'rm', '-f', tags['jj'][0]], cleanup.call_args.args[0])
-                self.assertEqual(0 if failure == 'build' else 1, sum(command[1] == 'run' for command in calls))
+                self.assertEqual(0 if failure in ('build', 'mounts') else 1,
+                                 sum(command[1] == 'run' for command in calls))
+                if failure == 'build':
+                    mount_probe.assert_not_called()
+                else:
+                    mount_probe.assert_called_once_with(tags['jj'][0])
 
     def test_full_mode_still_requires_revision_before_any_docker_operation(self):
         main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
@@ -279,6 +289,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         build = mock.Mock(side_effect=subprocess.CalledProcessError(17, ['docker', 'buildx', 'bake']))
         probe = mock.Mock()
         with mock.patch.dict(main.__globals__, {'build_images': build, 'run': probe,
+                                               'probe_jj_mounts': probe,
                                                'IMAGE_PREFIX': 'renamed-runtime'}), \
                 mock.patch('sys.argv', ['integration', '--expected-revision', revision]), \
                 mock.patch('subprocess.run') as cleanup:

@@ -202,7 +202,7 @@ For allowed helper metadata and forbidden log contents, follow the Readiness and
 [the authenticated-egress specification](spec/proxy-design.typ).
 Passing admission checks alone does not establish compliance with its logging exclusions.
 
-The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, and network access:
+The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, network access, and local Git and JJ binaries:
 
 ```sh
 dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
@@ -222,8 +222,11 @@ its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
 Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `rg` aliases, and blocked nested wrapper operations in the produced images.
 It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
 Each guest's binary checksum, runtime, and wrapper checks share one container run.
+A mounted checkout probe calls the launcher's real JJ mount generator for a disposable repository.
+It stages the repository in an owned Docker volume and translates bind source paths for the remote daemon, leaving generated destinations and permissions unchanged.
+Through the mounted proxy, it checks out history that removes and restores `.agents/sandbox`, then checks that the working copy is not stale.
+The probe removes its container and volume even when checkout fails.
 The colocated-workspace probe computes the proxy binary's checksum without copying the binary out of its image.
-Through the proxy, it checks out history that removes and restores `.agents/sandbox`, then checks that the working copy is not stale.
 It also checks the TLS certificate-store alias and starts the proxy server to exercise HTTP/HTTPS fetch helpers under Landlock.
 That check uses refused loopback connections with networking disabled, so missing helpers or denied execution cannot pass as expected fetch failures.
 In the full run, one Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.

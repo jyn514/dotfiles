@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import io
 import json
+import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
+import tarfile
 import tempfile
+from unittest import mock
 import uuid
 
 
@@ -52,6 +57,67 @@ def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> N
         path.write_text(json.dumps(definition))
         # Probes need engine-local images even with a docker-container builder.
         subprocess.run(['docker', 'buildx', 'bake', '--file', str(path), '--load'], cwd=ROOT, check=True)
+
+
+def probe_jj_mounts(image: str) -> None:
+    from docker_runtime import Docker
+
+    launcher = runpy.run_path(str(ROOT / 'tools/codex-sandbox/sandbox-proxies.py'))
+    generate = launcher['proxy_repository_mount_args']
+    container_repo = Path('/src/work')
+    with tempfile.TemporaryDirectory(prefix='jj-mount-fixture-') as directory:
+        root = Path(directory).resolve()
+        repo = root / 'repo'
+        subprocess.run([os.environ.get('DOTFILES_TEST_JJ_REAL', 'jj'), 'git', 'init', '--colocate', str(repo)],
+                       cwd=root, check=True)
+        sandbox = repo / '.agents/sandbox'
+        sandbox.mkdir(parents=True)
+        (sandbox / 'Dockerfile').write_text('FROM scratch\n')
+        command = {'mounts': [{'source': '.', 'target': '.', 'proxy': 'read-write'}]}
+        # Select the production Docker mount grammar without requiring host startup state.
+        with mock.patch.object(generate.__globals__['OUTER_RUNTIME'], 'nonrecursive_bind', Docker.nonrecursive_bind), \
+                mock.patch.dict(os.environ, {'HOME': str(root)}):
+            mounts = generate(repo, container_repo, 'jj', command)
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode='w') as tar:
+            tar.add(repo, arcname='repo')
+        name = 'jj-mount-fixture-' + uuid.uuid4().hex
+        created = False
+        try:
+            run('docker', 'volume', 'create', name)
+            created = True
+            daemon_root = Path(run('docker', 'volume', 'inspect', '--format', '{{.Mountpoint}}', name).strip())
+            user = run('docker', 'image', 'inspect', '--format', '{{.Config.User}}', image).strip() or '0:0'
+            seed = ['docker', 'run', '--rm', '--name', name, '--network', 'none', '--user', '0:0',
+                    '--mount', f'type=volume,src={name},dst=/fixture',
+                    '--entrypoint', '/trusted/bin/busybox']
+            subprocess.run([*seed, '--interactive', image, 'tar', 'xf', '-', '-C', '/fixture'],
+                           input=archive.getvalue(), check=True)
+            run(*seed, image, 'chown', '-R', user, '/fixture')
+            # The daemon cannot see our temporary directory. Relocate only bind
+            # sources to its populated volume; retain every destination and mode.
+            relocated = []
+            for argument in mounts:
+                fields = argument.split(',')
+                for index, field in enumerate(fields):
+                    if field.startswith('src='):
+                        relative = Path(field.removeprefix('src=')).relative_to(root)
+                        fields[index] = 'src=' + str(daemon_root / relative)
+                relocated.append(','.join(fields))
+            output = run(
+                'docker', 'run', '--rm', '--interactive', '--name', name, '--network', 'none',
+                '--cap-drop=ALL', '--read-only', '--tmpfs', '/tmp:mode=1777',
+                '--tmpfs', '/run/sandbox-proxy:mode=1777', *relocated,
+                '--workdir', str(container_repo), '--entrypoint', '/trusted/bin/sh', image,
+                input=Path(__file__).with_name('fixtures').joinpath('jj-mounted-checkout.sh').read_text(),
+            )
+            if output != 'jj-mounted-checkout-ok\n':
+                raise RuntimeError(f'unexpected mounted JJ checkout probe: {output!r}')
+        finally:
+            subprocess.run(['docker', 'rm', '-f', name], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if created:
+                run('docker', 'volume', 'rm', name)
 
 
 def check_labels(tags: list[str], revision: str) -> None:
@@ -106,6 +172,7 @@ def main() -> None:
     jj_image = tags['jj'][0]
     try:
         build_images(args.expected_revision, tags)
+        probe_jj_mounts(jj_image)
         if not args.jj_only:
             check_labels([tags['pi-alpine'][0], tags['pi-debian'][0]], args.expected_revision)
         # Leaving the executor waits for every probe, including on failure,
