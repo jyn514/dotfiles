@@ -142,10 +142,14 @@ test("SDK completion report includes its calling response exactly once", async (
     assert.equal(providerPrompt.match(/Before extending repeated similar batches of work/g)?.length, 1,
       "model-created goals receive one scout instruction through the native provider prompt, not one per goal tool");
     assert.match(providerPrompt, /Apply this scouting procedure only while a goal is active/);
+    assert.equal(providerPrompt.match(/Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition/g)?.length, 1,
+      "successful but unproductive prerequisite chains receive a scout trigger in the actual provider transcript");
+    assert.match(providerPrompt, /even when those tasks differ and none has stalled/);
     assert.match(providerPrompt, /Use a configured fresh-context scout template when available/);
     assert.match(providerPrompt, /follow its caller contract instead of restating its procedure/);
-    assert.match(providerPrompt, /Supply only the literal goal, constraint\/acceptance references, and product\/output\/current-work evidence paths/);
-    assert.match(providerPrompt, /omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
+    assert.match(providerPrompt, /literal goal, current acceptance condition, latest relevant user correction quoted if any/);
+    assert.match(providerPrompt, /omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
+    assert.match(providerPrompt, /user benefit justifies implementation, integration, verification and coordination costs compared with continuing/);
     assert.match(providerPrompt, /If no scout template is available/);
     assert.match(providerPrompt, /without claiming independence/);
     assert.doesNotMatch(providerPrompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);

@@ -84,20 +84,30 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
     assert.match(prompt, /Apply this scouting procedure only while a goal is active/);
     assert.match(prompt, /Before extending repeated similar batches of work/);
     assert.match(prompt, /even when the batches succeed/);
+    assert.match(prompt, /Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition/);
+    assert.match(prompt, /even when those tasks differ and none has stalled/);
     assert.match(prompt, /Use a configured fresh-context scout template when available/);
     assert.match(prompt, /follow its caller contract instead of restating its procedure/);
-    assert.match(prompt, /Supply only the literal goal, constraint\/acceptance references, and product\/output\/current-work evidence paths/);
-    assert.match(prompt, /omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
+    assert.match(prompt, /literal goal, current acceptance condition/);
+    assert.match(prompt, /latest relevant user correction quoted if any/);
+    assert.match(prompt, /constraint\/acceptance references and product\/output\/current-work evidence paths/);
+    assert.match(prompt, /omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
     assert.match(prompt, /If no scout template is available/);
     assert.match(prompt, /at most four read\/search calls/);
     assert.match(prompt, /inspect an existing product-use example/);
-    assert.match(prompt, /or report none/);
+    assert.match(prompt, /bounded next action by user benefit and work required/);
+    assert.match(prompt, /or report no better alternative/);
+    assert.match(prompt, /If benefit is unknown, choose a cheap check that could decide whether to proceed, rather than defaulting to implementation/);
+    assert.doesNotMatch(prompt, /identify one evidence-grounded investigation/);
     assert.match(prompt, /without claiming independence/);
     // Worker policy belongs to the configured template, whose name and report
     // budget can change without editing this independently distributed package.
     assert.doesNotMatch(prompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);
     assert.doesNotMatch(prompt, /goal-scout|pi-codex-subagents\/agents/);
-    assert.match(prompt, /implementation, verification and coordination costs/);
+    assert.match(prompt, /Before accepting an alternative, state why/);
+    assert.match(prompt, /user benefit justifies implementation, integration, verification and coordination costs compared with continuing/);
+    assert.match(prompt, /correctness, novelty or a newly found gap alone is not enough/);
+    assert.match(prompt, /no better alternative as a successful scout result/);
     assert.match(prompt, /a scout report alone is not progress/);
     assert.match(prompt, /parent retains task-selection authority/);
     assert.match(prompt, /preserve milestone order, acceptance conditions, approvals and explicit holds/);

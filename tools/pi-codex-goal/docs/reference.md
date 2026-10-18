@@ -110,13 +110,18 @@ While a goal is active, the extension:
 - Routes tracked implementation-through-verified-completion goals to the `autonomous-implementation` skill, when available, at start or resume and back to its recovery guidance when stuck.
   Standing tool guidance covers model-created goals too; plan-only, review, research, and writing goals do not activate the skill.
 - Instructs the agent to make a bounded search before extending repeated similar batches, including successful ones.
+  Also scout before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition.
+  This applies even when those tasks differ and none has stalled.
   Use a configured fresh-context scout template when available; its caller contract owns the worker procedure and report format.
-  Supply only the literal goal, constraint/acceptance references, and product/output/current-work evidence paths.
-  Omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale.
+  Supply the literal goal, current acceptance condition, latest relevant user correction quoted if any, governing references, and evidence paths.
+  Omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale.
   Templates are optional and installation-specific; this package neither installs one nor requires a particular template name.
-  Without one, search directly with at most four read/search calls, inspecting an existing product-use example without claiming independence.
-  The parent compares the finding with continuing its work, including verification and coordination costs.
-  It retains task-selection authority and all existing holds.
+  Without one, use at most four read/search calls to inspect an existing product-use example and assess a next action, not just another investigation.
+  Do not claim independence; if benefit is unknown, choose a cheap check before implementation.
+  Before accepting an alternative, the parent states why its evidenced or estimated user benefit justifies the work compared with continuing.
+  Include implementation, integration, verification and coordination costs; a technical gap alone does not justify priority.
+  No better alternative is a successful result.
+  The parent retains task-selection authority and all existing holds.
   These are model instructions, not an enforced scheduler, lookup limit or guarantee of better prioritization.
 - Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
 - Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available.

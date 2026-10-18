@@ -33,10 +33,12 @@ const BLOCKED_GOAL_GUIDELINE =
 const BOUNDED_SCOUT_GUIDELINE = [
   "Apply this scouting procedure only while a goal is active.",
   "Before extending repeated similar batches of work, make one bounded search for a more valuable next task, even when the batches succeed.",
+  "Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition, also make one bounded search, even when those tasks differ and none has stalled.",
   "Use a configured fresh-context scout template when available; follow its caller contract instead of restating its procedure.",
-  "Supply only the literal goal, constraint/acceptance references, and product/output/current-work evidence paths; omit conversation history, per-outcome assessments, proposed tasks and accumulated rationale.",
-  "If no scout template is available, make a read-only search yourself using at most four read/search calls: inspect an existing product-use example and identify one evidence-grounded investigation or report none, without claiming independence.",
-  "Compare its finding with continuing the current work, including implementation, verification and coordination costs, then choose an actual next action; a scout report alone is not progress.",
+  "Supply the literal goal, current acceptance condition, latest relevant user correction quoted if any, constraint/acceptance references and product/output/current-work evidence paths; omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale.",
+  "If no scout template is available, make a read-only search yourself using at most four read/search calls: inspect an existing product-use example, then assess a bounded next action by user benefit and work required or report no better alternative, without claiming independence. If benefit is unknown, choose a cheap check that could decide whether to proceed, rather than defaulting to implementation.",
+  "Before accepting an alternative, state why its evidenced or estimated user benefit justifies implementation, integration, verification and coordination costs compared with continuing the current work; correctness, novelty or a newly found gap alone is not enough.",
+  "Treat no better alternative as a successful scout result, then choose an actual next action; a scout report alone is not progress.",
   "The parent retains task-selection authority and must preserve milestone order, acceptance conditions, approvals and explicit holds.",
   "Do not scout after every tool call or repeat an unchanged search without new evidence.",
 ].join(" ");
