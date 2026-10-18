@@ -1638,17 +1638,21 @@ export class AgentManager {
 
   async captureChildren(
     parentId: string, generation: string, onCapture: (id: string, saved: SavedSession) => void,
+    onProgress?: (activity: string) => void,
   ): Promise<Record<string, SavedSession>> {
+    onProgress?.("draining parent subagent submissions");
     await this.drainSubmissions(parentId);
     const retained = this.captures.get(parentId) ?? {};
     this.captures.set(parentId, retained);
     const captured: Record<string, SavedSession> = {};
     // Recheck after parent drain: an already-admitted tool may have started a
     // child since the initial pause. Fence all of them before capturing any one.
+    onProgress?.("requesting child pauses");
     await this.pauseChildren(parentId);
     for (let info of readScopeInfos(parentId)) {
       let live = this.live.get(info.id);
       if (live?.expectedExit) {
+        onProgress?.(`closing child ${info.canonicalName}`);
         await live.termination;
         live = undefined;
         info = this.getAgentInfo(info.taskName, parentId);
@@ -1667,6 +1671,7 @@ export class AgentManager {
       }
       let saved = retained[info.id];
       if (!live.restoredHeld && (!saved || live.handoffGeneration !== generation)) {
+        onProgress?.(`capturing child ${info.canonicalName}`);
         live.handoffGeneration = generation;
         // Unknown helper text must never fall through to a provider request.
         // A parked run is not idle: dispatch the opted-in helper immediately.
@@ -1685,6 +1690,7 @@ export class AgentManager {
       this.notifyStatusChange(live.info);
       // Parent persistence must succeed before EOF makes get_entries unavailable.
       onCapture(info.id, saved);
+      onProgress?.(`closing child ${info.canonicalName}`);
       await this.terminateProcess(live, true);
       assertSessionAuthority(saved, SessionManager.open(info.sessionFile));
     }

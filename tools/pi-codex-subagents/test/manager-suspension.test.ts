@@ -111,6 +111,7 @@ sourceTest("Manager drains admitted submissions, releases waits neutrally, captu
     expect(existsSync(filesB.ended)).toBe(false);
 
     const captures: Record<string, SavedSession> = {};
+    const progress: string[] = [];
     let captureDone = false;
     const generation = randomUUID();
     const capture = manager.captureChildren(parentId, generation, (id: string, saved: SavedSession) => {
@@ -121,7 +122,7 @@ sourceTest("Manager drains admitted submissions, releases waits neutrally, captu
       captures[id] = structuredClone(saved);
       // This callback is the owning persistence handoff, before Manager may close a child.
       writeFileSync(join(cwd, `${id}.saved.json`), JSON.stringify(saved));
-    }).then(value => { captureDone = true; return value; });
+    }, activity => { progress.push(activity); }).then(value => { captureDone = true; return value; });
     await until(() => existsSync(filesA.pauseRequested) && existsSync(filesB.pauseRequested), "both held children observe native capture fences");
     expect(captureDone).toBe(false);
     expect(Object.keys(captures)).toHaveLength(0);
@@ -135,6 +136,12 @@ sourceTest("Manager drains admitted submissions, releases waits neutrally, captu
     const returned = await capture;
     expect(Object.keys(captures).sort()).toEqual([first.id, second.id].sort());
     expect(Object.keys(returned).sort()).toEqual(Object.keys(captures).sort());
+    for (const info of [first, second]) {
+      const capturing = progress.indexOf(`capturing child ${info.canonicalName}`);
+      const closing = progress.indexOf(`closing child ${info.canonicalName}`);
+      expect(capturing).toBeGreaterThanOrEqual(0);
+      expect(closing).toBeGreaterThan(capturing);
+    }
     await until(() => [first, second].every(info => !manager.getAgentInfo(info.canonicalName, parentId).childProcess), "captured children close after owner persistence");
     for (const info of [first, second]) {
       const saved = captures[info.id];

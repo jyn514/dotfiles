@@ -166,7 +166,7 @@ In RPC mode, `/pause --exit` may need a subsequent command or stdin EOF before t
 |---|---|
 | `/pause` | Stop at complete provider/tool boundaries, persist pending inputs, and close captured children |
 | `/pause --exit` | Save, then request shutdown; failure leaves the parent open |
-| `/pause --status` | Show the saved/incomplete phase and pending count |
+| `/pause --status` | Show the phase, pending count, and current pause operation, including the child being captured or closed |
 | `/unpause` | Prepare saved children idle, then start fresh continuation runs |
 | `/pause --discard` | Explicitly revoke saved pending inputs; already-admitted new runs remain owned by Pi |
 
@@ -178,6 +178,9 @@ Templates that start independent provider work outside Pi's normal admission are
 Pause requests reach existing children without waiting for the parent's current provider response or tool batch to finish.
 Saving rechecks for children started by already-admitted parent tools.
 A running tool must finish before saving succeeds.
+While saving, `/pause --status` distinguishes parent submission drain, parent response/tool completion, child capture, and child closure.
+For example, `Suspension: preparing; pending 0; capturing child /reviewer.` identifies the child currently being captured.
+Operation details describe live work only; they are not restored when reopening the session.
 A tool or handler that never returns prevents graceful save; terminating it is not successful suspension.
 Wait tools return a nonterminal paused result while the parent batch drains.
 Child completions remain buffered until parent delivery is acknowledged.

@@ -60,6 +60,7 @@ through public `ctx.executeTool`, covering its independently assigned nested dra
 Native nested-call events and persisted `nestedCalls` verify this path.
 `parent-blocked-held-task:<owned-path>` holds another parent tool between the wait and send.
 The child must observe its pause and finish its held tool without another provider request while that parent tool remains blocked.
+Live `/pause --status` notifications identify parent response/tool completion versus capture of the named child, then drop the activity after saving.
 Completed tool results prevent either batch from being resent on fresh continuation; there are no
 production options or fixture-only APIs.
 

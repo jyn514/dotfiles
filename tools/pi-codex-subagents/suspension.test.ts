@@ -99,6 +99,26 @@ test("capture callback persists equal child inputs before close; a later failure
   } finally { f.close(); }
 });
 
+test("live status identifies blocked submission drain and drops that activity after failure", async () => {
+  const f = fixture();
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  f.manager.drainSubmissions = async () => {
+    entered.resolve();
+    await release.promise;
+    throw new Error("submission failed");
+  };
+  const pause = f.coordinator.pause(f.ctx);
+  try {
+    await entered.promise;
+    expect(f.coordinator.status()).toContain("draining parent subagent submissions");
+    release.resolve();
+    await expect(pause).rejects.toThrow("submission failed");
+    expect(f.coordinator.status()).toContain("incomplete");
+    expect(f.coordinator.status()).not.toContain("draining parent");
+  } finally { release.resolve(); await pause.catch(() => {}); f.close(); }
+});
+
 test("early child pause failure stays incomplete without capturing or closing the parent and can be retried", async () => {
   const f = fixture();
   f.manager.pauseChildren = async () => { throw new Error("child pause refused"); };

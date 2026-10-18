@@ -126,6 +126,8 @@ export class SuspensionCoordinator {
   private claim?: ParentScopeClaim;
   private file?: string;
   private busy = false;
+  // Live diagnostics only: a reopened group cannot prove which operation is running.
+  private pauseProgress?: string;
   private liveGeneration = false;
   private discoveryError?: string;
   private commandContext?: ExtensionCommandContext;
@@ -240,7 +242,8 @@ export class SuspensionCoordinator {
     const count = revoked(group) ? 0 : (group.parent ? pendingCount(group.parent) : 0)
       + Object.values(group.children).reduce((sum, saved) => sum + pendingCount(saved), 0);
     const cleanup = group.discardCleanupPending && !group.error ? "; discard cleanup pending; retry /pause --discard" : "";
-    return `Suspension: ${group.phase}; pending ${count}${group.error ? `; ${group.error}` : cleanup}.`;
+    const progress = group.phase === "preparing" && this.pauseProgress ? `; ${this.pauseProgress}` : "";
+    return `Suspension: ${group.phase}; pending ${count}${progress}${group.error ? `; ${group.error}` : cleanup}.`;
   }
 
   async pause(ctx: ExtensionCommandContext, exit = false): Promise<void> {
@@ -278,17 +281,21 @@ export class SuspensionCoordinator {
       this.persist();
       // Fence existing children while the parent finishes its accepted batch.
       // Capture rechecks for children started by later tools in that batch.
+      this.pauseProgress = "requesting child pauses";
       await this.manager.pauseChildren(id);
+      this.pauseProgress = "draining parent subagent submissions";
       await this.manager.drainSubmissions(id);
       if (!this.group.parent || this.group.parentResumed || this.group.parent.marker === "started") {
         // Acknowledged parent replay is a new run. A fenced partial replay must retain its current request ID.
         const requestId = this.group.parentResumed ? `${this.group.generation}:parent:${randomUUID()}`
           : this.group.parent?.handoff.requestId ?? this.group.generation;
+        this.pauseProgress = "waiting for parent response/tool batch";
         this.group.parent = await this.replay.capture(ctx, requestId);
         this.group.parentResumed = false;
         this.persist();
       }
       // Handoff also finishes later tools in the admitted batch. Recheck their nested submissions/failures.
+      this.pauseProgress = "draining parent subagent submissions";
       await this.manager.drainSubmissions(id);
       const activeIds = this.manager.listAgents(undefined, id)
         .filter(agent => ["starting", "running", "suspended"].includes(agent.agent_status))
@@ -297,15 +304,17 @@ export class SuspensionCoordinator {
       this.group.inventoryComplete = true;
       this.persist();
       if (!this.liveGeneration && Object.keys(this.group.children).length) {
+        this.pauseProgress = "preparing saved children";
         await this.manager.prepareChildren(id, this.group.children);
         this.persist(); // Preparation may recapture/disarm held children and mutate their saved payloads.
       }
+      this.pauseProgress = "capturing children";
       const children = await this.manager.captureChildren(id, captureGeneration, (childId, saved) => {
         this.group!.children[childId] = saved;
         this.group!.resumed = this.group!.resumed.filter(id => id !== childId);
         this.updateCompletions();
         this.persist(); // Manager MUST await this synchronous callback before closing this child.
-      });
+      }, activity => { this.pauseProgress = activity; });
       Object.assign(this.group.children, children);
       this.assertChildrenAccountedFor();
       // Parent shutdown records may be descendants; this checks ancestry, not exact leaf equality.
@@ -327,7 +336,7 @@ export class SuspensionCoordinator {
         try { this.updateCompletions(); this.persist(); } catch { /* captures remain owned in memory */ }
       }
       throw error;
-    } finally { this.busy = false; }
+    } finally { this.pauseProgress = undefined; this.busy = false; }
   }
 
   async unpause(ctx: ExtensionCommandContext): Promise<void> {

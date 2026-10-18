@@ -38,6 +38,14 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
   // Production index owns Manager/coordinator. The optional test tool uses only
   // public ctx.executeTool; Manager loads child-helper before child template code.
   let rpc = sourceRpc(cwd, parentFile, false, parentExtensions);
+  const pauseStatus = async () => {
+    const start = rpc.records.length;
+    expect((await rpc.request({ type: "prompt", message: "/pause --status" })).disposition).toBe("handled");
+    const notification = rpc.records.slice(start).find(record => record.type === "extension_ui_request"
+      && record.method === "notify" && record.message.startsWith("Suspension:"));
+    expect(notification).toBeTruthy();
+    return notification.message as string;
+  };
   try {
     const initial = await rpc.request({ type: "get_state" });
     const parentId = initial.sessionId;
@@ -71,6 +79,7 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
       await until(() => existsSync(files.ended), "child tool finishes while parent remains held");
       expect(existsSync(parentFiles.ended)).toBe(false);
       expect(group().parent).toBeUndefined();
+      expect(await pauseStatus()).toContain("waiting for parent response/tool batch");
       await delay(50);
       expect(jsonl(providerCallsFile(childFile))).toHaveLength(1);
       writeFileSync(parentFiles.release, "finish parent batch");
@@ -102,10 +111,17 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
     expect(completions(parentFile)).toHaveLength(0);
     await until(() => existsSync(files.pauseRequested), "held child observes the coordinator's actual native pause fence");
     expect(readFileSync(files.pauseRequested, "utf8")).toMatch(/^(pausing|paused)$/);
+    if (!blocked) {
+      await until(async () => (await pauseStatus()).includes("capturing child /native-child"),
+        "live status names the child whose held tool prevents capture", 3000);
+    }
     writeFileSync(files.release, "release actual child tool");
     expect((await pause).disposition).toBe("handled");
     const saved = group();
     expect(saved.phase, JSON.stringify(saved)).toBe("saved");
+    const savedStatus = await pauseStatus();
+    expect(savedStatus).toContain("Suspension: saved;");
+    expect(savedStatus).not.toMatch(/waiting for|capturing child|closing child/);
     // Closing stdin is the documented RPC shutdown path. /pause --exit currently
     // sets shutdownRequested after RPC's async handled-prompt shutdown check.
     expect(await rpc.close()).toBe(0);
@@ -131,6 +147,9 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
     expect(reopened.sessionFile).toBe(parentFile);
     expect(reopened.pauseState).toBe("paused");
     expect(group().phase).toBe("saved");
+    const reopenedStatus = await pauseStatus();
+    expect(reopenedStatus).toContain("Suspension: saved;");
+    expect(reopenedStatus).not.toMatch(/waiting for|capturing child|closing child/);
     expect(getAgent("native-child", parentId)!.id).toBe(childId);
     expect(getAgent("native-child", parentId)!.sessionFile).toBe(childFile);
     expect(getAgent("native-child", parentId)!.childProcess).toBeUndefined();
