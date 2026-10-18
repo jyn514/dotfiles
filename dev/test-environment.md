@@ -9,6 +9,13 @@ For Python tests, use `dev/pytest [ARGS...]`; it applies this isolation and sele
 a working pytest with the repository's required plugins, using pinned `uvx`
 dependencies when necessary.
 
+For wrapper or launcher probes, pass the intended entrypoint by path rather than a bare command name.
+Isolation can substitute native tools for bare names; for example, `bb` may select native Babashka rather than this repository's dispatcher.
+
+```sh
+dev/test-environment libexec/agent-wrappers/bb agent-split --help
+```
+
 On Linux, the wrapper also adopts orphaned descendants and reaps them while the command runs.
 After the command exits, the wrapper sends SIGTERM to its adopted children and allows one second for cleanup.
 It then kills and reaps remaining descendants before removing HOME.

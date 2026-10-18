@@ -10,6 +10,8 @@ and the relevant setup function before using it on a new machine.
 - Run tests and ad-hoc Pi probes through `dev/test-environment`.
   Read [Testing and probes](dev/README.md#testing-and-probes) for dependencies,
   isolation, and exceptions that require real configuration.
+  When probing repository wrappers or launchers, invoke their paths explicitly; isolation can replace bare commands with native tools.
+  See [test-environment details](dev/test-environment.md) for entrypoint selection.
 - Check that commands generating shell code, configuration, or cache data succeed
   before consuming their output. Do not hide failures in nested command substitutions
   or unchecked pipelines. Source shell code only after successful generation;
