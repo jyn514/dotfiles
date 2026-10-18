@@ -21,12 +21,20 @@ Before choosing tools, name the question, the decision it informs, and the least
 Separate user limits and preservation requirements from diagnostic choices, such as sampling windows and observation points.
 Do not reject an alternative because it cannot satisfy conditions needed only by the current diagnostic.
 
+For whole-command latency, start with a phase-time budget; account for overlap rather than adding concurrent phases.
+Estimate the maximum end-to-end benefit before pursuing a local optimization.
+After meaningful improvements, refresh the budget and rank the remaining avoidable costs rather than following the previous bottleneck.
+
 Distinguish a progressing, CPU-heavy computation from a hang.
 For a progressing computation, prefer an existing profiler that can answer the question over sampling hooks or custom telemetry.
 Use existing evidence or the cheapest viability check; do not require an expensive profiling run just to rule out a tool.
 Completion-only profiling cannot diagnose a hang, but may capture a computation that completes or safely unwinds on timeout.
 Check the output path under relevant stop conditions and user limits; name conditions that can lose results.
+State whether subprocess counts cover direct launches or all descendants, and whether threads are included.
+Label timings as inclusive or exclusive.
+Do not sum overlapping parent/child durations or report reductions between differently scoped counts.
 Keep profiled attribution separate from unprofiled timing benchmarks.
+Do not convert traced time shares into unprofiled savings; instrumentation overhead can differ by operation.
 Before adding custom instrumentation, identify the required answer an existing tool cannot provide and the evidence of that limitation.
 
 ## Diagnose boundedly
@@ -46,7 +54,9 @@ For a hang, locate the active phase with bounded samples before attempting a rep
 
 Look first for repeated process startup, duplicate runtime loading, overly broad dependency or source scope, unnecessary freshness checks, uncached generated work, and metadata-heavy filesystem traffic. Use temporary local storage for disposable intermediates only when measurement shows significant filesystem overhead.
 
-When one process waits on another, determine whether it can perform the work directly before proposing a persistent daemon. For runtime-configuration regressions, inspect effective state, reload idempotence, hidden callbacks, and subprocesses.
+Before optimizing subprocess calls or adding a daemon, check whether an existing runtime and supported API can remove the boundary.
+If consolidation needs new quoting, framing, or parsing, compare moving the work into that runtime before adding another representation.
+For runtime-configuration regressions, inspect effective state, reload idempotence, hidden callbacks, and subprocesses.
 
 ## External and quota-bound benchmarks
 
