@@ -138,11 +138,17 @@ The launcher mounts the repository normally and then overlays `.agents/sandbox` 
 --mount type=bind,src=$repo/.agents/sandbox,dst=$container_repo/.agents/sandbox,readonly
 ```
 
-Every sibling container with a read-write view of the working tree must receive the same nested read-only overlay.
-Without it, a metadata proxy could change the host copy as a side effect of `restore`, `undo`, checkout, or another working-copy operation even though the agent's own path is read-only.
+Command proxies other than JJ receive the same nested read-only overlay.
+The JJ proxy deliberately omits it: allowed `restore`, `undo`, and checkout operations may change or remove tracked sandbox configuration through its writable repository view.
+Even a writable nested mount would prevent JJ from removing the directory when checking out a revision that predates it.
+The agent still has no direct write access to sandbox configuration; its contents can change indirectly through allowed JJ operations.
 
 At the first launch of a shared session, the loader resolves and validates the repository root and any existing `.agents/sandbox` before starting containers. An absent configuration file or directory selects the installed defaults described by the launcher interface; an existing invalid path is an error. Reject symlinked components, unexpected metadata indirection, and hard-linked manifest or executable files reachable through an agent-writable mount.
-When the directory is absent, no configuration overlay is needed: the accepted default policy remains fixed for the session, and configuration created by the agent is never loaded on a join. A later session must accept it through trusted startup. When the directory exists, retain its nested read-only overlay even if the configuration file is absent. The accepted configuration source, including its absence, remains fixed for the session.
+When the directory is absent, no configuration overlay is needed: the accepted default policy remains fixed for the session, and configuration created by the agent is never loaded on a join.
+A later session must accept it through trusted startup.
+When the directory exists, retain its nested read-only overlay in the agent and command proxies other than JJ even if the configuration file is absent.
+JJ working-copy changes do not replace the session's accepted policy.
+A later trusted startup may accept the changed configuration.
 
 == Architecture
 
@@ -155,6 +161,7 @@ outer container-engine daemon
 |
 +-- jj-proxy
 |   +-- repository metadata read-write
+|   +-- working tree read-write, including .agents/sandbox
 |   `-- session socket volume
 |
 +-- command-proxy: bug
@@ -228,7 +235,9 @@ Repositories that need no additional command proxies may omit the manifest or pr
 {"version": 1, "commands": {}}
 ```
 
-The launcher implicitly mounts the validated repository read-only at its common repository path and overlays `.agents/sandbox` read-only; the manifest cannot omit or weaken either protection.
+Command proxies receive a read-only repository view by default and a read-only `.agents/sandbox` overlay.
+Declared writable mounts may override the repository view but cannot weaken that overlay.
+The launcher-owned JJ proxy instead uses a writable repository view without a sandbox configuration overlay.
 `workdir`, mount sources, and mount targets are relative to the repository root unless the schema explicitly defines a launcher-owned source.
 The launcher resolves targets beneath its container repository path, so the manifest does not depend on an absolute path such as `/src/work`.
 The configuration loader rejects unknown fields, unsupported schema versions, malformed paths, escaping paths, duplicate targets, and configurations that would hide the proxy executable or socket. The launcher receives validated execution policy rather than manifest fields.

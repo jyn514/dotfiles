@@ -638,6 +638,31 @@ class ManifestTest(unittest.TestCase):
             mounts,
         )
 
+    def test_only_jj_inherits_writable_sandbox_configuration(self) -> None:
+        command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
+        for present in (True, False):
+            if not present:
+                shutil.rmtree(self.sandbox)
+            for name in ("jj", "example"):
+                with self.subTest(present=present, proxy=name):
+                    arguments = sandbox_proxies.proxy_repository_mount_args(
+                        self.repo, self.container_repo, name, command,
+                    )
+                    mounts = arguments[1::2]
+                    self.assertIn(
+                        f"type=bind,src={self.repo.resolve()},dst={self.container_repo},bind-nonrecursive=true",
+                        mounts,
+                    )
+                    sandbox_mounts = [mount for mount in mounts
+                                      if f"dst={self.container_repo}/.agents/sandbox" in mount]
+                    if present and name != "jj":
+                        self.assertEqual([
+                            f"type=bind,src={self.sandbox},dst={self.container_repo}/.agents/sandbox,readonly",
+                        ], sandbox_mounts)
+                    else:
+                        # Even a writable nested mount would prevent deleting the directory.
+                        self.assertEqual([], sandbox_mounts)
+
     def test_linked_worktree_keeps_repository_at_agent_path(self) -> None:
         main = self.repo
         worktree = Path(self.temporary.name + "-worktree")
@@ -792,6 +817,7 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("src=shared-example,dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/src/example/state,readonly", generated)
+        self.assertIn(f"type=bind,src={self.sandbox},dst=/src/example/.agents/sandbox,readonly", generated)
         self.assertIn("/src/example/secret:ro,noexec", generated)
         self.assertNotIn("dst=/src,readonly", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)

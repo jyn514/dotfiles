@@ -1212,7 +1212,9 @@ def proxy_repository_mount_args(
                 "--mount", f"type=bind,src={source},dst={target}{repository_mode}",
             ]
     sandbox = optional_sandbox_directory(repo)
-    if sandbox is not None:
+    if sandbox is not None and name != "jj":
+        # JJ must create/remove tracked sandbox configuration during checkout.
+        # Leave it in the repository mount; even a writable overlay pins the directory.
         arguments += [
             "--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly",
         ]
