@@ -78,8 +78,10 @@ class JjWrapperTest(unittest.TestCase):
             )
             client.chmod(0o755)
             wrapper = root / "jj"
+            subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+            subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
             wrapper.write_text(
-                WRAPPER.read_text().replace(
+                wrapper.read_text().replace(
                     "/libexec/agent-wrappers/jj-proxy-client", str(client)
                 )
             )
@@ -116,8 +118,10 @@ class JjWrapperTest(unittest.TestCase):
             )
             client.chmod(0o755)
             wrapper = root / "jj"
+            subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+            subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
             wrapper.write_text(
-                WRAPPER.read_text().replace(
+                wrapper.read_text().replace(
                     "/libexec/agent-wrappers/jj-proxy-client", str(client)
                 )
             )
@@ -161,8 +165,10 @@ class JjWrapperTest(unittest.TestCase):
             )
             client.chmod(0o755)
             wrapper = root / "jj"
+            subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+            subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
             wrapper.write_text(
-                WRAPPER.read_text().replace(
+                wrapper.read_text().replace(
                     "/libexec/agent-wrappers/jj-proxy-client", str(client)
                 )
             )
@@ -210,6 +216,18 @@ class JjWrapperTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["Codex gpt-test-model", "325577925+one-esk-nineteen@users.noreply.github.com"], identity)
 
+    def test_codex_latest_turn_context_and_spark_identity(self) -> None:
+        for model, email in (("latest-model", "325577925+one-esk-nineteen@users.noreply.github.com"),
+                             ("gpt-5.3-codex-spark", "343-guilty-spark@jyn.dev")):
+            with self.subTest(model=model):
+                contents = ('{"type":"turn_context","payload":{"model":"old-model"}}\n'
+                            '{"type":"turn_context","payload":{"model":"' + model + '"}}\n'
+                            '{"type":"other","payload":{"model":"not-a-context"}}\n'
+                            '{"type":"turn_context","payload":{"model":null}}\n')
+                result, identity = self.run_codex_identity("status", contents)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(["Codex " + model, email], identity)
+
     def test_missing_codex_session_does_not_block_jj(self) -> None:
         for directories_exist in (False, True):
             for command in ("status", "commit", "split"):
@@ -245,8 +263,10 @@ class JjWrapperTest(unittest.TestCase):
             )
             client.chmod(0o755)
             wrapper = root / "jj"
+            subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+            subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
             wrapper.write_text(
-                WRAPPER.read_text().replace(
+                wrapper.read_text().replace(
                     "/libexec/agent-wrappers/jj-proxy-client", str(client)
                 )
             )

@@ -26,7 +26,13 @@ Observed October 4, 2026: the agent root filesystem is overlay; `/src` and this 
 
 ## Boundaries and invariants
 
-The shell wrapper owns identity selection and native invocation; a small standard-library Python helper under `tools/jj-proxy/` owns invocation selection, filesystem resolution, and classification. Its checked JSON result carries `backend` (`native` or `proxy`), the physical `workspace` (null before creation or without a workspace), the bootstrap destination when applicable, and the expanded command prefix needed by hooks. Agent-split queries this same helper with its ordinary `split` invocation and actual cwd; it does not infer the backend from socket presence. Separate machine output from diagnostics and check success before consuming it. Use no `eval`, generated shell, persistent cache, or third-party dependency.
+The Python wrapper owns identity selection and native invocation; a standard-library Python helper under `tools/jj-proxy/` owns invocation selection, filesystem resolution, and classification.
+The wrapper imports `route()` and `check_result()` in-process.
+Agent-split queries the same helper through its JSON CLI with its ordinary `split` invocation and actual cwd; it does not infer the backend from socket presence.
+Both interfaces return `backend` (`native` or `proxy`), the physical `workspace` (null before creation or without a workspace), the bootstrap destination when applicable, the expanded command prefix needed by hooks, and the `hooks` flag.
+Standalone copies of the wrapper require Python.
+Separate machine output from diagnostics and check success before consuming it.
+Use no `eval`, generated shell, persistent cache, or third-party dependency.
 
 Original argv and actual cwd define command semantics; canonical paths, inert alias expansions, and mount evidence are routing data. Preserve the original argv array for execution and never silently change cwd: `-R` must not alter relative file operands. Helper parsing selects the backend and native hooks; protected calls retain existing server parsing and policy. The helper reads configuration data, metadata, and kernel mount information only; it creates no repositories and runs no JJ/Git configuration probes. Races or routing mistakes cannot grant host write authority, so protective mounts and server validation remain mandatory.
 

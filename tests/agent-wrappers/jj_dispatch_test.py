@@ -2,8 +2,11 @@
 """Exercise the real wrapper/router handoff, with recording execution backends."""
 import json
 import os
+import pty
 from pathlib import Path
 import shutil
+import signal
+import time
 import socket
 import struct
 import subprocess
@@ -31,7 +34,9 @@ class JjDispatchTest(unittest.TestCase):
             subprocess.run(["cmp", str(RECORDER), str(target)], check=True)
             target.chmod(0o755)
         self.wrapper = self.root / "jj"
-        self.wrapper.write_text(WRAPPER.read_text().replace(
+        subprocess.run(["cp", str(WRAPPER), str(self.wrapper)], check=True)
+        subprocess.run(["cmp", str(WRAPPER), str(self.wrapper)], check=True)
+        self.wrapper.write_text(self.wrapper.read_text().replace(
             "/libexec/agent-wrappers/jj-proxy-client", str(self.root / "proxy")))
         self.wrapper.chmod(0o755)
         self.env = {
@@ -75,9 +80,6 @@ class JjDispatchTest(unittest.TestCase):
         wrapper.parent.mkdir(parents=True)
         subprocess.run(["cp", str(self.root / "jj"), str(wrapper)], check=True)
         subprocess.run(["cmp", str(self.root / "jj"), str(wrapper)], check=True)
-        wrapper.write_text(wrapper.read_text().replace(
-            "route_helper=/tools/jj-proxy/route.py",
-            "route_helper=" + str(self.root / "missing-image-helper")))
         wrapper.chmod(0o755)
         helper = checkout / "tools/jj-proxy/route.py"
         helper.parent.mkdir(parents=True)
@@ -102,32 +104,162 @@ class JjDispatchTest(unittest.TestCase):
                 self.wrapper = self.discovery_wrapper(mode)
                 env = dict(self.env)
                 env.pop("JJ_ROUTE_HELPER")
-                result = self.run_wrapper("status", "--no-pager", cwd=ROOT, env=env)
+                result = subprocess.run([
+                    shutil.which("python3"), str(RECORDER.with_name("jj_source_bootstrap.py")),
+                    "discover", str(self.wrapper), "status", "--no-pager",
+                ], cwd=ROOT, env=env, text=True, capture_output=True)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(["proxy"], [call["role"] for call in self.calls()])
                 self.assertEqual(["status", "--no-pager"], self.calls()[0]["argv"])
 
-    def test_failed_realpath_discovery_never_reaches_a_backend(self):
-        real_realpath = shutil.which("realpath")
-        self.assertIsNotNone(real_realpath)
+    def test_filesystem_resolution_failure_never_reaches_a_backend(self):
+        # Compile first, unlink the real path, then execute unchanged code.
+        # Discovery must reject that missing invocation path before any backend.
+        wrapper = self.discovery_wrapper("direct")
+        env = dict(self.env)
+        env.pop("JJ_ROUTE_HELPER")
+        result = subprocess.run([
+            shutil.which("python3"), str(RECORDER.with_name("jj_source_bootstrap.py")),
+            "unlink", str(wrapper), "status",
+        ], cwd=ROOT, env=env, text=True, capture_output=True)
+        self.assertEqual(125, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertIn("No such file", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_native_unusual_paths_and_operands_survive_without_shell_interpretation(self):
+        names = ["tab\tname", "line\nname", "trailing\n", "quote'\"name",
+                 "back\\slash", "literal\\c", "$(touch marker)", "`touch marker`"]
+        for index, name in enumerate(names):
+            with self.subTest(name=name):
+                selected = self.repo(name)
+                alias = self.root / ("alias-" + str(index))
+                alias.symlink_to(selected)
+                self.record.unlink(missing_ok=True)
+                message = name + " message\n"
+                argv = ["--repository", str(alias), "commit", "-m", message]
+                result = self.run_wrapper(*argv)
+                self.assertEqual(0, result.returncode, result.stderr)
+                calls = self.calls()
+                self.assertEqual(3, len(calls))
+                self.assertEqual(argv, calls[1]["argv"])
+                for hook in (calls[0], calls[2]):
+                    self.assertEqual(["--repository", str(selected)], hook["argv"][:2])
+                    self.assertEqual(str(self.root), hook["cwd"])
+                self.assertFalse((self.root / "marker").exists())
+
+    def test_empty_route_command_and_absent_target_are_usable(self):
+        for mode in ("empty", "empty-command"):
+            with self.subTest(mode=mode):
+                self.record.unlink(missing_ok=True)
+                result = self.run_wrapper("status", env={
+                    **self.env, "JJ_ROUTE_HELPER": str(RECORDER.with_name("route_output.py")),
+                    "JJ_TEST_ROUTE_MODE": mode,
+                })
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual([["status"]], [call["argv"] for call in self.calls()])
+
+    def test_standalone_path_cleanup_removes_invoked_directory_and_canonical_aliases(self):
+        # No helper, no socket: Python alone is enough even without jq/realpath.
         commands = self.root / "commands"
         commands.mkdir()
-        realpath = commands / "realpath"
-        fixture = ROOT / "tests/fixtures/wrapper_realpath_failure.sh"
-        subprocess.run(["cp", str(fixture), str(realpath)], check=True)
-        subprocess.run(["cmp", str(fixture), str(realpath)], check=True)
-        realpath.chmod(0o755)
-        for mode in ("direct", "relative-chain"):
-            with self.subTest(mode=mode):
-                self.wrapper = self.discovery_wrapper(mode)
-                env = {**self.env, "REAL_REALPATH": real_realpath,
-                       "PATH": str(commands) + os.pathsep + self.env["PATH"]}
-                env.pop("JJ_ROUTE_HELPER")
-                result = self.run_wrapper("status", cwd=ROOT, env=env)
-                self.assertEqual(125, result.returncode, result.stderr)
-                self.assertEqual("", result.stdout)
-                self.assertIn("fixture: realpath failed", result.stderr)
-                self.assertEqual([], self.calls())
+        (commands / "python3").symlink_to(shutil.which("python3"))
+        backend = self.root / "backend"
+        backend.mkdir()
+        subprocess.run(["cp", str(RECORDER), str(backend / "jj")], check=True)
+        subprocess.run(["cmp", str(RECORDER), str(backend / "jj")], check=True)
+        (backend / "jj").chmod(0o755)
+        aliases = self.root / "alias-bin"
+        aliases.mkdir()
+        (aliases / "jj").symlink_to(self.wrapper)
+        alias_alias = self.root / "alias-alias"
+        alias_alias.symlink_to(aliases)
+        env = {**self.env, "JJ_USER": "", "JJ_ROUTE_HELPER": "", "SANDBOX_PROXY_DIR": "",
+               "JJ_REAL": "", "PATH": os.pathsep.join(map(str, [aliases, alias_alias,
+                    self.root / "missing", backend, commands])) + ":"}
+        result = subprocess.run([str(aliases / "jj"), "status", "literal\noperand"],
+                                cwd=self.root, env=env, text=True, capture_output=True, timeout=5)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["jj"], [call["role"] for call in self.calls()])
+        self.assertEqual(["status", "literal\noperand"], self.calls()[0]["argv"])
+
+    def test_standalone_does_not_import_router_dependencies(self):
+        env = {**self.env, "JJ_ROUTE_HELPER": "", "SANDBOX_PROXY_DIR": "", "JJ_USER": ""}
+        fixture = RECORDER.with_name("jj_without_router.py")
+        result = subprocess.run([shutil.which("python3"), str(fixture), str(self.wrapper), "status"],
+                                cwd=self.root, env=env, text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["native"], [call["role"] for call in self.calls()])
+
+    def check_native_cancellation(self, *, group):
+        selected = self.repo()
+        fixture = RECORDER.with_name("jj_signal_backend.py")
+        backend = self.root / "signal-native"
+        subprocess.run(["cp", str(fixture), str(backend)], check=True)
+        subprocess.run(["cmp", str(fixture), str(backend)], check=True)
+        backend.chmod(0o755)
+        for phase, count in (("pre", 1), ("main", 2), ("post", 3)):
+            for exits_zero in (False, True):
+                with self.subTest(phase=phase, exits_zero=exits_zero):
+                    record, ready = self.root / "signal.jsonl", self.root / "signal.ready"
+                    record.unlink(missing_ok=True)
+                    ready.unlink(missing_ok=True)
+                    child = subprocess.Popen(
+                        [str(self.wrapper), "commit", "-m", "cancelled"], cwd=selected,
+                        env={**self.env, "JJ_REAL": str(backend), "JJ_SIGNAL_PHASE": phase,
+                             "JJ_SIGNAL_RECORD": str(record), "JJ_SIGNAL_READY": str(ready),
+                             "JJ_SIGNAL_EXIT_ZERO": "1" if exits_zero else ""},
+                        start_new_session=True, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, text=True)
+                    try:
+                        deadline = time.monotonic() + 5
+                        while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+                            time.sleep(0.005)
+                        self.assertTrue(ready.exists(), "backend did not reach selected phase")
+                        if group:
+                            os.killpg(child.pid, signal.SIGTERM)
+                        else:
+                            child.send_signal(signal.SIGTERM)
+                        stdout, stderr = child.communicate(timeout=5)
+                        self.assertEqual(-signal.SIGTERM, child.returncode, stderr)
+                        self.assertEqual("", stdout)
+                        calls = [json.loads(line) for line in record.read_text().splitlines()]
+                        self.assertEqual(count, len(calls), calls)
+                        # Completion includes reaping the owned native child, even
+                        # when its signal handler elects to return success.
+                        pid = int(ready.read_text())
+                        deadline = time.monotonic() + 2
+                        while time.monotonic() < deadline:
+                            try:
+                                os.kill(pid, 0)
+                            except ProcessLookupError:
+                                break
+                            time.sleep(0.01)
+                        else:
+                            self.fail("cancelled native child is still present")
+                    finally:
+                        try:
+                            os.killpg(child.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        child.wait()
+
+    def test_group_cancellation_stops_pre_main_and_post_lifecycle(self):
+        self.check_native_cancellation(group=True)
+
+    def test_directed_cancellation_stops_pre_main_and_post_lifecycle(self):
+        self.check_native_cancellation(group=False)
+
+    def test_native_exec_restores_sigpipe_instead_of_surviving(self):
+        fixture = RECORDER.with_name("jj_pipe_backend.sh")
+        backend = self.root / "pipe-native"
+        subprocess.run(["cp", str(fixture), str(backend)], check=True)
+        subprocess.run(["cmp", str(fixture), str(backend)], check=True)
+        backend.chmod(0o755)
+        result = self.run_wrapper("status", env={**self.env, "JJ_REAL": str(backend), "JJ_USER": ""})
+        self.assertIn(result.returncode, (-signal.SIGPIPE, 128 + signal.SIGPIPE), result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertEqual([], self.calls())
 
     def test_local_commit_uses_native_and_scopes_both_hooks_to_selected_workspace(self):
         selected = self.repo()
@@ -170,6 +302,51 @@ class JjDispatchTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("ui.diff-formatter=:git", self.calls()[0]["argv"])
 
+    def test_inherited_identity_hooks_are_best_effort_and_reset_only_human_environment(self):
+        selected = self.repo()
+        for command, count in (("status", 2), ("diff", 2), ("show", 2),
+                               ("commit", 3), ("split", 3)):
+            with self.subTest(command=command):
+                self.record.unlink(missing_ok=True)
+                result = self.run_wrapper(command, cwd=selected,
+                                          env={**self.env, "JJ_TEST_HOOK_EXIT": "8"})
+                self.assertEqual(0, result.returncode, result.stderr)
+                calls = self.calls()
+                self.assertEqual(count, len(calls))
+                self.assertTrue(all(call["user"] == "TestAgent" for call in calls[:-1]))
+                self.assertTrue(all(call["email"] == "agent@example.invalid" for call in calls[:-1]))
+                self.assertIsNone(calls[-1]["user"])
+                self.assertIsNone(calls[-1]["email"])
+
+    def test_tty_diff_keeps_native_formatter_and_stdio(self):
+        selected = self.repo()
+        master, slave = pty.openpty()
+        try:
+            result = subprocess.run([str(self.wrapper), "diff"], cwd=selected,
+                                    env=self.env, stdout=slave, stderr=subprocess.PIPE,
+                                    text=True, timeout=5)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(["diff"], self.calls()[0]["argv"])
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_invalid_real_binary_and_missing_path_backend_fail_without_execution(self):
+        for real, status in ((str(self.root / "missing-native"), 1), (str(self.root), 126)):
+            with self.subTest(real=real):
+                result = self.run_wrapper("status", env={**self.env, "JJ_REAL": real})
+                self.assertEqual(status, result.returncode, result.stderr)
+                if status == 1:
+                    self.assertIn("configured real jj is not executable", result.stderr)
+                self.assertEqual([], self.calls())
+        commands = self.root / "python-only"
+        commands.mkdir()
+        (commands / "python3").symlink_to(shutil.which("python3"))
+        result = self.run_wrapper("status", env={**self.env, "JJ_REAL": "", "PATH": str(commands)})
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("real jj not found on PATH", result.stderr)
+        self.assertEqual([], self.calls())
+
     def test_failed_primary_native_command_retains_status_without_cleanup(self):
         selected = self.repo()
         result = self.run_wrapper("commit", "-m", "message", cwd=selected,
@@ -191,7 +368,9 @@ class JjDispatchTest(unittest.TestCase):
         linked = self.root / "linked"
         (linked / ".jj").mkdir(parents=True)
         (linked / ".jj/repo").write_text(str(ROOT / ".jj/repo"))
-        self.wrapper.write_text(WRAPPER.read_text().replace(
+        subprocess.run(["cp", str(WRAPPER), str(self.wrapper)], check=True)
+        subprocess.run(["cmp", str(WRAPPER), str(self.wrapper)], check=True)
+        self.wrapper.write_text(self.wrapper.read_text().replace(
             "/libexec/agent-wrappers/jj-proxy-client", str(ROOT / "tools/jj-proxy/client")))
         result = self.run_wrapper("status", cwd=linked)
         self.assertEqual(125, result.returncode, result.stderr)
@@ -231,7 +410,7 @@ class JjDispatchTest(unittest.TestCase):
         env = {**self.env, "JJ_AGENT": "pi", "PI_MODEL": "stale-env-model",
                "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
         for role, cwd in (("native", local), ("proxy", ROOT)):
-            for name in ("", "bad\nmodel", "bad\rmodel", "bad\tmodel", "bad\x1fmodel", "bad\x7fmodel"):
+            for name in ("", "bad\nmodel", "bad\rmodel", "bad\tmodel", "bad\x1fmodel", "bad\x7fmodel", "bad\x80model", "bad\x85model", "bad\x9fmodel"):
                 with self.subTest(role=role, model=name):
                     self.record.unlink(missing_ok=True)
                     args = ["status", "--no-pager"]
@@ -254,7 +433,8 @@ class JjDispatchTest(unittest.TestCase):
         cases = [(valid, "Pi legacy-model")]
         for fields in ({"session_id": "other-session"}, {"provider": ""},
                        {"modelId": ""}, {"modelId": None}, {"modelId": 7},
-                       {"modelId": "bad\nmodel"}, {"modelId": "bad\x7fmodel"}):
+                       {"modelId": "bad\nmodel"}, {"modelId": "bad\x7fmodel"},
+                       {"modelId": "bad\x85model"}):
             cases.append(({**valid, **fields}, "Pi unknown-model"))
         for contents, identity in cases:
             with self.subTest(contents=contents):
@@ -328,7 +508,9 @@ class JjDispatchTest(unittest.TestCase):
 
         server = threading.Thread(target=serve, daemon=True)
         server.start()
-        self.wrapper.write_text(WRAPPER.read_text().replace(
+        subprocess.run(["cp", str(WRAPPER), str(self.wrapper)], check=True)
+        subprocess.run(["cmp", str(WRAPPER), str(self.wrapper)], check=True)
+        self.wrapper.write_text(self.wrapper.read_text().replace(
             "/libexec/agent-wrappers/jj-proxy-client", str(ROOT / "tools/jj-proxy/client")))
         env = {**self.env, "JJ_PROXY_REPO": str(repository), "JJ_AGENT": "pi",
                "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
@@ -358,8 +540,11 @@ class JjDispatchTest(unittest.TestCase):
         self.assertEqual([], self.calls())
 
     def test_failed_or_malformed_route_publication_never_reaches_a_backend(self):
-        for mode, status in (("failed", 9), ("duplicate", 125), ("relative", 125)):
+        for mode, status in (("failed", 9), ("duplicate", 125), ("relative", 125),
+                             ("extra", 125), ("missing", 125),
+                             ("nul-command", 125), ("nul-target", 125)):
             with self.subTest(mode=mode):
+                self.record.unlink(missing_ok=True)
                 result = self.run_wrapper("status", env={
                     **self.env, "JJ_ROUTE_HELPER": str(RECORDER.with_name("route_output.py")),
                     "JJ_TEST_ROUTE_MODE": mode,

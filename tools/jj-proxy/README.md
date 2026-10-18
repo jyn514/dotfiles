@@ -59,7 +59,15 @@ jj -R /tmp/replay commit -m 'Record local work'
 
 The image installs `config/jj.toml` as native global configuration. The router reads its array aliases as data, so `init` and `clone` use the same definitions as native JJ. Native tools and credentials remain guest-only; this configuration is not the trusted proxy's `jj.toml`.
 
-`JJ_ROUTE_HELPER` identifies the packaged read-only router. Its internal CLI is `python3 route.py -- <jj-arguments>` from the actual invoking cwd; successful stdout is one JSON object with `backend`, `workspace`, `destination`, expanded `command` prefix, and `hooks`. Paths are physical absolute paths or null. Nonzero status invalidates all output; diagnostics use stderr. The wrapper owns identity and execution, while agent-split consumes the same backend/workspace result for recovery. This internal interface deploys with both consumers.
+The JJ wrapper requires Python, including standalone host copies.
+`JJ_ROUTE_HELPER` identifies the packaged read-only router.
+The wrapper imports its `route()` and `check_result()` functions in-process; it owns identity and execution.
+Agent-split uses the unchanged internal CLI, `python3 route.py -- <jj-arguments>`, from the actual invoking cwd.
+Successful stdout is one JSON object with `backend`, `workspace`, `destination`, expanded `command` prefix, and `hooks`.
+Paths are physical absolute paths or null.
+Nonzero CLI status invalidates all output; diagnostics use stderr.
+These internal interfaces deploy with both consumers.
+Routing and identity are recomputed for each invocation, without a shared cache.
 
 The existing private `jj --agent-split PATCH MESSAGE REVISION` operation is proxy-only. The wrapper checks its four opaque arguments before ordinary parsing, selects the workspace backend, resolves runtime identity, and forwards to the unchanged client. A native route rejects this operation before hooks or socket access; local agent-split uses ordinary `jj split`.
 

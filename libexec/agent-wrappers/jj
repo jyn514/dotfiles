@@ -1,262 +1,261 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env python3
+"""JJ routing, invocation-scoped identity, and native author lifecycle."""
+import errno
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import stat
+import subprocess
+import sys
 
-codex_version() {
-  session_root=${CODEX_HOME:-$HOME/.codex}
-  session=$(find "$session_root/sessions" "$session_root/archived_sessions" \
-    -type f -name "*${CODEX_THREAD_ID:-}.jsonl" -print -quit 2>/dev/null) || return
-  [ -n "$session" ] || return
-  jq -r '
-      select(.type == "turn_context")
-      | .payload.model
-      | select(. != null and . != "")
-    ' "$session" | tail -n1
-}
 
-pi_model() {
-  # A worker snapshot is invocation-scoped, including an explicitly unknown model.
-  # Never fall back to shared session state when that snapshot is present.
-  if [ "${PI_CALL_MODEL+x}" = x ]; then
-    jq -ner --arg model "$PI_CALL_MODEL" '
-        $model | select(length > 0 and test("^[^[:cntrl:]]+$"))
-      ' 2>/dev/null
-    return
-  fi
-  [ -n "${PI_MODEL_FILE:-}" ] || return 1
-  [ -n "${PI_MODEL_SESSION_ID:-}" ] || return 1
-  jq -er --arg session "$PI_MODEL_SESSION_ID" '
-      select(type == "object"
-        and .session_id == $session
-        and (.provider | type) == "string"
-        and (.provider | length) > 0
-        and (.modelId | type) == "string"
-        and (.modelId | length) > 0
-        and (.modelId | test("^[^[:cntrl:]]+$")))
-      | .modelId
-    ' "$PI_MODEL_FILE" 2>/dev/null
-}
+class WrapperError(ValueError):
+    pass
 
-is_jj_write() {
-  case "$1" in
-    commit|split) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
-# Discover stripped-environment sandbox sockets before asking the read-only
-# router. Socket presence enables routing; it does not select the backend.
-if [ -z "${SANDBOX_PROXY_DIR:-}" ]; then
-  sandbox_proxy_default=${SANDBOX_PROXY_DEFAULT_DIR:-/run/sandbox-proxies}
-  if [ -S "$sandbox_proxy_default/jj/socket" ]; then
-    SANDBOX_PROXY_DIR=$sandbox_proxy_default
-    export SANDBOX_PROXY_DIR
-  fi
-fi
+def load_router(path):
+    spec = importlib.util.spec_from_file_location('_jj_route', path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
-private_split=false
-if [ "${1:-}" = --agent-split ]; then
-  if [ "$#" -ne 4 ]; then
-    printf '%s\n' 'jj wrapper: --agent-split requires PATCH MESSAGE REVISION' >&2
-    exit 125
-  fi
-  private_split=true
-fi
 
-# The image supplies the helper role. Source-checkout invocation also works;
-# an older standalone host wrapper retains its native behavior without it.
-route_helper=${JJ_ROUTE_HELPER:-}
-if [ -z "$route_helper" ] && [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
-  route_helper=/tools/jj-proxy/route.py
-fi
-if [ -n "$route_helper" ] && [ ! -f "$route_helper" ] && [ -z "${JJ_ROUTE_HELPER:-}" ]; then
-  source_path=$(realpath -- "$0") || exit 125
-  source_dir=${source_path%/*}
-  route_helper=$source_dir/../../tools/jj-proxy/route.py
-fi
+def routing(argv, env):
+    private = argv[:1] == ['--agent-split']
+    if private and len(argv) != 4:
+        raise WrapperError('--agent-split requires PATCH MESSAGE REVISION')
+    if not env.get('SANDBOX_PROXY_DIR'):
+        default = env.get('SANDBOX_PROXY_DEFAULT_DIR', '/run/sandbox-proxies')
+        try:
+            if stat.S_ISSOCK((Path(default) / 'jj/socket').stat().st_mode):
+                env['SANDBOX_PROXY_DIR'] = default
+        except OSError:
+            pass
+    helper = env.get('JJ_ROUTE_HELPER', '')
+    if not helper and env.get('SANDBOX_PROXY_DIR'):
+        helper = '/tools/jj-proxy/route.py'
+        if not Path(helper).is_file():
+            helper = str(Path(sys.argv[0]).resolve(strict=True).parent / '../../tools/jj-proxy/route.py')
+    if helper and Path(helper).is_file():
+        router = load_router(helper)
+        result = router.route(['split'] if private else argv, env=env)
+        # The producer's validator remains authoritative, including when a
+        # configured producer is substituted. Execution also needs OS strings.
+        router.check_result(result)
+        for value in [*result['command'], result['workspace'], result['destination']]:
+            if value is not None:
+                os.fsencode(value)
+                if '\0' in value:
+                    raise WrapperError('invalid route result: NUL is not representable')
+    elif helper or env.get('SANDBOX_PROXY_DIR'):
+        raise WrapperError(f'route helper is missing: {helper}; rebuild the agent image')
+    else:
+        # No helper means no proc or tomllib dependency, and no selector parser.
+        hooks = not any(arg.startswith(('--at-op', '-@', '-R', '--repository')) or
+                        arg in ('--ignore-working-copy', '--help', '-h', '--version', '-V')
+                        for arg in argv)
+        result = dict(backend='native', command=argv[:1], hooks=hooks,
+                      workspace=os.getcwd(), destination=None)
+    if private and result['backend'] != 'proxy':
+        raise WrapperError('--agent-split is proxy-only; use ordinary jj split in a local repository')
+    return result
 
-backend=native
-subcommand=${1:-}
-hooks=true
-hook_target=
-if [ -n "$route_helper" ] && [ -f "$route_helper" ]; then
-  if [ "$private_split" = true ]; then
-    route=$(python3 "$route_helper" -- split) || exit "$?"
-  else
-    route=$(python3 "$route_helper" -- "$@") || exit "$?"
-  fi
-  if ! printf '%s\n' "$route" | jq -se '
-      length == 1 and (.[0] |
-        type == "object"
-        and (.backend == "native" or .backend == "proxy")
-        and (.workspace == null or (.workspace | type == "string" and startswith("/")))
-        and (.destination == null or (.destination | type == "string" and startswith("/")))
-        and (.command | type == "array" and all(.[]; type == "string"))
-        and (.hooks | type) == "boolean")
-    ' >/dev/null 2>&1; then
-    printf '%s\n' 'jj wrapper: invalid route result; repository left unchanged' >&2
-    exit 125
-  fi
-  backend=$(printf '%s\n' "$route" | jq -r .backend) || exit 125
-  subcommand=$(printf '%s\n' "$route" | jq -r '.command[0] // ""') || exit 125
-  hooks=$(printf '%s\n' "$route" | jq -r .hooks) || exit 125
-  hook_target=$(printf '%s\n' "$route" | jq -r '.destination // .workspace // ""') || exit 125
-elif [ -n "${SANDBOX_PROXY_DIR:-}" ] || [ -n "${JJ_ROUTE_HELPER:-}" ]; then
-  printf '%s\n' "jj wrapper: route helper is missing: $route_helper; rebuild the agent image" >&2
-  exit 125
-else
-  hook_target=$(pwd -P) || exit 125
-  # A standalone host shim has no router. Skip unresolved selector hooks rather
-  # than stamp a different workspace; ordinary host execution needs no Python.
-  for arg in "$@"; do
-    case "$arg" in
-      --ignore-working-copy|--at-op*|-@*|--help|-h|--version|-V|-R*|--repository*) hooks=false ;;
-    esac
-  done
-fi
 
-if [ "$private_split" = true ] && [ "$backend" != proxy ]; then
-  printf '%s\n' 'jj wrapper: --agent-split is proxy-only; use ordinary jj split in a local repository' >&2
-  exit 125
-fi
+def valid_model(model):
+    return isinstance(model, str) and bool(model) and not any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in model)
 
-# Identity by agent, auto-detected from each runner's own env. Resolve it before
-# forwarding sandbox calls so the trusted proxy can stamp the same identity.
-agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
-agent=${agent:-${PI_CODING_AGENT:+pi}}
-agent=${agent:-${CODEX_THREAD_ID:+codex}}
-case "$agent" in
-  claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
-  pi)
-    model=$(pi_model) || model=
-    if [ -n "$model" ]; then
-      JJ_USER="Pi $model"
-    else
-      JJ_USER='Pi unknown-model'
-      printf '%s\n' "jj wrapper: warning: could not determine active Pi model" >&2
-    fi
-    JJ_EMAIL='325577925+one-esk-nineteen@users.noreply.github.com'
-    ;;
-  codex)
-    # Session metadata is optional; lookup failure must reach the generic identity
-    # fallback instead of letting set -e prevent the requested jj command.
-    model=$(codex_version) || model=
-    JJ_EMAIL='325577925+one-esk-nineteen@users.noreply.github.com'
-    JJ_USER="Codex $model"
 
-    case "$model" in
-      "")
-        if is_jj_write "$subcommand"; then
-          printf '%s\n' "jj wrapper: warning: could not determine Codex model" >&2
-        fi
-        JJ_USER='Codex'
-        ;;
-      gpt-5.3-codex-spark)
-        JJ_EMAIL='343-guilty-spark@jyn.dev'
-        ;;
-    esac
-esac
+def pi_model(env):
+    if 'PI_CALL_MODEL' in env:
+        model = env['PI_CALL_MODEL']
+        return model if valid_model(model) else ''
+    if not env.get('PI_MODEL_FILE') or not env.get('PI_MODEL_SESSION_ID'):
+        return ''
+    try:
+        data = json.loads(Path(env['PI_MODEL_FILE']).read_text())
+        if (isinstance(data, dict) and data.get('session_id') == env['PI_MODEL_SESSION_ID']
+                and isinstance(data.get('provider'), str) and data['provider']
+                and valid_model(data.get('modelId'))):
+            return data['modelId']
+    except (OSError, ValueError):
+        pass
+    return ''
 
-if [ "$backend" = proxy ]; then
-  export JJ_USER JJ_EMAIL
-  exec /libexec/agent-wrappers/jj-proxy-client "$@"
-fi
 
-# Shim: stamp jj commits as the agent, not the human running the wrapper.
-# Sandboxes keep the underlying binary outside PATH so alternate executable
-# resolvers cannot bypass this wrapper. Other environments resolve the next jj.
-if [ -n "${JJ_REAL:-}" ]; then
-  if [ ! -x "$JJ_REAL" ]; then
-    printf '%s\n' "jj wrapper: configured real jj is not executable" >&2
-    exit 1
-  fi
-  real_jj=$JJ_REAL
-else
-  self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-  # Canonicalize entries so aliases such as /lib and /usr/lib compare equal.
-  # Empty and nonexistent entries are omitted; an empty PATH entry means cwd.
-  original_path=$PATH
-  filtered_path=
-  while [ -n "$original_path" ]; do
-    path_entry=${original_path%%:*}
-    case "$original_path" in
-      *:*) original_path=${original_path#*:} ;;
-      *) original_path= ;;
-    esac
+def codex_model(env):
+    root = Path(env.get('CODEX_HOME') or str(Path(env.get('HOME', str(Path.home()))) / '.codex'))
+    try:
+        for directory in ('sessions', 'archived_sessions'):
+            for base, _, files in os.walk(root / directory):
+                for name in files:
+                    if not name.endswith(env.get('CODEX_THREAD_ID', '') + '.jsonl'):
+                        continue
+                    model = ''
+                    for line in (Path(base) / name).read_text().splitlines():
+                        data = json.loads(line)
+                        if data.get('type') == 'turn_context':
+                            value = data.get('payload', {}).get('model')
+                            if isinstance(value, str) and value:
+                                model = value
+                    return model
+    except (OSError, ValueError, AttributeError):
+        pass
+    return ''
 
-    [ -n "$path_entry" ] || continue
-    canonical_entry=$(CDPATH='' cd -- "$path_entry" 2>/dev/null && pwd -P) || continue
-    [ "$canonical_entry" != "$self_dir" ] || continue
 
-    filtered_path=${filtered_path:+$filtered_path:}$canonical_entry
-  done
-  PATH=$filtered_path
-  export PATH
-  real_jj=$(command -v jj) || {
-    printf '%s\n' "jj wrapper: real jj not found on PATH" >&2
-    exit 1
-  }
-fi
+def identity(env, command):
+    agent = (env.get('JJ_AGENT') or ('claude' if env.get('CLAUDECODE') else '')
+             or ('pi' if env.get('PI_CODING_AGENT') else '')
+             or ('codex' if env.get('CODEX_THREAD_ID') else ''))
+    if agent == 'claude':
+        env.update(JJ_USER='Claude Opus 4.8', JJ_EMAIL='lifer@jyn.dev')
+    elif agent in ('pi', 'codex'):
+        env['JJ_EMAIL'] = '325577925+one-esk-nineteen@users.noreply.github.com'
+        if agent == 'pi':
+            model = pi_model(env)
+            env['JJ_USER'] = 'Pi ' + (model or 'unknown-model')
+            if not model:
+                print('jj wrapper: warning: could not determine active Pi model', file=sys.stderr)
+        else:
+            model = codex_model(env)
+            env['JJ_USER'] = 'Codex' + (' ' + model if model else '')
+            if not model and command in ('commit', 'split'):
+                print('jj wrapper: warning: could not determine Codex model', file=sys.stderr)
+            if model == 'gpt-5.3-codex-spark':
+                env['JJ_EMAIL'] = '343-guilty-spark@jyn.dev'
 
-should_force_plain_diff() {
-  [ ! -t 1 ] || return 1
 
-  case "$1" in
-    diff|show) return 0 ;;
-    *) return 1 ;;
-  esac
-}
+def native_binary(env):
+    if env.get('JJ_REAL'):
+        if not os.access(env['JJ_REAL'], os.X_OK):
+            raise WrapperError('configured real jj is not executable')
+        return env['JJ_REAL']
+    # Compare physical directories, but remove the invoked alias directory,
+    # not the source wrapper's directory (which may not be on PATH at all).
+    own = Path(sys.argv[0]).parent.resolve(strict=True)
+    paths = []
+    for entry in env.get('PATH', '').split(os.pathsep):
+        if not entry:
+            continue
+        try:
+            path = Path(entry).resolve(strict=True)
+            if path.is_dir() and path != own:
+                paths.append(str(path))
+        except (OSError, RuntimeError):
+            pass
+    env['PATH'] = os.pathsep.join(paths)
+    real = shutil.which('jj', path=env['PATH'])
+    if not real:
+        raise WrapperError('real jj not found on PATH')
+    return real
 
-has_diff_formatter_config() {
-  for arg in "$@"; do
-    case "$arg" in
-      ui.diff-formatter=*|--config=ui.diff-formatter=*) return 0 ;;
-    esac
-  done
-  return 1
-}
 
-if [ -n "${JJ_USER:-}" ]; then
-  # jj stamps author at change *creation*, committer at commit — so a change
-  # born before this shim (or re-snapshotted by a bare jj) keeps a stale
-  # author. Any command that records @ into a new commit inherits that author:
-  # `commit` makes one, `split` makes two. Reset the working-copy author to our
-  # identity first, so recorded commits have author == committer. Best-effort:
-  # never block the command if metaedit has nothing to do.
-  if [ "$hooks" = true ] && [ -n "$hook_target" ]; then
-    case "$subcommand" in
-      commit|split)
-        env "JJ_USER=$JJ_USER" "JJ_EMAIL=$JJ_EMAIL" "$real_jj" \
-          --repository "$hook_target" metaedit --update-author -r @ --quiet || true
-        ;;
-    esac
-  fi
+def execution_error(error):
+    print(f'jj wrapper: {error}', file=sys.stderr)
+    return 127 if error.errno == errno.ENOENT else 126
 
-fi
 
-if should_force_plain_diff "$subcommand" && ! has_diff_formatter_config "$@"; then
-  set -- --config ui.diff-formatter=:git "$@"
-fi
+def terminate(signum):
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
 
-# JJ drops leading --config values if a subcommand has its own --config. Use
-# native identity environment only for this invocation, not human-author cleanup.
-if [ -n "${JJ_USER:-}" ]; then
-  set -- env "JJ_USER=$JJ_USER" "JJ_EMAIL=$JJ_EMAIL" "$real_jj" "$@"
-else
-  set -- "$real_jj" "$@"
-fi
 
-if "$@"; then
-  if [ -n "${JJ_USER:-}" ] && [ "$hooks" = true ] && [ -n "$hook_target" ]; then
-    # Target bootstrap attribution at its destination, not the invoking repo.
-    # Intentionally use the real jj config here, not the agent identity,
-    # including when JJ_USER/JJ_EMAIL arrived as exported environment values.
-    (
-      unset JJ_USER JJ_EMAIL
-      "$real_jj" --repository "$hook_target" metaedit --update-author -r @ --quiet
-    ) || true
-  fi
-else
-  exit "$?"
-fi
+def execute(argv, env):
+    # Match Popen(restore_signals=True): Python ignores these at startup,
+    # but that interpreter policy must not leak into an exec'ed native tool.
+    for name in ('SIGPIPE', 'SIGXFZ', 'SIGXFSZ'):
+        signum = getattr(signal, name, None)
+        if signum is not None:
+            signal.signal(signum, signal.SIG_DFL)
+    try:
+        os.execve(argv[0], argv, env)
+    except OSError as error:
+        return execution_error(error)
 
-exit 0
+
+def wait_command(argv, env):
+    """Keep inherited terminal streams and forward directly addressed signals."""
+    child = None
+    previous = {}
+    cancelled = None
+
+    def forward(signum, frame):
+        nonlocal cancelled
+        cancelled = signum
+        if child is not None:
+            try:
+                child.send_signal(signum)
+            except ProcessLookupError:
+                pass
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+            previous[signum] = signal.signal(signum, forward)
+        if cancelled is not None:
+            terminate(cancelled)
+        try:
+            child = subprocess.Popen(argv, env=env)
+        except OSError as error:
+            status = execution_error(error)
+        else:
+            if cancelled is not None:
+                forward(cancelled, None)
+            status = child.wait()
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+    # A cancelled hook is not an ordinary best-effort failure. Reap its child,
+    # then terminate before a prehook can be followed by the requested write.
+    # The signal, not the child's possibly-successful handler, owns cancellation.
+    if cancelled is not None:
+        terminate(cancelled)
+    return status
+
+
+def hook(argv, env):
+    try:
+        wait_command(argv, env)
+    except OSError:
+        pass
+
+
+def main(argv):
+    env = dict(os.environ)
+    result = routing(argv, env)
+    command = next(iter(result['command']), '')
+    target = result['destination'] if result['destination'] is not None else result['workspace']
+    identity(env, command)
+    if result['backend'] == 'proxy':
+        return execute(['/libexec/agent-wrappers/jj-proxy-client', *argv], env)
+    try:
+        real = native_binary(env)
+    except WrapperError as error:
+        print(f'jj wrapper: {error}', file=sys.stderr)
+        return 1
+    cleanup = bool(env.get('JJ_USER') and result['hooks'] and target)
+    hook_argv = [real, '--repository', target or '', 'metaedit', '--update-author', '-r', '@', '--quiet']
+    if cleanup and command in ('commit', 'split'):
+        hook(hook_argv, env)
+    if (not os.isatty(1) and command in ('diff', 'show') and
+            not any(arg.startswith(('ui.diff-formatter=', '--config=ui.diff-formatter=')) for arg in argv)):
+        argv = ['--config', 'ui.diff-formatter=:git', *argv]
+    if not cleanup:
+        return execute([real, *argv], env)
+    status = wait_command([real, *argv], env)
+    if status == 0:
+        human_env = {key: value for key, value in env.items() if key not in ('JJ_USER', 'JJ_EMAIL')}
+        hook(hook_argv, human_env)
+    if status < 0:
+        terminate(-status)
+    return status
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError, AttributeError) as error:
+        print(f'jj wrapper: {error}', file=sys.stderr)
+        sys.exit(125)

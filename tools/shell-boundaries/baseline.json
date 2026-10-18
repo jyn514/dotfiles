@@ -16,7 +16,6 @@
   "dev/test:nested-substitution:17f72f46a7381f15",
   "dev/update-doas-sudo-shim:nested-substitution:0f34c0f7cb7a24ff",
   "lib/shell/realpath.sh:nested-substitution:8581f62bdb8b329a",
-  "libexec/agent-wrappers/jj:nested-substitution:d2d33eaace73677f",
   "libexec/command-not-found:nested-substitution:e5ff222eeec7e45c",
   "libexec/gen-claude-system-prompt:nested-substitution:79707384684d60b7",
   "libexec/generate-agent-permissions:nested-substitution:79707384684d60b7",
