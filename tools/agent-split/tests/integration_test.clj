@@ -253,11 +253,12 @@
 
 (deftest jj-split-patch-preflight-errors-identify-the-resolved-target-without-mutating-history
   (doseq [options [[] ["--json"]]
-          {:keys [patch revision reason]}
+          {:keys [patch revision reason diagnostic]}
           [{:patch (str/replace selected-patch "-two" "-obsolete")
             :revision "@" :reason "patch dry-run failed"}
            {:patch (str/replace selected-patch "+TWO" "+INVENTED")
-            :revision "@" :reason "not contained"}
+            :revision "@" :reason "not contained"
+            :diagnostic "selected base line 2; original edit at base line 2: added lines differ"}
            {:patch selected-patch :revision "@-" :reason "patch dry-run failed"}]]
     (with-repo*
       (fn [{:keys [repo]}]
@@ -274,6 +275,7 @@
           (is (= 1 (:exit result)))
           (is (= "" (:out result)) "failure diagnostics stay on stderr, including in JSON mode")
           (is (str/includes? (:err result) reason) (:err result))
+          (when diagnostic (is (str/includes? (:err result) diagnostic) (:err result)))
           (is (str/includes? (:err result) (str "Preflight target: " revision "\n")))
           (is (str/includes? (:err result) (str "Resolved commit: " commit "\n")))
           (doseq [parent parents]

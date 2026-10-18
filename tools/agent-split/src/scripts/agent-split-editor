@@ -128,9 +128,10 @@
       (when-not (or (seq (:modes selected-changes)) (seq (:edits selected-changes))
                     (seq (:binary selected-changes)))
         (fail! (str "selected diff for " file " is empty or malformed")))
-      (when-not ((ns-resolve 'scripts.containment 'contained?) original-changes selected-changes)
+      (when-let [reason ((ns-resolve 'scripts.containment 'rejection-reason)
+                         original-changes selected-changes)]
         (fail! (str "selected change for " file
-                    " is not contained in original diff"))))))
+                    " is not contained in original diff\n" reason))))))
 
 (defn- validate-contained! [left right selected]
   (let [original (diff-change-index

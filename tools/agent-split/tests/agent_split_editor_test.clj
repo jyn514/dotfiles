@@ -234,8 +234,12 @@
                          "+++ b/note.txt\n"
                          "@@ -1 +1 @@\n"
                          "-base\n"
-                         "+invented\n")]
-          (assert-failure (run-editor trees patch) #"not contained|stale")))))
+                         "+invented\n")
+              result (run-editor trees patch)]
+          (assert-failure result #"not contained|stale")
+          (is (str/includes? (:err result)
+                             "selected base line 1; original edit at base line 1: added lines differ"))
+          (is (= "right\n" (slurp (str (fs/file right "note.txt")))))))))
   (testing "path not changed by original revision"
     (with-trees*
       (fn [{:keys [left right] :as trees}]

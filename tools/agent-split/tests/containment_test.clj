@@ -67,7 +67,20 @@
               (pr-str {:kind kind :label label :context context :result result}))
           (when-not valid?
             (is (= 1 (:status result)))
-            (is (str/includes? (or (:error result) "") "not contained in original diff")))
+            (let [error (or (:error result) "")
+                  expected (get {:excess-insertion ["selected base gap before line 2" "added lines differ"]
+                                 :cross-paired ["selected base line 2" "original edit at base line 2" "added lines differ"]
+                                 :blank-boundary-unrelated-occurrence ["selected base line 5" "does not fit an original edit region"]
+                                 :blank-boundary-addition-cross-pair ["selected base lines 2-4" "does not fit an original edit region"]
+                                 :invented-addition ["selected binary patch differs"]
+                                 :invented-modification ["selected binary patch differs"]
+                                 :unchanged-deletion ["selected path has no change"]}
+                                label)]
+              (is (str/includes? error "not contained in original diff"))
+              (doseq [fragment expected]
+                (is (str/includes? error fragment) (str label ": " error)))
+              (when (= kind :binary)
+                (is (not (re-find #"base (?:line|gap)" error)) "binary failures must not invent text coordinates"))))
           original-diff))
       (finally (fs/delete-tree root)))))
 

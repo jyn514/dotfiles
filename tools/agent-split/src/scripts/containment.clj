@@ -135,7 +135,16 @@
       (mapv #(assoc % :added []) touched)
       [selected])))
 
-(defn contained? [original selected]
+(defn- region-location [{:keys [start removed]}]
+  (case (count removed)
+    0 (str "base gap before line " start)
+    1 (str "base line " start)
+    (str "base lines " start "-" (+ start (dec (count removed))))))
+
+(defn rejection-reason
+  "Return nil for a contained selection, otherwise identify the rejected edit
+   using parent/base coordinates. This is the sole containment decision path."
+  [original selected]
   (let [regions (mapcat (fn [region]
                           (if (some #(within-region? % region) (:edits original))
                             [region]
@@ -146,22 +155,37 @@
                                   #(when (within-region? %2 region) %1)
                                   (:edits original))))
                         regions)]
-    (and original
-         (or (seq (:modes selected)) (seq (:edits selected)) (seq (:binary selected)))
-         ;; Whole binary blobs are selected by equality of authoritative canonical
-         ;; Git sections, never by mode lines alone or by parsing their payloads.
-         (or (empty? (:binary selected))
-             (= (binary-section original) (binary-section selected)))
-         (set/subset? (:modes selected) (:modes original))
-         (not (contains? groups nil))
-         ;; Never borrow additions from another region, even if a long earlier
-         ;; insertion's ordinals overlap later base coordinates. Pool selected
-         ;; fragments before comparison so they cannot reuse one allowance.
-         (every? (fn [[ordinal regions]]
-                   (let [original-region {:edits [(nth (:edits original) ordinal)]}
-                         selected-regions {:edits regions}]
-                     (and (subsequence? (lines selected-regions :removed)
-                                        (lines original-region :removed))
-                          (subsequence? (lines selected-regions :added)
-                                        (lines original-region :added)))))
-                 groups))))
+    (cond
+      (nil? original)
+      (str (when-let [region (first (:edits selected))]
+             (str "selected " (region-location region) ": "))
+           "selected path has no change in the original diff")
+      (not (or (seq (:modes selected)) (seq (:edits selected)) (seq (:binary selected))))
+      "selected diff has no edits"
+      ;; Whole binary blobs are selected by canonical equality, not mode lines
+      ;; or payload parsing. Binary and mode failures have no text coordinates.
+      (and (seq (:binary selected))
+           (not= (binary-section original) (binary-section selected)))
+      "selected binary patch differs from the original binary change"
+      (not (set/subset? (:modes selected) (:modes original)))
+      "selected file-mode change is absent from the original diff"
+      (contains? groups nil)
+      (str "selected " (region-location (first (get groups nil)))
+           " does not fit an original edit region; crosses unchanged context or lies outside the original edits")
+      :else
+      ;; Pool fragments to prevent reused allowances, and inspect original
+      ;; regions in source order so the first diagnostic is deterministic.
+      (some (fn [[ordinal regions]]
+              (let [region (nth (:edits original) ordinal)
+                    original-region {:edits [region]}
+                    selected-regions {:edits regions}
+                    location (str "selected " (str/join ", " (map region-location regions))
+                                  "; original edit at " (region-location region) ": ")]
+                (cond
+                  (not (subsequence? (lines selected-regions :removed)
+                                     (lines original-region :removed)))
+                  (str location "removed lines differ in occurrence, count, order, or newline state")
+                  (not (subsequence? (lines selected-regions :added)
+                                     (lines original-region :added)))
+                  (str location "added lines differ in content, count, order, replacement position, or newline state"))))
+            (sort-by key groups)))))

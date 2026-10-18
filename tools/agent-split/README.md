@@ -95,6 +95,9 @@ Run tests or lint appropriate to each newly separated change.
 - Once the target resolves, preflight errors include the requested revision and the commit and parent IDs resolved before the checks.
   Compare those IDs with the current target when another writer may have committed; they do not guarantee the target stayed unchanged during preflight.
   Failures before target resolution cannot include these IDs.
+  Containment errors name the selected parent/base line range or insertion gap and the failed comparison.
+  When the selection fits an original edit region, the diagnostic names that region too.
+  These coordinates refer to the parent file, not the current working copy; binary and file-mode errors do not invent text coordinates.
 - For exit `1`, regenerate selected hunks from `jj diff --git -r <revision>` and retain unchanged context from the revision's parent.
   When the normal dry-run fails but Git's diagnostic `--unidiff-zero --check` succeeds, the error identifies missing context.
   This extra check never applies the patch or enables zero-context matching for a split.
