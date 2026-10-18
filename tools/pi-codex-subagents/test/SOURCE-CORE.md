@@ -58,6 +58,8 @@ Pause releases the wait, while the later admitted call must still steer the chil
 `parent-nested-held-task:<owned-path>` uses a packaged test tool to call production `send_message`
 through public `ctx.executeTool`, covering its independently assigned nested drain token.
 Native nested-call events and persisted `nestedCalls` verify this path.
+`parent-blocked-held-task:<owned-path>` holds another parent tool between the wait and send.
+The child must observe its pause and finish its held tool without another provider request while that parent tool remains blocked.
 Completed tool results prevent either batch from being resent on fresh continuation; there are no
 production options or fixture-only APIs.
 
@@ -76,6 +78,7 @@ It checks parent and child continuation, tool result/effect, child identity and 
 provider-work fencing, and buffered completion acknowledgment/delivery.
 It also checks direct and nested same-batch sends are captured once and delivered in fresh child
 history without extra provider requests or repeated effects.
+Manager coverage starts another admitted child after the initial pause and verifies that capture also fences that child.
 
 `pause-exit-rpc.test.ts` verifies durable save and safe child exit before a subsequent `get_state`
 triggers the existing shutdown check and exits zero.

@@ -36,6 +36,7 @@ function fixture(writer?: typeof writeGroup) {
     listAgents: (_prefix?: string, _parent?: string): any[] => [],
     getAgentInfo: (_name: string, _parent: string): any => { throw new Error("No child fixture info"); },
     beginPause() { events.push("begin"); }, endPause() { events.push("end"); },
+    async pauseChildren() { events.push("children-pause"); },
     async drainSubmissions() { events.push("drain"); },
     async discardSuspension() { events.push("discard"); },
     async releaseUncapturedChildren() { events.push("release-uncaptured"); },
@@ -95,6 +96,21 @@ test("capture callback persists equal child inputs before close; a later failure
     expect(f.read().phase).toBe("saved");
     expect(f.events.filter(event => event === "parent-capture")).toHaveLength(1);
     expect(f.shutdowns).toBe(1);
+  } finally { f.close(); }
+});
+
+test("early child pause failure stays incomplete without capturing or closing the parent and can be retried", async () => {
+  const f = fixture();
+  f.manager.pauseChildren = async () => { throw new Error("child pause refused"); };
+  try {
+    await expect(f.coordinator.pause(f.ctx, true)).rejects.toThrow("child pause refused");
+    expect(f.read().phase).toBe("incomplete");
+    expect(f.events).not.toContain("parent-capture");
+    expect(f.events).not.toContain("children-capture");
+    expect(f.shutdowns).toBe(0);
+    f.manager.pauseChildren = async () => { f.events.push("children-pause"); };
+    await f.coordinator.pause(f.ctx);
+    expect(f.read().phase).toBe("saved");
   } finally { f.close(); }
 });
 
@@ -630,7 +646,7 @@ test("paused configured direct skill leaves input unhandled and never spawns bef
       ...originalCore,
       AgentManager: class {
         beginPause() {} endPause() {} async ready() {} async shutdown() {}
-        async drainSubmissions() {} async captureChildren() { return {}; }
+        async pauseChildren() {} async drainSubmissions() {} async captureChildren() { return {}; }
         listAgents() { return []; } getCompletionState() { return state(); }
         async spawnAgent(request) { spawns++; return { task_name: request.task_name }; }
       },

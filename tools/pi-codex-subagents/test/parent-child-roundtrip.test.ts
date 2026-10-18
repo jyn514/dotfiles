@@ -20,15 +20,17 @@ const steeringHistory = (file: string) => SessionManager.open(file).getBranch().
   (entry.type === "custom_message" && text(entry.content) === lateSteering)
   || (entry.type === "message" && entry.message.role === "user" && text(entry.message.content) === lateSteering));
 
-sourceTest.each(["direct", "nested"])("production index/coordinator saves active parent+child and drains %s same-batch steering before capture", async (mode) => {
+sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator saves active parent+child and drains %s same-batch steering before capture", async (mode) => {
   const nested = mode === "nested";
+  const blocked = mode === "blocked";
   const laterTool = nested ? "faux_nested_send" : "send_message";
-  const parentExtensions = nested ? [productionIndex, heldExtension] : [productionIndex];
+  const parentExtensions = nested || blocked ? [productionIndex, heldExtension] : [productionIndex];
   const { getAgent, getRunsDir, parentScopeKey } = await import("../core.ts");
   const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "parent-child-"));
   const parentFile = join(cwd, "parent.jsonl");
   const marker = join(cwd, "child-tool");
   const files = heldToolFiles(marker);
+  const parentFiles = heldToolFiles(`${marker}.parent`);
   const templates = join(getAgentDir(), "pi-codex-subagents", "agents");
   mkdirSync(templates, { recursive: true });
   const templateFile = join(templates, "source-parent-roundtrip.md");
@@ -41,7 +43,7 @@ sourceTest.each(["direct", "nested"])("production index/coordinator saves active
     const parentId = initial.sessionId;
     const groupFile = join(getRunsDir(), parentScopeKey(parentId), "group.json");
     const group = () => JSON.parse(readFileSync(groupFile, "utf8"));
-    await rpc.request({ type: "prompt", message: `parent-${nested ? "nested-" : ""}held-task:${marker}` });
+    await rpc.request({ type: "prompt", message: `parent-${mode === "direct" ? "" : `${mode}-`}held-task:${marker}` });
     await until(() => existsSync(files.started) && rpc.records.some(record => record.type === "tool_execution_start" && record.toolName === "wait_agent"),
       "production parent is waiting on its actual held-tool child");
     const child = getAgent("native-child", parentId)!;
@@ -58,10 +60,25 @@ sourceTest.each(["direct", "nested"])("production index/coordinator saves active
 
     let pauseReplied = false;
     const pause = rpc.request({ type: "prompt", message: "/pause" }).then(result => { pauseReplied = true; return result; });
+    void pause.catch(() => {}); // Cleanup may close an outstanding request after a failed assertion.
+    if (blocked) {
+      await until(() => existsSync(parentFiles.started), "pause releases the wait but a later parent tool still blocks handoff");
+      expect(toolResults(parentFile, laterTool)).toHaveLength(0);
+      await until(() => existsSync(files.pauseRequested), "child is fenced while the parent tool is still held", 3000);
+      // The child can finish now without another provider call, even though its
+      // parent cannot finish the admitted batch or capture pending inputs yet.
+      writeFileSync(files.release, "finish child before parent handoff");
+      await until(() => existsSync(files.ended), "child tool finishes while parent remains held");
+      expect(existsSync(parentFiles.ended)).toBe(false);
+      expect(group().parent).toBeUndefined();
+      await delay(50);
+      expect(jsonl(providerCallsFile(childFile))).toHaveLength(1);
+      writeFileSync(parentFiles.release, "finish parent batch");
+    }
     await until(() => existsSync(groupFile) && !!group().parent, "coordinator durably exports active parent before child capture finishes");
-    expect(group().phase).toBe("preparing");
+    if (!blocked) expect(group().phase).toBe("preparing");
     expect(group().parent.handoff.wasActive).toBe(true);
-    expect(pauseReplied).toBe(false);
+    if (!blocked) expect(pauseReplied).toBe(false);
     const releasedWaits = toolResults(parentFile, "wait_agent");
     expect(releasedWaits).toHaveLength(1);
     expect(JSON.parse(text(releasedWaits[0].message.content)).paused).toBe(true);

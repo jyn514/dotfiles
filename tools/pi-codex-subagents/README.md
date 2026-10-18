@@ -175,6 +175,8 @@ An older Pi can still run ordinary subagent tools but cannot save this workflow.
 The packaged child helper loads before template extensions and checks these capabilities before restoration.
 Templates that start independent provider work outside Pi's normal admission are unsupported.
 
+Pause requests reach existing children without waiting for the parent's current provider response or tool batch to finish.
+Saving rechecks for children started by already-admitted parent tools.
 A running tool must finish before saving succeeds.
 A tool or handler that never returns prevents graceful save; terminating it is not successful suspension.
 Wait tools return a nonterminal paused result while the parent batch drains.

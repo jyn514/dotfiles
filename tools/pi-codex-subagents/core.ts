@@ -1627,6 +1627,15 @@ export class AgentManager {
     return record;
   }
 
+  /** Request native pauses without waiting for running provider/tool work to finish. */
+  async pauseChildren(parentId: string): Promise<void> {
+    await Promise.all([...this.live.values()].filter((live) => live.info.parentSessionId === parentId
+      && !live.expectedExit && !FINAL_STATUSES.has(live.info.status)).map(async (live) => {
+      await this.sendCommand(live, { type: "pause" });
+      this.ordinaryPausedChildren.add(live.info.id);
+    }));
+  }
+
   async captureChildren(
     parentId: string, generation: string, onCapture: (id: string, saved: SavedSession) => void,
   ): Promise<Record<string, SavedSession>> {
@@ -1634,13 +1643,9 @@ export class AgentManager {
     const retained = this.captures.get(parentId) ?? {};
     this.captures.set(parentId, retained);
     const captured: Record<string, SavedSession> = {};
-    // Fence every child before waiting for any one tool boundary. Otherwise an
-    // unvisited child can make another provider request while its sibling saves.
-    await Promise.all([...this.live.values()].filter((live) => live.info.parentSessionId === parentId
-      && !live.expectedExit && !FINAL_STATUSES.has(live.info.status)).map(async (live) => {
-      await this.sendCommand(live, { type: "pause" });
-      this.ordinaryPausedChildren.add(live.info.id);
-    }));
+    // Recheck after parent drain: an already-admitted tool may have started a
+    // child since the initial pause. Fence all of them before capturing any one.
+    await this.pauseChildren(parentId);
     for (let info of readScopeInfos(parentId)) {
       let live = this.live.get(info.id);
       if (live?.expectedExit) {

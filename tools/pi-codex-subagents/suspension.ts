@@ -276,7 +276,9 @@ export class SuspensionCoordinator {
       this.manager.beginPause(id);
       this.pi.requestPause();
       this.persist();
-      // beginPause releases waits. The entire accepted tool batch drains before children stop.
+      // Fence existing children while the parent finishes its accepted batch.
+      // Capture rechecks for children started by later tools in that batch.
+      await this.manager.pauseChildren(id);
       await this.manager.drainSubmissions(id);
       if (!this.group.parent || this.group.parentResumed || this.group.parent.marker === "started") {
         // Acknowledged parent replay is a new run. A fenced partial replay must retain its current request ID.

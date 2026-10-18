@@ -72,7 +72,7 @@ sourceTest("Manager drains admitted submissions, releases waits neutrally, captu
   });
   try {
     // This names a missing production contract explicitly, rather than masking it with mocks.
-    for (const method of ["beginPause", "allowDrainingToolCall", "drainSubmissions", "captureChildren", "prepareChildren",
+    for (const method of ["beginPause", "allowDrainingToolCall", "pauseChildren", "drainSubmissions", "captureChildren", "prepareChildren",
       "resumeChild", "endPause", "getCompletionState", "restoreCompletionState", "markCompletionDelivered"]) {
       expect(typeof (manager as any)[method], `Manager.${method} is required`).toBe("function");
     }
@@ -88,6 +88,8 @@ sourceTest("Manager drains admitted submissions, releases waits neutrally, captu
     expect(allReleased).toBe(false);
 
     manager.beginPause(parentId);
+    await manager.pauseChildren(parentId);
+    await until(() => existsSync(filesA.pauseRequested), "existing child is fenced before parent submissions drain");
     await until(() => waiterReleased && allReleased, "both parent wait lanes released by pause");
     const waitResult = await waiter;
     const allResult = await all;

@@ -44,7 +44,7 @@ const respond: FauxResponseFactory = (context) => {
   const text = messageText(last);
   if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, lastRole: context.messages.at(-1)?.role })}\n`);
   const parentTask = context.messages.filter(message => message.role === "user")
-    .map(messageText).map(text => text.match(/^parent-(nested-)?held-task:(.+)$/m)).find(Boolean);
+    .map(messageText).map(text => text.match(/^parent-(nested-|blocked-)?held-task:(.+)$/m)).find(Boolean);
   if (parentTask) {
     const completed = (name: string) => context.messages.some(message => message.role === "toolResult" && message.toolName === name && !message.isError);
     if (!completed("spawn_agent")) return fauxAssistantMessage(fauxToolCall("spawn_agent", {
@@ -52,7 +52,8 @@ const respond: FauxResponseFactory = (context) => {
     }), { stopReason: "toolUse" });
     if (!completed("wait_agent")) return fauxAssistantMessage([
       fauxToolCall("wait_agent", { targets: ["native-child"] }),
-      fauxToolCall(parentTask[1] ? "faux_nested_send" : "send_message", { target: "native-child", message: "same-batch steering after pause" }),
+      ...(parentTask[1] === "blocked-" ? [fauxToolCall("faux_hold", { path: `${parentTask[2]}.parent` })] : []),
+      fauxToolCall(parentTask[1] === "nested-" ? "faux_nested_send" : "send_message", { target: "native-child", message: "same-batch steering after pause" }),
     ], { stopReason: "toolUse" });
     return fauxAssistantMessage("faux:parent-complete");
   }
