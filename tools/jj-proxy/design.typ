@@ -366,9 +366,7 @@ For example, `"git remote" = { subcmds = ["list"] }` permits only the `git remot
 `updates_author` defaults to false and applies to every path in its rule.
 A mutation rule takes precedence over an inherited inspection rule.
 Within each section, the longest matching prefix selects the rule's metadata.
-Fetch checks
-and remote expansion are fixed evaluator behavior, not policy fields. The
-evaluator in `src/policy.rs` returns the command kind, normalized arguments,
+The evaluator in `src/policy.rs` returns the unchanged arguments,
 read-only classification, and author-update hook; execution consumes this
 decision rather than repeating command-name checks. Policy edits require
 rebuilding the image, but do not require recompiling the proxy binary.
@@ -392,12 +390,12 @@ built-ins such as `:git`; configuration cannot redefine an allowed built-in.
 Reject alternate repository, workspace, operation-store, or configuration
 paths in every syntactic position.
 
-Git fetch accepts only pre-existing, approved remote names and reviewed URL
-schemes and destinations. It cannot set a remote URL or select a credential
-helper, SSH command, transport helper, hook, or arbitrary local path. Git push
-is never accepted. Network access and credentials, if later required for fetch,
-are separate explicit capabilities rather than consequences of allowing a Git
-subcommand.
+Git fetch accepts any pre-existing configured remote.
+Jujutsu resolves remote selections and uses its normal defaults when none are supplied.
+The proxy does not maintain a remote-name allowlist or validate remote URLs or transports.
+Requests cannot add remotes, change remote URLs, or override configuration to select helpers, hooks, or SSH commands.
+Git push is never accepted.
+Network access and credentials, if later required for fetch, are separate explicit capabilities rather than consequences of allowing a Git subcommand.
 
 Pinning the Jujutsu version makes the accepted grammar stable; upgrading
 Jujutsu requires reviewing new commands and options before changing the pin.
@@ -468,9 +466,8 @@ sessions.
 - Inspection requests can read only repositories under `/src` and cannot
   mutate their working trees, Jujutsu stores, Git metadata, configuration, or
   credentials.
-- Git fetch is constrained to approved remotes, every Git push request is
-  rejected, and the Codex container has no write-capable credentials for
-  protected remotes.
+- Git fetch uses host-configured remotes, requests cannot change remote configuration,
+  every Git push request is rejected, and the Codex container has no write-capable credentials for protected remotes.
 - Supported commands preserve stdout, stderr, and exit status closely enough
   for interactive agent use.
 - Pi calls retain their invoking model under overlap. Missing or malformed guest

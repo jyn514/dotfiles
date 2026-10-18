@@ -1,17 +1,10 @@
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::Path;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CommandKind {
-    Standard,
-    GitFetch,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Decision {
-    pub kind: CommandKind,
     pub read_only: bool,
     pub updates_author: bool,
     pub argv: Vec<String>,
@@ -102,11 +95,11 @@ impl Policy {
     }
 
     pub fn validate_inspect(&self, argv: &[String]) -> Result<Decision> {
-        evaluate(self, argv, true, &HashSet::new())
+        evaluate(self, argv, true)
     }
 
-    pub fn validate(&self, argv: &[String], remotes: &HashSet<String>) -> Result<Decision> {
-        evaluate(self, argv, false, remotes)
+    pub fn validate(&self, argv: &[String]) -> Result<Decision> {
+        evaluate(self, argv, false)
     }
 
     fn parse(text: &str) -> Result<Self> {
@@ -171,38 +164,14 @@ pub fn extract_repository(argv: &[String]) -> Result<(Option<String>, Vec<String
     Ok((repository, command))
 }
 
-fn evaluate(policy: &Policy, argv: &[String], inspect: bool, remotes: &HashSet<String>) -> Result<Decision> {
+fn evaluate(policy: &Policy, argv: &[String], inspect: bool) -> Result<Decision> {
     validate_shape(argv)?;
     let rule = policy.rule_for(argv, inspect)?;
     reject_security_options(&policy.global, &argv[rule.path.len()..])?;
-    // Fetch constraints are fixed behavior, not configurable authorization.
-    let git_fetch = matches!(argv.get(0..2), Some([command, subcmd]) if command == "git" && subcmd == "fetch");
-    let mut selected_remote = false;
-    if git_fetch {
-        let mut index = 2;
-        while index < argv.len() {
-            let arg = &argv[index];
-            let remote = if arg == "--remote" {
-                index += 1;
-                Some(argv.get(index).ok_or_else(|| eyre!("--remote requires a value"))?.as_str())
-            } else { arg.strip_prefix("--remote=") };
-            if let Some(remote) = remote {
-                selected_remote = true;
-                if !remotes.contains(remote) { bail!("remote is not approved: {remote}"); }
-            }
-            index += 1;
-        }
-        if !selected_remote && remotes.is_empty() { bail!("no remotes are approved"); }
-    }
-    let mut normalized_argv = argv.to_vec();
-    if git_fetch && !selected_remote {
-        normalized_argv.extend(remotes.iter().flat_map(|remote| ["--remote".to_owned(), remote.clone()]));
-    }
     Ok(Decision {
-        kind: if git_fetch { CommandKind::GitFetch } else { CommandKind::Standard },
         read_only: inspect,
         updates_author: rule.updates_author,
-        argv: normalized_argv,
+        argv: argv.to_vec(),
     })
 }
 
@@ -218,14 +187,14 @@ mod tests {
     fn checked_in_policy() -> Result<Policy> {
         Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml")))
     }
-    fn validate(args: &[String], remotes: &HashSet<String>) -> Result<Decision> {
-        checked_in_policy()?.validate(args, remotes)
+    fn validate(args: &[String]) -> Result<Decision> {
+        checked_in_policy()?.validate(args)
     }
     fn validate_inspect(args: &[String]) -> Result<Decision> {
         checked_in_policy()?.validate_inspect(args)
     }
     fn check(args: &[&str]) -> bool {
-        validate(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &HashSet::from(["origin".into()])).is_ok()
+        validate(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>()).is_ok()
     }
     const COMPACT_POLICY: &str = include_str!("../tests/fixtures/compact-policy.toml");
 
@@ -263,8 +232,8 @@ mod tests {
         for (command, inspect) in [("state", true), ("state", false), ("files", false)] {
             let argv = [command, "operand"].map(str::to_owned);
             assert_eq!(
-                evaluate(&shorthand, &argv, inspect, &HashSet::new()).unwrap(),
-                evaluate(&tables, &argv, inspect, &HashSet::new()).unwrap(),
+                evaluate(&shorthand, &argv, inspect).unwrap(),
+                evaluate(&tables, &argv, inspect).unwrap(),
             );
         }
     }
@@ -273,7 +242,7 @@ mod tests {
     fn compact_rules_expand_and_mutation_inherits_inspection() {
         let policy = Policy::parse(COMPACT_POLICY).unwrap();
         let decide = |args: &[&str], inspect| evaluate(
-            &policy, &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(), inspect, &HashSet::new(),
+            &policy, &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(), inspect,
         );
         for inspect in [true, false] {
             for args in [vec!["state", "operand"], vec!["history", "list", "--future-option"], vec!["history", "show"]] {
@@ -316,8 +285,8 @@ mod tests {
                 vec!["spaced", "prefix", "operand"],
             ] {
                 let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
-                let decision = evaluate(&grouped, &argv, inspect, &HashSet::new()).unwrap();
-                assert_eq!(decision, evaluate(&flat, &argv, inspect, &HashSet::new()).unwrap());
+                let decision = evaluate(&grouped, &argv, inspect).unwrap();
+                assert_eq!(decision, evaluate(&flat, &argv, inspect).unwrap());
                 assert_eq!(decision.argv, argv);
                 assert_eq!(decision.read_only, inspect);
             }
@@ -329,8 +298,8 @@ mod tests {
                 vec!["future", "nested", "command", "leaf", "--private-key"],
             ] {
                 let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
-                assert!(evaluate(&grouped, &argv, inspect, &HashSet::new()).is_err(), "accepted {argv:?}");
-                assert!(evaluate(&flat, &argv, inspect, &HashSet::new()).is_err(), "accepted {argv:?}");
+                assert!(evaluate(&grouped, &argv, inspect).is_err(), "accepted {argv:?}");
+                assert!(evaluate(&flat, &argv, inspect).is_err(), "accepted {argv:?}");
             }
         }
     }
@@ -354,7 +323,7 @@ mod tests {
                 (vec!["history", "list"], false),
             ] {
                 let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
-                assert_eq!(evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap().updates_author,
+                assert_eq!(evaluate(&policy, &argv, inspect).unwrap().updates_author,
                     updates_author, "wrong author hook for {argv:?} in inspect={inspect}");
             }
         }
@@ -362,7 +331,7 @@ mod tests {
         let policy = Policy::parse(&text).unwrap();
         let argv = ["history", "nested", "create"].map(str::to_owned);
         assert!(policy.validate_inspect(&argv).unwrap().updates_author);
-        assert!(!policy.validate(&argv, &HashSet::new()).unwrap().updates_author);
+        assert!(!policy.validate(&argv).unwrap().updates_author);
     }
 
     #[test]
@@ -372,13 +341,13 @@ mod tests {
             .replace("[mutate]", "[mutate]\nstate = { updates_author = true }");
         let policy = Policy::parse(&text).unwrap();
         for inspect in [true, false] {
-            let state = evaluate(&policy, &["state".into()], inspect, &HashSet::new()).unwrap();
+            let state = evaluate(&policy, &["state".into()], inspect).unwrap();
             assert_eq!(state.read_only, inspect);
             assert_eq!(state.updates_author, !inspect);
-            assert!(evaluate(&policy, &["history".into(), "search".into()], inspect, &HashSet::new()).is_ok());
-            assert!(evaluate(&policy, &["history".into(), "show".into()], inspect, &HashSet::new()).is_err());
+            assert!(evaluate(&policy, &["history".into(), "search".into()], inspect).is_ok());
+            assert!(evaluate(&policy, &["history".into(), "show".into()], inspect).is_err());
         }
-        assert!(!evaluate(&policy, &["change".into(), "create".into()], false, &HashSet::new()).unwrap().updates_author);
+        assert!(!evaluate(&policy, &["change".into(), "create".into()], false).unwrap().updates_author);
     }
 
     #[test]
@@ -402,34 +371,30 @@ mod tests {
     }
 
     #[test]
-    fn fetch_constraints_do_not_require_policy_flags() {
-        let remotes = HashSet::from(["origin".into()]);
-        assert!(validate_inspect(&["git".into(), "fetch".into()]).is_err());
-        assert!(validate(&["git".into(), "fetch".into()], &HashSet::new()).is_err());
-        for args in [vec!["git", "fetch", "--remote"], vec!["git", "fetch", "--remote=evil"], vec!["git", "fetch", "--remote", "origin", "--remote", "evil"]] {
-            assert!(validate(&args.into_iter().map(str::to_owned).collect::<Vec<_>>(), &remotes).is_err());
+    fn fetch_preserves_remote_selection_for_jj() {
+        for args in [
+            vec!["git", "fetch"],
+            vec!["git", "fetch", "--remote", "upstream"],
+            vec!["git", "fetch", "--remote=contributor", "--branch", "main"],
+            vec!["git", "fetch", "--remote", "origin", "--remote", "upstream"],
+            vec!["git", "fetch", "--all-remotes"],
+        ] {
+            let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let decision = validate(&argv).unwrap();
+            assert_eq!(decision.argv, argv);
+            assert!(!decision.read_only);
+            assert!(validate_inspect(&argv).is_err());
         }
-        let argv = ["git", "fetch", "--remote=origin", "--branch", "main"].map(str::to_owned);
-        let decision = validate(&argv, &remotes).unwrap();
-        assert_eq!(decision.kind, CommandKind::GitFetch);
-        assert_eq!(decision.argv, argv);
     }
 
     #[test]
-    fn broad_git_permission_keeps_fixed_fetch_constraints() {
-        let policy = Policy::parse(&COMPACT_POLICY.replace("[mutate]", "[mutate]\ngit = {}")).unwrap();
-        let remotes = HashSet::from(["origin".into()]);
-        let argv = ["git", "fetch"].map(str::to_owned);
-        assert!(evaluate(&policy, &argv, true, &remotes).is_err());
-        assert!(evaluate(&policy, &argv, false, &HashSet::new()).is_err());
-        assert!(evaluate(&policy, &["git".into(), "fetch".into(), "--remote=evil".into()], false, &remotes).is_err());
-        let decision = evaluate(&policy, &argv, false, &remotes).unwrap();
-        assert_eq!(decision.kind, CommandKind::GitFetch);
-        assert_eq!(decision.argv, ["git", "fetch", "--remote", "origin"]);
-        let explicit = ["git", "fetch", "--remote=origin"].map(str::to_owned);
-        assert_eq!(evaluate(&policy, &explicit, false, &remotes).unwrap().argv, explicit);
+    fn fetch_still_requires_command_permission() {
+        let argv = ["git", "fetch", "--remote", "upstream"].map(str::to_owned);
         let unauthorized = Policy::parse(COMPACT_POLICY).unwrap();
-        assert!(evaluate(&unauthorized, &argv, false, &remotes).is_err());
+        assert!(unauthorized.validate(&argv).is_err());
+        let broad = Policy::parse(&COMPACT_POLICY.replace("[mutate]", "[mutate]\ngit = {}")).unwrap();
+        assert_eq!(broad.validate(&argv).unwrap().argv, argv);
+        assert!(broad.validate_inspect(&argv).is_err());
     }
 
     #[test]
@@ -447,13 +412,11 @@ mod tests {
     }
     #[test]
     fn decisions_describe_execution_effects() {
-        let commit = validate(&["commit".into()], &HashSet::new()).unwrap();
-        assert_eq!(commit.kind, CommandKind::Standard);
+        let commit = validate(&["commit".into()]).unwrap();
         assert!(commit.updates_author);
         assert!(!commit.read_only);
-        let fetch = validate(&["git".into(), "fetch".into()], &HashSet::from(["origin".into()])).unwrap();
-        assert_eq!(fetch.kind, CommandKind::GitFetch);
-        assert_eq!(fetch.argv, ["git", "fetch", "--remote", "origin"]);
+        let fetch = validate(&["git".into(), "fetch".into()]).unwrap();
+        assert_eq!(fetch.argv, ["git", "fetch"]);
     }
     #[test]
     fn rejects_escape_surfaces() {
@@ -462,7 +425,9 @@ mod tests {
             &["git", "init"][..], &["config", "set", "x", "y"][..], &["diff", "--tool", "/tmp/x"][..],
             &["status", "--repository", "/tmp/x"][..], &["log", "--config", "aliases.x=util exec"][..],
             &["workspace", "list", "--repository", "/tmp/x"][..], &["file", "show", "--repository", "/tmp/x", "src/main.rs"][..],
-            &["git", "fetch", "--remote", "evil"][..], &["push"][..],
+            &["git", "remote", "add", "test", "url"][..],
+            &["git", "remote", "set-url", "origin", "url"][..],
+            &["git", "fetch", "--config", "git.fetch=upstream"][..], &["push"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
     #[test]
@@ -471,21 +436,20 @@ mod tests {
         for inspect in [true, false] {
             for argument in ["version", "--version"] {
                 let argv = [argument.to_owned()];
-                let decision = evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap();
+                let decision = evaluate(&policy, &argv, inspect).unwrap();
                 assert_eq!(decision.argv, argv);
-                assert_eq!(decision.kind, CommandKind::Standard);
                 assert_eq!(decision.read_only, inspect);
                 assert!(!decision.updates_author);
             }
             for option in ["--config=ui.editor=evil", "--ignore-working-copy", "--at-op=@"] {
                 for args in [["--version", option], [option, "--version"]] {
                     let argv = args.map(str::to_owned);
-                    assert!(evaluate(&policy, &argv, inspect, &HashSet::new()).is_err(),
+                    assert!(evaluate(&policy, &argv, inspect).is_err(),
                         "accepted {argv:?} in inspect={inspect}");
                 }
             }
             for option in ["--version=1", "--help", "--no-pager"] {
-                assert!(evaluate(&policy, &[option.to_owned()], inspect, &HashSet::new()).is_err());
+                assert!(evaluate(&policy, &[option.to_owned()], inspect).is_err());
             }
         }
     }
@@ -506,7 +470,7 @@ mod tests {
             (false, vec!["commit", "-m", "ordinary change"]),
         ] {
             let ordinary = command.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
-            assert!(evaluate(&policy, &ordinary, inspect, &HashSet::new()).is_ok());
+            assert!(evaluate(&policy, &ordinary, inspect).is_ok());
             for option in &forbidden {
                 // Reject controls at every argument position, also after a
                 // repository selector is stripped from the caller's request.
@@ -517,7 +481,7 @@ mod tests {
                         let input = [selector, argv.clone()].concat()
                             .into_iter().map(str::to_owned).collect::<Vec<_>>();
                         let (_, extracted) = extract_repository(&input).unwrap();
-                        assert!(evaluate(&policy, &extracted, inspect, &HashSet::new()).is_err(),
+                        assert!(evaluate(&policy, &extracted, inspect).is_err(),
                             "accepted {input:?} in inspect={inspect}");
                     }
                 }
@@ -550,8 +514,7 @@ mod tests {
         ] {
             let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
             for inspect in [true, false] {
-                let decision = evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap();
-                assert_eq!(decision.kind, CommandKind::Standard);
+                let decision = evaluate(&policy, &argv, inspect).unwrap();
                 assert_eq!(decision.read_only, inspect);
                 assert!(!decision.updates_author);
                 assert_eq!(decision.argv, argv);

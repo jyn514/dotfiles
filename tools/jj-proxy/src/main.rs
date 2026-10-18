@@ -6,7 +6,6 @@ use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{kill, Signal};
 use nix::sys::stat::Mode;
 use nix::unistd::{close, dup, fchdir, setsid, Pid};
-use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
@@ -299,7 +298,6 @@ fn execute(
     command_policy: &policy::Policy,
     root: RawFd,
     selected_repo: &Path,
-    remotes: &HashSet<String>,
     temporary_directory: &str,
 ) -> Response {
     let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
@@ -351,7 +349,7 @@ fn execute(
         Err(error) => return failure(error.to_string()),
     };
     let decision = if request.agent_split.is_none() {
-        let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv, remotes) };
+        let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv) };
         match validation {
             Ok(decision) => Some(decision),
             Err(error) => return failure(error.to_string()),
@@ -453,7 +451,6 @@ fn serve() -> Result<()> {
     // environment, selects the cwd namespace.
     let source_root = File::open("/src").wrap_err("cannot open source")?;
     let repository_root = File::open(&repo).wrap_err("cannot open repository")?;
-    let remotes = HashSet::from(["origin".to_owned()]);
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
     fs::create_dir_all(TEMP_HOME).wrap_err("cannot create Jujutsu temporary directory")?;
@@ -480,7 +477,6 @@ fn serve() -> Result<()> {
                     repository_root.as_raw_fd()
                 },
                 Path::new(&repo),
-                &remotes,
                 TEMP_HOME,
             ),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
@@ -768,10 +764,9 @@ mod tests {
     #[test]
     fn command_policy_declares_author_update_effects() {
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
-        let remotes = HashSet::new();
-        assert!(policy.validate(&["commit".into()], &remotes).unwrap().updates_author);
-        assert!(policy.validate(&["split".into()], &remotes).unwrap().updates_author);
-        assert!(!policy.validate(&["status".into()], &remotes).unwrap().updates_author);
+        assert!(policy.validate(&["commit".into()]).unwrap().updates_author);
+        assert!(policy.validate(&["split".into()]).unwrap().updates_author);
+        assert!(!policy.validate(&["status".into()]).unwrap().updates_author);
 
         let command = author_update_command("agent", "agent@example.test");
         let args: Vec<_> = command
@@ -804,7 +799,7 @@ mod tests {
             user: None,
             email: None,
         };
-        let response = execute(&request, &policy, root.as_raw_fd(), Path::new("/tmp"), &HashSet::new(), "/tmp");
+        let response = execute(&request, &policy, root.as_raw_fd(), Path::new("/tmp"), "/tmp");
         assert_eq!(2, response.exit);
         assert!(response.stderr.contains("agent split is not allowed"));
     }

@@ -88,8 +88,12 @@ jj op log
 jj commit -m 'Describe the change'
 jj rebase -r @ -d main
 jj undo
-jj git fetch --remote origin
+jj git fetch --remote upstream
 ```
+
+Fetch accepts any existing configured remote, including repeated `--remote` options and `--all-remotes`.
+Without a remote option, Jujutsu uses its normal defaults, including the repository's `git.fetch` setting.
+Remote add/set-url operations, request-supplied configuration overrides, and push remain blocked.
 
 Common history, bookmark, file, and workspace operations are also allowed.
 Inspection also permits `evolog`, `bookmark list`, `tag list`, `op diff`, `sparse list`, `root`, `version`, and `workspace root`.
@@ -101,7 +105,7 @@ For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 
 - Never mount the outer Docker/Podman daemon socket or write-capable protected-remote credentials into the agent container.
 - Keep host-backed `.git` and `.jj` read-only there; commands targeting that metadata, including `status` and `diff`, use the proxy. The wrapper is a convenience dispatcher, not an authorization boundary. Absolute native invocation retains the same guest permissions and cannot write protected metadata.
-- The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and unapproved fetch remotes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
+- The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and remote configuration changes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
 - For a proxy route, socket failure returns `125` and never falls back to native JJ. A local route does not connect to the proxy.
 - A command timeout returns `124`; policy/request failures normally return `2`. Inspect stderr, correct the request, and retry.
 - Use `jj undo` through the proxy to recover an allowed history edit.
@@ -160,5 +164,7 @@ Forbidden selectors include `--at-operation` and `--at-op`, including attached v
 The trusted inspection executor adds its own `--ignore-working-copy` only after request validation.
 Rebuild the proxy image and recreate the server to apply policy changes; an already-running server retains its startup policy.
 
-Allowing `git fetch` does not make its behavior configurable: the evaluator always checks approved remotes, expands an omitted remote selection, and marks the decision for fetch execution. The executor consumes that decision rather than repeating command-policy checks.
+The evaluator passes fetch arguments unchanged to Jujutsu, which resolves configured remote names and default selections.
+There is no proxy remote-name allowlist or URL/transport validation.
+Remote URLs remain host-controlled because requests cannot change remote configuration.
 See the [tools overview](../README.md).
