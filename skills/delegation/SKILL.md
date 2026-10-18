@@ -34,6 +34,11 @@ Provide the worker with:
 - Ownership and shared contracts, permitted effects, protected work, and explicit holds.
 - The expected result, required checks, remaining integration work, and useful evidence to return.
 
+For assignments requiring full-file coverage, specify separate, bounded read calls.
+Continue from the last line actually returned, not the requested end of a truncated range.
+Require workers to finish retrievable gaps before returning;
+when access or tool failure prevents completion, report the exact unread ranges and blocker.
+
 Choose a worker suited to the task's judgment and cost requirements using the harness's available capabilities.
 Do not expand authority because a worker or tool can perform an action.
 Allow preparation and investigation to proceed when only a later command or shared-contract decision must wait.
