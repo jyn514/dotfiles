@@ -34,6 +34,9 @@ It does not compare sets of line strings.
 
 Separated edits remain selectable when earlier unselected edits change line counts.
 Adjacent one-for-one replacements can also be selected independently.
+A pure deletion of complete replacement regions can include their immediately adjacent empty context lines.
+This permits deleting an old section while leaving its replacement unselected when Git retains the section's blank separators as context.
+It does not permit deleting space-only lines, unrelated anchors, or extra consecutive blank lines.
 Partial unequal-length replacements within one contiguous region can be rejected conservatively when replacement correspondence is ambiguous.
 This is an implementation limitation, not a declaration that every rejected subset is invalid; selecting the complete region avoids it.
 

@@ -1,7 +1,92 @@
 ;; Rows are [label base original attempt valid?].
 ;; nil means an absent file; vectors are binary bytes, not text.
 {:text
- [[:excess-insertion
+ [[:section-deletion-blank-alignment
+   "# Intro\n\n### Before delegation\n\nRead coordination dialect.\nUse its fields.\n\n### Next\n"
+   "# Intro\n\n### When assessing threats\n\nSentence one.\nSentence two.\nSentence three.\n\n### Next\n"
+   "# Intro\n\n### Next\n"
+   true]
+  [:blank-boundary-deletion
+   "head\nold\n\nend\n"
+   "head\nnew\n\nend\n"
+   "head\nend\n"
+   true]
+  [:blank-boundary-kept
+   "head\nold\n\nend\n"
+   "head\nnew\n\nend\n"
+   "head\n\nend\n"
+   true]
+  [:blank-boundary-before
+   "head\n\nold\nend\n"
+   "head\n\nnew\nend\n"
+   "head\nend\n"
+   true]
+  [:blank-boundary-partial-replacement
+   "head\nold\nother\n\nend\n"
+   "head\nnew\nreplacement\n\nend\n"
+   "head\nother\nend\n"
+   false]
+  [:space-boundary-not-blank
+   "head\nold\n \nend\n"
+   "head\nnew\n \nend\n"
+   "head\nend\n"
+   false]
+  [:nonblank-boundary-not-blank
+   "head\nold\nanchor\nend\n"
+   "head\nnew\nanchor\nend\n"
+   "head\nend\n"
+   false]
+  [:blank-boundary-no-replacement
+   "head\nold\n\nend\n"
+   "head\n\nend\n"
+   "head\nend\n"
+   false]
+  [:blank-boundary-unrelated-occurrence
+   "head\nold\n\nanchor\n\nend\n"
+   "head\nnew\n\nanchor\n\nend\n"
+   "head\n\nanchor\nend\n"
+   false]
+  [:blank-boundary-excess-occurrences
+   "head\nold\n\n\nend\n"
+   "head\nnew\n\n\nend\n"
+   "head\nend\n"
+   false]
+  [:blank-boundary-addition-cross-pair
+   "head\nold\n\nother\nend\n"
+   "head\nnew\n\nreplacement\nend\n"
+   "head\nreplacement\nend\n"
+   false]
+  [:blank-boundary-crlf
+   "head\r\nold\r\n\r\nend\r\n"
+   "head\r\nnew\r\n\r\nend\r\n"
+   "head\r\nend\r\n"
+   true]
+  [:blank-boundary-bare-cr-not-blank
+   "head\nold\n\r"
+   "head\nnew\n\r"
+   "head\n"
+   false]
+  [:blank-boundary-terminal-blank
+   "head\nold\n\n"
+   "head\nnew\n\n"
+   "head\n"
+   true]
+  [:blank-boundary-invented-cr
+   "head\r\nold\r\n\r\nend\r\n"
+   "head\r\nnew\r\n\r\nend\r\n"
+   "head\nend\r\n"
+   false]
+  [:blank-boundary-final-no-newline
+   "head\nold\n\nend"
+   "head\nnew\n\nend"
+   "head\nend"
+   true]
+  [:blank-boundary-invented-final-newline
+   "head\nold\n\nend"
+   "head\nnew\n\nend"
+   "head\nend\n"
+   false]
+  [:excess-insertion
    "start\nend\n"
    "start\nnew\nend\n"
    "start\nnew\nnew\nend\n"

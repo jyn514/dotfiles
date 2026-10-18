@@ -475,7 +475,10 @@
   ;; Representative CLI/publication boundaries; containment-test runs every
   ;; authored case in-process with real Git-produced canonical diffs.
   (doseq [[label base original attempt valid?]
-          (representative-cases :text [:non-prefix-addition :cross-paired :earlier-insertion])]
+          (representative-cases :text [:non-prefix-addition :cross-paired :earlier-insertion
+                                       :section-deletion-blank-alignment
+                                       :blank-boundary-addition-cross-pair
+                                       :blank-boundary-unrelated-occurrence])]
     (testing (name label)
       (with-repo
         (fn [repo]

@@ -31,7 +31,7 @@
             (reset! file (second (re-matches #"diff --git a/.+ b/(.+)" line)))
             (reset! cursor nil)
             (reset! binary? false)
-            (swap! index assoc @file {:modes #{} :edits [] :binary []}))
+            (swap! index assoc @file {:modes #{} :edits [] :binary [] :context {}}))
 
         (or @binary? (= line "GIT binary patch")
             (str/starts-with? line "Binary files "))
@@ -44,9 +44,11 @@
                     (some-> (re-find #"^@@ -([0-9]+)" line) second parse-long (max 1))))
 
         (and @cursor (= line "\\ No newline at end of file"))
-        (when (and @region @last-side)
-          (swap! region update @last-side
-                 #(update % (dec (count %)) assoc :newline? false)))
+        (if (= @last-side :context)
+          (swap! index assoc-in [@file :context (dec @cursor) :newline?] false)
+          (when (and @region @last-side)
+            (swap! region update @last-side
+                   #(update % (dec (count %)) assoc :newline? false))))
 
         (and @cursor (or (str/starts-with? line "-")
                          (str/starts-with? line "+")))
@@ -60,7 +62,11 @@
           (when (= side :removed) (swap! cursor inc)))
 
         (and @cursor (str/starts-with? line " "))
-        (do (flush!) (swap! cursor inc) (reset! last-side nil))
+        (do (flush!)
+            (swap! index assoc-in [@file :context @cursor]
+                   {:text (subs line 1) :newline? true :position @cursor})
+            (swap! cursor inc)
+            (reset! last-side :context))
 
         (some #(str/starts-with? line %)
               ["old mode " "new mode " "deleted file mode " "new file mode "])
@@ -98,12 +104,48 @@
   ;; omit it. Remove only framing newlines, preserving all canonical payload.
   (str/replace (str/join "\n" (:binary index)) #"\n+$" ""))
 
+(defn- deletion-fragments
+  "Account for alternate blank-line alignment only for pure deletions of whole
+   replacement regions. Git can retain an empty boundary as context while a
+   section deletion removes it; the unselected replacement retains that boundary.
+   Never move additions across these boundaries or discard arbitrary whitespace."
+  [original selected]
+  (let [edits (:edits original)
+        removed (:removed selected)
+        selected-lines (set removed)
+        touched (filter #(some selected-lines (:removed %)) edits)
+        whole? (every? #(every? selected-lines (:removed %)) touched)
+        boundaries (set (mapcat (fn [region]
+                                 (when (seq (:added region))
+                                   [(dec (:start region))
+                                    (+ (:start region) (count (:removed region)))]))
+                               touched))
+        authorized-removals (set (mapcat :removed touched))
+        boundary? (fn [line]
+                    (and (contains? boundaries (:position line))
+                         ;; CR is part of a CRLF empty line, not ignorable space.
+                         (or (= "" (:text line))
+                             (and (= "\r" (:text line)) (:newline? line)))
+                         (= line (get (:context original) (:position line)))))]
+    (if (and (empty? (:added selected)) (seq removed) (seq touched) whole?
+             (= (count removed) (count selected-lines))
+             (every? #(or (contains? authorized-removals %) (boundary? %)) removed))
+      ;; Split deletions back by their original owners. This is not a merged
+      ;; allowance: the normal pooled occurrence check still owns each region.
+      (mapv #(assoc % :added []) touched)
+      [selected])))
+
 (defn contained? [original selected]
-  (let [groups (group-by (fn [region]
+  (let [regions (mapcat (fn [region]
+                          (if (some #(within-region? % region) (:edits original))
+                            [region]
+                            (deletion-fragments original region)))
+                        (:edits selected))
+        groups (group-by (fn [region]
                           (first (keep-indexed
                                   #(when (within-region? %2 region) %1)
                                   (:edits original))))
-                        (:edits selected))]
+                        regions)]
     (and original
          (or (seq (:modes selected)) (seq (:edits selected)) (seq (:binary selected)))
          ;; Whole binary blobs are selected by equality of authoritative canonical

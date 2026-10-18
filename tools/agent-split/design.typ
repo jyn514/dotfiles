@@ -348,7 +348,10 @@ jj op restore "$op"
 ]
 
 #requirement[A materialized expected revision is an implementation aid, not a substitute for containment validation.
-The wrapper must still reject selected changes that are not present in the original revision being split.]
+The wrapper must still reject selected changes that are not present in the original revision being split.
+A pure deletion covering whole replacement regions may include their immediately adjacent empty context lines, including empty CRLF lines.
+This accounts for Git retaining section separators as context while a selected section deletion removes them.
+It does not authorize deleting space-only lines, unrelated anchors, excess consecutive blank lines, or borrowing another region's additions.]
 
 #requirement[`jj interdiff` is appropriate for equality checks between two materialized revisions that are both addressable in the same Jujutsu operation.
 A wrapper that keeps an expected selected revision alive until after the real split may compare it with the actual selected commit using `jj interdiff --from expected --to actual-selected --git`, and require no patch difference.

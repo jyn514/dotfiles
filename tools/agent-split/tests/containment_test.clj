@@ -74,6 +74,9 @@
 (deftest ^:needs/git canonical-containment-decision-table
   ;; Realistic faults: collapsing repeated edits to sets, borrowing an addition
   ;; from another anchor, losing CR/newline state, or checking binary modes only.
+  ;; Boundary rows distinguish deleting an old section across Git's retained
+  ;; empty lines from deleting spaces, unrelated occurrences, excess blanks,
+  ;; partial replacements, or moving replacement additions across anchors.
   ;; Valid changes: partial ordered insertions/deletions and shifted coordinates;
   ;; changing canonical Git context must preserve every independent expectation.
   (doseq [kind [:text :binary]]
