@@ -10,7 +10,7 @@ Several sections may apply to the same interaction.
 | Subsystem behavior | Read |
 | --- | --- |
 | Shared mutable state, concurrent callers, or delayed results | [Concurrency safety](#concurrency-safety) |
-| External effects, persistence, or multi-step publication | [Partial failure and recovery](#partial-failure-and-recovery) |
+| Queued work, external effects, persistence, or multi-step publication | [Partial failure and recovery](#partial-failure-and-recovery) |
 | Asynchronous work, callbacks, queues, or cancellation | [Runtime progress](#runtime-progress) |
 | Input size, concurrency, or fan-out can grow, or latency, memory, or cost limits matter | [Resource bounds](#resource-bounds) |
 | Data or operations cross trust or privilege boundaries | [Trust and authority](#trust-and-authority) |
@@ -42,6 +42,11 @@ Use boundary-declaration to state effect outcomes, safe retry conditions, cleanu
 Trace failure between effects and acknowledgments, including an operation that succeeds remotely but loses its response.
 Check that the proposed boundary leaves the recovery owner enough evidence to distinguish failure from an unknown outcome.
 Do not infer that retry is safe because the caller received an error, or require transactions or compensation without a concrete need.
+
+For queued or accepted work, trace each occurrence through the selection, processing, persistence, and handoff stages that exist.
+Include selected-but-uncommitted batches and failures between ownership transfer and notification.
+At each fallible transition, identify where its payload remains recoverable until commit, transfer, or explicit consumption/discard.
+An error report is not a discard.
 
 ## Runtime progress
 

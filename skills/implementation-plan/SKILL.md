@@ -24,6 +24,9 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 7. **Specify verification.** Tie each test to a consumer-visible requirement or realistic regression. Consider generated properties when input combinations or action sequences are better expressed by generators than hand-picked examples; use [property-based-testing](../property-based-testing/SKILL.md) to choose properties and generators within the plan's scope. Use integration, pseudo-terminal, migration, or real-service tests only when the boundary requires them.
 8. **Order independently valid commits.** For each commit, give an imperative subject, useful result, principal files or subsystem, and verification that passes at that point. Land tests with their behavior. Preparatory refactors must be independently justified and behavior-preserving; do not introduce architecture merely to replace it in the next commit.
 9. **Review against the repository.** Check bypass paths, global state, unbounded resources, cancellation ownership, error precedence, compatibility, docs, generated files, dependencies, platform behavior, and whether detail exceeds evidence.
+   When revising a plan, group findings from the same failure family under one governing invariant.
+   Keep individual reproductions and expected outcomes in an acceptance table instead of repeating normative sections.
+   Do not add a mechanism per finding unless a distinct contract requires it.
 
 ## Output
 
