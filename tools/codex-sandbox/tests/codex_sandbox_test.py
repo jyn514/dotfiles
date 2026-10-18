@@ -184,6 +184,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             self.assertTrue((state.pi_agent_tmp / "pi-extensions").is_dir())
             self.assertTrue((state.pi_agent_tmp / "pi-link").is_dir())
             self.assertTrue((state.pi_agent_tmp / "extensions/codex-sidecar").is_dir())
+            self.assertTrue((state.pi_agent_tmp / "pi-codex-subagents/runs").is_dir())
 
     def test_policy_opt_out_drops_host_credentials(self):
         load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
@@ -1888,6 +1889,54 @@ class CodexSandboxTest(unittest.TestCase):
             )
             for item in run
         ))
+
+    def test_mounts_subagent_transcripts_read_only_from_persistent_host_storage(self) -> None:
+        runs = self.home / ".pi/agent/pi-codex-subagents/runs"
+        self.assertFalse(runs.exists())
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(runs.is_dir())
+        self.assertEqual(0o700, stat.S_IMODE(runs.stat().st_mode))
+        self.assertEqual(
+            [f"type=bind,src={runs},"
+             "dst=/home/codex/.pi/agent/pi-codex-subagents/runs,readonly"],
+            [argument for argument in self.final_run()
+             if "dst=/home/codex/.pi/agent/pi-codex-subagents/runs" in argument],
+        )
+        transcript = runs / "parent" / "child.jsonl"
+        transcript.parent.mkdir()
+        transcript.write_text("existing conversation\n")
+        runs.chmod(0o750)
+        repeated = self.run_launcher()
+        self.assertEqual(0, repeated.returncode, repeated.stderr)
+        self.assertEqual("existing conversation\n", transcript.read_text())
+        self.assertEqual(0o750, stat.S_IMODE(runs.stat().st_mode))
+
+    def test_invalid_subagent_transcript_storage_stops_before_worker_creation(self) -> None:
+        runs = self.home / ".pi/agent/pi-codex-subagents/runs"
+        runs.parent.mkdir(parents=True)
+        external = self.root / "external-run-storage"
+        external.mkdir()
+        marker = external / "keep"
+        marker.write_text("existing data\n")
+        for kind in ("file", "symlink"):
+            with self.subTest(kind=kind):
+                if kind == "file":
+                    runs.write_text("not a directory\n")
+                else:
+                    runs.symlink_to(external, target_is_directory=True)
+                try:
+                    result = self.run_launcher()
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn("Pi persistent directory is invalid", result.stderr)
+                    self.assertIn(str(runs), result.stderr)
+                    self.assertFalse(any(
+                        call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call
+                        for call in read_calls(self.docker_log)
+                    ))
+                    self.assertEqual("existing data\n", marker.read_text())
+                finally:
+                    runs.unlink()
 
     def test_launch_initializes_a_missing_jj_repository(self) -> None:
         shutil.rmtree(self.repo / ".jj")

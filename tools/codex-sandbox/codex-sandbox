@@ -72,6 +72,8 @@ SANDBOX_NETWORK = "codex-public-only"
 GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
 GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
+# Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
+PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
 
 
 STAGED_CONFIG = {
@@ -1639,7 +1641,8 @@ def prepare_agent_mountpoints(state: State) -> None:
     (state.pi_agent_tmp / "pi-extensions").mkdir(exist_ok=True)
     (state.pi_agent_tmp / "pi-link").mkdir(exist_ok=True)
     (state.pi_agent_tmp / "extensions/codex-sidecar").mkdir(parents=True, exist_ok=True)
-    (state.pi_agent_tmp / "sessions").mkdir(exist_ok=True)
+    for relative in PI_SESSION_DIRS:
+        (state.pi_agent_tmp / relative).mkdir(parents=True, exist_ok=True)
 
 
 def host_pi_resource_paths(state: State) -> dict[str, str]:
@@ -1650,7 +1653,10 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
     paths[str(state.home / ".pi/agent/pi-link")] = "/home/codex/.pi/agent/pi-link"
     paths[str(state.home / ".agents/skills")] = str(GUEST_AGENT_SKILLS)
     paths[str(state.home / ".agents/sandbox")] = "/home/codex/.agents/sandbox"
-    paths[str(state.home / ".pi/agent/sessions")] = "/home/codex/.pi/agent/sessions"
+    paths.update({
+        str(state.home / ".pi/agent" / relative): str(Path("/home/codex/.pi/agent") / relative)
+        for relative in PI_SESSION_DIRS
+    })
     paths.update({
         str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
         for relative in PI_RESOURCE_PATHS
@@ -1785,9 +1791,16 @@ def build_agent_command(
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
-        # Pi writes on the host; guest tools need read-only conversation search.
-        "--mount", f"type=bind,src={state.home / '.pi/agent/sessions'},"
-        f"dst={resource_paths[str(state.home / '.pi/agent/sessions')]},readonly",
+        # Main and subagent Pi write on the host; expose their session stores read-only.
+        *[
+            item
+            for relative in PI_SESSION_DIRS
+            for item in (
+                "--mount",
+                f"type=bind,src={state.home / '.pi/agent' / relative},"
+                f"dst={resource_paths[str(state.home / '.pi/agent' / relative)]},readonly",
+            )
+        ],
         "--mount", f"type=bind,src={state.skills_source},"
         f"dst={resource_paths[str(state.home / '.agents/skills')]}",
         *[
@@ -1839,10 +1852,11 @@ def run_agent(state: State, arguments: list[str]) -> int:
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
         raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
     pi_agent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    sessions = pi_agent / "sessions"
-    if sessions.is_symlink() or (sessions.exists() and not sessions.is_dir()):
-        raise LauncherError(f"Pi persistent directory is invalid: {sessions}")
-    sessions.mkdir(mode=0o700, exist_ok=True)
+    for relative in PI_SESSION_DIRS:
+        sessions = pi_agent / relative
+        if sessions.is_symlink() or (sessions.exists() and not sessions.is_dir()):
+            raise LauncherError(f"Pi persistent directory is invalid: {sessions}")
+        sessions.mkdir(mode=0o700, parents=True, exist_ok=True)
     pi_extensions = DOTFILES / "config/pi-agent/pi-extensions"
     if not pi_extensions.is_dir():
         raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")

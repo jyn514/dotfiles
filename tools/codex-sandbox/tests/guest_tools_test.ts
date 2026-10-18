@@ -75,7 +75,10 @@ test("registered tools and human bash snapshot their own public invocation conte
     CODEX_SANDBOX_TOOL_CONNECT: connector,
     CODEX_SANDBOX_GUEST_CWD: dir,
     CODEX_SANDBOX_GUEST_REPO: dir,
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/sessions": "/guest/sessions" }),
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
+      "/host/sessions": "/guest/sessions",
+      "/host/subagent-runs": "/guest/subagent-runs",
+    }),
     CODEX_GUEST_CALL_TEST_DIR: dir,
     PI_CALL_MODEL: "stale-env",
     PI_MODEL_FILE: join(dir, "model.json"),
@@ -122,6 +125,13 @@ test("registered tools and human bash snapshot their own public invocation conte
     });
     const ephemeral = await tools.get("bash").execute("ephemeral", {}, undefined, undefined, ctx);
     expect(ephemeral.session).toEqual({ id: "later-session", file: null });
+    sessionFile = "/host/subagent-runs/parent/child.jsonl";
+    const subagent = await tools.get("bash").execute("subagent", {}, undefined, undefined, ctx);
+    expect(subagent.session).toEqual({ id: "later-session", file: "/guest/subagent-runs/parent/child.jsonl" });
+    // Keep unexposed locations visible: an omitted path would hide missing mounts.
+    sessionFile = "/host/unexposed-subagents/run.jsonl";
+    const unexposed = await tools.get("bash").execute("unexposed", {}, undefined, undefined, ctx);
+    expect(unexposed.session).toEqual({ id: "later-session", file: sessionFile });
     sessionId = "";
     for (const tool of tools.values()) {
       const result = await tool.execute("unknown", {}, undefined, undefined, { ...ctx, model: undefined });

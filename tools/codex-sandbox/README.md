@@ -56,15 +56,16 @@ extension change. `/system-prompt` shows the prepared host prompt before this
 request-time projection.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, optional Zulip, and optional Agent Docker.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
-Host `~/.pi/agent/sessions` is mounted read-only at
-`/home/codex/.pi/agent/sessions` so guest tools can search past conversations.
+Host `~/.pi/agent/sessions` and the default subagent store `~/.pi/agent/pi-codex-subagents/runs` are mounted read-only
+at their matching paths under `/home/codex/.pi/agent` so guest tools can read main and subagent conversations.
 Pi continues to write sessions on the host.
 
 Guest `jj` calls snapshot the invoking Pi's model at dispatch, including in side
 panes and ordinary subagents; later model changes cannot alter in-flight
 attribution.
 Shell tools and `!` commands also snapshot `PI_SESSION_ID` and `PI_SESSION_FILE` per invocation.
-The file path names the guest's read-only session mount, not the host path; ephemeral sessions leave `PI_SESSION_FILE` unset.
+Known storage paths name the guest's read-only mounts; ephemeral sessions leave `PI_SESSION_FILE` unset.
+Paths outside the configured mappings remain advertised unchanged so missing mounts and mappings remain visible.
 Unknown session metadata clears inherited session values rather than using another pane's identity.
 Close existing sandbox panes and start a new sandbox to deploy the host extension and guest worker together;
 `/reload` alone does not replace the worker.
