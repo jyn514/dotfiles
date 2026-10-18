@@ -7,6 +7,18 @@ description: Apply jyn's design and testing preferences when adding or materiall
 
 Load once per coherent change; reload only when scope or governing constraints change.
 
+## Before substituting a mechanism
+
+When a requested or selected mechanism proves unavailable, compare the fallback with the required observable behavior before implementing it.
+State which guarantees it preserves, changes, or leaves unverified, including applicable precedence, persistence, ownership, and failure behavior.
+Apply the [shared scope rule](~/.agents/shared.md#before-changing-behavior-or-scope) to any changed guarantee outside existing authorization.
+Pause dependent implementation until that decision is resolved; continue independent investigation.
+An equivalent implementation within the authorized behavior does not need renewed approval.
+
+For example, loading a configuration profile and passing its values as overrides can both select the expected approval reviewer.
+If overrides also change precedence over project configuration, passing reviewer tests does not establish equivalence or authorize that change.
+During review, check the precedence requirement even when those tests pass.
+
 ## Model the domain
 
 - Represent data precisely. Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
