@@ -14,6 +14,8 @@ Do not load `ask-user.ts` independently alongside the bundle.
 
 `openrouter-output-cap.ts` limits OpenRouter chat requests to 10,000 output tokens.
 Start Pi with `--openrouter-max-tokens 6000` to choose another cap (minimum 2048).
+An invalid cap reports an extension error but leaves the request uncapped by this extension because [request-hook failures do not abort requests](../README.md#request-hook-failures).
+Restart with a valid flag value or omit the flag to restore the default cap.
 Smaller existing limits remain unchanged; model capability metadata and other providers remain unchanged.
 The cap includes reasoning on providers that count reasoning against output.
 Explicit thinking budgets are lowered when needed to leave Pi's 1024-token answer allowance; adaptive thinking and effort settings are preserved.

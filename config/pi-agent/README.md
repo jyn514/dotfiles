@@ -73,6 +73,14 @@ recognizes `exceeded request buffer limit while retrying upstream`; this is an
 implementation detail to recheck after updates, not a reason to add proxy retries.
 The sandbox proxy forwards application requests without retrying them.
 
+### Request-hook failures
+
+In the installed Pi 1.3.0 build, `before_provider_request` handler errors report an extension error but do not abort the request.
+The runner continues with the last payload returned by a successful handler, or the original payload if none succeeded.
+Throwing from this hook therefore cannot enforce validation or prevent an uncapped request.
+Check `emitBeforeProviderRequest` in `packages/coding-agent/src/core/extensions/runner.ts` after Pi updates.
+Tests that invoke a handler directly do not verify this failure behavior; use the real runner when testing request rejection.
+
 ## Testing
 
 The native prompt-section regression needs an installed Pi build with `systemPromptOptions.sections` because the locked test SDK predates that API.
