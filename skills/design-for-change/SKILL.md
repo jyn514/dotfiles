@@ -56,6 +56,9 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Allow temporary probes or fixture-specific adapters only to resolve a demonstrated uncertainty or prerequisite; a future integration TODO is insufficient. Preserve probes that establish acceptance as regression tests; one-off uncertainty probes need not persist. Do not promote temporary implementations into production interfaces.
 - Test both failure directions: accepting invalid results and losing required valid results. Include representative non-special-cased inputs where general behavior is required. For bounded algorithms, test forced work separately from branching work; small fixtures must not conceal the required input-population constraint. Preserve validation and publication constraints rather than relaxing them for a passing test.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
+- State concurrency requirements as states and ordering, independently of the callbacks used to pause the fixture.
+  Assert the precondition that makes a race valid before starting or releasing a competing operation.
+  When upstream moves a callback, move the fixture only if it still proves the same ownership, admission, and cancellation contract; otherwise resolve the behavior change first.
 - For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
 - After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-the-user-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
 - When claiming that a change fixes an observed failure, compare baseline and candidate from the same pre-failure state.

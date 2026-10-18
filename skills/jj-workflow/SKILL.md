@@ -86,9 +86,35 @@ After either split, inspect selected and remaining changes with `jj status` and 
 
 ## Rebase and abandon
 
-Inspect the target and descendants before `jj rebase`, and inspect the stack afterward. Before rebasing or abandoning, compare both the patch and resulting tree with the intended replacement.
+### Select the affected history
 
-Keep the original visible until the replacement is integrated, descendants are safely restacked, ownership is established, and tree equality is confirmed or every deliberate difference is recorded. Do not abandon while an unexpected difference remains unexplained.
+Establish the intended tip, destination, and authorized stack before choosing flags.
+Read the installed `jj rebase --help` when their selection semantics are uncertain.
+Expand the proposed selection with `jj log`, including revisions outside the intended tip's ancestry:
+
+- `-s SOURCE` moves `SOURCE::`, not just the path from SOURCE to the intended tip.
+- `-b TIP -o DEST` moves `(DEST..TIP)::`, including sibling branches descended from that range.
+- `-r SET` moves the selected patches, but also reparents descendants to fill the holes; it does not guarantee unchanged sibling identities.
+
+Compare the affected descendants and bookmarks with the authorized scope before mutating.
+If siblings must keep their ancestry, duplicate only the intended stack onto the destination rather than moving its shared ancestors.
+Do not perform a broad rebase and then repair unrelated branches.
+Record the operation ID, intended tip, and affected heads before mutation; inspect the operation diff and verify untouched heads afterward.
+
+### Maintain a fork stack
+
+For ongoing authorized fork maintenance, prefer an upstream sync between feature groups over accumulating unrelated work on an old base.
+This is a working cadence, not permission to schedule background fetches, rewrites, or pushes.
+Use the lineage comparison above to identify upstream-equivalent changes; titles and empty-looking summaries are only candidates.
+Inspect their patches, resulting trees, bookmarks, and descendants before abandonment.
+Fold superseded metadata-only follow-ups into their introducing feature when intermediate revisions remain valid.
+Keep manifests, lockfiles, generated artifacts, and their authoritative inputs coherent at each retained revision.
+Do not remove intentional functionality merely to shorten the stack.
+
+Before rebasing or abandoning, compare both the patch and resulting tree with the intended replacement.
+Keep the original visible until the replacement is integrated, descendants are safely restacked, ownership is established, and tree equality is confirmed or every deliberate difference is recorded.
+For history-only cleanup, require an empty whole-tree diff between the original and replacement tips, separately from unrelated working-copy edits.
+Do not abandon while an unexpected difference remains unexplained.
 
 ## Conflicts and stacked fixes
 

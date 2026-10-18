@@ -25,9 +25,9 @@ jj log -r @ --no-graph \
 
 Use the second command when the working-copy commit is known to be conflicted; otherwise use `jj status`. Identify the exact conflicted revision and target change before creating the resolution commit.
 
-Inspect the whole conflict and surrounding destination code for each file. See
-the [`jj-conflict` command reference](../../libexec/agent-wrappers/README.md) for
-selection semantics. If the repository provides the wrapper, use:
+Inspect the whole conflict and surrounding destination code for each file.
+Check the installed `jj-conflict --help` interface rather than assuming its source documentation ships beside an installed skill.
+If the repository provides the wrapper, use:
 
 ```bash
 jj-conflict inspect path/to/file --json
@@ -73,6 +73,12 @@ jj file show --revision BASE -- path/to/file
 ```
 
 Use the base to verify the diff, then apply its changes to the current destination snapshot. Preserve destination refactors and unrelated lines. If the destination changed the diff's context, resolve that region manually rather than restoring historical context. If both sides change the same behavior, reconcile it explicitly; do not keep both blocks merely because both appeared in the conflict.
+
+When lifecycle ordering changed, trace the old and destination transitions before composing the fork behavior.
+For example, destination startup may reserve a run before an extension callback that previously ran before reservation.
+Preserve the destination's control flow and helper placement unless a required fork contract needs a different result.
+Do not reverse that ordering just to preserve an old race fixture; use `design-for-change` to distinguish the required state from its callback mechanism.
+If preserving the fork contract requires changing destination policy, ask before dependent edits rather than treating the old test setup as authority.
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.
 
