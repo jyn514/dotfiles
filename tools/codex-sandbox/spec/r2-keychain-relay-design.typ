@@ -43,7 +43,7 @@ The design protects against silent background retrieval, cross-session socket re
 `HostKeychainBridge` owns a host TCP listener, isolated per-launch link and egress
 networks, a restricted `socat` relay container, an allowed-peer set installed after
 relay startup, and a 256-bit session token. Keychain resources stay separate from
-the optional Agent Podman and agent-room gateway.
+the optional Agent Podman gateway.
 Reuse `create_relay_network` and the launcher's resource cleanup paths.
 Keep Keychain authentication, admission, deadlines, and cancellable reads in its
 own request handler. Its framed protocol is defined below.

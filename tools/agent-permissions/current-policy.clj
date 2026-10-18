@@ -35,9 +35,6 @@
 (policy
   (deny ["sed"] :reason "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
 
-  ;; agent-room
-  (allow ["curl" "http://localhost:3000"])
-
   (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")])
   (allow ["jj" "file" (one-of "list" "show" "annotate")])
   (allow ["jj" "config" (one-of "list" "get")])

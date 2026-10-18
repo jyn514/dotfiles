@@ -260,10 +260,26 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertTrue(any(call.args[0][:2] == ["network", "rm"]
                             for call in run.call_args_list))
 
+    def test_gateway_requires_both_nested_capability_and_build_service(self):
+        prepare = self.launcher["prepare_gateway"]
+        for capabilities, service in ((frozenset(), self.state().agent_docker),
+                                      (frozenset({"nested-containers"}), None)):
+            with self.subTest(capabilities=capabilities, service=service):
+                state = self.state()
+                state.capabilities = capabilities
+                state.agent_docker = service
+                bridge = Mock()
+                create = Mock()
+                with patch.dict(prepare.__globals__, FixedTcpBridge=bridge,
+                                create_relay_network=create):
+                    self.assertEqual([], prepare(state))
+                bridge.assert_not_called()
+                create.assert_not_called()
+                self.assertIsNone(state.gateway_handle)
 
-    def test_agent_room_uses_fixed_gateway_port_and_loopback_target(self):
+    def test_build_gateway_uses_selected_service_port_and_bridge(self):
         state = self.state()
-        state.capabilities = frozenset({"agent-room"})
+        state.agent_docker["AGENT_DOCKER_SSH_PORT"] = "2345"
         commands = []
 
         def run(command, **_kwargs):
@@ -273,31 +289,18 @@ class GatewayLifecycleTest(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout="")
 
         bridge = Mock(port=3456)
-        bridge_factory = Mock(return_value=bridge)
+        factory = Mock(return_value=bridge)
         prepare = self.launcher["prepare_gateway"]
         start = self.launcher["start_gateway"]
         with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
-                        FixedTcpBridge=bridge_factory):
-            prepare(state)
+                        FixedTcpBridge=factory):
+            arguments = prepare(state)
             start(state)
-        bridge_factory.assert_called_once_with(("127.0.0.1", 3000))
+        factory.assert_called_once_with(("127.0.0.1", 2345))
+        self.assertIn("DOCKER_HOST=ssh://worker@gateway:2222", arguments)
         gateway_run = commands[0]
-        self.assertEqual("3456", gateway_run[gateway_run.index("--agent-room-port") + 1])
+        self.assertEqual("3456", gateway_run[gateway_run.index("--build-port") + 1])
         bridge.allow_peers.assert_called_once_with({"10.0.0.2", "127.0.0.1"})
-
-    def test_unavailable_agent_room_is_a_warning_when_it_is_the_only_capability(self):
-        state = self.state()
-        state.capabilities = frozenset({"agent-room"})
-        prepare = self.launcher["prepare_gateway"]
-        bridge = Mock()
-        bridge.start.side_effect = ConnectionRefusedError(111, "refused")
-        with patch.dict(prepare.__globals__,
-                        FixedTcpBridge=Mock(return_value=bridge),
-                        create_relay_network=Mock()), \
-                patch("sys.stderr", new_callable=io.StringIO) as stderr:
-            self.assertEqual([], prepare(state))
-        self.assertIsNone(state.gateway_handle)
-        self.assertIn("warning: agent-room relay unavailable: [Errno 111] refused", stderr.getvalue())
 
     def test_stopped_build_service_warns_and_creates_no_gateway(self):
         state = self.state()
@@ -326,7 +329,7 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_recovery_retains_foreign_resources_then_retries_in_dependency_order(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state, nested=True)
+            handle = self.launcher["GatewayHandle"](state)
             state.gateway_handle = handle
             remaining = ("container:gateway", "network:gateway-link", "network:gateway-egress")
             path = self.launcher["persist_relay_recovery"](
@@ -376,7 +379,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             state.proxy_lock = None; state.proxy_state = None; state.proxy_args = None
             state.manifest = None; state.prepared_images = None
             state.tmux_registration = None
-            handle = self.launcher["GatewayHandle"](state, nested=True)
+            handle = self.launcher["GatewayHandle"](state)
             state.gateway_handle = handle
             resource_type = self.launcher["OwnedResource"]
             presence = self.launcher["ResourcePresence"]
@@ -448,7 +451,7 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_recovery_retains_record_when_runtime_listing_is_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state, nested=True)
+            handle = self.launcher["GatewayHandle"](state)
             state.gateway_handle = handle
             path = self.launcher["persist_relay_recovery"](
                 state, handle.resources, handle.owner, ("network:gateway-link",),
@@ -463,24 +466,6 @@ class GatewayLifecycleTest(unittest.TestCase):
 
 
 class GatewayTest(unittest.TestCase):
-    def test_second_listener_spawn_failure_reaps_the_first(self):
-        popen = subprocess.Popen
-        children = []
-
-        def spawn(_command, **kwargs):
-            if children:
-                raise OSError('second listener failed')
-            child = popen(['sleep', '300'], **kwargs)
-            children.append(child)
-            return child
-
-        with patch.object(gateway.subprocess, 'Popen', side_effect=spawn):
-            with self.assertRaisesRegex(OSError, 'second listener failed'):
-                gateway.serve('host.lima.internal', build_port=1234, agent_room_port=5678)
-        self.assertIsNotNone(children[0].poll())
-        with self.assertRaises(ProcessLookupError):
-            os.killpg(children[0].pid, 0)
-
     def test_nested_listener_runs_without_other_capabilities(self):
         child = Mock(pid=12, returncode=None)
         with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
@@ -488,15 +473,6 @@ class GatewayTest(unittest.TestCase):
                 patch.object(gateway.os, 'killpg'):
             self.assertEqual(1, gateway.serve('host.lima.internal', build_port=22))
         self.assertIn('TCP4-LISTEN:2222,fork,reuseaddr', spawn.call_args.args[0])
-
-    def test_agent_room_listener_has_fixed_local_port(self):
-        child = Mock(pid=12, returncode=None)
-        with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
-                patch.object(gateway.os, 'wait', return_value=(12, 0)), \
-                patch.object(gateway.os, 'killpg'):
-            self.assertEqual(1, gateway.serve('host.lima.internal', agent_room_port=3456))
-        self.assertIn('TCP4-LISTEN:2225,fork,reuseaddr', spawn.call_args.args[0])
-        self.assertEqual('TCP4:host.lima.internal:3456', spawn.call_args.args[0][-1])
 
     def test_empty_gateway_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'at least one listener'):

@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/bin/python3 /opt/agent-tools/bin/agent_supervisor.py "$@"
+exec /opt/agent-pi/bin/pi --offline --approve "$@"

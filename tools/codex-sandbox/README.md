@@ -212,15 +212,13 @@ Restart the sandbox after provisioning so the launcher installs the SSH relay an
 - Optional: configure Agent Docker separately under `~/.agent-docker-access` or set `AGENT_DOCKER_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `zulip`, `nested-containers`, `flower-r2`, and `agent-room` independently.
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `zulip`, `nested-containers`, and `flower-r2` independently.
 Zulip defaults on;
 `{"version": 2, "capabilities": {"zulip": false}}` disables it.
 The retired boolean `host-editor` declaration is accepted and ignored for existing manifests.
 Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
-Nested containers, Flower R2, and agent-room default off. Selecting agent-room adds a fixed TCP relay
-from the host's loopback-only `127.0.0.1:3000` to the same `127.0.0.1:3000` inside the agent container.
-It accepts no agent-supplied destination and never relays the admin port 3001.
+Nested containers and Flower R2 default off.
 Nested-container clients tolerate delayed best-effort listener startup for a
 bounded readiness interval. Retries stop before the first request byte; after transmission starts,
 transport failure is terminal and a possibly accepted operation is never replayed. Flower R2 does
@@ -381,7 +379,7 @@ Pi runs on the host and uses its native external editor selection for prompt edi
 Guest tools have no host editor bridge. The launcher does not override Pi's
 `externalEditor` setting or expose an editor listener to the guest.
 
-A sandbox creates a gateway only when Agent Docker or agent-room is selected.
+A sandbox creates a gateway only when Agent Docker is selected.
 It starts in the background after its private link and egress networks are created.
 Clients retry only connection establishment within a bounded interval and never
 replay a possibly accepted request.

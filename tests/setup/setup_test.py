@@ -121,7 +121,6 @@ class DotfileSetupTests(unittest.TestCase):
 
     def test_grouped_configs_migrate_old_links_without_moving_local_resources(self) -> None:
         installed = {
-            "Library/LaunchAgents/com.jyn.agent-room.plist": "config/LaunchAgents/com.jyn.agent-room.plist",
             ".config/nvim/init.lua": "config/nvim/init.lua",
             ".config/nvim/after/queries/markdown/textobjects.scm": "config/nvim/after/queries/markdown/textobjects.scm",
             ".config/tmux/tmux.conf": "config/tmux/tmux.conf",

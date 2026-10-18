@@ -326,9 +326,8 @@ container-initiated connections to namespace services remain blocked. This lets
 Docker's userland proxy receive replies from published container services.
 Loopback publications bind to VM loopback; host access also requires Lima forwarding.
 Use `docker_host.py upgrade` above to install this policy in an existing VM.
-Each selected sandbox gateway has one private egress network and fixed
-Agent Docker SSH or agent-room listeners.
-Neither listener accepts a client-selected destination.
+Each selected sandbox gateway has one private egress network and a fixed Agent Docker SSH listener.
+The listener accepts no client-selected destination.
 Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.
 

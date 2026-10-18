@@ -7,7 +7,6 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`agent-permissions`](agent-permissions/) defines agent command policy, renders Codex rules or Claude settings, and audits Claude command history against generated Bash permissions. Policy changes alter agent authority.
 - [`agent-docker`](agent-docker/) manages the separate rootless Docker build VM on Linux and macOS. See the [setup and recovery guide](agent-docker/README.md).
 - [`agent-podman`](agent-podman/) retains lifecycle scripts for retired macOS Podman deployments. See its [teardown guide](agent-podman/README.md).
-- [`agent-room`](agent-room/) hosts two-party rooms addressed by bearer capability URLs. The public listener serves rooms; its loopback-only admin listener exposes both capabilities and room deletion.
 - [`agent-split`](agent-split/) performs deterministic, patch-level `jj split` operations with `bb agent-split`. It rewrites history; start with the [operator guide](agent-split/README.md), then consult the [design and safety contract](agent-split/design.typ).
 - [`codex-archive-old`](codex-archive-old/) implements `codex-archive-old [--days N] [--apply]`, listing or archiving stale interactive Codex sessions through the app-server protocol.
 - [`codex-config`](codex-config/) moves Codex-generated project trust, model-availability, and hook-state tables from the tracked dotfiles profile into the untracked user config before launch and after exit.

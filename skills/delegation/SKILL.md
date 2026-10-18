@@ -1,6 +1,6 @@
 ---
 name: delegation
-description: Divide and coordinate work among agents. Use before spawning or assigning subagents, splitting work among running agents, deciding whether to wait for a worker, or integrating delegated results. Covers implementation, research, review, and writing. Does not authorize new work, replace domain-specific procedures, or govern human approval requests or participation in an existing agent room.
+description: Divide and coordinate work among agents. Use before spawning or assigning subagents, splitting work among running agents, deciding whether to wait for a worker, or integrating delegated results. Covers implementation, research, review, and writing. Does not authorize new work, replace domain-specific procedures, or govern human approval requests.
 ---
 
 # Delegation

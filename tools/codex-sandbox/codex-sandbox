@@ -687,17 +687,14 @@ def attach_proxies(state: State) -> list[str]:
 class GatewayHandle:
     """Sole owner of one launch's staged, best-effort gateway resources."""
 
-    def __init__(self, state: State, nested: bool, agent_room: bool = False) -> None:
+    def __init__(self, state: State) -> None:
         self.state = state
-        self.nested = nested
-        self.agent_room = agent_room
         self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
         self.resources = RelayResourcePlan(
             state.gateway_link_network, state.gateway_egress_network, state.gateway_container,
         )
         self.cancelled = threading.Event()
-        self.agent_room_bridge: FixedTcpBridge | None = None
         self.build_bridge: FixedTcpBridge | None = None
         self._logical: set[str] = set()
         self.created: set[str] = set()
@@ -880,44 +877,25 @@ def recover_relays(state: State) -> None:
 def prepare_gateway(state: State) -> list[str]:
     capabilities = getattr(state, "capabilities", frozenset({"nested-containers"}))
     nested = "nested-containers" in capabilities and state.agent_docker is not None
-    agent_room = "agent-room" in capabilities
-    if not nested and not agent_room:
+    if not nested:
         return []
-    handle = GatewayHandle(state, nested, agent_room)
+    handle = GatewayHandle(state)
     state.gateway_handle = handle
-    if nested:
-        handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
-        handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
-        try:
-            handle.build_bridge.start()
-        except OSError as error:
-            handle.build_bridge.stop()
-            print(f"warning: nested Docker relay unavailable: {error}; "
-                  "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
-                  file=sys.stderr)
-            handle.build_bridge = None
-            handle.nested = nested = False
-            state.agent_docker = None
-            handle._logical.discard("bridge:build")
-        if not nested and not agent_room:
-            handle.cleanup()
-            state.gateway_handle = None
-            return []
-    if agent_room:
-        handle.agent_room_bridge = FixedTcpBridge(("127.0.0.1", 3000))
-        handle._register_logical("bridge:agent-room", remove=handle.agent_room_bridge.stop)
-        try:
-            handle.agent_room_bridge.start()
-        except OSError as error:
-            print(f"warning: agent-room relay unavailable: {error}", file=sys.stderr)
-            handle.agent_room_bridge = None
-            handle.agent_room = False
-            agent_room = False
-            handle._logical.discard("bridge:agent-room")
-        if not nested and not agent_room:
-            handle.cleanup()
-            state.gateway_handle = None
-            return []
+    handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
+    handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
+    try:
+        handle.build_bridge.start()
+    except OSError as error:
+        handle.build_bridge.stop()
+        print(f"warning: nested Docker relay unavailable: {error}; "
+              "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
+              file=sys.stderr)
+        handle.build_bridge = None
+        state.agent_docker = None
+        handle._logical.discard("bridge:build")
+        handle.cleanup()
+        state.gateway_handle = None
+        return []
     for name, internal in ((state.gateway_link_network, True),
                            (state.gateway_egress_network, False)):
         identity = f"network:{name}"
@@ -933,21 +911,15 @@ def prepare_gateway(state: State) -> list[str]:
             raise LauncherError("gateway startup cancelled")
         create_relay_network(state, name, internal=internal, owner=handle.owner)
         handle.created.add(identity)
-    arguments = [
+    values = state.agent_docker
+    return [
         "--network", state.gateway_link_network,
-        *(["--env", f"CODEX_SANDBOX_AGENT_ROOM_ADDRESS={state.gateway_container}:2225"]
-          if agent_room else []),
+        "--env", f"DOCKER_HOST=ssh://{values['AGENT_DOCKER_SSH_USER']}@{state.gateway_container}:2222",
+        "--env", f"AGENT_DOCKER_SSHKEY={values['AGENT_DOCKER_SSHKEY']}",
+        "--env", f"AGENT_DOCKER_KNOWN_HOSTS={state.container_known_hosts}",
+        "--mount", f"type=bind,src={state.agent_docker_key},dst={values['AGENT_DOCKER_SSHKEY']},readonly",
+        "--mount", f"type=bind,src={state.agent_docker_known_hosts},dst={state.container_known_hosts},readonly",
     ]
-    if nested:
-        values = state.agent_docker
-        arguments += [
-            "--env", f"DOCKER_HOST=ssh://{values['AGENT_DOCKER_SSH_USER']}@{state.gateway_container}:2222",
-            "--env", f"AGENT_DOCKER_SSHKEY={values['AGENT_DOCKER_SSHKEY']}",
-            "--env", f"AGENT_DOCKER_KNOWN_HOSTS={state.container_known_hosts}",
-            "--mount", f"type=bind,src={state.agent_docker_key},dst={values['AGENT_DOCKER_SSHKEY']},readonly",
-            "--mount", f"type=bind,src={state.agent_docker_known_hosts},dst={state.container_known_hosts},readonly",
-        ]
-    return arguments
 
 
 def start_gateway(state: State) -> None:
@@ -955,10 +927,8 @@ def start_gateway(state: State) -> None:
     if handle is None:
         raise LauncherError("gateway was not prepared")
     build_port = (str(handle.build_bridge.port) if handle.build_bridge is not None else None)
-    agent_room_port = (handle.agent_room_bridge.port
-                       if handle.agent_room_bridge is not None else None)
-    if build_port is None and agent_room_port is None:
-        raise LauncherError("gateway requires at least one selected listener")
+    if build_port is None:
+        raise LauncherError("gateway requires a build listener")
     container_resource = f"container:{state.gateway_container}"
     handle.registry.register(OwnedResource(
         container_resource, handle.owner,
@@ -976,14 +946,10 @@ def start_gateway(state: State) -> None:
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
-        # Keep small relays bounded without throttling Docker build traffic.
-        *([] if build_port is not None else
-          ["--pids-limit", "32", "--memory", "64m", "--cpus", "0.25"]),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
         "--host", OUTER_RUNTIME.host_address,
-        *(["--build-port", build_port] if build_port is not None else []),
-        *(["--agent-room-port", str(agent_room_port)] if agent_room_port is not None else []),
+        "--build-port", build_port,
     ], discard_stdout=True)
     handle.created.add(container_resource)
     def address(network):
@@ -1003,11 +969,6 @@ def start_gateway(state: State) -> None:
         address_resources.append(identity)
     if handle.cancelled.is_set():
         raise LauncherError("gateway startup cancelled")
-    if handle.agent_room_bridge is not None:
-        allowlist = "allowlist:agent-room"
-        handle._register_logical(allowlist,
-            depends_on=("bridge:agent-room", *address_resources))
-        handle.agent_room_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     if handle.build_bridge is not None:
         handle._register_logical("allowlist:build",
             depends_on=("bridge:build", *address_resources))

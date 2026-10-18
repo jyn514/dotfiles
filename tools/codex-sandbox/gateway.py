@@ -14,12 +14,10 @@ def port(value):
     return number
 
 
-def serve(host, build_port=None, agent_room_port=None):
+def serve(host, build_port=None):
     listeners = []
     if build_port is not None:
         listeners.append((2222, build_port))
-    if agent_room_port is not None:
-        listeners.append((2225, agent_room_port))
     if not listeners:
         raise ValueError('at least one listener is required')
     children = []
@@ -34,7 +32,7 @@ def serve(host, build_port=None, agent_room_port=None):
                 '/usr/bin/socat', '-d', '-d', f'TCP4-LISTEN:{local},fork,reuseaddr',
                 f'TCP4:{host}:{remote}'], start_new_session=True))
         # A listener dying leaves an incomplete gateway. Upstream refusal only
-        # ends socat's per-connection child; it must not kill either listener.
+        # ends socat's per-connection child; it must not kill the listener.
         pid, status = os.wait()
         child = next(child for child in children if child.pid == pid)
         child.returncode = os.waitstatus_to_exitcode(status)
@@ -64,11 +62,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, choices=('host.lima.internal', 'host.docker.internal'))
     parser.add_argument('--build-port', type=port)
-    parser.add_argument('--agent-room-port', type=port)
     args = parser.parse_args()
-    if args.build_port is None and args.agent_room_port is None:
+    if args.build_port is None:
         parser.error('at least one listener is required')
-    return serve(args.host, args.build_port, args.agent_room_port)
+    return serve(args.host, args.build_port)
 
 
 if __name__ == '__main__':

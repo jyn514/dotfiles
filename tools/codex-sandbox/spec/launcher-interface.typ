@@ -264,8 +264,7 @@ Bake HCL. A repository using the bundled resolver declares:
   "version": 2,
   "capabilities": {
     "nested-containers": true,
-    "flower-r2": false,
-    "agent-room": false
+    "flower-r2": false
   },
   "images": {
     "resolver": {
@@ -306,8 +305,8 @@ The retired boolean `host-editor` declaration is accepted and discarded during
 normalization; it selects no service. Prompt editing uses host Pi's native editor.
 
 Capability values are booleans. `zulip` defaults on;
-explicit `false` disables it. `nested-containers`, `flower-r2`, and `agent-room` default off.
-These four keys select separate services, subject to their existing
+explicit `false` disables it. `nested-containers` and `flower-r2` default off.
+These capability keys select separate services, subject to their existing
 host-authorization rules. Zulip requires available host credentials;
 when disabled, it does not validate or mount those credentials. These keys cannot
 disable required services or authorize an undeclared service through host
@@ -348,11 +347,10 @@ contains required agent/provider services, built-in repository operations, and
 optional services selected by defaults or explicit policy. Resolvers supply images; they cannot
 select capabilities or expand container authority.
 
-Flower R2 access, Zulip, nested container access, and agent-room are separate optional
+Flower R2 access, Zulip, and nested container access are separate optional
 capabilities with the defaults above. Host availability is a prerequisite,
 not a selection rule. Dotfiles can omit R2 access while paracress enables it.
-Nested containers and agent-room may share their existing gateway when any
-is selected; none selected means no gateway. Selected capabilities retain
+Nested containers use their existing gateway. Selected capabilities retain
 their existing host-authorization and failure rules.
 
 Resolve only images reachable from selected consumers and their dependencies.

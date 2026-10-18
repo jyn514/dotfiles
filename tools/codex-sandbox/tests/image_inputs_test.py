@@ -54,7 +54,6 @@ class ImageInputsTest(unittest.TestCase):
             dockerfile.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / dockerfile.relative_to(root), dockerfile)
             runtime = ['tools/codex-sandbox/image/agent-entrypoint',
-                       'tools/codex-sandbox/image/agent_supervisor.py',
                        'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',
                        'libexec/chat-history.clj',

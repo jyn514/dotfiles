@@ -89,8 +89,7 @@ The forwarded port exposes only authenticated guest SSH; it does not expose an u
 
 ## Recovery
 
-The sandbox reaches the machine through its gateway's fixed SSH listener,
-sharing the gateway container and networks with agent-room when selected.
+The sandbox reaches the machine through its gateway's fixed SSH listener.
 If the machine stops, the relay may continue accepting TCP connections while its upstream host port refuses them.
 SSH then closes before presenting a server banner, and Podman reports a handshake `EOF` rather than saying that the machine is stopped.
 

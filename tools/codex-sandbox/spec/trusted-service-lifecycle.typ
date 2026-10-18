@@ -134,7 +134,7 @@ used by one Pi attachment and its ordinary children. `/split` keeps these servic
 until final attachment release; they do not become shared-session services.
 Directory changes release only the invoking attachment, and a new workload gets
 its own per-launch authorization.
-Agent Podman and agent-room gateway listeners and Flower R2 consent relays use this scope.
+Agent Podman gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
 
 Every selected shared service is required: the agent must not start or join without it ready.
@@ -146,7 +146,6 @@ For per-launch services, `required` has the same meaning.
 The endpoint is projected into the agent, and its client performs bounded retries only for connection establishment or an explicit not-ready result.
 If startup later fails, the launcher warns and cleans the service after its startup worker terminates; client retries end with an unavailable error.
 A client never retries a request after the service may have accepted it.
-Agent-room forwarding may use this policy; installed policy may instead make an explicitly selected capability required.
 Repository configuration cannot weaken installed availability policy.
 
 == State machine
@@ -314,8 +313,6 @@ The host listener owns host-side authorization; the relay container owns only fi
 Peer allowlists or equivalent admission must be installed before readiness.
 A best-effort relay that fails before endpoint identity and authorization exist leaves no agent-visible endpoint.
 Failure after attachment leaves the projected endpoint unavailable until bounded client retries end and cleanup removes the owned resources.
-The `agent-room` relay is opt-in and fixed: it connects the agent's `127.0.0.1:3000` only to the host's loopback `127.0.0.1:3000`.
-It accepts no destination supplied by the agent and never relays the agent-room admin port `3001`.
 
 == Rejected generalizations
 

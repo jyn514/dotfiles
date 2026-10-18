@@ -61,7 +61,7 @@ COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
 V2_COMMAND_FIELDS = {"image", "argv", "workdir", "network", "mounts"}
 CAPABILITY_DEFAULTS = {
     "zulip": True,
-    "nested-containers": False, "flower-r2": False, "agent-room": False,
+    "nested-containers": False, "flower-r2": False,
 }
 # Accept the retired declaration for existing project manifests; never publish it.
 CAPABILITIES = set(CAPABILITY_DEFAULTS) | {"host-editor"}
