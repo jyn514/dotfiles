@@ -26,7 +26,9 @@ def physical(path, cwd):
 
 
 def within(path, root):
-    return path == root or root in path.parents
+    # Compare lexical components without constructing every ancestor Path.
+    # Anchors distinguish relative paths (including '.') from '/' and '//'.
+    return path.anchor == root.anchor and path.parts[:len(root.parts)] == root.parts
 
 
 @dataclass(frozen=True)

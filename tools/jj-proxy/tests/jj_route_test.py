@@ -29,6 +29,22 @@ def mount(id, parent, point, root='/', device='0:1', fs='overlay', source='overl
     return f'{id} {parent} {device} {escape(root)} {escape(point)} rw - {fs} {escape(source)} rw\n'
 
 
+class ContainmentTests(unittest.TestCase):
+    def test_lexical_containment_matches_ancestor_reference(self):
+        # Preserve the original lexical rule, including unresolved '..', empty
+        # relative roots, distinct POSIX anchors, and similarly named siblings.
+        # Exhaust this bounded spelling matrix; no filesystem or random seed.
+        paths = [Path(anchor + tail)
+                 for anchor in ('', '/', '//')
+                 for tail in ('', '.', '..', 'a', 'ab', 'a/b', 'a/../b',
+                              '../a', 'a/./b', 'a//b')]
+        for path in paths:
+            for root in paths:
+                with self.subTest(path=path, root=root):
+                    expected = path == root or root in path.parents
+                    self.assertEqual(router.within(path, root), expected)
+
+
 class RoutingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -357,6 +373,19 @@ class RoutingTests(unittest.TestCase):
         # No known-host evidence: non-rootfs and unrecognized filesystems native.
         mounts = mount(1, 0, '/') + mount(3, 1, alias, '/', '8:8', 'btrfs', '/dev/guest')
         self.assertDecision(['commit'], cwd=alias, workspace=alias, mounts=mounts)
+
+    def test_mount_backing_regions_require_complete_path_components(self):
+        alias = self.repo('backing-region-alias')
+        for backing, backend in (('/host/project', 'proxy'),
+                                 ('/host/project/nested', 'proxy'),
+                                 ('/host/project-other', 'native'),
+                                 ('/host/projectish', 'native'),
+                                 ('/host/projec', 'native')):
+            with self.subTest(backing=backing):
+                mounts = self.mounts + mount(3, 1, alias, backing,
+                                             '0:35', 'virtiofs', 'host')
+                self.assertDecision(['commit'], cwd=alias, workspace=alias,
+                                    mounts=mounts, backend=backend)
 
     def test_explicit_selected_role_on_root_mount_anchors_only_its_region(self):
         mounts = mount(1, 0, '/')
