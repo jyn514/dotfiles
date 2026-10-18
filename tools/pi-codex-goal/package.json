@@ -42,6 +42,7 @@
     "typecheck": "tsc",
     "check": "npm test && npm run typecheck && npm pack --dry-run",
     "check:compat": "npm run check",
+    "replay:block": "node tools/replay-block.ts",
     "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
