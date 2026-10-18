@@ -1,12 +1,17 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
+import { fileURLToPath } from "node:url";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  CONTROL_COMMAND, CONTROL_VERSION, CONTINUATION_MESSAGE, controlRecord, hasUnresolvedInputs,
+  assertSessionAuthority, type ControlRequest, type SavedSession,
+} from "./handoff.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
 export const PACKAGE_BASENAME = "pi-codex-subagents";
@@ -30,7 +35,7 @@ export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhig
 const FINAL_STATUSES = new Set<AgentRuntimeStatus>(["completed", "failed", "interrupted"]);
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
-export type AgentRuntimeStatus = "starting" | "running" | "completed" | "failed" | "interrupted";
+export type AgentRuntimeStatus = "starting" | "running" | "suspended" | "completed" | "failed" | "interrupted";
 
 export interface DirectSkillRoute {
   agentType: string;
@@ -104,6 +109,9 @@ export interface AgentInfo {
   finalResponse?: string;
   error?: string;
   childProcess?: ChildProcessOwnership;
+  /** Keeps saved work out of retention cleanup; the group manifest owns its payload. */
+  suspensionGeneration?: string;
+  admission?: "started" | "queued" | "handled" | "rejected" | "unknown";
 }
 
 export interface AgentListEntry {
@@ -137,12 +145,13 @@ export interface SpawnAgentParams {
   model?: { provider: string; modelId: string };
   thinking?: ThinkingLevel;
   templatePromptPosition?: "before" | "after";
+  admittedToolCallId?: string;
 }
 
 interface PendingRequest {
   resolve: (data: any) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 interface LiveAgent {
@@ -163,6 +172,12 @@ interface LiveAgent {
   candidateError?: string;
   modelResponseTimer?: ReturnType<typeof setTimeout>;
   lastActivityPersistedAt: number;
+  handoffGeneration?: string;
+  restoredHeld?: boolean;
+  releasing?: boolean;
+  settledWhileReleasing?: boolean;
+  controlGeneration?: string;
+  restoreFailure?: string;
 }
 
 export interface AgentCompletionEvent {
@@ -190,7 +205,21 @@ export interface AgentManagerOptions {
 interface Waiter {
   parentSessionId: string;
   targets?: Set<string>;
-  resolve: (event: AgentCompletionEvent) => void;
+  resolve: (event?: AgentCompletionEvent) => void;
+}
+
+export interface CompletionState {
+  mailbox: AgentCompletionEvent[];
+  delivered: string[];
+  targets: string[];
+}
+
+class RpcRequestError extends Error {
+  readonly outcome: "rejected" | "unknown";
+  constructor(message: string, outcome: "rejected" | "unknown") {
+    super(message);
+    this.outcome = outcome;
+  }
 }
 
 export function formatAgentError(error: unknown): string {
@@ -353,7 +382,7 @@ function pruneScope(directory: string, cutoff: number): void {
     for (const candidate of agentEntries) {
       try { latest = Math.max(latest, fs.statSync(path.join(directory, candidate.name)).mtimeMs); } catch {}
     }
-    if (isRunActive(agentId) || latest >= cutoff) continue;
+    if (info?.status === "suspended" || info?.suspensionGeneration || isRunActive(agentId) || latest >= cutoff) continue;
     let failed = false;
     for (const candidate of agentEntries.filter((candidate) => candidate.name !== entry.name)) {
       try { fs.rmSync(path.join(directory, candidate.name), { force: true }); } catch { failed = true; }
@@ -382,6 +411,7 @@ function pruneRunsRoot(root: string, cutoff: number): void {
   for (const entry of entries) {
     const target = path.join(root, entry.name);
     if (entry.name === "_outputs" && entry.isDirectory()) {
+      if (readAllInfos().some((info) => info.suspensionGeneration)) continue;
       let outputs: fs.Dirent[];
       try { outputs = fs.readdirSync(target, { withFileTypes: true }); } catch { continue; }
       for (const output of outputs) {
@@ -1032,6 +1062,11 @@ export class AgentManager {
   private readonly shutdownController = new AbortController();
   private readonly ownerProcessIdentity = inspectProcess(process.pid)?.identity;
   private readonly reconciliation: Promise<void>;
+  private readonly pauses = new Map<string, { allowed: Set<string>; failures: string[] }>();
+  private readonly submissions = new Map<string, Set<Promise<unknown>>>();
+  private readonly captures = new Map<string, Record<string, SavedSession>>();
+  private readonly deliveredCompletions = new Set<string>();
+  private readonly ordinaryPausedChildren = new Set<string>();
 
   constructor(private readonly options: AgentManagerOptions = {}) {
     ensureBaseDirs();
@@ -1054,7 +1089,91 @@ export class AgentManager {
   }
 
   private notifyUnclaimedCompletion(event: AgentCompletionEvent): void {
+    if (this.pauses.has(event.parentSessionId) || this.deliveredCompletions.has(event.id)) return;
     try { this.options.onUnclaimedCompletion?.(event); } catch {}
+  }
+
+  private submit<T>(parentId: string, toolCallId: string | undefined, operation: () => Promise<T>): Promise<T> {
+    const pause = this.pauses.get(parentId);
+    if (pause && (!toolCallId || !pause.allowed.has(toolCallId))) {
+      return Promise.reject(new Error("Subagent group is paused; only the admitted tool batch may drain."));
+    }
+    const pending = this.submissions.get(parentId) ?? new Set<Promise<unknown>>();
+    this.submissions.set(parentId, pending);
+    // Register before any asynchronous startup, restart, or preflight work can begin.
+    const result = Promise.resolve().then(operation);
+    pending.add(result);
+    void result.then(
+      () => { pending.delete(result); },
+      (error: unknown) => {
+        pending.delete(result);
+        this.pauses.get(parentId)?.failures.push(formatAgentError(error));
+      },
+    );
+    return result;
+  }
+
+  beginPause(parentId: string): void {
+    if (!this.pauses.has(parentId)) this.pauses.set(parentId, { allowed: new Set(), failures: [] });
+    else this.pauses.get(parentId)!.failures = [];
+    for (const waiter of [...this.waiters]) {
+      if (waiter.parentSessionId === parentId) waiter.resolve();
+    }
+  }
+
+  allowDrainingToolCall(parentId: string, toolCallId: string): void {
+    this.pauses.get(parentId)?.allowed.add(toolCallId);
+  }
+
+  async drainSubmissions(parentId: string): Promise<void> {
+    while (this.submissions.get(parentId)?.size) {
+      await Promise.allSettled([...this.submissions.get(parentId)!]);
+    }
+    const failures = this.pauses.get(parentId)?.failures ?? [];
+    if (failures.length) throw new Error(`Subagent admission did not resolve successfully: ${failures.join("; ")}`);
+  }
+
+  endPause(parentId: string): void {
+    this.pauses.delete(parentId);
+    for (const info of readScopeInfos(parentId)) {
+      const saved = this.captures.get(parentId)?.[info.id];
+      if (info.status !== "suspended" && (!saved || !hasUnresolvedInputs(saved))) {
+        const live = this.live.get(info.id);
+        delete info.suspensionGeneration;
+        if (live) delete live.info.suspensionGeneration;
+        saveInfo(live?.info ?? info);
+      }
+    }
+    for (const live of this.live.values()) {
+      if (live.info.parentSessionId === parentId && FINAL_STATUSES.has(live.info.status)) {
+        void this.terminateProcess(live).catch((error) => {
+          live.logger.info("exit", "failed to dispose resumed terminal child", { error: formatAgentError(error) });
+        });
+      }
+    }
+  }
+
+  getCompletionState(parentId: string): CompletionState {
+    const mailbox = this.mailbox.filter((event) => event.parentSessionId === parentId);
+    return {
+      mailbox: mailbox.map((event) => ({ ...event })),
+      delivered: mailbox.filter((event) => this.deliveredCompletions.has(event.id)).map((event) => event.id),
+      targets: [...(this.defaultWaitAllTargets.get(parentId) ?? [])],
+    };
+  }
+
+  restoreCompletionState(parentId: string, state: CompletionState): void {
+    const ids = new Set(this.mailbox.map((event) => event.id));
+    for (const event of state.mailbox) {
+      if (event.parentSessionId !== parentId) throw new Error("Completion state belongs to another parent session.");
+      if (!ids.has(event.id)) { this.mailbox.push({ ...event }); ids.add(event.id); }
+    }
+    for (const id of state.delivered) this.deliveredCompletions.add(id);
+    this.defaultWaitAllTargets.set(parentId, new Set(state.targets));
+  }
+
+  markCompletionDelivered(id: string): void {
+    this.deliveredCompletions.add(id);
   }
 
   private clearChildOwnership(info: AgentInfo, expectedToken: string): void {
@@ -1162,7 +1281,11 @@ export class AgentManager {
     }
   }
 
-  async spawnAgent(params: SpawnAgentParams): Promise<{ task_name: string; nickname: null }> {
+  spawnAgent(params: SpawnAgentParams): Promise<{ task_name: string; nickname: null }> {
+    return this.submit(params.parentSessionId, params.admittedToolCallId, () => this.spawnAdmittedAgent(params));
+  }
+
+  private async spawnAdmittedAgent(params: SpawnAgentParams): Promise<{ task_name: string; nickname: null }> {
     await this.reconciliation;
     const taskName = normalizeTaskName(params.task_name);
     const definition = getAgentDefinition(params.agent_type);
@@ -1239,7 +1362,9 @@ export class AgentManager {
         await this.startLiveAgent(info, prompt, params.message);
       } catch (error) {
         const message = formatAgentError(error);
-        try { this.markPersistedStartupFailed(info, message); } catch {}
+        if (!(error instanceof RpcRequestError && error.outcome === "unknown")) {
+          try { this.markPersistedStartupFailed(info, message); } catch {}
+        }
         if (error instanceof Error && error.message === message) throw error;
         throw new Error(message, { cause: error });
       }
@@ -1252,7 +1377,7 @@ export class AgentManager {
     }
   }
 
-  private async startLiveAgent(info: AgentInfo, initialMessage?: string, displayMessage?: string): Promise<LiveAgent> {
+  private async startLiveAgent(info: AgentInfo, initialMessage?: string, displayMessage?: string, held = false): Promise<LiveAgent> {
     readSystemPrompt();
     if (info.status !== "starting" && info.status !== "running") {
       this.notifyStatusChange({ ...info, status: "starting", lastActivity: Date.now() });
@@ -1279,6 +1404,7 @@ export class AgentManager {
       if (info.tools) args.push("--tools", info.tools);
       else args.push("--no-builtin-tools");
     }
+    args.push("--extension", fileURLToPath(new URL("./child-helper.ts", import.meta.url)));
     for (const extensionPath of info.extensionPaths ?? []) args.push("--extension", extensionPath);
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
@@ -1288,7 +1414,7 @@ export class AgentManager {
       proc = spawn(launch.command, args, {
         cwd: info.cwd,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken },
+        env: { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0" },
         detached: process.platform !== "win32",
       });
     } catch (error) {
@@ -1313,6 +1439,7 @@ export class AgentManager {
       resolveExit,
       candidateResponse: "",
       lastActivityPersistedAt: info.updatedAt,
+      restoredHeld: held,
     };
     this.live.set(info.id, live);
     const decoder = new RpcJsonlDecoder();
@@ -1376,6 +1503,7 @@ export class AgentManager {
       finishProcess(live.expectedExit ? undefined : new Error(`Child Pi exited (code=${code}, signal=${signal})${suffix}`));
     });
 
+    let prompted = false;
     try {
       if (!proc.pid) throw new Error("Child Pi process did not provide a PID.");
       await this.sendCommand(live, { type: "get_state" }, DEFAULT_STARTUP_TIMEOUT_MS);
@@ -1394,9 +1522,13 @@ export class AgentManager {
         startedAt: Date.now(),
       };
       saveInfo(info);
-      if (initialMessage) await this.prompt(live, initialMessage, displayMessage);
+      if (initialMessage) {
+        prompted = true;
+        await this.prompt(live, initialMessage, displayMessage);
+      }
       return live;
     } catch (error) {
+      if (prompted && error instanceof RpcRequestError && error.outcome === "unknown") throw error;
       if (!live.finalizedRun) this.markFailed(live, error instanceof Error ? error.message : String(error));
       await this.terminateProcess(live);
       throw error;
@@ -1407,9 +1539,9 @@ export class AgentManager {
     if (live.processFinished || live.expectedExit) return Promise.reject(new Error(`Agent ${live.info.taskName} process is not available.`));
     const id = `req-${++live.reqId}`;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = timeoutMs === 0 ? undefined : setTimeout(() => {
         live.pending.delete(id);
-        reject(new Error(`Timed out waiting for child Pi RPC command: ${String(command.type ?? "unknown")}`));
+        reject(new RpcRequestError(`Timed out waiting for child Pi RPC command: ${String(command.type ?? "unknown")}`, "unknown"));
       }, timeoutMs);
       live.pending.set(id, { resolve, reject, timer });
       live.proc.stdin.write(JSON.stringify({ id, ...command }) + "\n", (error) => {
@@ -1418,7 +1550,7 @@ export class AgentManager {
         if (!pending) return;
         clearTimeout(pending.timer);
         live.pending.delete(id);
-        pending.reject(error);
+        pending.reject(new RpcRequestError(error.message, "unknown"));
       });
     });
   }
@@ -1430,7 +1562,6 @@ export class AgentManager {
       error: live.info.error,
       completedAt: live.info.completedAt,
     };
-    this.removeMailboxEvents(live.info.parentSessionId, live.info.canonicalName);
     const targets = this.defaultWaitAllTargets.get(live.info.parentSessionId) ?? new Set<string>();
     targets.add(live.info.canonicalName);
     this.defaultWaitAllTargets.set(live.info.parentSessionId, targets);
@@ -1447,9 +1578,26 @@ export class AgentManager {
     saveInfo(live.info);
     live.lastActivityPersistedAt = live.info.updatedAt;
     this.notifyStatusChange(live.info);
+    live.info.admission = "unknown";
     try {
-      await this.sendCommand(live, { type: "prompt", message });
+      const result = await this.sendCommand(live, { type: "prompt", message });
+      const disposition = result?.disposition;
+      live.info.admission = disposition === "started" || disposition === "queued" || disposition === "handled"
+        ? disposition : "unknown";
+      this.removeMailboxEvents(live.info.parentSessionId, live.info.canonicalName);
+      saveInfo(live.info);
+      if (disposition === "handled" && !live.finalizedRun) {
+        this.markCompleted(live);
+        if (!this.pauses.has(live.info.parentSessionId)) void this.terminateProcess(live);
+      }
     } catch (error) {
+      if (!(error instanceof RpcRequestError && error.outcome === "rejected")) {
+        live.info.admission = "unknown";
+        live.info.error = `Input admission is unknown: ${formatAgentError(error)}`;
+        saveInfo(live.info);
+        throw error instanceof RpcRequestError ? error : new RpcRequestError(formatAgentError(error), "unknown");
+      }
+      live.info.admission = "rejected";
       live.info.status = previousFinalState.status;
       if (previousFinalState.finalResponse !== undefined) live.info.finalResponse = previousFinalState.finalResponse;
       else delete live.info.finalResponse;
@@ -1461,6 +1609,223 @@ export class AgentManager {
       this.notifyStatusChange(live.info);
       throw error;
     }
+  }
+
+  private async control(live: LiveAgent, request: ControlRequest) {
+    const before = await this.sendCommand(live, { type: "get_entries" });
+    const earlier = new Set((before?.entries ?? []).map((entry: { id: string }) => entry.id));
+    if (request.action !== "inspect") live.controlGeneration = request.generation;
+    const response = await this.sendCommand(live, {
+      type: "prompt", message: `/${CONTROL_COMMAND} ${JSON.stringify(request)}`,
+    }, request.action === "capture" || request.action === "finish" ? 0 : DEFAULT_STARTUP_TIMEOUT_MS);
+    const data = await this.sendCommand(live, { type: "get_entries" });
+    const record = controlRecord((data?.entries ?? []).filter((entry: { id: string }) => !earlier.has(entry.id)), request.generation, request.action);
+    if (response?.disposition !== "handled" || !record || record.version !== CONTROL_VERSION
+      || (!record.ok && request.action !== "finish")) {
+      throw new Error(record?.error ?? "Child did not publish a matching successful suspension control record; use Pi with handoff/submitInput support.");
+    }
+    return record;
+  }
+
+  async captureChildren(
+    parentId: string, generation: string, onCapture: (id: string, saved: SavedSession) => void,
+  ): Promise<Record<string, SavedSession>> {
+    await this.drainSubmissions(parentId);
+    const retained = this.captures.get(parentId) ?? {};
+    this.captures.set(parentId, retained);
+    const captured: Record<string, SavedSession> = {};
+    // Fence every child before waiting for any one tool boundary. Otherwise an
+    // unvisited child can make another provider request while its sibling saves.
+    await Promise.all([...this.live.values()].filter((live) => live.info.parentSessionId === parentId
+      && !live.expectedExit && !FINAL_STATUSES.has(live.info.status)).map(async (live) => {
+      await this.sendCommand(live, { type: "pause" });
+      this.ordinaryPausedChildren.add(live.info.id);
+    }));
+    for (let info of readScopeInfos(parentId)) {
+      let live = this.live.get(info.id);
+      if (live?.expectedExit) {
+        await live.termination;
+        live = undefined;
+        info = this.getAgentInfo(info.taskName, parentId);
+      }
+      if (!live) {
+        if (info.status === "suspended" && retained[info.id]) {
+          captured[info.id] = retained[info.id];
+          onCapture(info.id, retained[info.id]);
+        } else if (!FINAL_STATUSES.has(info.status)) {
+          throw new Error(`Cannot save ${info.canonicalName}: no live child or retained capture proves ownership.`);
+        }
+        continue;
+      }
+      if (!FINAL_STATUSES.has(info.status) && info.admission === "unknown") {
+        throw new Error(`Cannot save ${info.canonicalName}: its task admission is unknown; inspect it before retrying.`);
+      }
+      let saved = retained[info.id];
+      if (!live.restoredHeld && (!saved || live.handoffGeneration !== generation)) {
+        live.handoffGeneration = generation;
+        // Unknown helper text must never fall through to a provider request.
+        // A parked run is not idle: dispatch the opted-in helper immediately.
+        await this.sendCommand(live, { type: "pause" });
+        const record = await this.control(live, { action: "capture", generation: `${generation}:${info.id}` });
+        if (!record.snapshot) throw new Error(`Child ${info.canonicalName} returned no captured payload.`);
+        saved = record.snapshot;
+        retained[info.id] = saved;
+        this.ordinaryPausedChildren.delete(info.id);
+      }
+      if (!saved) throw new Error(`Child ${info.canonicalName} has no retained capture.`);
+      captured[info.id] = saved;
+      if (!FINAL_STATUSES.has(live.info.status)) live.info.status = "suspended";
+      live.info.suspensionGeneration = generation;
+      saveInfo(live.info);
+      this.notifyStatusChange(live.info);
+      // Parent persistence must succeed before EOF makes get_entries unavailable.
+      onCapture(info.id, saved);
+      await this.terminateProcess(live, true);
+      assertSessionAuthority(saved, SessionManager.open(info.sessionFile));
+    }
+    return captured;
+  }
+
+  async prepareChildren(parentId: string, snapshots: Record<string, SavedSession>): Promise<void> {
+    await this.reconciliation;
+    this.captures.set(parentId, snapshots);
+    for (const [id, saved] of Object.entries(snapshots)) {
+      const info = readScopeInfos(parentId).find((entry) => entry.id === id);
+      if (!info) throw new Error(`Saved child ${id} is missing its AgentInfo.`);
+      assertSessionAuthority(saved, SessionManager.open(info.sessionFile));
+      if (FINAL_STATUSES.has(info.status)) continue;
+      if (saved.marker === "started" || saved.marker === "unknown") {
+        const live = this.live.get(id);
+        if (!live || live.expectedExit) {
+          throw new Error(`Child ${info.canonicalName} lost its process after continuation admission; inspect unknown effects, do not replay it.`);
+        }
+        continue;
+      }
+      const live = this.live.get(id) ?? await this.startLiveAgent(info, undefined, undefined, true);
+      let state = await this.sendCommand(live, { type: "get_state" });
+      if (live.controlGeneration && state?.pauseState === "unpaused" && !state?.isStreaming) {
+        // A failed arm may already own staged asides. Export them before retry.
+        const record = await this.control(live, { action: "disarm", generation: live.controlGeneration });
+        if (!record.snapshot) throw new Error(`Child ${info.canonicalName} did not retain its partial replay.`);
+        Object.assign(saved, record.snapshot);
+        state = await this.sendCommand(live, { type: "get_state" });
+      }
+      live.restoredHeld = true;
+      if (live.restoreFailure) throw new Error(live.restoreFailure);
+      if (state?.pauseState !== "paused" || state?.isStreaming) {
+        throw new Error(`Child ${info.canonicalName} did not start paused; its template is unsupported for restoration.`);
+      }
+      await this.control(live, { action: "inspect", generation: `${saved.handoff.requestId}:prepare` });
+    }
+  }
+
+  async resumeChild(
+    parentId: string, id: string, saved: SavedSession, onUpdate: (saved: SavedSession) => void,
+  ): Promise<{ complete: boolean; error?: string }> {
+    const info = readScopeInfos(parentId).find((entry) => entry.id === id);
+    if (!info) throw new Error(`Saved child ${id} is missing its AgentInfo.`);
+    if (FINAL_STATUSES.has(info.status)) {
+      const retained = hasUnresolvedInputs(saved);
+      return retained ? { complete: false, error: `Terminal child ${info.canonicalName} still has retained input; inspect or explicitly discard it.` } : { complete: true };
+    }
+    const unresolved = hasUnresolvedInputs(saved);
+    if (saved.marker === "started" && !unresolved) return { complete: true };
+    if (saved.marker === "unknown") return { complete: false, error: `Child ${info.canonicalName} has an unknown prior admission.` };
+    const live = this.live.get(id);
+    if (!live || live.expectedExit) throw new Error(`Child ${info.canonicalName} has not been prepared.`);
+    const generation = saved.handoff.requestId;
+    live.releasing = true;
+    let complete = false;
+    try {
+      let disposition: "started" | "queued" | "handled" | "rejected" | "unknown" = saved.marker === "started" ? "started" : "unknown";
+      if (saved.marker !== "started") {
+        await this.control(live, { action: "arm", generation, snapshot: saved });
+        live.handoffGeneration = undefined;
+        live.restoredHeld = false;
+        const priorMarker = saved.marker;
+        saved.marker = "unknown";
+        try { onUpdate(saved); } catch (error) {
+          saved.marker = priorMarker; // No RPC submission occurred.
+          throw error;
+        }
+        try {
+          const result = await this.sendCommand(live, { type: "prompt", message: CONTINUATION_MESSAGE });
+          if (result?.disposition === "started" || result?.disposition === "queued" || result?.disposition === "handled") {
+            disposition = result.disposition;
+          }
+        } catch (error) {
+          if (error instanceof RpcRequestError && error.outcome === "rejected") disposition = "rejected";
+          else live.logger.info("resume", "prompt acknowledgment is unknown", { error: formatAgentError(error) });
+        }
+        saved.marker = disposition === "queued" ? "unknown" : disposition;
+        onUpdate(saved);
+      }
+      if (disposition !== "started") live.handoffGeneration = generation;
+      const record = await this.control(live, { action: "finish", generation, disposition });
+      if (!record.snapshot) throw new Error("Child release did not return its updated input ownership.");
+      this.captures.get(parentId)![id] = record.snapshot;
+      complete = record.ok && record.snapshot.marker === "started";
+      onUpdate(record.snapshot);
+      if (!complete) {
+        live.info.status = "suspended";
+        saveInfo(live.info);
+        return { complete: false, error: record.error ?? record.snapshot.error ?? `Child ${info.canonicalName} did not admit every saved input.` };
+      }
+      return { complete: true };
+    } finally {
+      live.releasing = false;
+      if (complete && live.settledWhileReleasing && !live.finalizedRun) {
+        if (live.candidateError) this.markFailed(live, live.candidateError);
+        else this.markCompleted(live);
+      }
+    }
+  }
+
+  async releaseUncapturedChildren(parentId: string): Promise<void> {
+    for (const id of [...this.ordinaryPausedChildren]) {
+      const live = this.live.get(id);
+      if (!live || live.info.parentSessionId !== parentId) continue;
+      if (FINAL_STATUSES.has(live.info.status)) { this.ordinaryPausedChildren.delete(id); continue; }
+      const state = await this.sendCommand(live, { type: "get_state" });
+      if (live.handoffGeneration && !state?.isStreaming) {
+        throw new Error(`Child ${live.info.canonicalName} may already be handed off; retry capture before releasing it.`);
+      }
+      await this.sendCommand(live, { type: "resume" });
+      live.handoffGeneration = undefined;
+      this.ordinaryPausedChildren.delete(id);
+    }
+  }
+
+  async discardSuspension(parentId: string): Promise<void> {
+    // The coordinator publishes revocation first. Forget every extension owner,
+    // including live child replay controllers, without aborting admitted runs.
+    await this.reconciliation;
+    this.captures.delete(parentId);
+    for (const persisted of readScopeInfos(parentId)) {
+      const live = this.live.get(persisted.id);
+      const info = live?.info ?? persisted;
+      if (live?.controlGeneration) {
+        await this.control(live, { action: "discard", generation: live.controlGeneration });
+        live.controlGeneration = undefined;
+      }
+      if (live) {
+        const state = await this.sendCommand(live, { type: "get_state" });
+        if (state?.isStreaming || state?.isCompacting) {
+          info.status = "running";
+          live.handoffGeneration = undefined;
+          live.restoredHeld = false;
+          if (state.pauseState !== "unpaused") await this.sendCommand(live, { type: "resume" });
+          this.ordinaryPausedChildren.delete(info.id);
+        } else if (info.status === "suspended") {
+          await this.terminateProcess(live, true);
+          info.status = "interrupted";
+        }
+      } else if (info.status === "suspended") info.status = "interrupted";
+      delete info.suspensionGeneration;
+      saveInfo(info);
+    }
+    await this.releaseUncapturedChildren(parentId);
+    this.endPause(parentId);
   }
 
   private clearModelResponseTimer(live: LiveAgent): void {
@@ -1497,13 +1862,14 @@ export class AgentManager {
       return;
     }
     live.broadcaster.broadcast(event);
+    if (event.type === "pause_state_changed" && event.state === "paused") this.clearModelResponseTimer(live);
     if (event.type === "response") {
       const pending = event.id ? live.pending.get(event.id) : undefined;
       if (!pending) return;
       clearTimeout(pending.timer);
       live.pending.delete(event.id);
       if (event.success) pending.resolve(event.data);
-      else pending.reject(new Error(event.error || "RPC command failed"));
+      else pending.reject(new RpcRequestError(event.error || "RPC command failed", "rejected"));
       return;
     }
     const highFrequencyUpdate = event.type === "message_update" || event.type === "tool_execution_update";
@@ -1513,6 +1879,10 @@ export class AgentManager {
         this.adoptTerminalState(live, persisted);
         return;
       }
+    }
+    if (event.type === "agent_start" && live.releasing) {
+      live.finalizedRun = false;
+      live.settledWhileReleasing = false;
     }
     if (live.finalizedRun || live.expectedExit) return;
     if (event.type === "agent_start") {
@@ -1570,8 +1940,15 @@ export class AgentManager {
     if (event.type === "agent_settled") {
       this.clearModelResponseTimer(live);
       if (live.info.status === "interrupted" || live.finalizedRun) return;
+      if (live.handoffGeneration && event.aborted === true) return;
+      const saved = this.captures.get(live.info.parentSessionId)?.[live.info.id];
+      if (live.releasing || (saved && hasUnresolvedInputs(saved))) {
+        live.settledWhileReleasing = true;
+        return;
+      }
       if (live.candidateError) this.markFailed(live, live.candidateError);
       else this.markCompleted(live);
+      if (this.pauses.has(live.info.parentSessionId)) return;
       void this.terminateProcess(live).catch((error) => {
         live.logger.info("hibernate", "failed to terminate settled child", { error: error instanceof Error ? error.message : String(error) });
       });
@@ -1595,6 +1972,10 @@ export class AgentManager {
   }
 
   private markCompleted(live: LiveAgent): void {
+    if (live.restoredHeld) {
+      this.markFailed(live, "Restored child completed work before continuation admission; its template is unsupported.");
+      return;
+    }
     if (live.finalizedRun) return;
     live.finalizedRun = true;
     live.info.status = "completed";
@@ -1616,6 +1997,19 @@ export class AgentManager {
 
   private markFailed(live: LiveAgent, error: string): void {
     if (live.finalizedRun) return;
+    if (live.restoredHeld) {
+      // A held process owns no task yet. Its startup failure cannot complete the
+      // saved task or authorize dropping its capture on the next retry.
+      this.clearModelResponseTimer(live);
+      live.info.status = "suspended";
+      live.info.error = `Restoration failed before continuation admission: ${formatAgentError(error)}`;
+      live.restoreFailure = live.info.error;
+      delete live.info.finalResponse;
+      delete live.info.completedAt;
+      saveInfo(live.info);
+      this.notifyStatusChange(live.info);
+      return;
+    }
     live.finalizedRun = true;
     live.info.status = "failed";
     live.info.error = formatAgentError(error);
@@ -1696,7 +2090,8 @@ export class AgentManager {
     this.defaultWaitAllTargets.get(parentSessionId)?.delete(canonicalAgentName(agentName));
   }
 
-  async waitAgent(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; event?: AgentCompletionEvent }> {
+  async waitAgent(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; event?: AgentCompletionEvent; paused?: boolean }> {
+    if (this.pauses.has(parentSessionId)) return { message: "Subagent group paused; no completion was consumed.", paused: true };
     const waitSignal = signal ? AbortSignal.any([signal, this.shutdownController.signal]) : this.shutdownController.signal;
     throwIfAborted(waitSignal);
     const normalizedTargets = targets?.length ? new Set(targets.map(canonicalAgentName)) : undefined;
@@ -1740,6 +2135,10 @@ export class AgentManager {
         parentSessionId,
         targets: normalizedTargets,
         resolve: (event) => settle(() => {
+          if (!event) {
+            resolve({ message: "Subagent group paused; no completion was consumed.", paused: true });
+            return;
+          }
           this.finishWaitTarget(parentSessionId, event.agentName);
           resolve({ message: `Wait completed: ${event.agentName} ${event.status}.`, event });
         }),
@@ -1750,7 +2149,7 @@ export class AgentManager {
     });
   }
 
-  async waitAllAgents(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; responses: AgentResponseEntry[] }> {
+  async waitAllAgents(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; responses: AgentResponseEntry[]; paused?: boolean }> {
     const waitSignal = signal ? AbortSignal.any([signal, this.shutdownController.signal]) : this.shutdownController.signal;
     throwIfAborted(waitSignal);
     const explicitTargets = targets?.length ? new Set(targets.map(canonicalAgentName)) : undefined;
@@ -1780,6 +2179,7 @@ export class AgentManager {
     try {
       while (true) {
         throwIfAborted(waitSignal);
+        if (this.pauses.has(parentSessionId)) return { message: "Subagent group paused; no completion was consumed.", responses: [], paused: true };
         if (!pendingNames().length) return finalize();
         await delay(250, undefined, { signal: waitSignal });
       }
@@ -1796,7 +2196,11 @@ export class AgentManager {
     }
   }
 
-  async sendMessage(parentSessionId: string, target: string, message: string): Promise<{ delivery: "steer" | "prompt" }> {
+  sendMessage(parentSessionId: string, target: string, message: string, toolCallId?: string): Promise<{ delivery: "steer" | "prompt" }> {
+    return this.submit(parentSessionId, toolCallId, () => this.sendAdmittedMessage(parentSessionId, target, message));
+  }
+
+  private async sendAdmittedMessage(parentSessionId: string, target: string, message: string): Promise<{ delivery: "steer" | "prompt" }> {
     await this.reconciliation;
     let info = this.getAgentInfo(target, parentSessionId);
     let live = this.live.get(info.id);
@@ -1805,6 +2209,7 @@ export class AgentManager {
       live = undefined;
       info = this.getAgentInfo(target, parentSessionId);
     }
+    if (info.status === "suspended") throw new Error("Agent is suspended; use /unpause before sending new work.");
     const wasLive = Boolean(live);
     if (!live) {
       if (info.childProcess) await this.terminateOwnedChild(info);
@@ -1826,6 +2231,7 @@ export class AgentManager {
       await this.prompt(live, message, message);
       return { delivery: "prompt" };
     } catch (error) {
+      if (error instanceof RpcRequestError && error.outcome === "unknown") throw error;
       await this.terminateProcess(live);
       throw error;
     }
@@ -1872,12 +2278,12 @@ export class AgentManager {
     });
   }
 
-  private terminateProcess(live: LiveAgent): Promise<void> {
+  private terminateProcess(live: LiveAgent, captured = false): Promise<void> {
     this.clearModelResponseTimer(live);
     if (live.processFinished) return Promise.resolve();
     if (live.termination) return live.termination;
     live.termination = (async () => {
-      const abortRequest = this.sendCommand(live, { type: "abort" }, 1000);
+      const abortRequest = captured ? Promise.resolve() : this.sendCommand(live, { type: "abort" }, 1000);
       live.expectedExit = true;
       try { await abortRequest; } catch {}
       try { live.proc.stdin.end(); } catch {}
@@ -1908,7 +2314,7 @@ export class AgentManager {
         saveInfo(live.info);
         this.notifyStatusChange(live.info);
       }
-      terminations.push(this.terminateProcess(live));
+      terminations.push(this.terminateProcess(live, live.info.status === "suspended"));
     }
     await Promise.allSettled(terminations);
   }

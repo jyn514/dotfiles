@@ -1,11 +1,16 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-const TEST_AGENT_DIR = "/tmp/pi-codex-subagents-tests";
+// Short owned paths also keep Unix socket names below the platform limit.
+const TEST_AGENT_DIR = process.env.PI_TEST_OWNED_ROOT
+  ? path.join(process.env.PI_TEST_OWNED_ROOT, "a")
+  : fs.mkdtempSync(path.join(os.tmpdir(), "pi-sa-"));
+fs.mkdirSync(TEST_AGENT_DIR, { recursive: true });
+afterAll(() => fs.rmSync(TEST_AGENT_DIR, { recursive: true, force: true }));
 const FAKE_RPC_CHILD = path.join(import.meta.dir, "test", "fake-rpc-child.js");
 process.env.PI_SUBAGENT_TEMP_DIR = path.join(TEST_AGENT_DIR, "temp");
 
@@ -944,7 +949,10 @@ describe("extension completion delivery and TUI", () => {
         registerCommand(name: string, command: any) { commands.set(name, command); },
         registerShortcut(key: string, options: any) { shortcuts.set(key, options); },
       } as any);
-      expect([...commands.keys()]).toEqual(["subagents"]);
+      expect(commands.has("subagents")).toBe(true);
+      expect(commands.get("pause").allowedWhilePaused).toBe(true);
+      expect(commands.get("unpause").allowedWhilePaused).toBe(true);
+      expect(commands.has("resume")).toBe(false);
       expect([...shortcuts.keys()]).toEqual(shortcut ? [shortcut] : []);
       await commands.get("subagents").handler("", ctx);
       expect(menusOpened).toBe(1);
@@ -1065,7 +1073,10 @@ describe("extension completion delivery and TUI", () => {
       expect(notifications).toEqual(['spawn_agent models not available: typo/nope']);
       // The values live in the schema, but the description has to say the capability exists.
       expect(tools.get("spawn_agent").description).toContain("`model` takes one of the values its schema lists");
-      expect([...commands.keys()]).toEqual(["subagents"]);
+      expect(commands.has("subagents")).toBe(true);
+      expect(commands.get("pause").allowedWhilePaused).toBe(true);
+      expect(commands.get("unpause").allowedWhilePaused).toBe(true);
+      expect(commands.has("resume")).toBe(false);
       expect(renderers.has("pi-codex-subagent-completion")).toBe(true);
 
       fs.mkdirSync(scope, { recursive: true });

@@ -42,6 +42,9 @@
   "files": [
     "index.ts",
     "core.ts",
+    "handoff.ts",
+    "child-helper.ts",
+    "suspension.ts",
     "peek.ts",
     "README.md",
     "LICENSE"

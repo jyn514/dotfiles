@@ -23,6 +23,7 @@ import {
   writeFullToolOutput,
 } from "./core.js";
 import { SubagentPeekOverlay } from "./peek.js";
+import { SuspensionCoordinator } from "./suspension.js";
 
 function textResult(text: string, details?: any) {
   return { content: [{ type: "text" as const, text }], details };
@@ -153,8 +154,8 @@ export default function (pi: ExtensionAPI) {
     }));
   };
 
-  const deliverCompletion = (event: AgentCompletionEvent) => {
-    if (!isCurrentSession(event.parentSessionId)) return;
+  let suspension: SuspensionCoordinator;
+  const completionMessage = (event: AgentCompletionEvent) => {
     const payload = JSON.stringify({
       agent_name: event.agentName,
       status: event.status,
@@ -162,16 +163,23 @@ export default function (pi: ExtensionAPI) {
       ...(event.error ? { error: event.error } : {}),
     }, null, 2);
     const bounded = boundedText(payload, DEFAULT_MAX_BYTES - 1024, DEFAULT_MAX_LINES - 4);
-    pi.sendMessage({
+    return {
       customType: completionMessageType,
       content: `<subagent_notification>\n${bounded.text}\n</subagent_notification>`,
       display: true,
       details: {
+        completionId: event.id,
         agent_name: event.agentName,
         status: event.status,
         ...(bounded.fullOutputPath ? { fullOutputPath: bounded.fullOutputPath } : {}),
       },
-    }, { deliverAs: "steer", triggerTurn: true });
+    };
+  };
+  const deliverCompletion = (event: AgentCompletionEvent) => {
+    if (!isCurrentSession(event.parentSessionId)) return;
+    if (suspension?.completion(event)) return;
+    // Legacy void delivery has no admission acknowledgment. Saved capture reconciles its ID.
+    pi.sendMessage(completionMessage(event), { deliverAs: "steer", triggerTurn: true });
   };
 
   const manager = new AgentManager({
@@ -182,6 +190,13 @@ export default function (pi: ExtensionAPI) {
       refreshAgentWidget();
     },
     onUnclaimedCompletion: deliverCompletion,
+  });
+
+  suspension = new SuspensionCoordinator(pi, manager, completionMessage);
+
+  pi.on("tool_call", (event: any, ctx: any) => {
+    const id = parentSessionId(ctx);
+    if (suspension.isPreparing(id)) manager.allowDrainingToolCall(id, event.toolCallId);
   });
 
   pi.registerMessageRenderer(completionMessageType, (message: any, { expanded }: any, theme: Theme) => {
@@ -201,6 +216,7 @@ export default function (pi: ExtensionAPI) {
     modelReference?: string;
     thinking?: ThinkingLevel;
     templatePromptPosition?: "before" | "after";
+    admittedToolCallId?: string;
   }
 
   const spawnFromContext = async (ctx: any, request: SpawnFromContextRequest) => {
@@ -234,6 +250,7 @@ export default function (pi: ExtensionAPI) {
       model,
       thinking: request.thinking,
       templatePromptPosition: request.templatePromptPosition,
+      admittedToolCallId: request.admittedToolCallId,
     });
   };
 
@@ -272,6 +289,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
         const result = await spawnFromContext(ctx, {
+          admittedToolCallId: _toolCallId,
           taskName: params.task_name,
           message: params.message,
           agentType: params.agent_type,
@@ -326,6 +344,10 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
 
     const route = loadSubagentConfig().directSkillRoutes?.[invocation.skill.name];
     if (!route) return;
+    if (suspension.isPaused(parentSessionId(ctx))) {
+      ctx.ui?.notify?.("Direct skill delegation is blocked while the subagent group is paused.", "warning");
+      return; // No effect occurred; native admission must reject, not acknowledge consumption.
+    }
     const definition = getAgentDefinition(route.agentType);
     if (!definition) {
       ctx.ui?.notify?.(`Direct skill route template not found: ${route.agentType}`, "warning");
@@ -359,6 +381,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
 
   pi.on("session_start", async (_event: any, ctx: any) => {
     activeContext = ctx;
+    // Synchronous discovery fences admission before the first await/automatic startup work.
+    suspension.discover(ctx);
     activeAgents.clear();
     if (loadSubagentConfig().directSkillRoutes && typeof ctx.resolveSkillCommand !== "function") {
       ctx.ui?.notify?.("Direct skill routes require Pi extension context resolveSkillCommand() support", "warning");
@@ -389,11 +413,11 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     }
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (_event: any, ctx: any) => {
     if (activeContext?.mode === "tui") activeContext.ui.setWidget(widgetKey, undefined);
     activeContext = undefined;
     activeAgents.clear();
-    await manager.shutdown();
+    try { await manager.shutdown(); } finally { suspension.shutdown(ctx); }
   });
 
   pi.registerTool(spawnAgentTool);
@@ -518,7 +542,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
-        const result = await manager.sendMessage(parentSessionId(ctx), cleanTarget(params.target), params.message);
+        const result = await manager.sendMessage(parentSessionId(ctx), cleanTarget(params.target), params.message, _id);
         return textResult(result.delivery === "steer" ? "Message steered into the running agent." : "Message started a new agent turn.", { target: params.target, ...result });
       } catch (error) {
         throw new Error(`send_message failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -663,8 +687,35 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     });
   }
 
+  pi.registerCommand("pause", {
+    description: "Save parent and subagents; --status, --discard, or --exit",
+    allowedWhilePaused: true,
+    handler: async (args: string, ctx: any) => {
+      suspension.setCommandContext(ctx);
+      try {
+        const option = args.trim();
+        if (option === "--status") { ctx.ui?.notify?.(suspension.status(), "info"); return; }
+        if (option === "--discard") { await suspension.discard(ctx); ctx.ui?.notify?.(suspension.status(), "info"); return; }
+        if (option && option !== "--exit") throw new Error("Usage: /pause [--exit|--status|--discard]");
+        await suspension.pause(ctx, option === "--exit");
+      } catch (error) { ctx.ui?.notify?.(`Not saved: ${error instanceof Error ? error.message : String(error)}`, "error"); }
+    },
+  });
+  pi.registerCommand("unpause", {
+    description: "Restore saved parent and subagent work",
+    allowedWhilePaused: true,
+    handler: async (args: string, ctx: any) => {
+      suspension.setCommandContext(ctx);
+      try {
+        if (args.trim()) throw new Error("Usage: /unpause");
+        await suspension.unpause(ctx);
+      } catch (error) { ctx.ui?.notify?.(`Resume incomplete: ${error instanceof Error ? error.message : String(error)}`, "error"); }
+    },
+  });
+
   pi.registerCommand("subagents", {
+    allowedWhilePaused: true,
     description: "Browse subagents",
-    handler: async (_args, ctx) => browseAgents(ctx),
+    handler: async (_args, ctx) => { suspension.setCommandContext(ctx); await browseAgents(ctx); },
   });
 }

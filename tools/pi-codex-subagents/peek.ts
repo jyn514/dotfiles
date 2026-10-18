@@ -88,7 +88,7 @@ export class SubagentPeekOverlay {
     this.modelName = info.modelId || info.model;
     this.loadSession();
     this.rebuildChat();
-    this.connectSocket();
+    if (info.status !== "suspended") this.connectSocket();
     this.pollInterval = setInterval(() => this.poll(), 200);
   }
 
@@ -394,9 +394,10 @@ export class SubagentPeekOverlay {
     const innerWidth = Math.max(20, width - 2);
     const title = ` ${this.info.taskName} `;
     const modelTag = this.modelName ? `[${truncateToWidth(this.modelName, 18)}] ` : "";
-    const statusIcon = { thinking: "◐", streaming: "●", calling: "◒", tool: "◑", done: "✓" }[this.status];
-    const statusColor = { thinking: "warning", streaming: "success", calling: "accent", tool: "accent", done: "success" }[this.status];
-    const statusText = ` ${statusIcon} ${this.status} `;
+    const suspended = this.info.status === "suspended";
+    const statusIcon = suspended ? "Ⅱ" : { thinking: "◐", streaming: "●", calling: "◒", tool: "◑", done: "✓" }[this.status];
+    const statusColor = suspended ? "warning" : { thinking: "warning", streaming: "success", calling: "accent", tool: "accent", done: "success" }[this.status];
+    const statusText = ` ${statusIcon} ${suspended ? "suspended" : this.status} `;
     const headerWidth = visibleWidth(title) + visibleWidth(modelTag) + visibleWidth(statusText);
     const lines = [
       this.theme.fg("border", "╭") +

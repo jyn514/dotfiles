@@ -2,7 +2,8 @@
 
 Codex-shaped, session-scoped subagents for [Pi](https://github.com/earendil-works/pi). Spawn isolated child Pi processes, receive their final responses automatically, steer active work, and inspect sessions in a live overlay.
 
-Requires Pi 0.80.4 or newer and Node.js 22.19 or newer.
+Ordinary subagent tools require Pi 0.80.4 or newer and Node.js 22.19 or newer.
+[Durable pause](#durable-pause) additionally requires Pi's native handoff and fresh-input admission APIs in both parent and children.
 
 ## Install
 
@@ -154,6 +155,56 @@ The overlay uses the child working directory for tool rendering and synchronizes
 
 Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `send_message` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
 
+## Durable pause
+
+Use `/pause --exit` to save the parent and its children, then exit only after saving succeeds.
+Reopen the **same parent session file**, which starts paused, and run `/unpause`.
+`/resume` remains Pi's session picker.
+In RPC mode, `/pause --exit` may need a subsequent command or stdin EOF before the process exits; see [source-test limits](test/SOURCE-CORE.md#coverage-and-limits).
+
+| Command | Action |
+|---|---|
+| `/pause` | Stop at complete provider/tool boundaries, persist pending inputs, and close captured children |
+| `/pause --exit` | Save, then request shutdown; failure leaves the parent open |
+| `/pause --status` | Show the saved/incomplete phase and pending count |
+| `/unpause` | Prepare saved children idle, then start fresh continuation runs |
+| `/pause --discard` | Explicitly revoke saved pending inputs; already-admitted new runs remain owned by Pi |
+
+This requires command-context `handoff()` and `submitInput()`, pause APIs, and opted-in paused command dispatch.
+An older Pi can still run ordinary subagent tools but cannot save this workflow.
+The packaged child helper loads before template extensions and checks these capabilities before restoration.
+Templates that start independent provider work outside Pi's normal admission are unsupported.
+
+A running tool must finish before saving succeeds.
+A tool or handler that never returns prevents graceful save; terminating it is not successful suspension.
+Wait tools return a nonterminal paused result while the parent batch drains.
+Child completions remain buffered until parent delivery is acknowledged.
+
+Continuation reads the latest valid transcript and visibly identifies itself as harness input, not a new human request.
+Completed tool effects are not mechanically repeated, although the model can choose to call a tool again.
+Pending text, images, and distinct equal-content occurrences survive; replay can change roles, timestamps, and cross-lane order.
+Fresh runs use current settings and a fresh retry budget, not saved callback or scheduler state.
+An idle parent with only child work receives no unnecessary continuation prompt.
+
+A partial failure reports **incomplete**, not saved.
+Keep that parent open and retry `/pause`, or `/unpause` to continue captured work without restarting unaffected children.
+If one continuation starts and another fails, retry does not start the accepted continuation again.
+Handled/rejected continuation markers leave the original task unresolved.
+Unknown admission or process death after admission requires inspection, not speculative replay.
+Inspect transcripts, child status, and the group record before explicitly discarding work you no longer need.
+Ordinary quit, abort, or forced termination does not implicitly save pending inputs.
+
+Records live under the configured runs directory, in the parent's scope directory: `group.json`, child `*.info.json`, and session transcripts.
+Saved work is exempt from retention cleanup until resumed or discarded.
+Restart authority requires the original parent ID, canonical file path, and an ancestor transcript anchor.
+Copies, forks, imports, and navigation behind/off that anchor cannot replay the saved generation.
+Consumption and discard remain revoked across transcript navigation.
+
+An exclusive `.group.claim` prevents concurrent restoration.
+Normal shutdown releases it.
+After a crash, remove a stale claim only after verifying that no parent or restore process still owns it; a PID alone is insufficient proof.
+Keep the group record and transcripts for recovery.
+
 ## Output limits
 
 Automatic completions, wait tools, and response tools follow Pi's standard 50 KB / 2,000-line output limit. Oversized output is truncated and the complete text is written beside the runtime data; the returned notice includes a path that can be read with Pi's `read` tool.
@@ -161,6 +212,14 @@ Automatic completions, wait tools, and response tools follow Pi's standard 50 KB
 ## Environment
 
 `PI_SUBAGENT_PI_BIN` overrides the Pi executable used for child processes. Normally children use the same Pi installation as the parent.
+
+## Development tests
+
+From the repository root, run `bun run test:subagents`.
+The suite uses changed Pi sources, the real RPC/session runtime, a local faux provider, and disposable state without provider credentials.
+Set `PI_TEST_CORE_ROOT` to the companion Pi checkout if it is not `/src/llms/pi`.
+See [the source-test instructions](test/SOURCE-CORE.md) for prerequisites, focused runs, and fixture limits.
+Installed package artifacts are not sufficient evidence for the pause workflow.
 
 ## License
 
