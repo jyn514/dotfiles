@@ -131,12 +131,28 @@ class SharedChatHistoryTests(unittest.TestCase):
                 self.assertEqual("", converted.stdout)
                 self.assertEqual("preserve existing session\n", self.output.read_text())
 
-    def pi_tree(self):
-        result = subprocess.run(["node", str(Path(__file__).with_name("inspect-pi-session.mjs")),
-                                 str(self.output)], env=self.environment, cwd=ROOT,
-                                capture_output=True, text=True)
+    def pi_trees(self, *files):
+        result = self.run_command("node", Path(__file__).with_name("inspect-pi-session.mjs"), *files)
         self.assertEqual(0, result.returncode, result.stderr)
-        return json.loads(result.stdout)
+        trees = json.loads(result.stdout)
+        self.assertEqual(len(files), len(trees))
+        return trees
+
+    def pi_tree(self):
+        return self.pi_trees(self.output)[0]
+
+    def test_pi_inspection_batch_propagates_a_later_native_failure(self):
+        self.lineage()
+        result = self.run_command(CONVERT, CHILD, "--branches", "-o", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        invalid = self.root / "invalid Pi session.jsonl"
+        invalid.write_text("not a Pi session\n")
+        result = self.run_command("node", Path(__file__).with_name("inspect-pi-session.mjs"),
+                                  self.output, invalid)
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertTrue(result.stderr)
+        self.assertEqual("not a Pi session\n", invalid.read_text())
 
     def native_environment(self):
         binaries = self.root / "native bin"
@@ -231,24 +247,34 @@ class SharedChatHistoryTests(unittest.TestCase):
 
     def test_branch_import_can_select_a_shared_ancestor_or_empty_thread(self):
         parent, latest = self.lineage()
-        for file, expected in ((parent, ["café", "discarded parent"]),
-                               (latest, ["café", "parent continuation", "current child"])):
+        selected = ((parent, ["café", "discarded parent"]),
+                    (latest, ["café", "parent continuation", "current child"]))
+        snapshots = []
+        for file, expected in selected:
             with self.subTest(file=file.name):
                 result = self.run_command(CONVERT, file, "--branches", "-o", self.output)
                 self.assertEqual(0, result.returncode, result.stderr)
-                tree = self.pi_tree()
-                self.assertEqual(expected, tree["active"])
-                self.assertEqual(expected, tree["context"])
+                snapshot = self.root / f"selected {len(snapshots)}.jsonl"
+                # The next conversion overwrites self.output; retain this exact SDK input.
+                snapshot.write_bytes(self.output.read_bytes())
+                snapshots.append(snapshot)
         empty_id = "019abcde-1234-7000-8000-000000000006"
         empty = self.write_rollout(f"rollout-2026-10-14T15-00-00-{empty_id}.jsonl", empty_id, [])
         alternate = self.write_rollout(f"rollout-2026-10-14T16-00-00-{empty_id}_{PARENT_ROLLOUT}.jsonl",
                                         empty_id, ["alternative from empty"])
         result = self.run_command(CONVERT, empty, "--branches", "-o", self.output)
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual([], self.pi_tree()["active"])
+        empty_snapshot = self.root / "empty selection.jsonl"
+        empty_snapshot.write_bytes(self.output.read_bytes())
         result = self.run_command(CONVERT, alternate, "--branches", "-o", self.output)
         self.assertEqual(0, result.returncode, result.stderr)
-        tree = self.pi_tree()
+        trees = self.pi_trees(*snapshots, empty_snapshot, self.output)
+        for (file, expected), tree in zip(selected, trees[:2]):
+            with self.subTest(file=file.name):
+                self.assertEqual(expected, tree["active"])
+                self.assertEqual(expected, tree["context"])
+        self.assertEqual([], trees[2]["active"])
+        tree = trees[3]
         self.assertEqual(["alternative from empty"], tree["active"])
         self.assertEqual({(), ("alternative from empty",)}, {tuple(path) for path in tree["paths"]})
         self.assertTrue(any(empty_id in label for label in tree["labels"]))
