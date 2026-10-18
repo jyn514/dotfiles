@@ -215,6 +215,8 @@ Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `
 It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
 Each guest's binary checksum, runtime, and wrapper checks share one container run.
 The colocated-workspace probe computes the proxy binary's checksum without copying the binary out of its image.
+It also checks the TLS certificate-store alias and starts the proxy server to exercise HTTP/HTTPS fetch helpers under Landlock.
+That check uses refused loopback connections with networking disabled, so missing helpers or denied execution cannot pass as expected fetch failures.
 One Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.
 Bake schedules independent work concurrently and shares common stages without publishing and resolving an intermediate JJ tag.
 All three images are built before the probes run.

@@ -109,7 +109,8 @@ def main() -> None:
         # before the outer finally can remove their image aliases.
         with ThreadPoolExecutor(max_workers=3) as probes:
             colocated = probes.submit(
-                run, 'docker', 'run', '--rm', '--interactive', '--tmpfs', '/tmp:mode=1777',
+                run, 'docker', 'run', '--rm', '--interactive', '--network', 'none',
+                '--tmpfs', '/tmp:mode=1777', '--tmpfs', '/run/sandbox-proxy:mode=1777',
                 '--entrypoint', '/trusted/bin/sh', jj_image,
                 input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
             )

@@ -28,6 +28,11 @@ fn trusted_jj_policy_cannot_write_outside_repository() {
 }
 
 #[test]
+fn trusted_git_can_read_randomness_without_write_access() {
+    assert_success(run_fixture("random"));
+}
+
+#[test]
 fn inspection_policy_cannot_write_repository_or_metadata() {
     assert_success(run_fixture("inspect"));
 }

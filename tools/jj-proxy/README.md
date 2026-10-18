@@ -20,6 +20,9 @@ cargo build --locked --manifest-path tools/jj-proxy/Cargo.toml
 
 The image owner reads JJ release URLs and SHA-256 checksums from `config/mise.lock`, also used by host mise.
 The proxy downloads the locked musl binary for amd64 or arm64 and verifies it before extraction.
+The runtime packages Git's HTTP/HTTPS helpers under `/trusted/bin`, where Landlock permits execution.
+Alpine's `/etc/ssl/cert.pem` path links to the bundled CA store for HTTPS certificate verification.
+Landlock permits read-only access to `/dev/urandom` for Git's temporary object filenames.
 The guest image copies that binary from the resolved proxy image instead of downloading a separate release.
 Standalone Docker or Podman builds must supply the `JJ_AMD64_URL`, `JJ_AMD64_SHA256`, `JJ_ARM64_URL`, and `JJ_ARM64_SHA256` build arguments from that lock.
 Refresh the JJ lock with `mise lock aqua:jj-vcs/jj --bump --platform linux-x64,linux-arm64,macos-arm64` from `config/`.

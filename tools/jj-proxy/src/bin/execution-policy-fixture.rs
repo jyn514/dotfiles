@@ -1,7 +1,7 @@
 use jj_proxy::execution_policy;
 use std::env;
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = env::temp_dir().join(format!("jj-proxy-policy-{}", std::process::id()));
@@ -45,6 +45,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fs::write(&working_file, "new")?;
             fs::write(git.join("metadata"), "new")?;
         }
+        Some("random") => {
+            let mut bytes = [0; 32];
+            fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+            match fs::OpenOptions::new().write(true).open("/dev/urandom") {
+                Err(error) if error.kind() == ErrorKind::PermissionDenied => {}
+                Err(error) => return Err(error.into()),
+                Ok(_) => return Err("policy allowed writing to the random device".into()),
+            }
+        }
         Some("outside") => match fs::write(root.join("outside-repository"), "no") {
             Err(error) if error.kind() == ErrorKind::PermissionDenied => {}
             Err(error) => return Err(error.into()),
@@ -68,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(()) => return Err("inspection policy allowed configuration writes".into()),
             }
         }
-        _ => return Err("expected worktree, outside, or inspect mode".into()),
+        _ => return Err("expected worktree, outside, random, or inspect mode".into()),
     }
     Ok(())
 }

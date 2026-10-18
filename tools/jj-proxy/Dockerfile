@@ -41,7 +41,8 @@ RUN case "${TARGETARCH}" in \
     && cp /jj/jj /jj-bin \
     && /jj-bin --version \
     && rm -rf /jj /jj.tar.gz
-RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
+RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy /image-root/etc/ssl \
+    && ln -s certs/ca-certificates.crt /image-root/etc/ssl/cert.pem
 
 FROM build AS verified
 # The pinned JJ binary uses external Git during secure-config test setup.
@@ -53,13 +54,17 @@ RUN --mount=type=cache,target=/build/target \
     JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked
 
 FROM alpine:3.22 AS editor
+# Git also searches PATH for transport helpers; keep them under the existing
+# trusted executable directory rather than widening Landlock execution access.
 RUN apk add --no-cache git \
     && mkdir -p /trusted/bin \
     && cp /bin/busybox /trusted/bin/busybox \
     && cp /bin/busybox /trusted/bin/sh \
     && ln -s busybox /trusted/bin/cp \
     && ln -s busybox /trusted/bin/rm \
-    && cp /usr/bin/git /trusted/bin/git
+    && cp /usr/bin/git /trusted/bin/git \
+    && cp /usr/libexec/git-core/git-remote-http /trusted/bin/git-remote-http \
+    && ln -s git-remote-http /trusted/bin/git-remote-https
 
 FROM scratch AS proxy-runtime
 ENV PATH=/trusted/bin

@@ -86,6 +86,7 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) 
     let system_lib = PathFd::new("/lib").wrap_err("cannot open system library directory")?;
     let user_lib = PathFd::new("/usr/lib").wrap_err("cannot open user library directory")?;
     let null = PathFd::new("/dev/null").wrap_err("cannot open null device")?;
+    let random = PathFd::new("/dev/urandom").wrap_err("cannot open random device")?;
     let read_access = make_bitflags!(AccessFs::{ ReadFile | ReadDir });
     let write_access = make_bitflags!(AccessFs::{
         WriteFile | RemoveDir | RemoveFile | MakeDir | MakeReg | MakeSock |
@@ -133,6 +134,9 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) 
             make_bitflags!(AccessFs::{ ReadFile | WriteFile }),
         ))
         .wrap_err("cannot add null-device rule")?
+        // Alpine Git reads /dev/urandom when creating temporary object files.
+        .add_rule(PathBeneath::new(random, AccessFs::ReadFile))
+        .wrap_err("cannot add random-device read rule")?
         .restrict_self()
         .wrap_err("cannot enforce Landlock execution policy")?;
     if !matches!(
