@@ -1,20 +1,22 @@
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
-use jj_proxy::{execution_policy, policy};
+use jj_proxy::{execution_policy, policy, workspaces::{self, Workspace}};
+#[allow(deprecated)]
+use nix::fcntl::{flock, FlockArg};
 use serde::{Deserialize, Serialize};
 use nix::fcntl::{openat, OFlag};
 use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{kill, Signal};
 use nix::sys::stat::Mode;
-use nix::unistd::{close, dup, fchdir, setsid, Pid};
+use nix::unistd::{dup, fchdir, setsid, Pid};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::net::Shutdown;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -89,30 +91,22 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
     }
 }
 
+#[cfg(test)]
 fn prepare_jj_config(repo: &str, scope: &str, jj: &Path, trusted_config: &Path, config_home: &Path) -> Result<()> {
-    let output = Command::new(jj)
-        .arg("--config-file").arg(trusted_config)
+    prepare_jj_config_deadline(repo, scope, jj, trusted_config, config_home, Instant::now() + TIMEOUT)
+}
+
+fn prepare_jj_config_deadline(repo: &str, scope: &str, jj: &Path, trusted_config: &Path, config_home: &Path, deadline: Instant) -> Result<()> {
+    let mut command = Command::new(jj);
+    command.arg("--config-file").arg(trusted_config)
         .args(["--repository", repo, "--ignore-working-copy", "config", "path", scope])
-        .env_clear()
-        .env("HOME", "/nonexistent")
-        .env("XDG_CONFIG_HOME", config_home)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .wrap_err("cannot initialize per-repository Jujutsu config")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(8192)]);
-        let stderr = stderr.trim();
-        let detail = if stderr.is_empty() {
-            String::new()
-        } else {
-            format!(": {stderr}")
-        };
-        bail!(
-            "cannot initialize per-repository Jujutsu config: jj exited with {}{detail}",
-            output.status,
-        );
+        .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", config_home)
+        .stdin(Stdio::null());
+    // SAFETY: setsid is async-signal-safe and captures no shared state.
+    unsafe { command.pre_exec(|| setsid().map(|_| ()).map_err(|error| io::Error::from_raw_os_error(error as i32))); }
+    let (status, _, stderr) = run_bounded(&mut command, deadline).wrap_err("cannot initialize per-repository Jujutsu config")?;
+    if status != 0 {
+        bail!("cannot initialize per-repository Jujutsu config: jj exited with {status}: {}", String::from_utf8_lossy(&stderr[..stderr.len().min(8192)]).trim());
     }
     Ok(())
 }
@@ -137,7 +131,12 @@ fn seed_inspection_config(config_id_path: &Path, kind: &str, config_home: &Path)
     Ok(true)
 }
 
+#[cfg(test)]
 fn prepare_inspection_config(workspace: &Path, jj: &Path, trusted_config: &Path, config_home: &Path) -> Result<()> {
+    prepare_inspection_config_deadline(workspace, jj, trusted_config, config_home, Instant::now() + TIMEOUT)
+}
+
+fn prepare_inspection_config_deadline(workspace: &Path, jj: &Path, trusted_config: &Path, config_home: &Path, deadline: Instant) -> Result<()> {
     let jj_dir = workspace.join(".jj");
     let repo_entry = jj_dir.join("repo");
     let repo_dir = if repo_entry.is_dir() {
@@ -151,99 +150,73 @@ fn prepare_inspection_config(workspace: &Path, jj: &Path, trusted_config: &Path,
     let workspace_has_config = seed_inspection_config(&jj_dir.join("workspace-config-id"), "workspaces", config_home)?;
     let workspace = workspace.to_str().ok_or_else(|| eyre!("non-UTF-8 workspace path"))?;
     if repo_has_config {
-        prepare_jj_config(workspace, "--repo", jj, trusted_config, config_home)?;
+        prepare_jj_config_deadline(workspace, "--repo", jj, trusted_config, config_home, deadline)?;
     }
     if workspace_has_config {
-        prepare_jj_config(workspace, "--workspace", jj, trusted_config, config_home)?;
+        prepare_jj_config_deadline(workspace, "--workspace", jj, trusted_config, config_home, deadline)?;
     }
     Ok(())
 }
 
-fn open_cwd(root: RawFd, path: &str, inspect: bool) -> Result<OwnedFd> {
-    if path.contains('\0') || (!inspect && path.starts_with('/')) || (inspect && path != "/src" && !path.starts_with("/src/")) {
+fn open_cwd(root: RawFd, path: &str, source: &Path) -> Result<OwnedFd> {
+    if path.contains('\0') || !Path::new(path).starts_with(source) {
         bail!("cwd is outside the protected /src workspace");
     }
-    let path = if inspect { path.strip_prefix("/src").unwrap_or("") } else { path };
-    let mut current = dup(root).wrap_err("could not duplicate repository descriptor")?;
-    for component in path.split('/').filter(|part| !part.is_empty() && *part != ".") {
-        if component == ".." { bail!("cwd escapes the repository"); }
-        let next = openat(
-            Some(current), component,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        ).wrap_err_with(|| format!("invalid cwd component {component:?}"))?;
-        close(current).wrap_err("could not close cwd descriptor")?;
-        current = next;
+    // Protocol v2 carries canonical absolute paths, not a mode-dependent namespace.
+    if Path::new(path).components().any(|part| matches!(part, std::path::Component::ParentDir | std::path::Component::CurDir))
+        || path.split('/').any(|part| part == "." || part == "..") || path.contains("//") || (Path::new(path) != source && path.ends_with('/')) {
+        bail!("cwd must be canonical absolute");
     }
-    // SAFETY: `current` came from `dup` or `openat`, so it is a valid, open
-    // descriptor. Each superseded descriptor was closed above, and no other
-    // owning Rust value was constructed from `current`; ownership can
-    // therefore be transferred exactly once to `OwnedFd` here.
-    Ok(unsafe { OwnedFd::from_raw_fd(current) })
+    let mut current = dup_owned(root)?;
+    for component in Path::new(path).strip_prefix(source).unwrap().to_str().unwrap().split('/').filter(|part| !part.is_empty()) {
+        let next = openat(Some(current.as_raw_fd()), component,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty()).wrap_err_with(|| format!("invalid cwd component {component:?}"))?;
+        // SAFETY: openat returned a fresh owned descriptor.
+        current = unsafe { OwnedFd::from_raw_fd(next) };
+    }
+    Ok(current)
 }
 
+fn dup_owned(fd: RawFd) -> Result<OwnedFd> {
+    // SAFETY: dup returns a fresh owned descriptor.
+    Ok(unsafe { OwnedFd::from_raw_fd(dup(fd)?) })
+}
+
+#[cfg(test)]
 fn jj_command() -> Command {
-    let mut command = Command::new("/trusted/bin/jj");
-    // Command-line config has higher precedence than repository config. Keep
-    // jj.toml as the single declaration instead of repeating protected keys.
-    command.args([
-        "--no-pager",
-        "--color=never",
-        "--config-file",
-        TRUSTED_JJ_CONFIG,
-    ]);
-    command
+    Runtime::trusted().command(None)
 }
 
 fn agent_jj_command(user: &str, email: &str) -> Command {
-    let mut command = jj_command();
-    // The trusted file contains the human identity used when returning control.
-    // Agent attribution must therefore override it at the same CLI precedence.
-    command
-        .arg("--config")
-        .arg(format!("user.name={user}"))
-        .arg("--config")
-        .arg(format!("user.email={email}"));
-    command
+    Runtime::trusted().command(Some((user, email)))
 }
 
 fn workspace_for(path: &Path) -> Option<&Path> {
     path.ancestors().find(|ancestor| ancestor.join(".jj").is_dir())
 }
 
-fn select_repository(request: &Request, selected_repo: &Path, source_root: &Path, selector: Option<&str>) -> Result<(std::path::PathBuf, bool)> {
-    let invocation = if matches!(request.mode, RequestMode::Inspect) {
-        Path::new(&request.cwd).to_path_buf()
-    } else {
-        selected_repo.join(&request.cwd)
-    };
+fn select_repository(request: &Request, workspaces: &[Workspace], source_root: &Path, selector: Option<&str>) -> Result<(PathBuf, bool)> {
+    let invocation = Path::new(&request.cwd);
     let target = match selector {
         Some(value) => fs::canonicalize(invocation.join(value)).wrap_err("cannot resolve repository selector")?,
-        None => invocation,
+        None => invocation.to_path_buf(),
     };
-    if selector.is_some() && !target.starts_with(source_root) && target != selected_repo {
-        bail!("repository selector is outside /src");
-    }
-    let workspace = if selector.is_some() || matches!(request.mode, RequestMode::Inspect) {
-        workspace_for(&target).ok_or_else(|| eyre!("repository selector is not inside a Jujutsu workspace"))?
-    } else {
-        selected_repo
-    };
-    let inspect = matches!(request.mode, RequestMode::Inspect) || workspace != selected_repo;
+    if !target.starts_with(source_root) { bail!("repository selector is outside /src"); }
+    let workspace = workspace_for(&target).ok_or_else(|| eyre!("repository selector is not inside a Jujutsu workspace"))?;
+    if !workspace.starts_with(source_root) { bail!("repository workspace is outside /src"); }
+    let inspect = matches!(request.mode, RequestMode::Inspect)
+        || !workspaces.iter().any(|entry| Path::new(&entry.root) == workspace);
     Ok((workspace.to_path_buf(), inspect))
 }
 
+#[cfg(test)]
 fn author_update_command(user: &str, email: &str) -> Command {
     let mut command = agent_jj_command(user, email);
     command.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
     command
 }
 
-fn reset_author_command() -> Command {
-    let mut command = jj_command();
-    command.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
-    command
-}
 
 fn trusted_environment(temporary_directory: &str) -> Vec<(&str, &str)> {
     vec![
@@ -277,9 +250,103 @@ fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
 
 fn kill_group(pid: u32) { let _ = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL); }
 
+/// Request framing requires shutdown(Write), so read EOF/RDHUP is normal.
+/// Only a full Unix-stream disconnect or socket error cancels a queued request.
+fn check_peer(peer: Option<&UnixStream>) -> Result<()> {
+    let Some(peer) = peer else { return Ok(()); };
+    let mut descriptor = nix::libc::pollfd { fd: peer.as_raw_fd(), events: 0, revents: 0 };
+    loop {
+        // SAFETY: descriptor is a live single pollfd, and timeout zero cannot block.
+        let status = unsafe { nix::libc::poll(&mut descriptor, 1, 0) };
+        if status < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted { continue; }
+            return Err(error).wrap_err("cannot check request peer");
+        }
+        if descriptor.revents & (nix::libc::POLLHUP | nix::libc::POLLERR | nix::libc::POLLNVAL) != 0 {
+            bail!("request canceled: peer disconnected before mutation");
+        }
+        return Ok(());
+    }
+}
+
+/// Open, don't create: the launcher owns persistent inode identity across services.
+fn acquire_lock(path: &Path, deadline: Instant) -> Result<File> {
+    acquire_lock_checked(path, deadline, || Ok(()))
+}
+
+fn acquire_lock_checked(path: &Path, deadline: Instant, mut check_cancellation: impl FnMut() -> Result<()>) -> Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = OpenOptions::new().read(true).write(true)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC).open(path)
+        .wrap_err("cannot open repository request lock")?;
+    if !file.metadata()?.is_file() { bail!("repository request lock is not a regular file"); }
+    loop {
+        check_cancellation()?;
+        if Instant::now() >= deadline { bail!("repository request lock deadline exceeded"); }
+        #[allow(deprecated)]
+        match flock(file.as_raw_fd(), FlockArg::LockExclusiveNonblock) {
+            Ok(()) => {
+                // Cancellation may have raced with successful flock. Do not
+                // admit the request merely because ownership became available.
+                check_cancellation()?;
+                // Trusted JJ descendants retain the lease if the server dies.
+                // Normal requests reap the whole group before dropping it.
+                nix::fcntl::fcntl(file.as_raw_fd(), nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::empty()))?;
+                return Ok(file);
+            },
+            Err(nix::errno::Errno::EWOULDBLOCK) | Err(nix::errno::Errno::EINTR) =>
+                thread::sleep(Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now()))),
+            Err(error) => return Err(error).wrap_err("cannot acquire repository request lock"),
+        }
+    }
+}
+
+/// The caller gives every child its own session. No child may outlive ownership
+/// of the request lock, even when the leader exits while descendants hold pipes.
+fn run_bounded(command: &mut Command, deadline: Instant) -> Result<(i32, Vec<u8>, Vec<u8>)> {
+    #[cfg(target_os = "linux")]
+    nix::sys::prctl::set_child_subreaper(true).wrap_err("cannot adopt command descendants")?;
+    if Instant::now() >= deadline { bail!("request deadline exceeded before starting jj"); }
+    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let pid = child.id();
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let out_thread = thread::spawn(move || collect(stdout));
+    let err_thread = thread::spawn(move || collect(stderr));
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status.code().unwrap_or(128)),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) => { kill_group(pid); let _ = child.wait(); break Ok(124); }
+            Err(error) => { kill_group(pid); let _ = child.wait(); break Err(error); }
+        }
+    };
+    kill_group(pid);
+    // Adopted descendants remain in the child's process group. Wait until all
+    // are dead and reaped before the caller can drop its request lock.
+    #[cfg(target_os = "linux")]
+    loop {
+        match nix::sys::wait::waitpid(Pid::from_raw(-(pid as i32)), None) {
+            Ok(_) | Err(nix::errno::Errno::EINTR) => continue,
+            Err(nix::errno::Errno::ECHILD) => break,
+            Err(error) => return Err(error).wrap_err("cannot reap command descendants"),
+        }
+    }
+    let stdout = out_thread.join().ok().and_then(Result::ok).unwrap_or_default();
+    let stderr = err_thread.join().ok().and_then(Result::ok).unwrap_or_default();
+    Ok((status?, stdout, stderr))
+}
+
 fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
+    let parent = std::process::id();
     move || {
         let io_error = |error: nix::errno::Errno| io::Error::from_raw_os_error(error as i32);
+        #[cfg(target_os = "linux")]
+        {
+            nix::sys::prctl::set_pdeathsig(Signal::SIGKILL).map_err(io_error)?;
+            if nix::unistd::getppid().as_raw() != parent as i32 { return Err(io::Error::from_raw_os_error(nix::libc::ESRCH)); }
+        }
         setsid().map_err(io_error)?;
         fchdir(fd).map_err(io_error)?;
         let limits = [
@@ -293,15 +360,51 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
     }
 }
 
+struct Runtime<'a> {
+    source: &'a Path,
+    jj: &'a Path,
+    config: &'a Path,
+    config_home: &'a Path,
+    #[cfg(test)]
+    after_author_update: Option<&'a dyn Fn()>,
+}
+
+impl Runtime<'_> {
+    fn trusted() -> Runtime<'static> {
+        Runtime { source: Path::new("/src"), jj: Path::new("/trusted/bin/jj"), config: Path::new(TRUSTED_JJ_CONFIG), config_home: Path::new(CONFIG_HOME),
+            #[cfg(test)]
+            after_author_update: None,
+        }
+    }
+
+    fn command(&self, identity: Option<(&str, &str)>) -> Command {
+        let mut command = Command::new(self.jj);
+        command.args(["--no-pager", "--color=never", "--config-file"]).arg(self.config);
+        if let Some((user, email)) = identity {
+            command.arg("--config").arg(format!("user.name={user}"))
+                .arg("--config").arg(format!("user.email={email}"));
+        }
+        command
+    }
+}
+
 fn execute(
     request: &Request,
     command_policy: &policy::Policy,
     root: RawFd,
-    selected_repo: &Path,
+    workspaces: &[Workspace],
     temporary_directory: &str,
+    peer: Option<&UnixStream>,
 ) -> Response {
-    let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
-    if request.version != 1 { return failure("unsupported protocol version".into()); }
+    execute_with_runtime(request, command_policy, root, workspaces, temporary_directory, &Runtime::trusted(), Instant::now() + TIMEOUT, peer)
+}
+
+fn execute_with_runtime(
+    request: &Request, command_policy: &policy::Policy, root: RawFd,
+    workspaces: &[Workspace], temporary_directory: &str, runtime: &Runtime<'_>, deadline: Instant, peer: Option<&UnixStream>,
+) -> Response {
+    let failure = |message: String| Response { version: 2, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
+    if request.version != 2 { return failure("unsupported protocol version".into()); }
     let valid_identity = |value: &str, limit: usize| {
         !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
     };
@@ -314,9 +417,6 @@ fn execute(
         (None, None) => ("Codex", "breq@jyn.dev"),
         _ => return failure("invalid agent identity".into()),
     };
-    if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
-        return Response { version: 1, exit: 0, stdout: String::new(), stderr: String::new() };
-    }
     if matches!(request.mode, RequestMode::Inspect) && request.agent_split.is_some() {
         return failure("agent split is not allowed in inspection mode".into());
     }
@@ -339,12 +439,12 @@ fn execute(
         {
             return failure("invalid agent split request".into());
         }
-        if let Err(error) = fs::write(format!("{CONFIG_HOME}/agent-split.patch"), &split.patch) {
-            return failure(format!("could not stage split patch: {error}"));
-        }
     }
-    let cwd = match open_cwd(root, &request.cwd, matches!(request.mode, RequestMode::Inspect)) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
-    let (workspace, inspect) = match select_repository(request, selected_repo, Path::new("/src"), repository_selector.as_deref()) {
+    let cwd = match open_cwd(root, &request.cwd, runtime.source) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+    if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
+        return Response { version: 2, exit: 0, stdout: String::new(), stderr: String::new() };
+    }
+    let (workspace, inspect) = match select_repository(request, workspaces, runtime.source, repository_selector.as_deref()) {
         Ok(selection) => selection,
         Err(error) => return failure(error.to_string()),
     };
@@ -360,19 +460,46 @@ fn execute(
         || decision.is_some_and(|decision| decision.updates_author);
     if inspect {
         if request.agent_split.is_some() { return failure("agent split is not allowed in inspection mode".into()); }
-        if let Err(error) = prepare_inspection_config(&workspace, Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME)) {
+        if let Err(error) = prepare_inspection_config_deadline(&workspace, runtime.jj, runtime.config, runtime.config_home, deadline) {
             return failure(format!("cannot prepare inspection repository config: {error}"));
         }
     }
 
+    // An owned descriptor covers every mutating action, including commands
+    // without an author hook. Never acquire a second repository lock.
+    let _request_lock = if inspect { None } else {
+        let authority = workspaces.iter().find(|entry| Path::new(&entry.root) == workspace).unwrap();
+        match acquire_lock_checked(Path::new(&authority.lock), deadline, || check_peer(peer)) {
+            Ok(lock) => Some(lock), Err(error) => return failure(error.to_string()),
+        }
+    };
+    if !inspect {
+        if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
+    }
+    if let Some(split) = &request.agent_split {
+        if let Err(error) = fs::write(runtime.config_home.join("agent-split.patch"), &split.patch) {
+            return failure(format!("could not stage split patch: {error}"));
+        }
+    }
     if !inspect && updates_author {
-        let mut update = author_update_command(user, email);
+        if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
+        let mut update = runtime.command(Some((user, email)));
+        update.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
+        update.arg("--repository").arg(&workspace);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
+            .env("XDG_CONFIG_HOME", runtime.config_home)
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         // Match the local wrapper's best-effort update: failure must not block the
         // requested command, but successful commits must not inherit jyn's author.
         unsafe { update.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
-        let _ = update.status();
+        if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
+        match run_bounded(&mut update, deadline) {
+            Ok((124, _, _)) => return Response { version: 2, exit: 124, stdout: String::new(), stderr: "jj proxy: author update deadline exceeded\n".into() },
+            Err(error) if Instant::now() >= deadline => return failure(format!("author update deadline exceeded: {error}")),
+            _ => {}
+        }
+        #[cfg(test)]
+        if let Some(callback) = runtime.after_author_update { callback(); }
     }
 
     let mut command = if inspect {
@@ -380,9 +507,9 @@ fn execute(
         command.args(["inspect-jj", user, email]);
         command
     } else {
-        agent_jj_command(user, email)
+        runtime.command(Some((user, email)))
     };
-    if repository_selector.is_some() {
+    if repository_selector.is_some() || request.agent_split.is_some() {
         command.arg("--repository").arg(&workspace);
     }
     if let Some(split) = &request.agent_split {
@@ -394,70 +521,84 @@ fn execute(
         command.args(&argv);
     }
     command.env_clear().envs(command_environment(user, email, temporary_directory))
+        .env("XDG_CONFIG_HOME", runtime.config_home)
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if inspect {
-        for key in ["JJ_PROXY_REPO", "JJ_PROXY_GIT_DIR", "JJ_PROXY_COMMON_DIR", "JJ_PROXY_JJ_REPO"] {
+        for key in ["JJ_PROXY_REPO", "JJ_PROXY_WORKSPACES"] {
             if let Ok(value) = env::var(key) { command.env(key, value); }
         }
     }
     // SAFETY: the callback captures only the copied descriptor number and
-    // performs the async-signal-safe `setsid`, `fchdir`, and `setrlimit`
-    // syscalls. No proxy reader threads exist while `spawn` forks, and `cwd`
+    // performs only async-signal-safe process-control syscalls (including
+    // Linux prctl for parent-death signalling). No proxy reader threads exist while `spawn` forks, and `cwd`
     // remains alive until after `spawn` returns, so the descriptor is valid in
     // the child. The callback does not allocate, lock, or access shared state.
     unsafe { command.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
-    let mut child = match command.spawn() { Ok(child) => child, Err(error) => return failure(format!("could not start jj: {error}")) };
-    let pid = child.id();
-    let child_stdout = child.stdout.take().unwrap();
-    let child_stderr = child.stderr.take().unwrap();
-    let out_thread = thread::spawn(move || collect(child_stdout));
-    let err_thread = thread::spawn(move || collect(child_stderr));
-    let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.code().unwrap_or(128),
-            Ok(None) if started.elapsed() < TIMEOUT => thread::sleep(Duration::from_millis(20)),
-            Ok(None) => { kill_group(pid); let _ = child.wait(); break 124; }
-            Err(error) => { kill_group(pid); let _ = child.wait(); return failure(format!("could not wait for jj: {error}")); }
-        }
+    if !inspect && !updates_author {
+        if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
+    }
+    let output = match run_bounded(&mut command, deadline) {
+        Ok(output) => output,
+        Err(error) => return failure(format!("could not execute jj: {error}")),
     };
-    // A successful leader must not be allowed to leave inherited-pipe holders
-    // or other descendants behind in the proxy container.
-    kill_group(pid);
-    let stdout = out_thread.join().ok().and_then(Result::ok).unwrap_or_default();
-    let stderr = err_thread.join().ok().and_then(Result::ok).unwrap_or_default();
+    let (status, stdout, stderr) = output;
     if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
         return failure("output limit exceeded".into());
     }
     if status == 0 && !inspect && updates_author {
-        let mut reset = reset_author_command();
+        let mut reset = runtime.command(None);
+        reset.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
+        reset.arg("--repository").arg(&workspace);
         reset.env_clear().envs(trusted_environment(temporary_directory))
+            .env("XDG_CONFIG_HOME", runtime.config_home)
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         // A successful agent command may create or snapshot a new working-copy
         // commit. Return its author to the repository identity so later human
         // work is not attributed to the agent that happened to create `@`.
         unsafe { reset.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
-        let _ = reset.status();
+        match run_bounded(&mut reset, deadline) {
+            Ok((124, _, _)) => return Response { version: 2, exit: 124, stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr: "jj proxy: author reset deadline exceeded\n".into() },
+            Err(error) if Instant::now() >= deadline => return failure(format!("author reset deadline exceeded: {error}")),
+            _ => {}
+        }
     }
-    Response { version: 1, exit: status, stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr: String::from_utf8_lossy(&stderr).into_owned() }
+    Response { version: 2, exit: status, stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr: String::from_utf8_lossy(&stderr).into_owned() }
+}
+
+fn startup_timeout(value: Option<&str>) -> Result<Duration> {
+    let Some(value) = value else { return Ok(TIMEOUT); };
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        bail!("JJ_PROXY_STARTUP_TIMEOUT_SECS must be a positive integer");
+    }
+    let seconds: u64 = value.parse().wrap_err("invalid JJ_PROXY_STARTUP_TIMEOUT_SECS")?;
+    if seconds == 0 { bail!("JJ_PROXY_STARTUP_TIMEOUT_SECS must be a positive integer"); }
+    Ok(Duration::from_secs(seconds))
 }
 
 fn serve() -> Result<()> {
     let command_policy = policy::Policy::load(Path::new(TRUSTED_COMMAND_POLICY))?;
     // The server retains its mutation policy; inspection children add a
     // read-only policy before executing Jujutsu.
-    let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".to_owned());
-    // Keep both roots available: request mode, not the server's startup
-    // environment, selects the cwd namespace.
+    let workspaces = workspaces::load()?;
     let source_root = File::open("/src").wrap_err("cannot open source")?;
-    let repository_root = File::open(&repo).wrap_err("cannot open repository")?;
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
     fs::create_dir_all(TEMP_HOME).wrap_err("cannot create Jujutsu temporary directory")?;
     fs::set_permissions(TEMP_HOME, fs::Permissions::from_mode(0o700))
         .wrap_err("cannot secure Jujutsu temporary directory")?;
-    execution_policy::install(&repo)?;
-    prepare_jj_config(&repo, "--repo", Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME))?;
+    execution_policy::install_workspaces(&workspaces, true)?;
+    let startup_budget = match env::var("JJ_PROXY_STARTUP_TIMEOUT_SECS") {
+        Ok(value) => startup_timeout(Some(&value))?,
+        Err(env::VarError::NotPresent) => startup_timeout(None)?,
+        Err(error) => return Err(error).wrap_err("invalid JJ_PROXY_STARTUP_TIMEOUT_SECS"),
+    };
+    // One startup budget covers all stores, not one full timeout per root.
+    let deadline = Instant::now().checked_add(startup_budget).ok_or_else(|| eyre!("startup deadline is out of range"))?;
+    for workspace in &workspaces {
+        let _lock = acquire_lock(Path::new(&workspace.lock), deadline)?;
+        prepare_jj_config_deadline(&workspace.root, "--repo", Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME), deadline)?;
+        prepare_jj_config_deadline(&workspace.root, "--workspace", Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME), deadline)?;
+    }
     let socket = socket_path();
     let _ = fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket).wrap_err("cannot bind proxy socket")?;
@@ -471,15 +612,12 @@ fn serve() -> Result<()> {
             Ok(request) => execute(
                 &request,
                 &command_policy,
-                if matches!(request.mode, RequestMode::Inspect) {
-                    source_root.as_raw_fd()
-                } else {
-                    repository_root.as_raw_fd()
-                },
-                Path::new(&repo),
+                source_root.as_raw_fd(),
+                &workspaces,
                 TEMP_HOME,
+                Some(&stream),
             ),
-            Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
+            Err(error) => Response { version: 2, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
     }
@@ -487,21 +625,12 @@ fn serve() -> Result<()> {
 }
 
 fn client(args: Vec<String>) -> Result<i32> {
-    let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".into());
-    let cwd = env::current_dir().wrap_err("cannot read current directory")?;
-    let repo_path = fs::canonicalize(&repo).wrap_err("repository unavailable")?;
-    let cwd = fs::canonicalize(cwd).wrap_err("cannot resolve current directory")?;
-    let inspect = env::var_os("JJ_PROXY_INSPECT").is_some()
-        || (cwd.starts_with("/src") && cwd.strip_prefix(&repo_path).is_err());
-    let cwd = if inspect {
-        cwd.to_string_lossy().into_owned()
-    } else {
-        cwd.strip_prefix(&repo_path)
-            .map_err(|_| eyre!("current directory is outside the protected repository"))?
-            .to_string_lossy().into_owned()
-    };
+    let cwd = fs::canonicalize(env::current_dir().wrap_err("cannot read current directory")?).wrap_err("cannot resolve current directory")?;
+    if !cwd.starts_with("/src") { bail!("current directory is outside /src"); }
+    let inspect = env::var_os("JJ_PROXY_INSPECT").is_some();
+    let cwd = cwd.to_str().ok_or_else(|| eyre!("non-UTF-8 current directory"))?.to_owned();
     let request = Request {
-        version: 1,
+        version: 2,
         mode: if inspect { RequestMode::Inspect } else { RequestMode::Mutate },
         cwd,
         argv: args,
@@ -523,7 +652,7 @@ fn client(args: Vec<String>) -> Result<i32> {
     write_frame(&mut stream, &body).wrap_err("cannot send proxy request")?;
     stream.shutdown(Shutdown::Write).wrap_err("cannot finish proxy request")?;
     let response: Response = serde_json::from_slice(&read_frame(&mut stream, MAX_OUTPUT * 3).wrap_err("cannot read proxy response")?).wrap_err("cannot decode proxy response")?;
-    if response.version != 1 { bail!("unsupported response version"); }
+    if response.version != 2 { bail!("unsupported response version"); }
     print!("{}", response.stdout); eprint!("{}", response.stderr);
     Ok(response.exit)
 }
@@ -550,8 +679,8 @@ fn inspect_jj(args: &[String]) -> Result<i32> {
     if args.len() < 3 {
         bail!("invalid inspection invocation");
     }
-    let repo = env::var("JJ_PROXY_REPO").wrap_err("repository unavailable")?;
-    execution_policy::install_inspect(&repo)?;
+    let workspaces = workspaces::load()?;
+    execution_policy::install_workspaces(&workspaces, false)?;
     let mut command = agent_jj_command(&args[0], &args[1]);
     command.arg("--ignore-working-copy").args(&args[2..]);
     Err(command.exec().into())
@@ -626,7 +755,7 @@ mod tests {
 
     #[test]
     fn inspection_prepares_config_without_changing_repository_metadata() {
-        let jj = env::var_os("JJ_PROXY_TEST_JJ").map(PathBuf::from).or_else(|| {
+        let jj = env::var_os("JJ_PROXY_TEST_JJ").or_else(|| env::var_os("DOTFILES_TEST_JJ_REAL")).map(PathBuf::from).or_else(|| {
             ["/trusted/bin/jj", "/opt/agent-tools/bin/jj", "/opt/homebrew/bin/jj"]
                 .into_iter().map(PathBuf::from).find(|path| {
                     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
@@ -715,16 +844,21 @@ mod tests {
         fs::create_dir_all(selected.join("nested")).unwrap();
         std::os::unix::fs::symlink(&outside, selected.join("nested/escape")).unwrap();
         let mut request = Request {
-            version: 1, mode: RequestMode::Mutate, cwd: "nested".into(),
+            version: 2, mode: RequestMode::Mutate, cwd: selected.join("nested").to_str().unwrap().into(),
             argv: vec!["status".into()], agent_split: None, user: None, email: None,
         };
-        assert_eq!((selected.clone(), false), select_repository(&request, &selected, &source, Some(".")).unwrap());
-        assert_eq!((other.clone(), true), select_repository(&request, &selected, &source, Some("../../other")).unwrap());
-        assert!(select_repository(&request, &selected, &source, Some(outside.to_str().unwrap())).is_err());
-        assert!(select_repository(&request, &selected, &source, Some("escape")).is_err());
+        let authority = vec![Workspace { root: selected.to_str().unwrap().into(), git_dir: String::new(), common_dir: String::new(), jj_repo: String::new(), lock: String::new() }];
+        assert_eq!((selected.clone(), false), select_repository(&request, &authority, &source, Some(".")).unwrap());
+        assert_eq!((other.clone(), true), select_repository(&request, &authority, &source, Some("../../other")).unwrap());
+        assert!(select_repository(&request, &authority, &source, Some(outside.to_str().unwrap())).is_err());
+        assert!(select_repository(&request, &authority, &source, Some("escape")).is_err());
+        let mut both = authority.clone();
+        both.push(Workspace { root: other.to_str().unwrap().into(), ..authority[0].clone() });
+        assert_eq!((other.clone(), false), select_repository(&request, &both, &source, Some("../../other")).unwrap());
         request.mode = RequestMode::Inspect;
+        assert_eq!((other.clone(), true), select_repository(&request, &both, &source, Some("../../other")).unwrap());
         request.cwd = other.to_string_lossy().into_owned();
-        assert_eq!((selected, true), select_repository(&request, &source.join("selected"), &source, Some("../selected")).unwrap());
+        assert_eq!((selected, true), select_repository(&request, &authority, &source, Some("../selected")).unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -787,7 +921,7 @@ mod tests {
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let root = File::open("/tmp").unwrap();
         let request = Request {
-            version: 1,
+            version: 2,
             mode: RequestMode::Inspect,
             cwd: "/src/other".into(),
             argv: Vec::new(),
@@ -799,8 +933,374 @@ mod tests {
             user: None,
             email: None,
         };
-        let response = execute(&request, &policy, root.as_raw_fd(), Path::new("/tmp"), "/tmp");
+        let response = execute(&request, &policy, root.as_raw_fd(), &[], "/tmp", None);
         assert_eq!(2, response.exit);
         assert!(response.stderr.contains("agent split is not allowed"));
     }
+
+    fn real_jj() -> Option<PathBuf> {
+        env::var_os("JJ_PROXY_TEST_JJ").or_else(|| env::var_os("DOTFILES_TEST_JJ_REAL"))
+            .map(PathBuf::from)
+    }
+
+    fn native(jj: &Path, root: &Path, args: &[&str]) -> String {
+        let output = Command::new(jj).args(args).current_dir(env::temp_dir())
+            .env_clear().env("HOME", root).env("XDG_CONFIG_HOME", root.join("config"))
+            .output().unwrap();
+        assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn test_authority(root: &Path, name: &str) -> Workspace {
+        let repo = root.join(name);
+        Workspace { root: repo.to_str().unwrap().into(), git_dir: repo.join(".jj/repo/store/git").to_str().unwrap().into(),
+            common_dir: repo.join(".jj/repo/store/git").to_str().unwrap().into(),
+            jj_repo: repo.join(".jj/repo").to_str().unwrap().into(), lock: root.join(format!("{name}.lock")).to_str().unwrap().into() }
+    }
+
+    /// Two independent request-owner processes exercise the real orchestration,
+    /// real JJ attribution and the same flock inode. Container mount enforcement
+    /// remains the container suite's responsibility.
+    #[test]
+    fn real_jj_cross_workspace_and_cross_process_sequences() {
+        let Some(jj) = real_jj() else { eprintln!("SKIP real JJ sequence: no JJ_PROXY_TEST_JJ or DOTFILES_TEST_JJ_REAL"); return; };
+        let child = env::var("JJ_PROXY_SEQUENCE_CHILD").ok();
+        let root = if let Some(path) = env::var_os("JJ_PROXY_SEQUENCE_ROOT") { PathBuf::from(path) } else {
+            env::temp_dir().join(format!("jj-proxy-sequence-{}", std::process::id()))
+        };
+        if let Some(role) = child {
+            let workspaces = vec![test_authority(&root, "project"), test_authority(&root, "relocated")];
+            let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+            let config = root.join("trusted.toml");
+            let config_home = root.join("config");
+            let pause = || {
+                fs::write(root.join("paused"), "author hook complete").unwrap();
+                while !root.join("release").exists() { thread::sleep(Duration::from_millis(10)); }
+            };
+            let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home,
+                after_author_update: if role == "A" { Some(&pause) } else { None } };
+            let argv: Vec<String> = match role.as_str() {
+                "A" => ["-R", "../relocated", "commit", "root:selected", "-m", "A commit"].into_iter().map(str::to_owned).collect(),
+                "B" => ["-R", "../relocated", "commit", "root:second", "-m", "B commit"].into_iter().map(str::to_owned).collect(),
+                "new" => ["-R", "../relocated", "bookmark", "create", "nonhook"].into_iter().map(str::to_owned).collect(),
+                "independent" => ["new", "-m", "independent"].into_iter().map(str::to_owned).collect(),
+                _ => panic!("unknown role"),
+            };
+            let request = Request { version: 2, mode: RequestMode::Mutate, cwd: root.join("project").to_str().unwrap().into(),
+                argv, agent_split: None, user: Some(format!("Agent {role}")), email: Some(format!("{role}@example.test")) };
+            let source = File::open(&root).unwrap();
+            let response = execute_with_runtime(&request, &policy, source.as_raw_fd(), &workspaces,
+                root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(20), None);
+            assert_eq!(0, response.exit, "{}", response.stderr);
+            fs::write(root.join(format!("done-{role}")), "done").unwrap();
+            return;
+        }
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        fs::write(root.join("trusted.toml"), include_str!("../jj.toml")).unwrap();
+        for name in ["project", "relocated"] {
+            native(&jj, &root, &["git", "init", root.join(name).to_str().unwrap()]);
+            fs::write(root.join(format!("{name}.lock")), "").unwrap();
+        }
+        for name in ["selected", "second", "unrelated"] { fs::write(root.join("relocated").join(name), name).unwrap(); }
+        fs::write(root.join("project/project-only"), "project").unwrap();
+        let workspaces = vec![test_authority(&root, "project"), test_authority(&root, "relocated")];
+        let source = File::open(&root).unwrap();
+        let config = root.join("trusted.toml");
+        let config_home = root.join("config");
+        fs::create_dir_all(&config_home).unwrap();
+        let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let request_for = |cwd: &str, args: &[&str]| Request { version: 2, mode: RequestMode::Mutate,
+            cwd: root.join(cwd).to_str().unwrap().into(), argv: args.iter().map(|arg| (*arg).into()).collect(),
+            agent_split: None, user: Some("Agent selector".into()), email: Some("selector@example.test".into()) };
+        // Native JJ interprets a plain fileset from the invocation cwd, not -R.
+        // Preserve that error rather than silently committing target-relative files.
+        let relative = request_for("project", &["-R", "../relocated", "commit", "selected", "-m", "must not commit"]);
+        let native_failure = Command::new(&jj).args(["--no-pager", "--color=never", "--config-file"])
+            .arg(&config).args(&relative.argv).current_dir(root.join("project"))
+            .env_clear().env("HOME", &root).env("XDG_CONFIG_HOME", &config_home).output().unwrap();
+        let proxy_failure = execute_with_runtime(&relative, &policy, source.as_raw_fd(), &workspaces,
+            root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), None);
+        assert!(!native_failure.status.success(), "native JJ unexpectedly accepted invocation-relative fileset");
+        assert_ne!(0, proxy_failure.exit);
+        assert_eq!(String::from_utf8(native_failure.stderr).unwrap(), proxy_failure.stderr);
+        // Reverse direction, absolute selector, relocated invocation cwd. Hooks
+        // must not snapshot or reattribute the invoking dotfiles workspace.
+        let relocated_before = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
+        let reverse = request_for("relocated", &["-R", root.join("project").to_str().unwrap(), "commit", "root:project-only", "-m", "reverse selector"]);
+        let response = execute_with_runtime(&reverse, &policy, source.as_raw_fd(), &workspaces,
+            root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), None);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert_eq!(relocated_before, native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+        let launch = |role: &str| Command::new(env::current_exe().unwrap())
+            .args(["--exact", "tests::real_jj_cross_workspace_and_cross_process_sequences", "--nocapture"])
+            .env("JJ_PROXY_SEQUENCE_CHILD", role).env("JJ_PROXY_SEQUENCE_ROOT", &root)
+            .env("JJ_PROXY_TEST_JJ", &jj).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let project_before = native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
+        let a = launch("A");
+        let until = Instant::now() + Duration::from_secs(10);
+        while !root.join("paused").exists() { assert!(Instant::now() < until, "A did not reach post-prehook state"); thread::sleep(Duration::from_millis(10)); }
+        let target_before = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
+        let waiting = request_for("project", &["-R", "../relocated", "commit", "root:second", "-m", "timed out waiter"]);
+        let started = Instant::now();
+        let timeout = execute_with_runtime(&waiting, &policy, source.as_raw_fd(), &workspaces,
+            root.to_str().unwrap(), &runtime, started + Duration::from_millis(60), None);
+        assert_ne!(0, timeout.exit);
+        assert!(timeout.stderr.contains("lock deadline exceeded"), "{}", timeout.stderr);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(target_before, native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]), "timed-out waiter ran a prehook or command");
+        let mut b = launch("B");
+        let mut nonhook = launch("new");
+        thread::sleep(Duration::from_millis(150));
+        assert!(b.try_wait().unwrap().is_none(), "B entered while A held the sequence");
+        assert!(nonhook.try_wait().unwrap().is_none(), "non-hook mutation entered while A held the sequence");
+        assert_eq!(target_before, native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+        assert_eq!(project_before, native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]), "target hooks mutated the invocation repository");
+        let independent = launch("independent").wait_with_output().unwrap();
+        assert!(independent.status.success(), "independent repository blocked: {}", String::from_utf8_lossy(&independent.stderr));
+        // Independent mutation intentionally changes project history; hooks for
+        // A/B must not do so. Compare before starting that explicit mutation.
+        assert_ne!(project_before, native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+        fs::write(root.join("release"), "go").unwrap();
+        for owner in [a, b, nonhook] {
+            let output = owner.wait_with_output().unwrap();
+            assert!(output.status.success(), "request failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        for (message, author, file) in [("A commit", "Agent A", "selected"), ("B commit", "Agent B", "second")] {
+            let rev = format!("description(substring:{message:?})");
+            assert_eq!(author, native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "log", "--no-graph", "-r", &rev, "-T", "author.name()"]));
+            let files = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "diff", "--from", &format!("({rev})-"), "--to", &rev, "--summary"]);
+            assert!(files.contains(file), "missing scoped commit content: {files}");
+            assert!(!files.contains("unrelated"), "scoped commit included unrelated file: {files}");
+        }
+        // Exercise private split through its real editor, relocating only the
+        // fixture's trusted tool/config paths (the production script stays the oracle).
+        if ["/bin/sh", "/bin/rm", "/bin/cp", "/usr/bin/git"].iter().all(|path| Path::new(path).is_file()) {
+            let editor = root.join("split-editor");
+            let script = include_str!("../agent-split-editor")
+                .replace("patch=/tmp/jj-config/agent-split.patch", &format!("patch={}", config_home.join("agent-split.patch").display()))
+                .replace("rm -rf", "/bin/rm -rf").replace("cp -a", "/bin/cp -a").replace("git -C", "/usr/bin/git -C");
+            fs::write(&editor, script).unwrap();
+            let config_text = include_str!("../jj.toml").replace("program = \"/trusted/bin/sh\"", "program = \"/bin/sh\"")
+                .replace("\"/trusted/bin/agent-split-editor\"", &serde_json::to_string(editor.to_str().unwrap()).unwrap());
+            fs::write(&config, config_text).unwrap();
+            fs::write(root.join("relocated/split-selected"), "split this file\n").unwrap();
+            let patch = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "diff", "--git", "root:split-selected"]);
+            let project_before_split = native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
+            let mut split_request = request_for("relocated", &[]);
+            split_request.agent_split = Some(AgentSplit { patch, message: "private dotfiles split".into(), revision: "@".into() });
+            let response = execute_with_runtime(&split_request, &policy, source.as_raw_fd(), &workspaces,
+                root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), None);
+            assert_eq!(0, response.exit, "{}", response.stderr);
+            assert_eq!(project_before_split, native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+            let revision = "description(substring:\"private dotfiles split\")";
+            assert_eq!("Agent selector", native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "log", "--no-graph", "-r", revision, "-T", "author.name()"]));
+            let files = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "diff", "--from", &format!("({revision})-"), "--to", revision, "--summary"]);
+            assert!(files.contains("split-selected")); assert!(!files.contains("unrelated"));
+        } else { eprintln!("SKIP native private split: /bin/sh, /bin/rm, /bin/cp or /usr/bin/git unavailable"); }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[test]
+    fn checked_cwd_rejects_relative_and_symlink_namespaces_in_both_modes() {
+        let root = env::temp_dir().join(format!("jj-cwd-{}", std::process::id()));
+        fs::create_dir_all(root.join("workspace/nested")).unwrap();
+        std::os::unix::fs::symlink("workspace", root.join("alias")).unwrap();
+        let source = File::open(&root).unwrap();
+        assert!(open_cwd(source.as_raw_fd(), "/src/workspace/nested", Path::new("/src")).is_ok());
+        for path in ["workspace", "/tmp", "/src/../tmp", "/src/workspace/./nested", "/src//workspace", "/src/alias", "/src/workspace/"] {
+            assert!(open_cwd(source.as_raw_fd(), path, Path::new("/src")).is_err(), "accepted {path}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn lock_wait_timeout_and_owner_death_preserve_persistent_inode() {
+        if let Some(path) = env::var_os("JJ_PROXY_LOCK_CHILD") {
+            let _lock = acquire_lock(Path::new(&path), Instant::now() + Duration::from_secs(5)).unwrap();
+            fs::write(Path::new(&path).with_extension("ready"), "locked").unwrap();
+            loop { thread::sleep(Duration::from_secs(1)); }
+        }
+        use std::os::unix::fs::MetadataExt;
+        let root = env::temp_dir().join(format!("jj-lock-death-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("persistent.lock");
+        fs::write(&path, "").unwrap();
+        let inode = fs::metadata(&path).unwrap().ino();
+        let mut owner = Command::new(env::current_exe().unwrap())
+            .args(["--exact", "tests::lock_wait_timeout_and_owner_death_preserve_persistent_inode"])
+            .env("JJ_PROXY_LOCK_CHILD", &path).stdout(Stdio::null()).spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.with_extension("ready").exists() { assert!(Instant::now() < deadline); thread::sleep(Duration::from_millis(10)); }
+        let started = Instant::now();
+        assert!(acquire_lock(&path, started + Duration::from_millis(60)).is_err());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        owner.kill().unwrap(); owner.wait().unwrap();
+        let lock = acquire_lock(&path, Instant::now() + Duration::from_secs(1)).unwrap();
+        assert_eq!(inode, lock.metadata().unwrap().ino());
+        drop(lock);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn deadline_kills_and_reaps_descendants_before_lease_release() {
+        if let Ok(role) = env::var("JJ_PROXY_DEADLINE_CHILD") {
+            let root = PathBuf::from(env::var_os("JJ_PROXY_DEADLINE_ROOT").unwrap());
+            fs::write(root.join(format!("{role}.pid")), std::process::id().to_string()).unwrap();
+            if role == "leader" {
+                let _descendant = Command::new(env::current_exe().unwrap())
+                    .args(["--exact", "tests::deadline_kills_and_reaps_descendants_before_lease_release"])
+                    .env("JJ_PROXY_DEADLINE_CHILD", "descendant").spawn().unwrap();
+            }
+            loop { thread::sleep(Duration::from_secs(1)); }
+        }
+        let root = env::temp_dir().join(format!("jj-deadline-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let lock_path = root.join("lease.lock"); fs::write(&lock_path, "").unwrap();
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let lease = acquire_lock(&lock_path, deadline).unwrap();
+        let cwd = File::open(&root).unwrap();
+        let mut command = Command::new(env::current_exe().unwrap());
+        command.args(["--exact", "tests::deadline_kills_and_reaps_descendants_before_lease_release"])
+            .env("JJ_PROXY_DEADLINE_CHILD", "leader").env("JJ_PROXY_DEADLINE_ROOT", &root);
+        unsafe { command.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
+        let (status, _, _) = run_bounded(&mut command, deadline).unwrap();
+        assert_eq!(124, status);
+        for role in ["leader", "descendant"] {
+            let pid: i32 = fs::read_to_string(root.join(format!("{role}.pid"))).unwrap().parse().unwrap();
+            assert_eq!(Err(nix::errno::Errno::ESRCH), kill(Pid::from_raw(pid), None), "{role} survived or was not reaped");
+        }
+        drop(lease);
+        let _next = acquire_lock(&lock_path, Instant::now() + Duration::from_secs(1)).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[test]
+    fn startup_budget_is_positive_and_shared_between_lock_acquisitions() {
+        assert_eq!(TIMEOUT, startup_timeout(None).unwrap());
+        assert_eq!(Duration::from_secs(120), startup_timeout(Some("120")).unwrap());
+        for value in ["", "0", "-1", "+1", " 120", "1.5", "18446744073709551616"] {
+            assert!(startup_timeout(Some(value)).is_err(), "accepted {value:?}");
+        }
+        let root = env::temp_dir().join(format!("jj-startup-budget-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let first = root.join("first.lock"); let second = root.join("second.lock");
+        fs::write(&first, "").unwrap(); fs::write(&second, "").unwrap();
+        let held = acquire_lock(&second, Instant::now() + Duration::from_secs(1)).unwrap();
+        let deadline = Instant::now() + Duration::from_millis(80);
+        let first_lease = acquire_lock(&first, deadline).unwrap();
+        // Model configuration preparation consuming the entire shared budget.
+        while Instant::now() < deadline { thread::sleep(Duration::from_millis(5)); }
+        drop(first_lease);
+        let started = Instant::now();
+        assert!(acquire_lock(&second, deadline).is_err());
+        assert!(started.elapsed() < Duration::from_millis(40));
+        drop(held); fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancellation_racing_with_lock_admission_releases_the_lease() {
+        let root = env::temp_dir().join(format!("jj-lock-admission-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let lock_path = root.join("request.lock"); fs::write(&lock_path, "").unwrap();
+        let mut checks = 0;
+        let result = acquire_lock_checked(&lock_path, Instant::now() + Duration::from_secs(1), || {
+            checks += 1;
+            if checks == 2 { bail!("request canceled after acquiring ownership"); }
+            Ok(())
+        });
+        assert!(result.is_err()); assert_eq!(2, checks);
+        let _next = acquire_lock(&lock_path, Instant::now() + Duration::from_secs(1)).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn disconnected_queued_request_cannot_mutate_but_write_half_close_can() {
+        use std::sync::mpsc;
+        let Some(jj) = real_jj() else { eprintln!("SKIP queued disconnect: no real JJ"); return; };
+        let root = env::temp_dir().join(format!("jj-peer-cancel-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let repo = root.join("repository");
+        native(&jj, &root, &["git", "init", repo.to_str().unwrap()]);
+        let authority = test_authority(&root, "repository");
+        fs::write(&authority.lock, "").unwrap();
+        fs::write(root.join("trusted.toml"), include_str!("../jj.toml")).unwrap();
+        fs::create_dir(root.join("config")).unwrap();
+        for disconnect in [false, true] {
+            let filename = if disconnect { "canceled-file" } else { "normal-file" };
+            fs::write(repo.join(filename), "selected contents").unwrap();
+            let before = native(&jj, &root, &["-R", repo.to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
+            let lease = acquire_lock(Path::new(&authority.lock), Instant::now() + Duration::from_secs(1)).unwrap();
+            let (mut client, mut server) = UnixStream::pair().unwrap();
+            let request = Request { version: 2, mode: RequestMode::Mutate, cwd: repo.to_str().unwrap().into(),
+                argv: vec!["commit".into(), format!("root:{filename}"), "-m".into(), filename.into()],
+                agent_split: None, user: Some("Agent cancellation".into()), email: Some("cancel@example.test".into()) };
+            write_frame(&mut client, &serde_json::to_vec(&request).unwrap()).unwrap();
+            client.shutdown(Shutdown::Write).unwrap();
+            let (decoded_tx, decoded_rx) = mpsc::channel();
+            let (done_tx, done_rx) = mpsc::channel();
+            let worker_root = root.clone(); let worker_jj = jj.clone(); let worker_authority = authority.clone();
+            let worker = thread::spawn(move || {
+                let request: Request = serde_json::from_slice(&read_frame(&mut server, MAX_REQUEST).unwrap()).unwrap();
+                require_eof(&mut server).unwrap();
+                let source = File::open(&worker_root).unwrap();
+                let config = worker_root.join("trusted.toml"); let config_home = worker_root.join("config");
+                let runtime = Runtime { source: &worker_root, jj: &worker_jj, config: &config, config_home: &config_home, after_author_update: None };
+                let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+                // The complete half-closed request is decoded while another
+                // owner holds the target lock. No JJ mutation can yet be admitted.
+                decoded_tx.send(()).unwrap();
+                let response = execute_with_runtime(&request, &policy, source.as_raw_fd(), &[worker_authority],
+                    worker_root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), Some(&server));
+                done_tx.send(response).unwrap();
+            });
+            decoded_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            if disconnect {
+                drop(client);
+                // Cancellation must finish while ownership is STILL unavailable,
+                // not run an orphan prehook after the previous owner releases it.
+                let response = done_rx.recv_timeout(Duration::from_secs(1)).expect("disconnected waiter did not cancel while blocked");
+                assert_ne!(0, response.exit); assert!(response.stderr.contains("request canceled"), "{}", response.stderr);
+                assert_eq!(before, native(&jj, &root, &["-R", repo.to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+                drop(lease); worker.join().unwrap();
+                assert_eq!(before, native(&jj, &root, &["-R", repo.to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+            } else {
+                assert!(matches!(done_rx.recv_timeout(Duration::from_millis(80)), Err(mpsc::RecvTimeoutError::Timeout)), "write half-close canceled a valid waiter");
+                drop(lease);
+                let response = done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+                assert_eq!(0, response.exit, "{}", response.stderr);
+                worker.join().unwrap(); drop(client);
+                assert_ne!(before, native(&jj, &root, &["-R", repo.to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
+            }
+        }
+        // A disconnect after the actual prehook has started the operation is
+        // outcome-unknown to the client, not permission to interrupt its sequence.
+        fs::write(repo.join("started-file"), "started contents").unwrap();
+        let (client, server) = UnixStream::pair().unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        let client = std::cell::RefCell::new(Some(client));
+        let disconnect_after_hook = || { drop(client.borrow_mut().take()); };
+        let source = File::open(&root).unwrap();
+        let config = root.join("trusted.toml"); let config_home = root.join("config");
+        let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home,
+            after_author_update: Some(&disconnect_after_hook) };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let started = Request { version: 2, mode: RequestMode::Mutate, cwd: repo.to_str().unwrap().into(),
+            argv: ["commit", "root:started-file", "-m", "started request"].into_iter().map(str::to_owned).collect(),
+            agent_split: None, user: Some("Agent started".into()), email: Some("started@example.test".into()) };
+        let response = execute_with_runtime(&started, &policy, source.as_raw_fd(), &[authority], root.to_str().unwrap(),
+            &runtime, Instant::now() + Duration::from_secs(5), Some(&server));
+        assert_eq!(0, response.exit, "started operation was canceled: {}", response.stderr);
+        assert_eq!("Agent started", native(&jj, &root, &["-R", repo.to_str().unwrap(), "log", "--no-graph", "-r", "description(substring:\"started request\")", "-T", "author.name()"]));
+        let trusted_config: toml::Value = toml::from_str(include_str!("../jj.toml")).unwrap();
+        assert_eq!(trusted_config["user"]["name"].as_str().unwrap(), native(&jj, &root, &["-R", repo.to_str().unwrap(), "log", "--no-graph", "-r", "@", "-T", "author.name()"]), "started disconnect skipped author reset");
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }

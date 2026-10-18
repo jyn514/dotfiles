@@ -1,8 +1,10 @@
 """The live runtime probe must build the Pi commit it checks."""
 
+import io
 import json
 from pathlib import Path
 import runpy
+import tarfile
 import subprocess
 import threading
 import unittest
@@ -10,6 +12,60 @@ from unittest import mock
 
 
 class ImageRuntimeIntegrationTest(unittest.TestCase):
+    def test_mount_probe_archives_and_projects_its_complete_launch_authority(self):
+        probe = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['probe_jj_mounts']
+        native_run = subprocess.run
+        archived = set()
+        launches = []
+
+        def subprocess_run(command, **kwargs):
+            if command[0] != 'docker':
+                return native_run(command, **kwargs)
+            if 'tar' in command:
+                with tarfile.open(fileobj=io.BytesIO(kwargs['input'])) as archive:
+                    archived.update(archive.getnames())
+            else:
+                self.assertEqual(['docker', 'rm', '-f'], command[:3])
+            return subprocess.CompletedProcess(command, 0)
+
+        def run(*command, **kwargs):
+            self.assertEqual('docker', command[0])
+            if command[1:3] == ('volume', 'inspect'):
+                return '/daemon/fixture\n'
+            if command[1:3] == ('image', 'inspect'):
+                return '65532:65532\n'
+            if command[1] == 'run' and '--workdir' in command:
+                launches.append(command)
+                return 'jj-mounted-checkout-ok\n'
+            return ''
+
+        with mock.patch.dict(probe.__globals__, {'run': run}), \
+                mock.patch('subprocess.run', side_effect=subprocess_run):
+            probe('fixture-image')
+        self.assertEqual(1, len(launches))
+        launch = launches[0]
+        environment = dict(launch[index + 1].split('=', 1) for index, argument in enumerate(launch[:-1])
+                           if argument == '--env')
+        authority, = json.loads(environment['JJ_PROXY_WORKSPACES'])
+        self.assertEqual(environment['JJ_PROXY_REPO'], authority['root'])
+        mounts = {}
+        for index, argument in enumerate(launch[:-1]):
+            if argument != '--mount':
+                continue
+            fields = launch[index + 1].split(',')
+            values = dict(field.split('=', 1) for field in fields if '=' in field)
+            mounts[values['dst']] = (values['src'], 'readonly' not in fields)
+            # All bind sources, including the persistent lock and staged /src,
+            # must have been copied before the Docker daemon consumes them.
+            self.assertIn(str(Path(values['src']).relative_to('/daemon/fixture')), archived)
+        for key in ('root', 'git_dir', 'jj_repo', 'lock'):
+            target = Path(authority[key])
+            mountpoint = next(parent for parent in (target, *target.parents) if str(parent) in mounts)
+            self.assertTrue(mounts[str(mountpoint)][1], key)
+        self.assertFalse(mounts['/src'][1])
+        self.assertTrue(any(name.startswith('proxy-staging/') for name in archived))
+        self.assertTrue(any(name.endswith(Path(authority['lock']).name) for name in archived))
+
     def test_combined_probe_keeps_each_required_check(self):
         check = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['check_guest']
         revision = 'b' * 40
@@ -132,8 +188,10 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 errors.append(error)
 
         mount_probe = mock.Mock()
+        shared_probe = mock.Mock()
         with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
                                                'probe_jj_mounts': mount_probe,
+                                               'probe_shared_workspaces': shared_probe,
                                                'IMAGE_PREFIX': 'renamed-runtime'}), \
                 mock.patch('sys.argv', ['integration', '--expected-revision', revision]), \
                 mock.patch('subprocess.run', side_effect=cleanup):
@@ -156,6 +214,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             self.assertIsInstance(errors[0], expected)
         self.assertTrue(cleaned.is_set())
         mount_probe.assert_called_once_with(tags['jj'][0])
+        self.assertEqual([mock.call(tags['jj'][0]), mock.call(tags['jj'][0], linked=True)],
+                         shared_probe.call_args_list)
 
     def test_bake_preserves_revisions_aliases_and_the_shared_jj_dependency(self):
         build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
@@ -244,8 +304,10 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                     return 'a' * 64 + '  /trusted/bin/jj\n' + marker + '\n'
 
                 mount_probe = mock.Mock(side_effect=error if failure == 'mounts' else None)
+                shared_probe = mock.Mock()
                 with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
-                                                       'probe_jj_mounts': mount_probe}), \
+                                                       'probe_jj_mounts': mount_probe,
+                                                       'probe_shared_workspaces': shared_probe}), \
                         mock.patch('sys.argv', ['integration', '--jj-only']), \
                         mock.patch('subprocess.run') as cleanup:
                     if failure is None:
@@ -261,6 +323,11 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                     mount_probe.assert_not_called()
                 else:
                     mount_probe.assert_called_once_with(tags['jj'][0])
+                if failure in ('build', 'mounts'):
+                    shared_probe.assert_not_called()
+                else:
+                    self.assertEqual([mock.call(tags['jj'][0]), mock.call(tags['jj'][0], linked=True)],
+                                     shared_probe.call_args_list)
 
     def test_full_mode_still_requires_revision_before_any_docker_operation(self):
         main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']

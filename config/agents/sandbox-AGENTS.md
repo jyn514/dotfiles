@@ -3,9 +3,10 @@
 ## Differences between guest and host
 
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
-- `/src` is a read-only view of the host's source directory.
-  The working tree named by the dynamic sandbox context is overlaid writable.
-  If jyn tells you to edit a file in a neighboring repository, ask to switch repositories with `/cd`.
+- `/src` is a read-only view of the host's source directory, with writable ordinary files in the active workspace and launcher dotfiles checkout.
+  Use the launcher's selected dotfiles path, normally `/src/dotfiles`; relocated checkouts or name collisions can use another path.
+  Other `/src` siblings are inspection-only; use `/cd` before editing them.
+  Writable access does not authorize unrelated edits or taking ownership of another contributor's changes.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
 - `/home/codex/.agents/skills` is writable and host-backed, you may edit it.
 - Other shared instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
@@ -14,7 +15,11 @@
 
 ## Permissions
 
-- Repository metadata and sandbox policy—including `.git`, `.jj`, and `.agents/sandbox`—are protected. Use ordinary wrapped commands such as `jj`; proxy failure is fail-closed and does not authorize bypassing the mount or invoking another binary.
+- Repository metadata and sandbox policy—including `.git`, `.jj`, their external backing paths, and `.agents/sandbox`—are protected in both writable checkouts.
+  Use ordinary wrapped commands such as `jj`; proxy failure is fail-closed and does not authorize bypassing the mount or invoking another binary.
+  For a scoped cross-repository commit, use the selected dotfiles path and a root-relative fileset, for example:
+  `jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'`.
+- The active project's accepted policy owns services and credentials; writable dotfiles does not enable its optional services.
 - Host and private-network services are blocked except through designated relays or proxies. Proxy capabilities are fixed at session startup; direct failure does not authorize another route.
 - Public network acccess is allowed, but must be READ-ONLY unless explicitly authorized by a human.
   Be considerate of others and do not hammer expensive network endpoints.

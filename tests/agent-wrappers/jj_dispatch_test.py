@@ -53,6 +53,8 @@ class JjDispatchTest(unittest.TestCase):
             "JJ_TEST_RECORD": str(self.record),
         }
         self.env.pop("PI_CALL_MODEL", None)
+        self.env.pop("JJ_PROXY_ROOTS", None)
+        self.env.pop("JJ_PROXY_INSPECT", None)
         (self.root / "config.toml").write_text("")
 
     def repo(self, name="local"):
@@ -364,6 +366,28 @@ class JjDispatchTest(unittest.TestCase):
                 self.assertEqual(["proxy"], [call["role"] for call in self.calls()])
                 self.assertEqual(args, self.calls()[0]["argv"])
 
+    def test_second_workspace_selectors_keep_arguments_cwd_and_proxy_failures(self):
+        active = self.repo("active")
+        dotfiles = self.repo("allocated-config")
+        nested = active / "nested"
+        nested.mkdir()
+        env = {**self.env, "JJ_PROXY_REPO": str(active),
+               "JJ_PROXY_ROOTS": json.dumps([str(active), str(dotfiles)])}
+        cases = ((nested, ["-R", str(dotfiles), "commit", "root:skills/example", "-m", "change"]),
+                 (nested, ["--repository", os.path.relpath(dotfiles, nested), "commit", "skills/example"]),
+                 (dotfiles, ["-R", str(active), "commit", "root:project-file"]),
+                 (dotfiles, ["status"]))
+        for cwd, args in cases:
+            for status in (0, 2, 125):
+                with self.subTest(cwd=cwd, args=args, status=status):
+                    self.record.unlink(missing_ok=True)
+                    result = self.run_wrapper(*args, cwd=cwd,
+                                              env={**env, "JJ_TEST_MAIN_EXIT": str(status)})
+                    self.assertEqual(status, result.returncode, result.stderr)
+                    self.assertEqual(["proxy"], [call["role"] for call in self.calls()])
+                    self.assertEqual(args, self.calls()[0]["argv"])
+                    self.assertEqual(str(cwd), self.calls()[0]["cwd"])
+
     def test_guest_workspace_with_host_store_reports_namespace_error_without_native_retry(self):
         linked = self.root / "linked"
         (linked / ".jj").mkdir(parents=True)
@@ -468,8 +492,16 @@ class JjDispatchTest(unittest.TestCase):
         self.assertIn("proxy-only", result.stderr)
         self.assertEqual([], self.calls())
 
+    @unittest.skipUnless(Path('/src') in ROOT.parents, 'wire protocol fixture requires checkout under /src')
     def test_private_split_runtime_identity_reaches_actual_client_request(self):
-        repository = self.root / "protected-role"
+        target = ROOT / "target"
+        target.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(dir=target, prefix="jj-wire-")
+        self.addCleanup(temporary.cleanup)
+        workspace_root = Path(temporary.name)
+        active = workspace_root / "active"
+        active.mkdir()
+        repository = workspace_root / "relocated-dotfiles"
         repository.mkdir()
         patch = repository / "patch"
         patch.write_text("literal patch bytes\n")
@@ -501,7 +533,7 @@ class JjDispatchTest(unittest.TestCase):
 
                     length = struct.unpack(">I", receive(4))[0]
                     requests.append(json.loads(receive(length)))
-                    response = json.dumps({"version": 1, "exit": 0, "stdout": "split-ok\n", "stderr": ""}).encode()
+                    response = json.dumps({"version": 2, "exit": 0, "stdout": "split-ok\n", "stderr": ""}).encode()
                     connection.sendall(struct.pack(">I", len(response)) + response)
             except Exception as error:
                 errors.append(error)
@@ -512,7 +544,8 @@ class JjDispatchTest(unittest.TestCase):
         subprocess.run(["cmp", str(WRAPPER), str(self.wrapper)], check=True)
         self.wrapper.write_text(self.wrapper.read_text().replace(
             "/libexec/agent-wrappers/jj-proxy-client", str(ROOT / "tools/jj-proxy/client")))
-        env = {**self.env, "JJ_PROXY_REPO": str(repository), "JJ_AGENT": "pi",
+        env = {**self.env, "JJ_PROXY_REPO": str(active), "JJ_AGENT": "pi",
+               "JJ_PROXY_ROOTS": json.dumps([str(active), str(repository)]),
                "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
         env.pop("JJ_USER")
         env.pop("JJ_EMAIL")
@@ -525,6 +558,9 @@ class JjDispatchTest(unittest.TestCase):
         self.assertEqual("split-ok\n", result.stdout)
         self.assertEqual([], self.calls())
         self.assertEqual(1, len(requests))
+        self.assertEqual(2, requests[0]["version"])
+        self.assertEqual(str(repository), requests[0]["cwd"])
+        self.assertEqual("mutate", requests[0]["mode"])
         self.assertEqual("Pi wire-model", requests[0]["user"])
         self.assertEqual("325577925+one-esk-nineteen@users.noreply.github.com", requests[0]["email"])
         self.assertEqual([], requests[0]["argv"])

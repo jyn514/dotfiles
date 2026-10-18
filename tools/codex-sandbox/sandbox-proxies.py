@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -43,10 +44,14 @@ from caddy_foundation import (
     validate_configuration_mount,
 )
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
-from source_view import check_mount_destinations
+from source_view import check_mount_destinations, source_mounts
+from workspace_layout import jj_repository_path
 
 OUTER_RUNTIME = ContainerRuntime()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
+# Startup config preparation may wait on another proxy's repository lease.
+# Send this budget to JJ and give its manager time to observe the final result.
+JJ_STARTUP_TIMEOUT_SECONDS = 120
 
 
 class ConfigError(Exception):
@@ -498,33 +503,6 @@ def git_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Pa
     return metadata_mounts(repo, container_repo, set(git_metadata_paths(repo)))
 
 
-def jj_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Path, Path]]:
-    git_dir, common_dir = git_metadata_paths(repo)
-    return metadata_mounts(repo, container_repo, {git_dir, common_dir, jj_repository_path(repo)})
-
-
-def jj_repository_path(repo: Path) -> Path:
-    entry = repo / ".jj" / "repo"
-    if entry.is_file() and not entry.is_symlink():
-        if entry.lstat().st_nlink != 1:
-            raise ConfigError("Jujutsu repository pointer must not be hard linked")
-        try:
-            value = entry.read_text(encoding="utf-8").strip()
-        except UnicodeError as error:
-            raise ConfigError("Jujutsu repository pointer is not UTF-8") from error
-        if not value or "\0" in value or "\n" in value or "\r" in value:
-            raise ConfigError("Jujutsu repository pointer is invalid")
-        target = Path(value)
-        if not target.is_absolute():
-            target = entry.parent / target
-        jj_repo = target.resolve(strict=True)
-    else:
-        jj_repo = entry.resolve(strict=True)
-    if not jj_repo.is_dir() or jj_repo.is_symlink():
-        raise ConfigError(f"Jujutsu repository metadata is invalid: {jj_repo}")
-    return jj_repo
-
-
 def runtime_directory(repo: Path) -> Path:
     base = Path.home() / ".cache" / "codex-sandbox-proxies"
     path = base / repository_identity(repo)
@@ -621,6 +599,48 @@ def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> No
     metadata_path.unlink(missing_ok=True)
 
 
+def workspace_records(value: Any) -> list[dict[str, str]]:
+    """Parse persisted authority without opening paths needed only by live services."""
+    from workspace_layout import WorkspaceLayout
+    if not isinstance(value, list) or not 1 <= len(value) <= 2:
+        raise ConfigError("workspace authority must contain one or two workspaces")
+    try:
+        layouts = [WorkspaceLayout.from_dict(item) for item in value]
+    except (ValueError, TypeError, KeyError) as error:
+        raise ConfigError(f"invalid workspace authority: {error}") from error
+    if (len({item.host_root for item in layouts}) != len(layouts) or
+            len({item.guest_root for item in layouts}) != len(layouts)):
+        raise ConfigError("workspace authority contains duplicate roots")
+    return [item.to_dict() for item in layouts]
+
+
+def requested_workspaces(args: argparse.Namespace) -> list[dict[str, str]] | None:
+    if hasattr(args, "_workspace_records"):
+        return args._workspace_records
+    source = getattr(args, "workspaces", None)
+    if source is None:
+        return None
+    try:
+        records = workspace_records(json.loads(Path(source).read_text(encoding="utf-8")))
+    except (OSError, ValueError) as error:
+        raise ConfigError(f"cannot read workspace authority: {error}") from error
+    first = records[0]
+    if (first["host_root"] != str(Path(args.repo).resolve()) or
+            first["guest_root"] != str(container_repository(args.container_repo))):
+        raise ConfigError("workspace authority does not start with the active repository")
+    return records
+
+
+def workspace_layouts(records: list[dict[str, str]]):
+    from workspace_layout import WorkspaceLayout
+    return [WorkspaceLayout.from_dict(item) for item in workspace_records(records)]
+
+
+def workspace_environment(records: list[dict[str, str]]) -> str:
+    return json.dumps([item.proxy_authority() for item in workspace_layouts(records)],
+                      sort_keys=True, separators=(",", ":"))
+
+
 def publish_main(args: argparse.Namespace) -> int:
     """Publish one complete, strictly parsed schema-4 authority."""
     runtime = runtime_directory(Path(args.repo))
@@ -631,8 +651,9 @@ def publish_main(args: argparse.Namespace) -> int:
     state["runtime"] = owner
     manifest = load_accepted_manifest(Path(args.manifest))
     launch = state.get("accepted")
-    if not isinstance(launch, dict) or set(launch) != {
-            "source-present", "agent-image", "helper-image", "parameters", "proxy-images"}:
+    if not isinstance(launch, dict) or set(launch) not in (
+            {"source-present", "agent-image", "helper-image", "parameters", "proxy-images"},
+            {"source-present", "agent-image", "helper-image", "parameters", "proxy-images", "workspaces"}):
         raise ConfigError("shared state is missing accepted launch authority")
     parameters = launch["parameters"]
     proxies = state.get("proxies")
@@ -677,6 +698,8 @@ def publish_main(args: argparse.Namespace) -> int:
                      "image-bound-parameters": parameters},
         "services": services,
     }
+    if "workspaces" in launch:
+        payload["accepted"]["workspaces"] = workspace_records(launch["workspaces"])
     # Parse the complete in-memory payload before the sole atomic replacement.
     _accepted_schema4(payload, expected_parameters=parameters)
     write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
@@ -846,6 +869,9 @@ def containers_running(containers: list[str]) -> bool:
 def cached_session_state(
     args: argparse.Namespace, repo: Path, metadata: Any, manifest: dict[str, Any],
 ) -> dict[str, Any] | None:
+    if requested_workspaces(args) is not None:
+        # Pre-authority caches can never authorize the new worker's mounts.
+        return None
     if not isinstance(metadata, dict) or metadata.get("version") not in (1, 2):
         return None
     if metadata.get("repository") != repository_identity(repo):
@@ -905,8 +931,9 @@ def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
     if not _valid_runtime_owner(metadata.get("runtime-owner")):
         raise ConfigError("active session has invalid runtime owner")
     accepted = metadata.get("accepted")
-    if not isinstance(accepted, dict) or set(accepted) != {
-            "policy", "source-present", "broker-roles", "images", "image-bound-parameters"}:
+    if not isinstance(accepted, dict) or set(accepted) not in (
+            {"policy", "source-present", "broker-roles", "images", "image-bound-parameters"},
+            {"policy", "source-present", "broker-roles", "images", "image-bound-parameters", "workspaces"}):
         raise ConfigError("active session has invalid accepted authority")
     images = accepted.get("images")
     services = metadata.get("services")
@@ -937,6 +964,14 @@ def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
         raise ConfigError("active session service set does not match accepted policy and images")
     if accepted["image-bound-parameters"] != expected_parameters:
         raise ConfigError("active session image-bound parameters changed")
+    if "workspaces" in accepted:
+        records = workspace_records(accepted["workspaces"])
+        jj = parsed.get("jj")
+        if (jj is None or jj["recovery"].get("workspaces") != records or
+                records[0]["guest_root"] != metadata["container_repository"]):
+            raise ConfigError("accepted workspace authority differs from the JJ service")
+    elif any("workspaces" in service["recovery"] for service in parsed.values()):
+        raise ConfigError("JJ workspace authority is missing from the session")
     accepted = {**accepted, "policy": policy}
     return parsed, accepted
 
@@ -947,6 +982,9 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
     if not isinstance(metadata, dict) or metadata.get("version") != 4:
         raise ConfigError("active session is not schema 4; restart after active sandboxes exit")
     parsed4, accepted4 = _accepted_schema4(metadata, expected_parameters={"uid": args.uid, "gid": args.gid})
+    expected_workspaces = requested_workspaces(args)
+    if expected_workspaces is not None and accepted4.get("workspaces") != expected_workspaces:
+        raise ConfigError("active session workspace authority changed; start a fresh sandbox after attached sessions exit")
     state = session_state(metadata)
     accepted = {"manifest": accepted4["policy"], "source-present": accepted4["source-present"],
                 "images": {"agent": accepted4["images"]["agent"],
@@ -1191,9 +1229,45 @@ def proxy_logs(container: str) -> str:
     return result.stdout.strip()
 
 
+def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path) -> list[str]:
+    layouts = workspace_layouts(records)
+    host_src = Path.home() / "src"
+    if not host_src.is_dir():
+        host_src = staging / "empty-source"
+        host_src.mkdir(parents=True, exist_ok=True)
+    backing = [(source, target) for item in layouts for source, target in item.metadata_mounts()]
+    aliases = [(item.host_root, target) for item in layouts for target in item.repository_aliases()]
+    destinations = [item.guest_root for item in layouts] + [target for _, target in backing + aliases if target.is_relative_to("/src")]
+    arguments = source_mounts(host_src, destinations, staging / "source-view")
+    mounts: dict[Path, Path] = {}
+    for source, target in [*((item.host_root, item.guest_root) for item in layouts), *backing, *aliases]:
+        previous = mounts.get(target)
+        if previous is not None:
+            if previous != source:
+                raise ConfigError(f"conflicting workspace mount destination: {target}")
+            continue
+        mounts[target] = source
+        arguments += ["--mount", f"type=bind,src={source},dst={target},{OUTER_RUNTIME.nonrecursive_bind}"]
+    locks: dict[Path, Path] = {}
+    for item in layouts:
+        target = Path(item.proxy_authority()["lock"])
+        if target in locks and locks[target] != item.lock_file:
+            raise ConfigError("workspace lock destination collision")
+        if target not in locks:
+            locks[target] = item.lock_file
+            arguments += ["--mount", f"type=bind,src={item.lock_file},dst={target}"]
+    check_mount_destinations(arguments)
+    return arguments
+
+
 def proxy_repository_mount_args(
     repo: Path, container_repo: Path, name: str, command: dict[str, Any],
+    *, workspaces: list[dict[str, str]] | None = None, staging: Path | None = None,
 ) -> list[str]:
+    if name == "jj":
+        if workspaces is None or staging is None:
+            raise ConfigError("JJ mounts require explicit workspace authority and owned source-view staging")
+        return shared_workspace_mount_args(workspaces, staging)
     repo = repo.resolve(strict=True)
     repository_mode = ",readonly"
     if any(mount.get("target") == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
@@ -1201,18 +1275,8 @@ def proxy_repository_mount_args(
     arguments = [
         "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},{OUTER_RUNTIME.nonrecursive_bind}",
     ]
-    if name == "jj":
-        metadata_mounts = jj_proxy_metadata_mounts(repo, container_repo)
-        host_src = Path.home() / "src"
-        if host_src.is_dir() and not any(target == Path("/src") for _, target in metadata_mounts):
-            host_src = host_src.resolve(strict=True)
-            arguments += ["--mount", f"type=bind,src={host_src},dst=/src,readonly,{OUTER_RUNTIME.nonrecursive_bind}"]
-        for source, target in metadata_mounts:
-            arguments += [
-                "--mount", f"type=bind,src={source},dst={target}{repository_mode}",
-            ]
     sandbox = optional_sandbox_directory(repo)
-    if sandbox is not None and name != "jj":
+    if sandbox is not None:
         # JJ must create/remove tracked sandbox configuration during checkout.
         # Leave it in the repository mount; even a writable overlay pins the directory.
         arguments += [
@@ -1508,6 +1572,9 @@ def start_one_proxy(
     handles: list[Any] | None = None,
 ) -> dict[str, str]:
     service_owner = uuid.uuid4().hex
+    workspaces = requested_workspaces(args) if name == "jj" else None
+    if name == "jj" and workspaces is None:
+        raise ConfigError("trusted JJ startup requires explicit workspace authority")
     container_uid, container_gid = proxy_container_identity(name, os.getuid(), os.getgid())
     selected_network = args.network if command["network"] else "none"
     zulip_network = f"{args.prefix}-zulip-application" if name == "zulip" else None
@@ -1565,6 +1632,10 @@ def start_one_proxy(
         "identity-parameters": {"uid": container_uid, "gid": container_gid, "network": selected_network},
         "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
     }
+    if workspaces is not None:
+        proxy["workspaces"] = workspaces
+        proxy["workspace-source-view"] = str(runtime_directory(repo) / ("jj-source-view-" + service_owner))
+        proxy["resource-status"]["source-view"] = "intended"
     if isinstance(OUTER_RUNTIME, VMRuntime):
         proxy["volume-owner"] = service_owner
     if zulip_network:
@@ -1606,6 +1677,10 @@ def start_one_proxy(
     try:
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
+        if workspaces is not None:
+            Path(proxy["workspace-source-view"]).mkdir(mode=0o700)
+            proxy["resource-status"]["source-view"] = "created"
+            persist()
         if zulip_network:
             pair_effect = lambda status, operation: _recorded_effect(
                 proxy, status, persist, cancelled, operation, name)
@@ -1649,14 +1724,9 @@ def start_one_proxy(
             network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
             docker_args += ["--dns", network["dns"]]
         if name == "jj":
-            git_dir, common_dir = git_metadata_paths(repo)
-            jj_repo = jj_repository_path(repo)
-            docker_args += [
-                "--env", f"JJ_PROXY_REPO={container_repo}",
-                "--env", f"JJ_PROXY_GIT_DIR={metadata_container_path(repo, git_dir, container_repo)}",
-                "--env", f"JJ_PROXY_COMMON_DIR={metadata_container_path(repo, common_dir, container_repo)}",
-                "--env", f"JJ_PROXY_JJ_REPO={metadata_container_path(repo, jj_repo, container_repo)}",
-            ]
+            docker_args += ["--env", f"JJ_PROXY_REPO={container_repo}",
+                            "--env", "JJ_PROXY_WORKSPACES=" + workspace_environment(workspaces),
+                            "--env", f"JJ_PROXY_STARTUP_TIMEOUT_SECS={JJ_STARTUP_TIMEOUT_SECONDS}"]
         docker_args += proxy_git_environment_args(repo, container_repo, command)
         if name == "zulip":
             docker_args += [
@@ -1666,7 +1736,10 @@ def start_one_proxy(
                 "--env", f"ZULIP_CADDY_ENDPOINT=http://{proxy['caddy-container']}:8787/api/v1/messages",
             ]
         checked_repository_path(repo, command["workdir"], f"command {name} workdir")
-        docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
+        docker_args += proxy_repository_mount_args(
+            repo, container_repo, name, command, workspaces=workspaces,
+            staging=Path(proxy["workspace-source-view"]) if workspaces is not None else None,
+        )
         docker_args += [images[name], *command["argv"][1:]]
         proxy["resource-status"]["container"] = "intended"; persist()
         try: _docker(*docker_args)
@@ -1695,7 +1768,8 @@ def start_one_proxy(
             proxy["resource-status"]["forward"] = "created"; persist()
             if cancelled is not None and cancelled.is_set():
                 raise ConfigError(f"proxy {name} startup cancelled")
-        deadline = time.monotonic() + 10
+        readiness_budget = JJ_STARTUP_TIMEOUT_SECONDS + 10 if name == "jj" else 10
+        deadline = time.monotonic() + readiness_budget
         readiness_error = ""
         while (remaining := deadline - time.monotonic()) > 0:
             if cancelled is not None and cancelled.is_set():
@@ -1735,6 +1809,9 @@ def start_one_proxy(
 def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_accepted_manifest(Path(args.manifest))
+    args._workspace_records = requested_workspaces(args)
+    if args._workspace_records is not None and "jj" not in manifest["commands"]:
+        raise ConfigError("workspace authority requires the trusted JJ service")
     images = resolve_images(repo, manifest, getattr(args, 'images', None))
     state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
     if getattr(args, "agent_image", None) is not None:
@@ -1745,6 +1822,9 @@ def start_main(args: argparse.Namespace) -> int:
             "parameters": {"uid": args.uid, "gid": args.gid},
             "proxy-images": images,
         }
+    workspaces = requested_workspaces(args)
+    if workspaces is not None and "accepted" in state:
+        state["accepted"]["workspaces"] = workspaces
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
     state_lock = threading.Lock()
@@ -1874,6 +1954,7 @@ _MANAGED_PROXY_OPTIONAL = {
     "endpoint", "caddy-container", "helper-container", "socket-volume", "pair-token",
     "caddy-image-chain", "configuration", "helper-image", "helper-implementation",
     "pair-implementation", "credential-identity", "credential-source", "networks",
+    "workspaces", "workspace-source-view",
 }
 
 
@@ -1898,6 +1979,7 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
             not isinstance(parameters["network"], str) or not parameters["network"] or
             not isinstance(statuses, dict) or set(statuses) not in (
                 {"volume", "container", "forward"},
+                {"volume", "container", "forward", "source-view"},
                 {"volume", "container", "forward", "network"},
                 {"volume", "container", "forward", "network", "socket-volume",
                  "helper-container", "caddy-container", "configuration"}) or
@@ -1907,6 +1989,16 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
             any(not isinstance(proxy[field], str) or not proxy[field] for field in
                 ("name", "volume", "container", "image"))):
         raise ConfigError("managed proxy recovery record is invalid")
+    if "workspaces" in proxy or "workspace-source-view" in proxy:
+        if proxy["name"] != "jj" or not {"workspaces", "workspace-source-view"} <= set(proxy):
+            raise ConfigError("workspace authority belongs only to the JJ service")
+        workspace_records(proxy["workspaces"])
+        source_view = Path(proxy["workspace-source-view"])
+        base = Path.home() / ".cache/codex-sandbox-proxies"
+        if (source_view.name != "jj-source-view-" + owner or
+                re.fullmatch(r"[0-9a-f]{64}", source_view.parent.name) is None or
+                source_view.parent.parent != base or "source-view" not in statuses):
+            raise ConfigError("workspace source-view recovery path is invalid")
     if proxy.get("volume-owner", owner) != owner:
         raise ConfigError("managed proxy volume owner changed")
     forwarding = proxy.get("forwarding")
@@ -2008,6 +2100,10 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
     proxy_roles = {"proxy-volume": ()}
     proxy_identities = {"proxy-volume": volume_id}
     container_dependencies = ["proxy-volume"]
+    if "workspace-source-view" in proxy:
+        proxy_roles["source-view"] = ()
+        proxy_identities["source-view"] = _proxy_resource_identity("source-view", service_owner)
+        container_dependencies.append("source-view")
     if "network" in proxy:
         proxy_roles["network"] = ()
         proxy_identities["network"] = _proxy_resource_identity("network", service_owner)
@@ -2096,6 +2192,17 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         volume_id, service_owner, volume_presence, remove_volume,
         proxy_dependencies[volume_id],
     ))
+    source_view_id = proxy_identities.get("source-view")
+    if source_view_id is not None:
+        source_view_path = Path(proxy["workspace-source-view"])
+        def source_view_presence() -> ResourcePresence:
+            if source_view_path.is_symlink():
+                return ResourcePresence.MISMATCHED
+            if not source_view_path.exists():
+                return ResourcePresence.ABSENT
+            return ResourcePresence.OWNED if source_view_path.is_dir() else ResourcePresence.MISMATCHED
+        registry.register(OwnedResource(source_view_id, service_owner, source_view_presence,
+                                        lambda: shutil.rmtree(source_view_path)))
     network_id = proxy_identities.get("network")
     if network_id is not None:
         def network_presence() -> ResourcePresence:
@@ -2395,6 +2502,8 @@ def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid
             network_mode = live_snapshot.get("HostConfig", {}).get("NetworkMode")
             if network_mode not in (None, parameters["network"]):
                 raise ConfigError("active proxy container network changed")
+            if "workspaces" in proxy:
+                validate_workspace_snapshot(proxy, live_snapshot)
             if proxy["name"] == "zulip":
                 networks = live_snapshot.get("NetworkSettings", {}).get("Networks", {})
                 mounts = [item for item in live_snapshot.get("Mounts", [])
@@ -2483,6 +2592,36 @@ def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid
             **({"dev.codex.service-owner": proxy["service-owner"]}
                if "service-owner" in proxy else {})}):
         raise ConfigError("active proxy container failed command, repository identity, or native image validation")
+
+
+def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    """Check the authority that actually reached the running JJ container."""
+    records = workspace_records(proxy["workspaces"])
+    environment = snapshot.get("Config", {}).get("Env", [])
+    values = [value.removeprefix("JJ_PROXY_WORKSPACES=") for value in environment
+              if value.startswith("JJ_PROXY_WORKSPACES=")]
+    active = [value.removeprefix("JJ_PROXY_REPO=") for value in environment
+              if value.startswith("JJ_PROXY_REPO=")]
+    if values != [workspace_environment(records)] or active != [records[0]["guest_root"]]:
+        raise ConfigError("active JJ workspace environment changed")
+    mounts = snapshot.get("Mounts", [])
+    expected: dict[str, str] = {}
+    for item in workspace_layouts(records):
+        for source, target in [(item.host_root, item.guest_root), *item.metadata_mounts(),
+                               *((item.host_root, alias) for alias in item.repository_aliases()),
+                               (item.lock_file, Path(item.proxy_authority()["lock"]))]:
+            expected[str(target)] = str(source)
+    for target, source in expected.items():
+        actual = [mount for mount in mounts if mount.get("Destination") == target]
+        if (len(actual) != 1 or actual[0].get("Source") != source or actual[0].get("RW") is not True):
+            raise ConfigError(f"active JJ workspace mount changed: {target}")
+    # Reject additional writable source-tree binds: source browsing is read-only.
+    for mount in mounts:
+        target = mount.get("Destination", "")
+        if (mount.get("RW") is True and
+                (target == "/src" or target.startswith("/src/") or target.startswith("/run/jj-locks/")) and
+                target not in expected):
+            raise ConfigError(f"unexpected writable JJ workspace mount: {target}")
 
 
 def route_main(args: argparse.Namespace) -> int:
@@ -2582,10 +2721,11 @@ def agent_args_main(args: argparse.Namespace) -> int:
     ]
     if os.environ.get("JJ_PROXY_INSPECT"):
         lines += ["--env", "JJ_PROXY_INSPECT=1"]
-    # The launcher owns the agent's /src mount through source_mounts().
-    sandbox = optional_sandbox_directory(repo)
-    if sandbox is not None:
-        lines += ["--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly"]
+    jj = next((proxy for proxy in state.get("proxies", []) if proxy.get("name") == "jj"), None)
+    if jj is not None and "workspaces" in jj:
+        roots = [record["guest_root"] for record in workspace_records(jj["workspaces"])]
+        lines += ["--env", "JJ_PROXY_ROOTS=" + json.dumps(roots, separators=(",", ":"))]
+    # The launcher owns the source view and protected workspace policy mounts.
     for name, command in manifest["commands"].items():
         if name not in volumes:
             raise ConfigError(f"shared proxy state is missing command: {name}")
@@ -2683,6 +2823,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     join = sub.add_parser("join")
     join.add_argument("--repo", required=True)
     join.add_argument("--container-repo", required=True)
+    join.add_argument("--workspaces")
     join.add_argument("--state", required=True)
     join.add_argument("--manifest", required=True)
     join.add_argument("--images", required=True)
@@ -2693,6 +2834,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     attach = sub.add_parser("attach")
     attach.add_argument("--repo", required=True)
     attach.add_argument("--container-repo", required=True)
+    attach.add_argument("--workspaces")
     attach.add_argument("--shared", action="store_true")
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
@@ -2736,6 +2878,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     start = sub.add_parser("start")
     start.add_argument("--repo", required=True)
     start.add_argument("--container-repo", required=True)
+    start.add_argument("--workspaces")
     start.add_argument("--prefix", required=True)
     start.add_argument("--state", required=True)
     start.add_argument("--helper-image")

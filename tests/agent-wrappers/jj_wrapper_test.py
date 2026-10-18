@@ -23,6 +23,28 @@ class JjWrapperTest(unittest.TestCase):
         os.environ.pop("PI_CALL_MODEL", None)
         self.addCleanup(helper.stop)
 
+    def test_malformed_workspace_projection_does_not_reach_either_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record = root / "executed"
+            backend = Path(__file__).with_name("fixtures") / "jj_record.py"
+            wrapper = root / "jj"
+            subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+            subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
+            wrapper.write_text(wrapper.read_text().replace(
+                "/libexec/agent-wrappers/jj-proxy-client", str(backend)))
+            for hint in ('{}', '["relative"]', 'not-json'):
+                with self.subTest(hint=hint):
+                    result = subprocess.run([str(wrapper), "status"], cwd=ROOT,
+                                            env={**os.environ, "JJ_PROXY_ROOTS": hint,
+                                                 "SANDBOX_PROXY_DIR": str(root / "proxy"),
+                                                 "JJ_REAL": str(backend), "JJ_TEST_RECORD": str(record)},
+                                            text=True, capture_output=True)
+                    self.assertEqual(125, result.returncode, result.stderr)
+                    self.assertEqual("", result.stdout)
+                    self.assertIn("malformed JJ_PROXY_ROOTS", result.stderr)
+                    self.assertFalse(record.exists())
+
     def test_uses_configured_real_binary_outside_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

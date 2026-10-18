@@ -21,6 +21,7 @@ RUNTIME_PROBE = Path(__file__).with_name('fixtures') / 'image-runtime.sh'
 IMAGE_PREFIX = 'codex-sandbox'
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
 from owned_images import jj_release_args
+from shared_workspace_probe import probe_shared_workspaces
 
 
 def run(*args: str, input: str | bytes | None = None) -> str:
@@ -62,6 +63,7 @@ def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> N
 
 def probe_jj_mounts(image: str) -> None:
     from docker_runtime import Docker
+    from workspace_layout import discover_workspace, ensure_request_lock
 
     launcher = runpy.run_path(str(ROOT / 'tools/codex-sandbox/sandbox-proxies.py'))
     generate = launcher['proxy_repository_mount_args']
@@ -69,8 +71,19 @@ def probe_jj_mounts(image: str) -> None:
     with tempfile.TemporaryDirectory(prefix='jj-mount-fixture-') as directory:
         root = Path(directory).resolve()
         repo = root / 'repo'
-        subprocess.run([os.environ.get('DOTFILES_TEST_JJ_REAL', 'jj'), 'git', 'init', '--colocate', str(repo)],
-                       cwd=root, check=True)
+        jj = os.environ.get('DOTFILES_TEST_JJ_REAL', 'jj')
+        subprocess.run([jj, 'git', 'init', '--colocate', str(repo)], cwd=root, check=True)
+
+        def native(arguments, *, capture, cwd=None):
+            if arguments[0] == 'jj':
+                arguments = [jj, *arguments[1:]]
+            return subprocess.run(arguments, cwd=cwd, check=True, text=True, capture_output=capture)
+
+        layout = discover_workspace(repo, container_repo, root, runner=native)
+        ensure_request_lock(layout)
+        records = [layout.to_dict()]
+        staging = root / 'proxy-staging'
+        staging.mkdir()
         sandbox = repo / '.agents/sandbox'
         sandbox.mkdir(parents=True)
         (sandbox / 'Dockerfile').write_text('FROM scratch\n')
@@ -78,10 +91,13 @@ def probe_jj_mounts(image: str) -> None:
         # Select the production Docker mount grammar without requiring host startup state.
         with mock.patch.object(generate.__globals__['OUTER_RUNTIME'], 'nonrecursive_bind', Docker.nonrecursive_bind), \
                 mock.patch.dict(os.environ, {'HOME': str(root)}):
-            mounts = generate(repo, container_repo, 'jj', command)
+            mounts = generate(repo, container_repo, 'jj', command, workspaces=records, staging=staging)
         archive = io.BytesIO()
         with tarfile.open(fileobj=archive, mode='w') as tar:
-            tar.add(repo, arcname='repo')
+            # Every generated bind source, including locks and source-view scaffolding,
+            # must survive relocation into the daemon's private fixture volume.
+            for path in root.iterdir():
+                tar.add(path, arcname=path.name)
         name = 'jj-mount-fixture-' + uuid.uuid4().hex
         created = False
         try:
@@ -109,6 +125,8 @@ def probe_jj_mounts(image: str) -> None:
                 'docker', 'run', '--rm', '--interactive', '--name', name, '--network', 'none',
                 '--cap-drop=ALL', '--read-only', '--tmpfs', '/tmp:mode=1777',
                 '--tmpfs', '/run/sandbox-proxy:mode=1777', *relocated,
+                '--env', 'JJ_PROXY_REPO=' + str(container_repo),
+                '--env', 'JJ_PROXY_WORKSPACES=' + launcher['workspace_environment'](records),
                 '--workdir', str(container_repo), '--entrypoint', '/trusted/bin/sh', image,
                 input=Path(__file__).with_name('fixtures').joinpath('jj-mounted-checkout.sh').read_text(),
             )
@@ -180,6 +198,8 @@ def main() -> None:
     try:
         build_images(args.expected_revision, tags)
         probe_jj_mounts(jj_image)
+        probe_shared_workspaces(jj_image)
+        probe_shared_workspaces(jj_image, linked=True)
         if not args.jj_only:
             check_labels([tags['pi-alpine'][0], tags['pi-debian'][0]], args.expected_revision)
         # Leaving the executor waits for every probe, including on failure,
@@ -188,6 +208,7 @@ def main() -> None:
             colocated = probes.submit(
                 run, 'docker', 'run', '--rm', '--interactive', '--network', 'none',
                 '--tmpfs', '/tmp:mode=1777', '--tmpfs', '/run/sandbox-proxy:mode=1777',
+                '--tmpfs', '/src:mode=1777', '--tmpfs', '/run/jj-locks:mode=1777',
                 '--entrypoint', '/trusted/bin/sh', jj_image,
                 input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
             )

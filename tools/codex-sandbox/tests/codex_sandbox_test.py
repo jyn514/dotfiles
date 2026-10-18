@@ -691,8 +691,12 @@ class RepositoryPreflightTest(unittest.TestCase):
             nested = repository / "nested"
             nested.mkdir()
             state = SimpleNamespace(home=home)
-            with contextlib.chdir(nested):
+            with contextlib.chdir(nested), mock.patch.dict(
+                launcher["validate_repository"].__globals__, DOTFILES=repository,
+            ):
                 launcher["validate_repository"](state)
+            self.assertEqual(1, len(state.workspaces))
+            state.workspaces_file.unlink()
             self.assertEqual(repository, state.repository)
             self.assertEqual(repository / ".git", state.git_mount_source)
             self.assertTrue((repository / ".jj").is_dir())
@@ -1947,6 +1951,23 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertTrue((self.repo / ".jj" / "repo").is_dir())
         self.assertTrue((self.repo / ".git").is_dir())
         self.final_run()
+
+    def test_fixture_initialization_never_uses_authoritative_checkout_metadata(self) -> None:
+        shutil.rmtree(self.repo / ".jj")
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        initializations = [call for call in read_calls(self.jj_log) if call[:2] == ["git", "init"]]
+        self.assertEqual([["git", "init", "--colocate", str(self.repo)]], initializations)
+        command = self.final_run()
+        metadata_sources = [item.split(",dst=", 1)[0].removeprefix("type=bind,src=")
+                            for item in command if item.startswith("type=bind,src=")]
+        self.assertFalse(any(Path(source).is_relative_to(ROOT / metadata)
+                             for source in metadata_sources for metadata in (".jj", ".git")))
+        # Restoring DOTFILES preserves real source paths for staged host code.
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/pi-agent/pi-extensions'},"
+            "dst=/home/codex/.pi/agent/pi-extensions,readonly", command,
+        )
 
     def test_git_subdirectory_initializes_jj_at_repository_root(self) -> None:
         shutil.rmtree(self.repo / ".jj")

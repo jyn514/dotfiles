@@ -207,6 +207,14 @@ It copies linked workspaces using npm's published file lists and preserves ordin
 Build tools, tests, and unrelated workspaces stay in the build stage.
 The standalone entrypoint shares the coding-agent `dist` tree through a symlink, including its binary assets.
 
+Before building images or requesting a host rerun, run the native fixture checks:
+
+```sh
+dev/pytest -q tools/codex-sandbox/tests/fixture_metadata_test.py
+```
+
+These checks do not replace the container probe; report any local-JJ prerequisite skips separately.
+
 The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, network access, and local Git and JJ binaries:
 
 ```sh
@@ -220,6 +228,9 @@ dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration
 ```
 
 JJ-only mode builds, probes, and cleans only the JJ image; it retains the shared JJ cache alias.
+
+For shared-workspace fixtures, generate repository metadata and run JJ discovery with the tested image's pinned JJ.
+Do not substitute host JJ unless the test explicitly covers cross-version compatibility.
 
 For the full run, use the host commit recorded in `~/.local/share/pi/node/.source-revision`.
 The test passes that commit as the required `PI_REVISION` build argument and checks

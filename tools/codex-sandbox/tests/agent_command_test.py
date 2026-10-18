@@ -69,6 +69,7 @@ class AgentCommandTest(unittest.TestCase):
     def test_host_worker_command_uses_resource_paths_and_session_channel(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         build = launcher["build_agent_command"]
+        from workspace_layout_test import git_fixture
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = SimpleNamespace(
@@ -90,14 +91,17 @@ class AgentCommandTest(unittest.TestCase):
             state.pi_agent_tmp.mkdir()
             state.skills_source.mkdir()
             state.skills_tmp.mkdir()
-            state.home.mkdir()
+            (state.home / "src").mkdir(parents=True)
             (state.host_pi_package / "README.md").parent.mkdir(parents=True)
             for relative in ("README.md", "docs", "examples"):
                 path = state.host_pi_package / relative
                 path.mkdir() if "." not in path.name else path.touch()
-            state.repository.mkdir()
-            (state.repository / ".jj").mkdir()
-            state.git_mount_source.mkdir(parents=True)
+            git_fixture(state.repository)
+            dotfiles = git_fixture(root / "installed/dotfiles")
+            state.workspaces = [
+                launcher["discover_workspace"](state.repository, state.container_repository, state.home),
+                launcher["discover_workspace"](dotfiles, Path("/src/shared-dotfiles"), state.home),
+            ]
             extensions = root / "pi-extensions"
             extensions.mkdir()
 
@@ -107,11 +111,6 @@ class AgentCommandTest(unittest.TestCase):
                 "proxy_flags": lambda: [],
                 "staged_config_path": lambda _state, _role: root / "config",
                 "installed_config_source": lambda _path: root / "installed-config",
-                "run": lambda *_args, **_kwargs: SimpleNamespace(
-                    stdout=f"{state.git_mount_source}\n{state.git_mount_source}\n",
-                ),
-                "source_mounts": lambda *_args: [],
-                "check_mount_destinations": mock.Mock(),
             }):
                 command = build(
                     state, ["image", "pi"], timing=False,
@@ -178,6 +177,17 @@ class AgentCommandTest(unittest.TestCase):
                 f"dst={Path(resource_paths[str(state.repository)]) / '.jj'},readonly",
                 command,
             )
+            self.assertIn(
+                f"type=bind,src={dotfiles},dst=/src/shared-dotfiles,bind-nonrecursive", command,
+            )
+            self.assertIn(
+                f"type=bind,src={dotfiles / '.jj'},dst=/src/shared-dotfiles/.jj,readonly", command,
+            )
+            self.assertIn(
+                f"type=bind,src={dotfiles / '.agents/sandbox'},"
+                "dst=/src/shared-dotfiles/.agents/sandbox,readonly", command,
+            )
+            launcher["check_mount_destinations"](command)
             self.assertEqual("/src/repository", command[command.index("--workdir") + 1])
 
 

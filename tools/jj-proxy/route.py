@@ -354,16 +354,29 @@ def host_regions(env, mounts, cwd):
     mount = effective_mount(source, mounts)
     if mount and mount.point == source:
         anchors.append((source, False))
-    selected = physical(env.get('JJ_PROXY_REPO', '/src/work'), cwd)
-    explicit_selected = bool(env.get('JJ_PROXY_REPO'))
-    if selected.exists():
-        # The launcher's explicit selected-workspace role is host evidence even
-        # without a distinct mount. Only its backing SUBREGION is anchored,
-        # never the entire rootfs. Effective nested mounts still differ.
-        anchors.append((selected, explicit_selected))
-        workspace = workspace_at(selected, explicit=True)
-        if workspace:
-            anchors += [(path, explicit_selected) for path in metadata(workspace)[0][1:]]
+    if 'JJ_PROXY_ROOTS' in env:
+        try:
+            roots = json.loads(env['JJ_PROXY_ROOTS'])
+        except (ValueError, TypeError) as error:
+            raise RouteError('malformed JJ_PROXY_ROOTS: expected absolute guest roots') from error
+        if (not isinstance(roots, list) or not roots or
+                any(not isinstance(root, str) or '\0' in root or
+                    not Path(root).is_absolute() or
+                    '..' in Path(root).parts for root in roots)):
+            raise RouteError('malformed JJ_PROXY_ROOTS: expected absolute guest roots')
+        selected_roots = [(physical(root, cwd), True) for root in roots]
+    else:
+        selected_roots = [(physical(env.get('JJ_PROXY_REPO', '/src/work'), cwd),
+                           bool(env.get('JJ_PROXY_REPO')))]
+    for selected, explicit_selected in selected_roots:
+        if selected.exists():
+            # Launcher roles are host evidence even without a distinct mount.
+            # Anchor only each backing SUBREGION, never the entire rootfs.
+            # This projection routes aliases; the service owns authorization.
+            anchors.append((selected, explicit_selected))
+            workspace = workspace_at(selected, explicit=True)
+            if workspace:
+                anchors += [(path, explicit_selected) for path in metadata(workspace)[0][1:]]
     regions = []
     for path, allow_root in anchors:
         mount = effective_mount(path, mounts)

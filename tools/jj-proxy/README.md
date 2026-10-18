@@ -33,13 +33,21 @@ by the Dockerfile's copied inputs and `config/mise.lock`. Local Cargo artifacts 
 change that key. Keep the builder's input list aligned with Dockerfile `COPY`
 instructions when adding image sources.
 
-The sandbox launcher must validate all metadata indirections, create the private socket volume, mount the repository and metadata as specified by the design, set `JJ_PROXY_REPO`, `JJ_PROXY_GIT_DIR`, `JJ_PROXY_COMMON_DIR`, and `JJ_PROXY_JJ_REPO`, and wait for readiness before starting the agent. A manually started proxy without those mounts is not protected.
+The launcher validates metadata indirections, creates the private socket volume, mounts both workspaces and metadata, and waits for readiness.
+`JJ_PROXY_REPO` names the active guest root.
+Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
+Each entry describes an authorized guest workspace, its resolved metadata, and its persistent request-lock path.
+The launcher derives these entries from the active workspace and its own `DOTFILES`, deduplicating identical roots.
+Dotfiles normally maps to `/src/dotfiles`, but the launcher retains an active mapping or allocates a collision-free path when needed.
+A manually started proxy without the validated mounts and authority is not protected.
 
 The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
-For another host-backed Jujutsu repository under `/src`, the wrapper sends inspection requests.
-These use `--ignore-working-copy` and a separate read-only Landlock policy;
-commands that change repository state are rejected. Inspection of linked workspaces
-requires their metadata to be visible in the proxy container.
+Protocol version 2 always carries a physical absolute invocation cwd under `/src`; cwd addressing does not grant write permission.
+The server grants mutation access only to exact resolved roots in its trusted workspace set, not to a path prefix or every workspace sharing a store.
+Other host-backed Jujutsu repositories under `/src` permit inspection only.
+Explicit inspection remains read-only even for an authorized root.
+Inspection uses `--ignore-working-copy` and a separate read-only Landlock policy; state-changing commands are rejected.
+Inspection of linked workspaces requires their metadata to be visible in the proxy container.
 For a repository with a Jujutsu secure-config ID, the trusted proxy prepares a
 private config-cache entry before inspection. It never initializes or rewrites
 the inspected repository's `.jj` metadata; the inspection child can only read
@@ -47,7 +55,8 @@ that cache.
 Use `jj -R /src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
 `--repository` is equivalent. A selector outside `/src` is refused, and mutation
-access is granted only to the selected workspace.
+access is granted only to an exact authorized workspace root.
+One existing JJ service per active shared session knows both roots; other command proxies, services, and credentials remain active-project scoped.
 
 ## Independent container-local repositories
 
@@ -92,7 +101,20 @@ jj commit -m 'Describe the change'
 jj rebase -r @ -d main
 jj undo
 jj git fetch --remote upstream
+# From another project, using the launcher's selected dotfiles path:
+jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 ```
+
+`root:` filesets select paths relative to the target repository.
+Other filesets retain native invocation-cwd semantics; `-R` does not change the requested command's cwd.
+Only author prehooks and author reset target the resolved repository; a cross-repository commit must not snapshot or reattribute the invoking workspace.
+
+All mutation-mode requests, including commands without author hooks, acquire the target JJ backing repository's persistent request lock.
+The lock covers prehooks, command execution, and applicable author reset across distinct proxy services.
+Independent repositories remain concurrent; arbitrary host commands and ordinary file edits do not participate.
+Linked workspaces retain shared-history semantics, not history isolation.
+Startup configuration shares one lock-wait/preparation deadline across both workspaces.
+The launcher supplies `JJ_PROXY_STARTUP_TIMEOUT_SECS` and gives JJ readiness checks that budget plus observation time, rather than the other command proxies' shorter readiness limit.
 
 Fetch accepts any existing configured remote, including repeated `--remote` options and `--all-remotes`.
 Without a remote option, Jujutsu uses its normal defaults, including the repository's `git.fetch` setting.
@@ -111,12 +133,20 @@ For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 - The JJ proxy can change or remove tracked `.agents/sandbox` files during history operations.
   That directory stays read-only for the agent and other command proxies.
   The current session keeps its accepted policy; a later trusted startup may accept the changed files.
-- The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and remote configuration changes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
+- The proxy rejects shell execution, config overrides, unchecked repository selectors, external tools, `git push`, `git init`, and remote configuration changes.
+  Read-only [`jj.toml`](./jj.toml) owns trusted editor, formatter, and signing settings; proxy command construction does not override it.
+  Allowed history edits can still be logically destructive but recoverable.
 - For a proxy route, socket failure returns `125` and never falls back to native JJ. A local route does not connect to the proxy.
-- A command timeout returns `124`; policy/request failures normally return `2`. Inspect stderr, correct the request, and retry.
+- A command timeout returns `124`; policy/request failures normally return `2`.
+  A timeout or disconnect can leave a mutation applied without its response; inspect the target repository before deciding whether to retry.
+  The client never automatically replays the request.
 - Use `jj undo` through the proxy to recover an allowed history edit.
   The proxy rejects `jj op restore`; run it only from a trusted environment outside the agent sandbox.
   If the proxy was interrupted during a metadata write, stop the agent, inspect/recover the repository from that trusted environment, then restart the whole proxy session.
+
+Tracked configuration edits do not reload staged guest configuration or an existing proxy's startup authority.
+Deploy launcher, clients, router, and rebuilt guest/proxy images together in fresh sandboxes; `/reload` is insufficient.
+Existing accepted sessions lacking the workspace authority cannot join as new sessions; preserve their running attachments until they exit.
 
 ## Tests
 
@@ -131,7 +161,7 @@ The native pytest adapter runs Cargo and passes the test environment's selected 
 Set `DOTFILES_TEST_JJ_REAL` to select a specific binary.
 Direct Cargo runs can report success while skipping real-JJ integration tests if no binary is found.
 
-The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. These checks do not establish acceptance in a real container.
+The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. Native and mocked checks alone do not establish container acceptance; the `--jj-only` probe exercises real containers.
 
 ## Design and reference
 

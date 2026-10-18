@@ -1,9 +1,7 @@
 #!/bin/sh
 set -eu
-export JJ_PROXY_REPO="$PWD"
-export JJ_PROXY_GIT_DIR="$PWD/.git"
-export JJ_PROXY_COMMON_DIR="$PWD/.git"
-export JJ_PROXY_JJ_REPO="$PWD/.jj/repo"
+: "${JJ_PROXY_REPO:?launcher workspace root is required}"
+: "${JJ_PROXY_WORKSPACES:?launcher workspace authority is required}"
 export SANDBOX_PROXY_DIR=/run/sandbox-proxy
 jj-proxy serve >/tmp/jj-proxy.log 2>&1 &
 server=$!

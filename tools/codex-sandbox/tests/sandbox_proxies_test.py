@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -201,6 +202,36 @@ class ManifestTest(unittest.TestCase):
         self.sandbox = self.repo / ".agents" / "sandbox"
         self.sandbox.mkdir(parents=True)
         self.container_repo = Path("/src/example")
+
+    def jj_mount_arguments(self, repo: Path, container_repo: Path, command: dict) -> list[str]:
+        from workspace_layout import WorkspaceLayout, ensure_request_lock
+
+        # These mount fixtures deliberately have minimal JJ metadata. Resolve their
+        # real Git layout and JJ pointer, without pretending they are initialized stores.
+        repo = repo.resolve(strict=True)
+        git_dir, common_dir = sandbox_proxies.git_metadata_paths(repo)
+        jj_repo = sandbox_proxies.jj_repository_path(repo)
+        digest = hashlib.sha256(os.fsencode(jj_repo)).hexdigest()
+        layout = WorkspaceLayout(repo, container_repo, git_dir, common_dir, jj_repo,
+                                 self.repo / '.cache/codex-sandbox-proxies/request-locks' / (digest + '.lock'))
+        ensure_request_lock(layout)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        return sandbox_proxies.proxy_repository_mount_args(
+            repo, container_repo, 'jj', command, workspaces=[layout.to_dict()], staging=Path(temporary.name),
+        )
+
+    @staticmethod
+    def bind_mounts(arguments: list[str]) -> dict[Path, tuple[Path, bool]]:
+        mounts = {}
+        for index, argument in enumerate(arguments[:-1]):
+            if argument != '--mount':
+                continue
+            fields = arguments[index + 1].split(',')
+            values = dict(field.split('=', 1) for field in fields if '=' in field)
+            if values['type'] == 'bind':
+                mounts[Path(values['dst'])] = (Path(values['src']), 'readonly' not in fields)
+        return mounts
 
     def test_runtime_directory_uses_shared_home_when_xdg_runtime_is_elsewhere(self) -> None:
         with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.repo / "unshared-run")}):
@@ -612,31 +643,31 @@ class ManifestTest(unittest.TestCase):
                 self.repo, self.container_repo, "bug", command,
             )
 
-    def test_generates_writable_repository_when_root_override_is_declared(self) -> None:
+    def test_jj_authority_grants_writable_worktree_metadata_and_lock(self) -> None:
         self.write({"jj": self.command(mounts=[
             {"source": ".", "target": ".", "proxy": "read-write"},
         ])})
         command = sandbox_proxies.load_manifest(self.repo)["commands"]["jj"]
-        arguments = sandbox_proxies.proxy_repository_mount_args(
-            self.repo, self.container_repo, "jj", command,
-        )
-        mounts = arguments[1::2]
-        self.assertIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/example,bind-nonrecursive=true",
-            mounts,
-        )
-        self.assertNotIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/example,readonly,bind-nonrecursive=true",
-            mounts,
-        )
-        self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/example/.git",
-            mounts,
-        )
-        self.assertIn(
-            f"type=bind,src={(self.repo / '.jj/repo').resolve()},dst=/src/example/.jj/repo",
-            mounts,
-        )
+        arguments = self.jj_mount_arguments(self.repo, self.container_repo, command)
+        mounts = self.bind_mounts(arguments)
+        self.assertEqual((self.repo.resolve(), True), mounts[self.container_repo])
+        self.assertEqual(((self.repo / '.git').resolve(), True), mounts[self.container_repo / '.git'])
+        # The .jj directory bind already carries its colocated repo; no redundant
+        # nested mount is needed to grant writable backing-store access.
+        self.assertEqual(((self.repo / '.jj').resolve(), True), mounts[self.container_repo / '.jj'])
+        locks = [value for target, value in mounts.items() if target.parent == Path('/run/jj-locks')]
+        self.assertEqual(1, len(locks))
+        self.assertTrue(locks[0][0].is_file())
+        self.assertTrue(locks[0][1])
+
+    def test_jj_mounts_require_explicit_authority_and_owned_staging(self) -> None:
+        command = self.command(mounts=[{'source': '.', 'target': '.', 'proxy': 'read-write'}])
+        for supplied in ({}, {'workspaces': []}, {'staging': self.repo / 'staged'}):
+            with self.subTest(supplied=supplied), self.assertRaisesRegex(
+                    sandbox_proxies.ConfigError, 'explicit workspace authority and owned source-view staging'):
+                sandbox_proxies.proxy_repository_mount_args(
+                    self.repo, self.container_repo, 'jj', command, **supplied,
+                )
 
     def test_only_jj_inherits_writable_sandbox_configuration(self) -> None:
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
@@ -645,14 +676,19 @@ class ManifestTest(unittest.TestCase):
                 shutil.rmtree(self.sandbox)
             for name in ("jj", "example"):
                 with self.subTest(present=present, proxy=name):
-                    arguments = sandbox_proxies.proxy_repository_mount_args(
-                        self.repo, self.container_repo, name, command,
-                    )
+                    if name == 'jj':
+                        arguments = self.jj_mount_arguments(self.repo, self.container_repo, command)
+                        self.assertEqual((self.repo.resolve(), True),
+                                         self.bind_mounts(arguments)[self.container_repo])
+                    else:
+                        arguments = sandbox_proxies.proxy_repository_mount_args(
+                            self.repo, self.container_repo, name, command,
+                        )
+                        self.assertIn(
+                            f"type=bind,src={self.repo.resolve()},dst={self.container_repo},bind-nonrecursive=true",
+                            arguments[1::2],
+                        )
                     mounts = arguments[1::2]
-                    self.assertIn(
-                        f"type=bind,src={self.repo.resolve()},dst={self.container_repo},bind-nonrecursive=true",
-                        mounts,
-                    )
                     sandbox_mounts = [mount for mount in mounts
                                       if f"dst={self.container_repo}/.agents/sandbox" in mount]
                     if present and name != "jj":
@@ -677,18 +713,15 @@ class ManifestTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(main), "worktree", "add", "--quiet", str(worktree)], check=True)
         (worktree / ".jj" / "repo").mkdir(parents=True)
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
-        arguments = sandbox_proxies.proxy_repository_mount_args(
-            worktree, self.container_repo, "jj", command,
-        )
-        self.assertIn(
-            f"type=bind,src={worktree.resolve()},dst=/src/example,bind-nonrecursive=true",
-            arguments,
-        )
+        arguments = self.jj_mount_arguments(worktree, self.container_repo, command)
+        mounts = self.bind_mounts(arguments)
+        self.assertEqual((worktree.resolve(), True), mounts[self.container_repo])
+        self.assertEqual((worktree.resolve() / '.git', True), mounts[self.container_repo / '.git'])
         common_dir = sandbox_proxies.git_metadata_paths(worktree)[1]
         target = sandbox_proxies.metadata_container_path(
             worktree, common_dir, self.container_repo,
         )
-        self.assertIn(f"type=bind,src={common_dir},dst={target}", arguments)
+        self.assertEqual((common_dir, True), mounts[target])
 
     def test_nested_repository_allows_sibling_metadata_beneath_source_root(self) -> None:
         host_root = self.repo / "host-source"
@@ -711,18 +744,15 @@ class ManifestTest(unittest.TestCase):
         relative = os.path.relpath(external, self.repo / ".jj")
         (self.repo / ".jj" / "repo").write_text(relative + "\n", encoding="utf-8")
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
-        arguments = sandbox_proxies.proxy_repository_mount_args(
-            self.repo, self.container_repo, "jj", command,
-        )
-        self.assertIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/example,bind-nonrecursive=true",
-            arguments,
-        )
+        arguments = self.jj_mount_arguments(self.repo, self.container_repo, command)
+        mounts = self.bind_mounts(arguments)
+        self.assertEqual((self.repo.resolve(), True), mounts[self.container_repo])
         target = sandbox_proxies.metadata_container_path(
             self.repo, external, self.container_repo,
         )
-        self.assertIn(f"type=bind,src={external.resolve()},dst={target}", arguments)
-        self.assertNotIn(f"src={self.repo.parent},dst=/src/example", " ".join(arguments))
+        self.assertEqual((external.resolve(), True), mounts[target])
+        self.assertEqual((external.resolve(), True), mounts[external.resolve()])
+        self.assertNotEqual(self.repo.parent, mounts[self.container_repo][0])
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{
@@ -793,7 +823,7 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "hard link"):
             sandbox_proxies.load_manifest(self.repo)
 
-    def test_agent_arguments_protect_config_and_declared_paths(self) -> None:
+    def test_combined_agent_arguments_protect_config_and_declared_paths_once(self) -> None:
         self.write({"example": self.command(mounts=[
             {"source": "state", "target": "state", "agent": "read-only"},
             {"source": "secret", "target": "secret", "agent": "hidden"},
@@ -817,7 +847,25 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("src=shared-example,dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/src/example/state,readonly", generated)
-        self.assertIn(f"type=bind,src={self.sandbox},dst=/src/example/.agents/sandbox,readonly", generated)
+        # Check the two real producers together: each used to add the policy mount.
+        from workspace_layout import WorkspaceLayout
+        launcher = runpy.run_path(str(ROOT / "tools/codex-sandbox/codex-sandbox"))
+        (self.repo / "src").mkdir()
+        workspace = WorkspaceLayout(
+            self.repo, self.container_repo, self.repo / ".git", self.repo / ".git",
+            self.repo / ".jj/repo", self.repo / "request.lock",
+        )
+        worker = SimpleNamespace(
+            home=self.repo, skills_tmp=self.repo / "staged", workspaces=[workspace],
+        )
+        combined = [*launcher["agent_repository_mounts"](worker),
+                    *reversed(generated.splitlines())]
+        launcher["check_mount_destinations"](combined)
+        policy_mounts = [value for value in combined
+                         if f"dst={self.container_repo}/.agents/sandbox," in value]
+        self.assertEqual([
+            f"type=bind,src={self.sandbox},dst={self.container_repo}/.agents/sandbox,readonly",
+        ], policy_mounts)
         self.assertIn("/src/example/secret:ro,noexec", generated)
         self.assertNotIn("dst=/src,readonly", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
@@ -2013,10 +2061,21 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("failed", recovery["lifecycle-state"])
         self.assertEqual("a" * 32, recovery["forwarding"]["owner"])
 
+    def workspace_authority_file(self):
+        path = self.repo / "workspaces.json"
+        path.write_text(json.dumps([{
+            "host_root": str(self.repo), "guest_root": str(self.container_repo),
+            "git_dir": str(self.repo / ".git"), "common_dir": str(self.repo / ".git"),
+            "jj_repo": str(self.repo / ".jj/repo"),
+            "lock_file": str(self.repo / "abcdef.lock"),
+        }]))
+        return str(path)
+
     def test_jj_proxy_uses_rootless_container_root_for_private_metadata(self) -> None:
         state_path = self.repo / "state"
-        args = SimpleNamespace(prefix="test", state=str(state_path), network="sandbox",
-                               container_repo=str(self.container_repo), zuliprc=None)
+        args = SimpleNamespace(prefix="test", state=str(state_path), network="sandbox", repo=str(self.repo),
+                               container_repo=str(self.container_repo), zuliprc=None,
+                               workspaces=self.workspace_authority_file())
         command = self.command(argv=["jj-proxy", "serve"])
         image = "sha256:" + "0" * 64
         completed = subprocess.CompletedProcess
@@ -2043,8 +2102,9 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("0:0", run_argv[run_argv.index("--user") + 1])
 
     def test_jj_proxy_uses_agent_identity_for_uidmapped_virtiofs(self) -> None:
-        args = SimpleNamespace(prefix="test", state=str(self.repo / "state"), network="sandbox",
-                               container_repo=str(self.container_repo), zuliprc=None)
+        args = SimpleNamespace(prefix="test", state=str(self.repo / "state"), network="sandbox", repo=str(self.repo),
+                               container_repo=str(self.container_repo), zuliprc=None,
+                               workspaces=self.workspace_authority_file())
         command = self.command(argv=["jj-proxy", "serve"])
         image = "sha256:" + "0" * 64
         completed = subprocess.CompletedProcess

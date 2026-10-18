@@ -12,6 +12,25 @@ launcher = runpy.run_path(str(tool / "codex-sandbox"))
 launcher["main"].__globals__["image_runtime"] = lambda: launcher["ContainerRuntime"]()
 
 
+native_validate_repository = launcher["validate_repository"]
+
+
+def validate_fixture_repository(state, *, initialize_missing=True):
+    # Config and builder sources still come from the real launcher checkout.
+    # Only workspace discovery uses the disposable fake-boundary repository;
+    # never initialize or inspect the authoritative checkout's JJ metadata.
+    scope = native_validate_repository.__globals__
+    source = scope["DOTFILES"]
+    scope["DOTFILES"] = Path(os.environ["FAKE_REPOSITORY"])
+    try:
+        native_validate_repository(state, initialize_missing=initialize_missing)
+    finally:
+        scope["DOTFILES"] = source
+
+
+launcher["main"].__globals__["validate_repository"] = validate_fixture_repository
+
+
 def helper(*arguments: str, check: bool = True):
     # The fixture's PATH provides the existing fake proxy helper process.
     return subprocess.run(["python3", str(tool / "sandbox-proxies.py"), *arguments], check=check)

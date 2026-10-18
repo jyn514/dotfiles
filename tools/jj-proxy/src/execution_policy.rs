@@ -36,7 +36,7 @@ pub fn install(repo: &str) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
-    install_with_paths_mode(repo, paths, true)
+    install_with_paths_mode(repo, paths, true, None)
 }
 
 #[cfg(target_os = "linux")]
@@ -55,28 +55,32 @@ pub fn install_inspect(repo: &str) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 pub fn install_inspect_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
-    install_with_paths_mode(repo, paths, false)
+    install_with_paths_mode(repo, paths, false, None)
 }
 
 #[cfg(target_os = "linux")]
-fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) -> Result<()> {
+fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool, authority: Option<&[crate::workspaces::Workspace]>) -> Result<()> {
     let trusted =
         PathFd::new(paths.trusted).wrap_err("cannot open trusted directory")?;
     let trusted_bin = PathFd::new(paths.trusted_bin)
         .wrap_err("cannot open trusted executable directory")?;
     let source = PathFd::new(paths.source).wrap_err("cannot open source directory")?;
-    let repository = PathFd::new(repo).wrap_err("cannot open repository directory")?;
-    let git_path = env::var("JJ_PROXY_GIT_DIR").wrap_err("Git directory is not configured")?;
-    let common_path =
-        env::var("JJ_PROXY_COMMON_DIR").wrap_err("Git common directory is not configured")?;
-    let jj_repo_path =
-        env::var("JJ_PROXY_JJ_REPO").wrap_err("Jujutsu repository directory is not configured")?;
-    let git = PathFd::new(&git_path).wrap_err("cannot open Git metadata directory")?;
-    let common = PathFd::new(&common_path).wrap_err("cannot open Git common directory")?;
-    let jj =
-        PathFd::new(format!("{repo}/.jj")).wrap_err("cannot open Jujutsu metadata directory")?;
-    let jj_repo =
-        PathFd::new(&jj_repo_path).wrap_err("cannot open Jujutsu repository directory")?;
+    let mut grants = Vec::new();
+    if let Some(workspaces) = authority {
+        for workspace in workspaces {
+            for path in [&workspace.root, &workspace.git_dir, &workspace.common_dir, &workspace.jj_repo] {
+                grants.push(PathFd::new(path).wrap_err("cannot open authorized workspace path")?);
+            }
+            grants.push(PathFd::new(format!("{}/.jj", workspace.root))?);
+        }
+    } else {
+        // Legacy helper surface retained for native policy tests, never used by serve.
+        grants.push(PathFd::new(repo)?);
+        grants.push(PathFd::new(format!("{repo}/.jj"))?);
+        for key in ["JJ_PROXY_GIT_DIR", "JJ_PROXY_COMMON_DIR", "JJ_PROXY_JJ_REPO"] {
+            grants.push(PathFd::new(env::var(key).wrap_err("metadata directory is not configured")?)?);
+        }
+    }
     let config =
         PathFd::new(paths.config).wrap_err("cannot open secure config directory")?;
     let socket =
@@ -93,8 +97,7 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) 
         MakeFifo | MakeSym | Refer | Truncate
     });
     let repository_access = if writable { read_access | write_access } else { read_access };
-    let metadata_access = repository_access;
-    let status = Ruleset::default()
+    let mut ruleset = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(read_access | write_access | AccessFs::Execute)
         .wrap_err("cannot configure Landlock filesystem access")?
@@ -106,16 +109,6 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) 
         .wrap_err("cannot add trusted Landlock execution rule")?
         .add_rule(PathBeneath::new(source, read_access))
         .wrap_err("cannot add /src read-only rule")?
-        .add_rule(PathBeneath::new(repository, repository_access))
-        .wrap_err("cannot add repository access rule")?
-        .add_rule(PathBeneath::new(git, metadata_access))
-        .wrap_err("cannot add Git metadata access rule")?
-        .add_rule(PathBeneath::new(common, metadata_access))
-        .wrap_err("cannot add Git common-directory access rule")?
-        .add_rule(PathBeneath::new(jj, metadata_access))
-        .wrap_err("cannot add Jujutsu metadata access rule")?
-        .add_rule(PathBeneath::new(jj_repo, metadata_access))
-        .wrap_err("cannot add Jujutsu repository access rule")?
         .add_rule(PathBeneath::new(config, if writable { read_access | write_access } else { read_access }))
         .wrap_err("cannot add configuration access rule")?
         .add_rule(PathBeneath::new(socket, read_access | write_access))
@@ -136,8 +129,16 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) 
         .wrap_err("cannot add null-device rule")?
         // Alpine Git reads /dev/urandom when creating temporary object files.
         .add_rule(PathBeneath::new(random, AccessFs::ReadFile))
-        .wrap_err("cannot add random-device read rule")?
-        .restrict_self()
+        .wrap_err("cannot add random-device read rule")?;
+    for grant in grants {
+        ruleset = ruleset.add_rule(PathBeneath::new(grant, repository_access))?;
+    }
+    if let Some(workspaces) = authority.filter(|_| writable) {
+        for workspace in workspaces {
+            ruleset = ruleset.add_rule(PathBeneath::new(PathFd::new(&workspace.lock)?, AccessFs::ReadFile | AccessFs::WriteFile))?;
+        }
+    }
+    let status = ruleset.restrict_self()
         .wrap_err("cannot enforce Landlock execution policy")?;
     if !matches!(
         status.ruleset,
@@ -166,5 +167,29 @@ pub fn install_inspect_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Resu
 
 #[cfg(not(target_os = "linux"))]
 pub fn install_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+/// Server authority is always explicit; inspection adds a read-only restriction.
+#[cfg(target_os = "linux")]
+pub fn install_workspaces(workspaces: &[crate::workspaces::Workspace], writable: bool) -> Result<()> {
+    install_workspaces_with_paths(workspaces, &PolicyPaths {
+        source: Path::new("/src"), trusted: Path::new("/trusted"),
+        trusted_bin: Path::new("/trusted/bin"), config: Path::new("/tmp/jj-config"),
+        socket: Path::new("/run/sandbox-proxy"),
+    }, writable)
+}
+#[cfg(target_os = "linux")]
+pub fn install_workspaces_with_paths(workspaces: &[crate::workspaces::Workspace], paths: &PolicyPaths<'_>, writable: bool) -> Result<()> {
+    let Some(first) = workspaces.first() else { bail!("workspace authority is empty"); };
+    install_with_paths_mode(&first.root, paths, writable, Some(workspaces))
+}
+#[cfg(not(target_os = "linux"))]
+pub fn install_workspaces(_: &[crate::workspaces::Workspace], _: bool) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn install_workspaces_with_paths(_: &[crate::workspaces::Workspace], _: &PolicyPaths<'_>, _: bool) -> Result<()> {
     Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
 }

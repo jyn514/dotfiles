@@ -6,6 +6,7 @@ accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
 Host Pi with guest tool execution is the launcher execution path; the host
 extension authority requirements below are not yet fully verified.
+The shared-dotfiles workspace contract below is implemented.
 Interactive `/split` panes use shared guest-workload lifetime. Native Pi/tmux
 checks use a real local tool worker; VM-backed acceptance remains unverified.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
@@ -57,9 +58,9 @@ configuration must remain inaccessible to guest writes through every mount alias
 An execution attachment binds one interactive host Pi and its ordinary children
 to a guest worker and directory. Human-created `/split` panes have separate
 attachments to that worker, not separate containers. Pi conversation files remain
-on the host. The launcher selects the repository and guest mount; repository tool
-arguments use guest paths. Host-discovered shared skills are mounted at the guest
-skills path. Recursive project instruction includes and resource reads
+on the host.
+The launcher selects the active repository and guest mounts; repository tool arguments use guest paths.
+Host-discovered shared skills are mounted at the guest skills path. Recursive project instruction includes and resource reads
 resolve in the guest view under the extension authority contract. Rewrite mapped
 host resource paths to guest paths in `context_with_system` before each model request,
 including goal-triggered turns, structured system-section updates, and resumed sessions;
@@ -67,8 +68,9 @@ advertise the guest working directory in the same projection. Stored messages re
 rewriting alone does not constrain the preceding resource reads. Host Pi's README,
 docs, and examples are mounted read-only at guest Pi package paths; their
 advertised host paths map to those guest paths. Project-relative resources, including project skills, map
-from the host repository root to its `/src` guest mount. Sibling and historical
-paths remain unchanged.
+from the host repository root to its `/src` guest mount.
+Resources under launcher dotfiles project to its selected guest root even when the host checkout is outside the source tree.
+Other sibling and historical paths remain unchanged.
 A saved conversation's cwd is historical context, not a request to mount that
 directory. Cross-directory resume forks into a new session ID under the selected
 launch directory.
@@ -237,6 +239,37 @@ Required acceptance checks are:
   cannot become host executable code through `/reload` or fork startup.
 - Authenticated model requests use admitted broker routes; no reusable provider
   credentials enter guest processes, and failures never select direct fallback.
+
+== Writable workspace authority <workspace-authority>
+
+The trusted launcher derives one immutable description for the active workspace and one for its own `DOTFILES` checkout.
+Each description binds the canonical host root, guest root, resolved Git directory/common directory, and JJ workspace/repository metadata.
+Derive mounts, resource-path projection, JJ permissions, and accepted-session identity from these descriptions, not guest request fields.
+This is not a user-configurable multi-repository facility.
+
+Ordinary files in both workspaces are writable.
+Protect `.git`, `.jj`, their external backing paths, and `.agents/sandbox` through every exposed alias in both checkouts.
+Other `/src` siblings remain inspection-only; independent container-local repositories retain native JJ operation.
+Filesystem access does not authorize unrelated edits or ownership of another contributor's changes.
+The active project's accepted policy alone selects optional services and credentials; dotfiles supplies no additional service policy.
+
+Retain the active workspace's guest path and working directory.
+Prefer dotfiles' existing source-tree mapping, normally `/src/dotfiles`; otherwise allocate a destination unused by visible source entries and other mounts.
+A conventional-name collision must not hide another source tree or reject a valid layout.
+When the active root is dotfiles, retain its guest path and deduplicate mounts and authority.
+Record the selected path once and derive all consumers from it.
+Reject remaining incompatible mount destinations before container creation.
+Resolve the installed skills source independently; do not retarget an intentionally different installation.
+
+Before acquiring active-session lifetime/publication locks, the host initializes absent JJ metadata in valid Git-only dotfiles with
+`jj git init --colocate` at an explicit host target, without changing launcher cwd.
+Use launcher coordination and recheck absence after acquiring it; release initialization coordination before session acquisition.
+Never treat malformed existing metadata as absent or replace it automatically.
+Validate both layouts before starting runtime resources and report failures against the affected checkout.
+
+One existing JJ service per active shared session receives both exact workspace roots and writable metadata; no second service is added.
+Only it receives the persistent mutation-lock mounts described by #link("../../jj-proxy/design.typ")[the JJ contract].
+Other command proxies retain active-project scope.
 
 == Configuration belongs to the loader
 
@@ -414,6 +447,8 @@ another sandbox for that checkout is a join.
 The first launch accepts repository configuration and resolves its selected images.
 Session metadata retains the normalized configuration, including source absence,
 verified image set, and image-bound launch parameters outside agent-writable mounts.
+Accepted authority also binds the exact writable workspace set, metadata layouts, and persistent JJ request-lock mounts.
+Joins verify these descriptions against live mounts and trusted startup environment; new worker mounts alone cannot add authority.
 
 A join uses that accepted configuration and image set. It neither reloads repository
 sandbox configuration nor invokes image resolvers. Configuration and source edits,
@@ -433,8 +468,11 @@ join compatibility.
 
 Optional relays use the accepted repository opt-ins and current host authorization,
 which may narrow authority. Their resources and tokens remain per-launch.
-Agent instructions, skills, and extensions may reload with `/reload`; this does
-not reload sandbox configuration, images, or shared services.
+Agent instructions, skills, and admitted extensions may reload with `/reload`; this does not restage guest configuration or reload
+sandbox configuration, images, workspace authority, or shared services.
+Editing tracked configuration in writable dotfiles does not reload its staged copy.
+Deploy shared-dotfiles support with rebuilt guest/proxy images and fresh sandboxes; `/reload` is insufficient.
+Existing accepted sessions lacking workspace authority reject new joins without disturbing running attachments.
 
 == One launcher interface
 
@@ -622,8 +660,10 @@ Defaults in trusted normalized shared-session snapshots are not raw source selec
 An unsupported resolver/backend pair fails during policy binding, before resolver or
 relay effects. Shared-session schema 4 stores accepted normalized policy, source
 presence, verified images, provider selection, image-bound parameters, and the
-complete trusted-service set. Joins accept only schema 4; active legacy records
-reject the join without reading current configuration or disturbing their holders.
+complete trusted-service set.
+Shared-dotfiles authority requires an explicitly versioned extension binding the workspace descriptions and request-lock mounts above.
+Do not reinterpret schema 4 records lacking that authority as compatible sessions.
+Active legacy records reject the join without reading current configuration or disturbing their holders.
 Legacy records remain parseable only for owner-validated stale recovery. Final-holder
 cleanup permits the next launch to migrate from current configuration.
 
@@ -660,8 +700,14 @@ This requires a separately versioned store record and a shared-session schema ex
   parameters reject only the join.
 - Configuration absent at first startup remains absent for joins. Configuration
   changes are accepted only after final-holder cleanup and a new trusted startup.
-- `/reload` updates per-agent instructions, skills, and extensions without changing
-  shared services or sandbox authority.
+- Both active and dotfiles ordinary files are writable, with metadata and policy protected through every alias.
+  A third sibling remains inspection-only, including an unlisted workspace sharing an authorized JJ store.
+- Relocated dotfiles and conventional-name collisions preserve the active mapping and project resource paths.
+  When dotfiles is active, one authority and one mount per destination remain.
+- Git-only dotfiles initializes under host coordination; malformed metadata fails without replacement.
+- Joins require the exact accepted workspace and lock authority; old records cannot gain it from newly mounted workers.
+- `/reload` updates per-agent instructions, skills, and admitted extensions without restaging guest configuration or changing
+  shared services, images, or sandbox authority.
 
 Evidence inspected: `bake.py`, `owned_images.py`, and the agent-image resolver;
 paracress's `src/scripts/ci/image.clj` and

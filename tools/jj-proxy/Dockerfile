@@ -50,6 +50,7 @@ RUN apk add --no-cache git
 COPY --from=jj /jj-bin /jj-bin
 COPY tools/jj-proxy/jj.toml ./
 COPY tools/jj-proxy/policy.toml ./policy.toml
+COPY tools/jj-proxy/agent-split-editor ./agent-split-editor
 RUN --mount=type=cache,target=/build/target \
     JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked
 

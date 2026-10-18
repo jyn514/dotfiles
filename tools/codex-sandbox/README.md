@@ -16,6 +16,8 @@ while its built-in tools and human `!` shell commands run in the guest container
 `pi` requires an existing Git working tree and rejects other directories before
 accessing Lima or Docker. In a Git repository without Jujutsu, it runs
 `jj git init --colocate` at the Git root, including when launched from a subdirectory.
+The launcher also initializes its Git-only dotfiles checkout on the host when JJ metadata is absent.
+It coordinates concurrent initialization and never replaces malformed existing metadata; startup reports the affected checkout instead.
 Host mode requires the Pi installation at
 `~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
 current sandbox image. `./setup local` builds `jyn514/pi` from upstream main
@@ -45,6 +47,8 @@ restore host-local built-in tools and `!` commands; guest routing is a
 normal-operation guarantee, not a malicious-code security boundary.
 The [host extension authority contract](spec/proxy-design.typ) still requires
 admitted host handlers and brokered model requests; conformance remains unverified.
+**Known gap:** host extensions load from this guest-writable checkout, so the contract's host-code isolation requirement remains unmet.
+The approved whole-checkout writable-dotfiles scope proceeds with this limitation; metadata and policy overlays do not isolate host executable sources.
 Proxy and credential failures still fail closed.
 [Model-requested session forks](spec/launcher-interface.typ) are selected but not
 implemented; they must inherit the parent's guest backend and authority.
@@ -75,17 +79,38 @@ Sidecars drop all capabilities.
 This takes effect on new launches;
 restart existing sessions to apply it.
 
-The launcher mounts `~/src` read-only at `/src`, then overlays the active repository writable at the same relative path when it is beneath `~/src`—for example, `~/src/dotfiles` becomes `/src/dotfiles`.
-Repositories outside `~/src` use `/src/repository`.
-The selected path is also the agent and proxy working directory.
+The launcher mounts `~/src` read-only at `/src`, then overlays ordinary files in the active workspace and its own `DOTFILES` checkout writable.
+The active workspace keeps its existing guest path: its relative path beneath `~/src`, or `/src/repository` for an external repository.
+That active path remains the agent and proxy working directory.
+Dotfiles normally maps to `/src/dotfiles`; the launcher uses its existing source mapping where possible and allocates an unused `/src` path otherwise.
+A collision must neither hide another source entry nor reject an otherwise valid layout.
+When dotfiles is the active workspace, the launcher retains that path and deduplicates its mounts and authority.
+Use the launcher's selected path rather than assuming `/src/dotfiles`.
+Other source siblings remain inspection-only.
+Both writable checkouts retain protection for `.git`, `.jj`, external metadata backing paths, and `.agents/sandbox` through every exposed alias.
+The active project's accepted policy owns services and credentials; exposing dotfiles does not accept its optional capabilities.
+
+One JJ proxy per active shared session accepts exactly those workspace roots, with no additional dotfiles service.
+For a scoped commit from another project, use a root-relative fileset and the selected dotfiles path:
+
+```sh
+jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
+```
+
+Ordinary filesets retain invocation-cwd semantics even with `-R`; only author hooks target the resolved repository.
+Writable files are shared host files, not isolated branches or permission to include another contributor's changes.
+Distinct proxies serialize all mutation-mode requests, including author hooks, with one persistent lock per JJ backing repository.
+Independent repositories remain concurrent; this lock does not coordinate arbitrary host writers or ordinary file edits.
+See the [JJ proxy contract](../jj-proxy/design.typ) for protocol and permission details.
 
 For external worktrees whose mountpoints are missing beneath `/src`, the launcher stages those directories in temporary sandbox state and binds the existing source subtrees read-only.
 This also accommodates linked Git metadata without creating placeholder directories under `~/src`.
 Before launch, it rejects duplicate mount destinations in the assembled container arguments.
+The launcher alone adds the agent's protected `.agents/sandbox` mounts; proxy-generated arguments do not repeat them.
 When this staging is needed, new entries in staged parent directories appear on the next launch;
 the contents of bound subtrees remain live.
 
-The launcher owns the selected repository's `.git` overlay. Linked worktrees
+The launcher owns each writable workspace's `.git` overlay. Linked worktrees
 retain their pointer file as a read-only file mount, with backing metadata
 mounted read-only at both host and guest paths so absolute and relative pointers
 resolve. Directory overlays use the selected Git metadata root. Other metadata
@@ -122,7 +147,10 @@ The guest does not need a copy of Pi's user-level `AGENTS.md`.
 Run `/reload` in existing panes to apply host-side sandbox instruction loading.
 A fresh sandbox launch updates the resource-path map and removes the old guest copy.
 
-`/reload` refreshes host resources, but does not restage configuration or replace guest mounts.
+`/reload` refreshes host resources, but does not restage configuration, replace guest mounts, or change accepted workspace authority.
+Editing tracked configuration through writable dotfiles does not reload its staged copy.
+Deploy shared-dotfiles support with rebuilt guest and proxy images and fresh sandboxes; `/reload` is insufficient.
+Existing accepted sessions without workspace authority cannot admit new sessions under this contract; let their attachments exit before starting fresh.
 An updated prompt can therefore point to a file that the guest cannot read.
 
 Guest visibility depends on how the resource is exposed:
@@ -136,6 +164,7 @@ Guest visibility depends on how the resource is exposed:
   at `/home/codex/.agents/skills`. In-place edits and new files under that source
   are readable without restarting the worker. Retargeting the installed directory
   link requires a fresh sandbox launch to select the new source.
+  With the normal installed link, this alias and `skills/` under the selected dotfiles root expose the same files.
 - **Live pi-link package:** the local fork is bound read-only at `/home/codex/.pi/agent/pi-link`.
   Pi discovers its bundled skill through the [host package configuration](../../config/pi-agent/README.md).
   Start a fresh sandbox to add this mount; `/reload` alone does not expose it to an existing worker.
@@ -421,7 +450,8 @@ For interactive startup profiling, use
 ### Operational and security boundaries
 
 - Treat the agent, including container root, as untrusted.
-  It can modify ordinary working-tree files, the host's shared `~/.agents/skills` directory, and call every mounted proxy, but must not receive the outer daemon or direct writable access to `.git`, `.jj`, or `.agents/sandbox`.
+  It can modify ordinary files in the active workspace and launcher dotfiles, the host's shared `~/.agents/skills` directory, and call every mounted proxy.
+  It must not receive the outer daemon or direct writable access to `.git`, `.jj`, their external backing paths, or `.agents/sandbox`.
 - Trust the checkout and manifest authors before startup.
   Image builders and proxy images are part of the trusted computing base;
   a read-only mount does not make hostile policy safe.

@@ -7,6 +7,7 @@ separate trust domains. Host Pi with guest tools is implemented as an execution
 path, but conformance to the host extension authority contract remains unverified;
 the `git` built-in mount is implemented in the launcher, not yet consumed by the
 `bug` proxy. Manifest examples use the temporary version 1 format.
+The shared-dotfiles workspace authority and cross-proxy JJ locking contract is implemented.
 
 == Objective
 
@@ -35,7 +36,7 @@ The agent must not be able to:
 - write, replace, rename, or remove protected repository metadata directly
 - choose a proxy executable, image, mount, environment variable, or container option
 - execute mutable working-tree code with proxy authority
-- redirect a proxy to another repository
+- redirect a proxy to a repository outside its trusted workspace authority
 - control the outer container daemon
 - increase its proxy capabilities during a sandbox session
 - read, replace, or export a reusable upstream credential
@@ -117,6 +118,10 @@ guest-modified packages or project extensions to host execution. Host registrati
 must distinguish bounded host capabilities from guest-backed tools and reject
 unclassified model-executable handlers. Replacing only Bash is insufficient.
 
+*Known implementation gap:* host extensions still load from the guest-writable dotfiles checkout, so the host-code isolation requirement above remains unmet.
+The approved whole-checkout writable-dotfiles scope proceeds with this limitation; its metadata and policy overlays do not enforce host-code isolation.
+This approval does not remove the requirement or establish conformance.
+
 The host can route selected authenticated model requests through validated broker
 endpoints without exposing credentials to guest tools. Moving Pi to the host does
 not authorize direct credential fallback or bypass required broker routes.
@@ -131,15 +136,17 @@ Implemented sandbox-owned repository configuration lives under:
 └── proxy-commands.json
 ```
 
-The launcher mounts the repository normally and then overlays `.agents/sandbox` read-only in the agent container:
+The launcher mounts the active workspace and launcher dotfiles writable for ordinary files, then protects each `.agents/sandbox`.
+The following overlay applies to each authorized workspace in the agent container:
 
 ```text
 --mount type=bind,src=$repo,dst=$container_repo
 --mount type=bind,src=$repo/.agents/sandbox,dst=$container_repo/.agents/sandbox,readonly
 ```
 
-Command proxies other than JJ receive the same nested read-only overlay.
-The JJ proxy deliberately omits it: allowed `restore`, `undo`, and checkout operations may change or remove tracked sandbox configuration through its writable repository view.
+Command proxies other than JJ remain active-project scoped and receive the same nested read-only overlay there.
+Adding dotfiles does not accept its policy or credentials.
+The JJ proxy receives both trusted workspace roots and deliberately omits their configuration overlays: allowed `restore`, `undo`, and checkout operations may change or remove tracked sandbox configuration through its writable repository view.
 Even a writable nested mount would prevent JJ from removing the directory when checking out a revision that predates it.
 The agent still has no direct write access to sandbox configuration; its contents can change indirectly through allowed JJ operations.
 
@@ -160,8 +167,9 @@ the same mount and proxy boundaries remain:
 outer container-engine daemon
 |
 +-- jj-proxy
-|   +-- repository metadata read-write
-|   +-- working tree read-write, including .agents/sandbox
+|   +-- active and launcher-dotfiles metadata read-write
+|   +-- both working trees read-write, including .agents/sandbox
+|   +-- persistent request locks per JJ backing repository
 |   `-- session socket volume
 |
 +-- command-proxy: bug
@@ -172,8 +180,8 @@ outer container-engine daemon
 |   `-- session socket volume
 |
 `-- agent
-    +-- working tree read-write
-    +-- .git and .jj overlaid read-only
+    +-- active and launcher-dotfiles ordinary files read-write
+    +-- .git, .jj, and external metadata overlaid read-only
     +-- manifest-declared paths overlaid with their agent modes
     +-- .agents/sandbox overlaid read-only
     `-- proxy socket volumes mounted read-only
@@ -278,7 +286,8 @@ The selected resolver and all executable inputs it loads are trusted startup sup
 It resolves freshness at shared-session creation, with shared dependencies resolved once.
 Starting another sandbox for the same checkout joins the existing shared session. Joins use its accepted configuration and immutable images without reading changed sandbox configuration or invoking image resolvers. The launcher verifies recorded images and live services before attaching; invalid recorded state fails only the join.
 Configuration and source changes take effect at the next trusted startup after the final execution attachment closes. Per-agent instructions, skills, and extensions remain reloadable through `/reload` under the host extension authority rules above.
-There is no live replacement: one server retains ownership of command serialization, sockets, and shared state for the session.
+There is no live replacement: one server retains ownership of sockets and shared state for the session.
+JJ mutations additionally use shared per-backing-repository request locks across distinct servers; this adds no service lifecycle.
 
 == Socket protocol
 
@@ -398,7 +407,12 @@ Any number of launchers may share one checkout's proxy set.
 Under the selected #link("launcher-interface.typ")[interactive `/split` plan],
 one launcher retains its guest worker and session lock across peer panes; the first
 Pi's exit is not final-holder release.
-Linked worktrees retain distinct repository identities and proxy sets.
+Linked worktrees retain distinct workspace-session identities and proxy sets.
+JJ proxies sharing a canonical backing repository use the same persistent request-lock file across those sets.
+These locks coordinate trusted proxy mutations inside the runtime, not arbitrary host commands or source-file edits.
+They do not replace the host-kernel launcher coordination above.
+Never unlink or replace request-lock files during cleanup or restart; derive their identity from the canonical host JJ backing repository.
+Mount the relevant locks only into trusted JJ services and include them in accepted authority, live-resource checks, VM bind preflight, and Landlock access.
 
 == Trusted execution
 
@@ -604,11 +618,28 @@ Authoritative issue state remains in Git refs.
 
 `jj-proxy` accepts a broad but validated Jujutsu argument grammar because interactive repository work needs operands and options.
 Jujutsu atomically links temporary objects between `.jj` and `.git`, so separate writable bind mounts introduce an unusable cross-device boundary.
-Its repository bind starts at the nearest common ancestor of a linked worktree, its `gitdir`, and its common Git directory, and is writable to preserve filesystem identity.
-A fail-closed Landlock policy permits reads only from the selected worktree, its resolved metadata, and trusted runtime files; it permits writes only beneath the resolved Git metadata, `.jj`, the proxy's private configuration directory, and its socket directory.
-Metadata operations remain available, while commands that would update ordinary working-copy files fail at the Landlock boundary.
+Repository binds preserve filesystem identity between each authorized worktree and its resolved metadata.
+The trusted launcher supplies `JJ_PROXY_REPO` as the active root and `JJ_PROXY_WORKSPACES` as a JSON array whose entries contain exactly
+`root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
+Derive this set from the #link("launcher-interface.typ")[launcher workspace descriptions], deduplicating identical roots.
+Validate it before readiness; guest cwd, selectors, and shared-store membership cannot add roots.
+A fail-closed Landlock policy admits the authorized worktrees, resolved metadata, request locks, private configuration, socket directory, and trusted runtime files.
+Mutation execution may write ordinary files and metadata in the authorized workspaces.
+Inspection children apply a separate read-only policy and `--ignore-working-copy`, even for explicit inspection of an authorized root.
+Protocol version 2 carries a physical absolute invocation cwd under `/src` in both modes.
+The server derives mutation authority from exact resolved workspace roots, not cwd spelling or path-prefix membership.
+Other `/src` siblings remain inspection-only; independent guest repositories remain native.
 Execution is permitted only beneath `/trusted/bin`, giving the working tree the same effective `noexec` property under Docker and Podman without unsafe syscall bindings or a hard-coded kernel ABI.
 The `bug` protocol is narrower than Jujutsu's grammar: it forwards one bridge subcommand, rewrites body input, rejects `push` and `raw`, and leaves issue-operation validation to the trusted bridge.
+
+All mutation-mode JJ requests acquire the target backing repository's persistent lock before any author prehook or mutating command.
+Hold it through command execution and applicable author reset, including requests without hooks and secure-config preparation at startup.
+Distinct proxies sharing a backing repository serialize; independent repositories remain concurrent.
+Hold at most one repository lock, never for the session lifetime or while waiting for another repository lock.
+Lock wait and execution share a bounded request deadline within the client's response timeout.
+A wait timeout or cancellation runs no hook or command; stop and reap timed-out children before releasing ownership.
+Descriptor close or process death releases ownership; read-only inspection needs no mutation lock.
+The #link("../../jj-proxy/design.typ")[JJ contract] owns target-scoped hooks, native cwd/fileset semantics, and unknown-outcome handling.
 
 The generic manifest does not replace `jj-proxy`'s command-specific validation.
 A future proxy command with caller-controlled arguments must define a complete accepted grammar and reject executable selection, alternate repositories, configuration overrides, and other privilege-crossing surfaces.
@@ -621,8 +652,11 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 
 == Acceptance checks
 
-- The agent cannot modify `.git`, `.jj`, or `.agents/sandbox` directly, through an alternate path, or through a sibling metadata proxy
-- Editing ordinary working-tree files remains possible
+- The agent cannot directly modify `.git`, `.jj`, external backing metadata, or `.agents/sandbox` through any alias in either writable checkout
+- Ordinary files in the active workspace and launcher dotfiles remain writable; other source siblings remain inspection-only
+- Exact trusted workspace roots select JJ mutation access; unlisted linked workspaces do not inherit authority from a shared store
+- Distinct JJ proxies serialize complete mutation-mode requests, including hooks, on the same persistent backing-repository lock
+- Independent repositories remain concurrent; the request lock does not promise coordination with arbitrary host writers or file edits
 - The generic host router runs `bb bug` locally while it owns the host lock and uses the recorded runtime to reach the proxy while a sandbox launcher owns that lock
 - Proxied reads and writes work without giving the agent access to `.git/git-bug` or queue control state
 - A `git` built-in mount supports colocated and non-colocated Git-backed Jujutsu workspaces, including backing Git directories outside the selected worktree; Git-bug reads and writes the selected refs while queue and workqueue state stay in the selected workspace
@@ -641,7 +675,7 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - Logs and diagnostics for the launcher-owned Caddy/helper service interfaces satisfy the permitted fields and sensitive-content exclusions in Readiness and observability
 - Non-idempotent requests are not retried, and cancellation reports an outcome-unknown remote mutation where success cannot be established
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
-- The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
+- The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect a command outside its trusted repository authority
 - Modified working-tree copies of `bb.edn`, bridge source, git-bug, or proxy scripts do not affect trusted execution
 - An invalid, ambiguous, unavailable, or wrong-platform resolver result fails before its consumer starts
 - Resolver freshness, sharing, refresh, and capability omission satisfy the launcher interface's acceptance checks

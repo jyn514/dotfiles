@@ -13,38 +13,33 @@ LAUNCHER = Path(__file__).resolve().parents[1] / "codex-sandbox"
 
 def repository_fixture(root: Path, layout: str, *, absolute: bool = False):
     """Create native Git layouts shared by unit and container regressions."""
+    from workspace_layout_test import git_fixture, native
+    from workspace_layout import discover_workspace
     home = root / "home"
-    main = home / "src/team/main"
-    main.mkdir(parents=True)
-    subprocess.run(["git", "init", "--quiet", str(main)], check=True)
-    subprocess.run([
-        "git", "-C", str(main), "-c", "user.name=Fixture", "-c",
-        "user.email=fixture@example.invalid", "commit", "--quiet", "--allow-empty",
-        "-m", "fixture",
-    ], check=True)
+    main = git_fixture(home / "src/team/main")
     common = main / ".git"
     if layout == "directory":
         repo, git_dir = main, common
     elif layout == "linked":
         repo = home / "src/team/worktree"
-        subprocess.run([
-            "git", "-C", str(main), "worktree", "add", "--quiet", "--detach", str(repo),
-        ], check=True)
+        native("git", "-C", str(main), "worktree", "add", "--quiet", "--detach", str(repo))
+        native("jj", "git", "init", "--colocate", str(repo), cwd=repo)
         git_dir = common / "worktrees/worktree"
         pointer = git_dir if absolute else Path("../main/.git/worktrees/worktree")
         (repo / ".git").write_text(f"gitdir: {pointer}\n")
     elif layout == "missing":
         repo, git_dir = home / "src/team/workspace", common
-        repo.mkdir()
+        native("jj", "workspace", "add", "--no-colocate", str(repo), cwd=main)
     else:
         raise ValueError(layout)
-    (repo / ".jj").mkdir()
     (repo / ".jj/marker").write_text("protected")
     staging = root / "staged"
     staging.mkdir()
+    guest = Path("/src/team") / repo.name
     state = SimpleNamespace(
-        home=home, repository=repo, container_repository=Path("/src/team") / repo.name,
+        home=home, repository=repo, container_repository=guest,
         skills_tmp=staging, git_repository=common, git_mount_source=common,
+        workspaces=[discover_workspace(repo, guest, home)],
     )
     return state, git_dir, common
 
@@ -80,6 +75,77 @@ class RepositoryMountsTest(unittest.TestCase):
                 self.assertEqual(1, command.count(
                     f"type=bind,src={common},dst={state.container_repository / '.git'},readonly",
                 ))
+
+
+class SharedWorkspaceMountsTest(unittest.TestCase):
+    def test_real_layouts_mount_two_writable_roots_once_and_protect_every_metadata_alias(self):
+        from workspace_layout_test import git_fixture, native
+        from workspace_layout import discover_workspace
+        for layout in ("directory", "git-linked", "jj-linked"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                home = root / "home"
+                main = git_fixture(home / "src/team/main")
+                repo = main
+                if layout == "git-linked":
+                    repo = home / "src/team/worktree"
+                    native("git", "-C", str(main), "worktree", "add", "--quiet", "--detach", str(repo))
+                    native("jj", "git", "init", "--colocate", str(repo), cwd=repo)
+                elif layout == "jj-linked":
+                    repo = home / "src/team/worktree"
+                    native("jj", "workspace", "add", "--no-colocate", str(repo), cwd=main)
+                dotfiles = git_fixture(root / "relocated/dotfiles")
+                (dotfiles / "skills").mkdir()
+                staging = root / "staged"
+                staging.mkdir()
+                state = SimpleNamespace(home=home, repository=repo,
+                    container_repository=Path("/src/team") / repo.name,
+                    skills_tmp=staging, skills_source=dotfiles / "skills",
+                    workspaces=[discover_workspace(repo, Path("/src/team") / repo.name, home),
+                                discover_workspace(dotfiles, Path("/src/dotfiles-2"), home)])
+                launcher = runpy.run_path(str(LAUNCHER))
+                command = launcher["agent_repository_mounts"](state)
+                launcher["check_mount_destinations"](command)
+                self.assertEqual(command, launcher["agent_repository_mounts"](state),
+                                 "a second consumer must reuse the one source view")
+                records = [item for item in command if item.startswith("type=bind,")]
+                for workspace in state.workspaces:
+                    root_mount = [item for item in records if f"dst={workspace.guest_root}," in item]
+                    self.assertEqual(1, len(root_mount))
+                    self.assertNotIn("readonly", root_mount[0])
+                    for source, target in workspace.metadata_mounts():
+                        self.assertIn(f"type=bind,src={source},dst={target},readonly", records)
+                    policy = workspace.host_root / ".agents/sandbox"
+                    if policy.is_dir():
+                        self.assertIn(f"type=bind,src={policy},dst={workspace.guest_root}/.agents/sandbox,readonly", records)
+                self.assertFalse((home / "src/dotfiles-2").exists(), "scaffolding must not mutate host sources")
+
+    def test_one_authority_deduplicates_active_dotfiles_mounts(self):
+        from workspace_layout_test import git_fixture
+        from workspace_layout import discover_workspace
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            repo = git_fixture(home / "src/relocated")
+            state = SimpleNamespace(home=home, skills_tmp=home / "staged",
+                workspaces=[discover_workspace(repo, Path("/src/relocated"), home)])
+            launcher = runpy.run_path(str(LAUNCHER))
+            command = launcher["agent_repository_mounts"](state)
+            launcher["check_mount_destinations"](command)
+            roots = [item for item in command if "dst=/src/relocated," in item]
+            self.assertEqual(1, len(roots))
+
+    def test_conflicting_workspace_destinations_fail_before_mount_construction(self):
+        from workspace_layout_test import git_fixture
+        from workspace_layout import discover_workspace
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            first = git_fixture(home / "src/first")
+            second = git_fixture(home / "src/second")
+            state = SimpleNamespace(home=home, skills_tmp=home / "staged", workspaces=[
+                discover_workspace(root, Path("/src/repository"), home) for root in (first, second)])
+            launcher = runpy.run_path(str(LAUNCHER))
+            with self.assertRaisesRegex(launcher["LauncherError"], "Conflicting workspace mount"):
+                launcher["agent_repository_mounts"](state)
 
 
 if __name__ == "__main__":

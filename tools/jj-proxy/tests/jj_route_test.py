@@ -374,6 +374,53 @@ class RoutingTests(unittest.TestCase):
         mounts = mount(1, 0, '/') + mount(3, 1, alias, '/', '8:8', 'btrfs', '/dev/guest')
         self.assertDecision(['commit'], cwd=alias, workspace=alias, mounts=mounts)
 
+    def test_advertised_relocated_workspace_and_backing_aliases_route_proxy(self):
+        dotfiles = self.repo('relocated-config')
+        alias = self.repo('outside-alias')
+        mounts = (mount(1, 0, '/') +
+                  mount(2, 1, '/src', '/host/src', '0:36', 'virtiofs', 'source') +
+                  mount(3, 1, self.host, '/host/project', '0:35', 'virtiofs', 'host') +
+                  mount(4, 1, dotfiles, '/outside-source/config', '0:37', 'virtiofs', 'dotfiles') +
+                  mount(5, 1, alias, '/outside-source/config', '0:37', 'virtiofs', 'dotfiles'))
+        # Neither /src's backing nor the active workspace covers this mount.
+        self.assertDecision(['commit'], cwd=dotfiles, workspace=dotfiles, mounts=mounts)
+        env = dict(self.env, JJ_PROXY_ROOTS=json.dumps([str(self.host), str(dotfiles)]))
+        for selected in (dotfiles, alias):
+            with self.subTest(selected=selected):
+                self.assertDecision(['commit'], cwd=selected, workspace=selected,
+                                    mounts=mounts, env=env, backend='proxy')
+        for args in (['-R', str(dotfiles), 'commit'],
+                     ['--repository', os.path.relpath(dotfiles, self.host), 'commit']):
+            self.assertDecision(args, cwd=self.host, workspace=dotfiles, command=['commit'],
+                                mounts=mounts, env=env, backend='proxy')
+        self.assertDecision(['commit'], mounts=mounts, env=env)
+        # Root hints do not authorize writes: even a local alias sharing only
+        # advertised metadata must route to the server for its own decision.
+        shutil.rmtree(self.local / '.jj/repo')
+        (self.local / '.jj/repo').write_text(str(dotfiles / '.jj/repo'))
+        self.assertDecision(['commit'], mounts=mounts, env=env, backend='proxy')
+
+    def test_advertised_workspace_anchors_separate_metadata_mount(self):
+        dotfiles = self.repo('external-dotfiles')
+        mounts = (self.mounts +
+                  mount(3, 1, dotfiles, '/elsewhere/config', '0:37', 'virtiofs', 'dotfiles') +
+                  mount(4, 3, dotfiles / '.jj', '/private-metadata', '8:4', 'ext4', '/dev/metadata') +
+                  mount(5, 1, self.local / '.jj', '/private-metadata', '8:4', 'ext4', '/dev/metadata'))
+        self.assertDecision(['commit'], mounts=mounts)
+        env = dict(self.env, JJ_PROXY_ROOTS=json.dumps([str(self.host), str(dotfiles)]))
+        self.assertDecision(['commit'], mounts=mounts, env=env, backend='proxy')
+        # Changing the producer's root list must change routing without an
+        # independently maintained client map of writable repository names.
+        env['JJ_PROXY_ROOTS'] = json.dumps([str(self.host)])
+        self.assertDecision(['commit'], mounts=mounts, env=env)
+
+    def test_malformed_explicit_root_projection_fails_instead_of_routing_native(self):
+        for roots in ('', '{', '{}', 'null', '[]', '[null]', '[1]',
+                      '["relative"]', '["/src/../escape"]',
+                      json.dumps(['/src/bad\0root'])):
+            with self.subTest(roots=roots), self.assertRaises(router.RouteError):
+                self.decision(['commit'], env=dict(self.env, JJ_PROXY_ROOTS=roots))
+
     def test_mount_backing_regions_require_complete_path_components(self):
         alias = self.repo('backing-region-alias')
         for backing, backend in (('/host/project', 'proxy'),

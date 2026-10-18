@@ -5,6 +5,8 @@
 
 = Jujutsu metadata proxy
 
+*Status:* The shared-dotfiles workspace authority, protocol version 2, and cross-proxy mutation-lock contract below are implemented.
+
 == Objective
 
 Allow an LLM-controlled Codex container to edit a repository and create or
@@ -29,7 +31,7 @@ The agent must not be able to:
 - choose the executable run by the proxy;
 - escape through a shell, alias, editor, pager, diff tool, signing program, or
   untrusted Jujutsu configuration;
-- redirect the proxy to another repository; or
+- redirect the proxy outside its trusted workspace authority; or
 - control the container daemon that establishes the protective mounts.
 
 The agent may:
@@ -43,20 +45,22 @@ The agent may:
 
 == Architecture
 
-`codex-sandbox` starts two sibling containers under the outer container daemon:
+`codex-sandbox` uses one JJ proxy per active shared session under the outer container daemon.
+That existing service knows the active workspace and launcher dotfiles; it adds no dotfiles-only service:
 
 ```text
 outer Docker or Podman daemon
 |
 +-- jj-proxy
-|   +-- repository mounted read-write and no-exec
+|   +-- active and launcher-dotfiles workspaces and metadata read-write and no-exec
+|   +-- persistent request locks per JJ backing repository
 |   +-- trusted jj binary and configuration
 |   `-- Unix socket created in a private volume
 |
 `-- Codex
-    +-- working tree mounted read-write
-    +-- .git overlaid by a read-only bind mount
-    +-- .jj overlaid by a read-only bind mount
+    +-- active and launcher-dotfiles ordinary files read-write
+    +-- .git, .jj, and external backing metadata overlaid read-only
+    +-- .agents/sandbox overlaid read-only in both workspaces
     +-- proxy socket volume mounted read-only
     `-- jj wrapper routes host metadata to proxy, independent guest repos to native
 ```
@@ -81,21 +85,27 @@ API mutations; a command wrapper is not enforcement against container root.
 
 == Mount layout
 
-The Codex container receives the repository normally, followed by nested
-read-only mounts for its metadata:
+The Codex container receives both authorized workspaces, followed by nested read-only mounts for metadata and sandbox policy.
+This example applies to each workspace with colocated directory metadata:
 
 ```text
 --mount type=bind,src=$repo,dst=$container_repo
 --mount type=bind,src=$repo/.git,dst=$container_repo/.git,readonly
 --mount type=bind,src=$repo/.jj,dst=$container_repo/.jj,readonly
+--mount type=bind,src=$repo/.agents/sandbox,dst=$container_repo/.agents/sandbox,readonly
 --mount type=volume,src=$socket_volume,dst=/run/jj-proxy,readonly
 ```
 
-The proxy receives the repository read-write and no-exec at the same absolute
-path and the socket volume read-write. Keeping the path identical makes
-working-copy paths and diagnostics agree between containers. The no-exec mount
-is defense in depth: it prevents direct execution of a binary or script created
-in the working tree, but it does not make arbitrary tool selection safe. A
+The proxy receives both workspaces and their metadata read-write and no-exec at the same absolute guest paths, plus the socket volume read-write.
+The launcher derives dotfiles from its own `DOTFILES`, not cwd, guest input, or sibling policy.
+The active guest path remains unchanged; dotfiles normally maps to `/src/dotfiles`, with an unused `/src` fallback for relocated checkouts or collisions.
+When dotfiles is active, retain its active path and deduplicate mounts and authority.
+The active project's accepted policy alone owns optional services and credentials.
+Before runtime startup, the host initializes valid Git-only dotfiles with `jj git init --colocate` only when JJ metadata is absent.
+It rechecks absence under launcher coordination and never replaces malformed existing metadata.
+The #link("../codex-sandbox/spec/launcher-interface.typ")[launcher contract] owns initialization order and path allocation.
+Keeping the path identical makes working-copy paths and diagnostics agree between containers.
+The no-exec mount prevents direct execution from the working tree, but does not make arbitrary tool selection safe. A
 trusted interpreter or dynamic loader can still read attacker-controlled code
 from a no-exec mount.
 
@@ -116,9 +126,17 @@ hard-link aliases reachable through any agent-writable mount. An implementation
 that cannot establish this invariant must instead put the writable working tree
 on a distinct filesystem or copy-up layer from the protected metadata.
 
-The first version protects only the selected repository root. Nested
-repositories are out of scope unless the launcher discovers and overlays every
-nested metadata path before Codex starts.
+Protection covers the active workspace and launcher dotfiles, including external metadata and policy through every exposed alias.
+Other source siblings remain inspection-only.
+Nested repositories are out of scope unless the launcher discovers and overlays every nested metadata path before Codex starts.
+Writable files remain shared host state; access does not authorize unrelated edits or ownership of another contributor's changes.
+
+The launcher supplies `JJ_PROXY_REPO` as the active guest root.
+Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
+Each entry binds an exact guest workspace root, its resolved metadata paths, and a persistent request-lock path.
+Validate all entries and prepare secure configuration for both workspaces before readiness.
+Accepted-session authority binds the exact set, metadata layouts, lock mounts, and live trusted environment.
+Guest request fields cannot add entries; a shared JJ store does not authorize an unlisted linked workspace.
 
 Container root must not receive `CAP_SYS_ADMIN`. Passwordless `sudo` inside a
 VM-backed Codex container therefore does not permit remounting metadata
@@ -134,8 +152,9 @@ Requests are length-delimited JSON objects, not shell command strings:
 
 ```json
 {
-  "version": 1,
-  "cwd": "subdirectory/within/repository",
+  "version": 2,
+  "mode": "mutate",
+  "cwd": "/src/project/subdirectory",
   "argv": ["commit", "-m", "Fix parser recovery", "src/parser.clj"]
 }
 ```
@@ -144,7 +163,7 @@ Responses contain the exit status and captured streams:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exit": 0,
   "stdout": "...",
   "stderr": "..."
@@ -153,17 +172,28 @@ Responses contain the exit status and captured streams:
 
 Set explicit request and response size limits. Reject malformed UTF-8, unknown
 fields, embedded NUL bytes, excessive argument counts, and oversized messages.
-Resolve `cwd` relative to an already-open repository descriptor without
-following magic links or escaping the repository, retain the resulting
-descriptor, and enter it with `fchdir`. A string-based canonicalization followed
-by `chdir` is insufficient because the agent can replace a working-tree path
-between those operations. The proxy passes the fixed repository path to
-Jujutsu independently of `cwd`.
+Protocol version 2 requires a physical absolute `cwd` beneath `/src` in both mutation and inspection modes.
+Resolve it through checked filesystem traversal from an already-open `/src` descriptor without magic links or escape.
+Retain the resulting descriptor and enter it with `fchdir`.
+String canonicalization followed by unchecked `chdir` is insufficient because working-tree paths can change between those operations.
+Resolve a single `-R` or `--repository` selector relative to this checked invocation cwd and pass the resolved repository to JJ.
+The requested command retains its invocation cwd and native fileset interpretation; repository selection does not change cwd.
+Only author prehooks and applicable author reset target the resolved repository explicitly.
+Private agent-split targets the workspace resolved from its invocation cwd.
 
-The proxy serializes requests per repository and runs every request in a fresh
-process group or cgroup. It incrementally enforces output limits rather than
-capturing unbounded output first. On timeout, client disconnect, or output-limit
-failure, it kills and reaps the entire group. Apply explicit PID, memory, CPU,
+For a scoped commit from another project, use the selected dotfiles path and a root-relative fileset:
+
+```sh
+jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
+```
+
+`root:` selects paths relative to the target repository; other filesets retain invocation-cwd semantics and native errors.
+A cross-repository commit must not snapshot or reattribute the invoking workspace.
+
+The proxy serializes mutation requests per backing repository as specified below.
+It runs every request in a fresh process group or cgroup and incrementally enforces output limits.
+On timeout, client disconnect, or output-limit failure, it kills and reaps the entire group.
+Apply explicit PID, memory, CPU,
 file-size, and file-descriptor limits so malformed or expensive requests cannot
 exhaust the outer daemon or leave descendants running.
 
@@ -173,11 +203,10 @@ secret token or from trusting the wrapper.
 
 == Repository access modes
 
-The proxy distinguishes mutation access from read-only inspection access. A
-mutation request is bound to the selected repository, uses its fixed working
-copy descriptor, and receives read-write Landlock access to the working tree,
-Jujutsu store, and resolved Git metadata. This is the only mode that may
-snapshot a working copy or change repository state.
+The proxy distinguishes mutation access from read-only inspection access.
+A mutation request resolves to an exact root in trusted `JJ_PROXY_WORKSPACES`.
+It receives read-write Landlock access to the authorized worktrees, JJ stores, resolved Git metadata, and required request locks.
+Only mutation mode may snapshot a working copy or change repository state.
 
 The launcher admits repositories by mounting the host source tree read-only at
 `/src` in both containers. An inspection request identifies a directory beneath
@@ -187,9 +216,8 @@ second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces
 whose metadata is outside the mounted tree are not admitted by this mechanism.
 The trusted proxy may also resolve a single `-R` or `--repository` selector
 against the invocation directory. It canonicalizes the target, requires a
-workspace under `/src`, and derives access from the resolved workspace rather
-than the client's requested mode. A client may request stricter inspection but
-cannot grant mutation access to another workspace.
+workspace under `/src`, and derives mutation permission from exact trusted root membership rather than a path prefix or store identity.
+A client may request stricter inspection, including for an authorized root, but cannot grant additional mutation access.
 Inspection requests are restricted to commands whose reviewed grammar has no
 repository mutation path, initially `status`, `diff`, `log`, `show`,
 `interdiff`, observational `file` subcommands, `workspace list`, `git root`,
@@ -201,7 +229,33 @@ Read-only classification is an enforced command-policy property, not a label
 in the client. The proxy must reject commands that can snapshot, update stores,
 write configuration, invoke helpers, or access credentials even when their
 usual invocation appears observational. The `/src` mount defines inspection
-admission; the selected repository remains the sole mutation target.
+admission; only exact trusted workspace roots permit mutation.
+
+== Mutation ownership across proxies
+
+Launchers create persistent request-lock files keyed by the canonical host JJ backing repository.
+Mount the same file into every trusted JJ service targeting that store, including proxies from distinct active-project sessions and linked workspaces.
+Never unlink or replace it during cleanup or restart; the agent receives no lock mount.
+Include lock identity and mounts in accepted authority, live-resource validation, VM bind preflight, and Landlock access.
+This runtime advisory lock is separate from host-kernel launcher session coordination.
+It coordinates trusted proxies, not arbitrary host commands or concurrent ordinary file edits.
+
+Acquire the target repository's lock before any mutation-mode action, including author prehooks.
+Hold it through the command and applicable author reset, including requests with no author hook.
+Secure-config preparation at startup uses the same lock.
+The launcher supplies the positive-integer `JJ_PROXY_STARTUP_TIMEOUT_SECS` budget; one startup deadline covers all workspace preparations.
+The manager's JJ readiness budget exceeds that deadline so ordinary shared-store contention is not mistaken for unhealthy startup.
+A process-local mutex or active project's session lock is insufficient: another proxy's `new`, `edit`, or commit must not interleave a prehook and command.
+Independent backing repositories remain concurrent.
+Hold at most one repository lock at a time, never for a session lifetime or while waiting for another repository lock.
+Read-only inspection needs no mutation lock; linked workspaces retain shared-history semantics, not history isolation.
+
+Use one bounded request deadline for lock wait and the protected sequence, within the client's response timeout.
+A lock-wait timeout or cancellation runs no prehook or command.
+On command failure or timeout, stop and reap its process group before releasing ownership; retain conditional author-reset behavior.
+Closing the owning descriptor releases the lock on normal exit or process death.
+A timeout or disconnect can leave a mutation applied without its response; never replay automatically.
+Inspect the target repository before deciding whether to retry.
 
 == Wrapper
 
@@ -335,7 +389,7 @@ surfaces:
 - `debug`;
 - configuration mutation and all command-line configuration overrides;
 - alternate workspace or config paths; a repository selector is accepted only
-  when it resolves to the selected mutable workspace or an inspection workspace
+  when it resolves to an exact authorized mutable workspace or an inspection workspace
   beneath the read-only `/src` mount;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
@@ -387,8 +441,8 @@ Reject arbitrary `--tool`, `--editor`, interactive diff or merge, signing, and
 similar executable-selecting options even though the repository is mounted
 no-exec in the proxy. Where needed, allow only named, hard-coded Jujutsu
 built-ins such as `:git`; configuration cannot redefine an allowed built-in.
-Reject alternate repository, workspace, operation-store, or configuration
-paths in every syntactic position.
+Reject alternate workspace, operation-store, or configuration paths in every syntactic position.
+Only the checked repository selector described above is permitted.
 
 Git fetch accepts any pre-existing configured remote.
 Jujutsu resolves remote selections and uses its normal defaults when none are supplied.
@@ -407,21 +461,25 @@ read-only under `--ignore-working-copy` and the read-only filesystem policy.
 
 `codex-sandbox` performs these steps:
 
-+ Resolve the repository root and metadata paths.
-+ Create a session-specific socket volume and proxy container name.
-+ Start the proxy with the repository mounted read-write and no-exec.
++ Derive and validate the active and launcher-dotfiles workspace descriptions, initializing absent dotfiles JJ metadata on the host.
++ Create persistent backing-repository request locks and a session-specific socket volume and proxy container name.
++ Start the proxy with both authorized workspaces and metadata read-write and no-exec, plus the trusted lock mounts.
 + Wait for an explicit readiness response from the socket.
-+ Start Codex with the working tree writable and metadata overlaid read-only.
++ Start Codex with ordinary files in both workspaces writable and metadata and sandbox policy overlaid read-only.
 + On exit or signal, stop and remove the proxy and remove the socket volume.
 
 Cleanup must preserve the Codex exit status and tolerate partially completed
 startup. Names include the host UID and launcher PID to avoid collisions between
 sessions.
+Persistent request-lock files survive cleanup and restart.
+Deploy launcher, both clients, router, and rebuilt guest/proxy images together in fresh sandboxes.
+Editing tracked configuration does not reload staged guest configuration or the proxy's startup authority; `/reload` is insufficient.
+Existing accepted sessions without workspace authority reject new joins without disturbing running attachments.
 
 == Implementation stages
 
 + Build the proxy and client with protocol framing, descriptor-relative
-  fixed-repository execution, environment scrubbing, per-command grammar
+  checked absolute-cwd execution, exact workspace authority, environment scrubbing, per-command grammar
   validation, serialization, process-group cleanup, and resource limits.
 + Add unit tests for every rejected escape surface and malformed request.
 + Add an integration fixture containing colocated `.jj` and `.git` metadata.
@@ -474,8 +532,16 @@ sessions.
   call metadata prevents execution; explicit unknown models produce an attribution
   warning rather than a stale-file or configured-default identity. Standalone host
   Pi retains its session-matched model-file validation.
-- Concurrent requests are serialized; timed-out, oversized, and interrupted
-  requests leave neither the proxy wedged nor descendant processes running.
+- Distinct proxy services sharing one JJ backing repository serialize all mutation-mode requests through hooks, command, and reset.
+  A non-hook mutation cannot enter another request's paused prehook sequence.
+  Independent backing repositories remain concurrent; request-lock identity survives restart.
+- Lock-wait timeout or cancellation performs no mutation; process termination releases ownership.
+  Timed-out, oversized, and interrupted requests leave neither the proxy wedged nor descendant processes running.
+- Cross-repository commits with `root:` filesets affect only selected paths and target attribution.
+  Other filesets and errors agree with native JJ at the original invocation cwd.
+- Both trusted workspace roots permit mutation, while an unlisted sibling or linked workspace remains inspection-only.
+  Explicit inspection of an authorized root remains read-only.
+- Old accepted sessions cannot acquire new workspace authority from worker mounts or `/reload`.
 - Proxy failure is fail-closed, and launcher cleanup removes only resources for
   its own session.
 - Existing non-agent working-copy changes remain intact across proxy startup,

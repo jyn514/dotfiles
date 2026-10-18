@@ -36,7 +36,7 @@ These settings reach absolute executable paths and script shebangs as well as co
 Nested wrapper calls use the inner private HOME.
 
 The wrapper clears inherited `JJ_CONFIG` so Jujutsu reads user configuration from the private HOME and XDG directories.
-It also removes inherited sandbox credentials, Pi session selection, and personal configuration paths before starting the child.
+It also removes inherited sandbox credentials, JJ workspace routing and authority projections, Pi session selection, and personal configuration paths before starting the child.
 
 The wrapper sets `CARGO_HOME` to the stable test-only directory `target/test-environment/cargo` in this checkout.
 This reuses downloads and keeps unchanged compiled dependencies fresh across runs.

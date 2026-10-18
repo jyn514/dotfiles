@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
@@ -38,6 +39,10 @@ from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
 from relay_lifecycle import RelayResourcePlan
 from source_view import check_mount_destinations, source_mounts
+from workspace_layout import (
+    WorkspaceLayout, WorkspaceError, discover_repository_metadata, discover_workspace,
+    ensure_request_lock, workspace_guest_root,
+)
 from keychain_bridge import HostKeychainBridge
 from host_tcp_bridge import FixedTcpBridge
 from image_resolver import prepare_launch_images
@@ -158,6 +163,9 @@ class State:
     tmux_registration: str | None = None
     github_credential: Path | None = None
     metadata_roots: tuple[Path, ...] = ()
+    workspaces: list[WorkspaceLayout] = field(default_factory=list)
+    workspaces_file: Path | None = None
+    repository_mount_arguments: list[str] | None = None
     resource_owner: str = field(default_factory=lambda: secrets.token_hex(16))
     recovery_record: Path | None = None
     capabilities: frozenset[str] = frozenset()
@@ -507,64 +515,91 @@ def existing_git_root() -> Path:
     return Path(result.stdout.strip()).resolve(strict=True)
 
 
-def validate_repository(state: State, *, initialize_missing: bool = True) -> None:
+def initialize_dotfiles(repository: Path) -> None:
+    """Coordinate initialization before acquiring any session lifetime lock."""
+    directory = proxy_module().runtime_directory(repository)
+    with (directory / "coordination.lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        entry = repository / ".jj"
+        # lexists semantics: dangling symlinks and partial initialization are
+        # existing metadata, not permission to replace it with a fresh store.
+        if entry.exists() or entry.is_symlink():
+            return
+        try:
+            root = run(["git", "-C", str(repository), "rev-parse", "--show-toplevel"],
+                       capture=True).stdout.strip()
+            if Path(root).resolve(strict=True) != repository:
+                raise LauncherError(f"Dotfiles is not a Git checkout root: {repository}")
+            run(["jj", "git", "init", "--colocate", str(repository)], cwd=repository)
+        except subprocess.CalledProcessError as error:
+            raise LauncherError(f"Dotfiles could not be initialized as a Jujutsu workspace: {repository}") from error
+
+
+def active_repository_root(*, initialize_missing: bool) -> Path:
     try:
-        # Finding the mount root needs metadata, not a working-tree snapshot.
         result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
     except subprocess.CalledProcessError:
         if not initialize_missing:
             raise LauncherError("The destination is not an existing Jujutsu workspace")
         repository = existing_git_root()
+        entry = repository / ".jj"
+        if entry.exists() or entry.is_symlink():
+            raise LauncherError(f"Existing Jujutsu metadata requires repair: {repository}")
         try:
             run(["jj", "git", "init", "--colocate", str(repository)])
             result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
         except subprocess.CalledProcessError as error:
             raise LauncherError("The current directory could not be initialized as a Jujutsu workspace") from error
-    repository = Path(result.stdout.strip()).resolve(strict=True)
-    jj = repository / ".jj"
-    if not jj.is_dir() or jj.is_symlink():
-        raise LauncherError("The Jujutsu workspace root cannot be safely mounted")
+    return Path(result.stdout.strip()).resolve(strict=True)
+
+
+def validate_repository(state: State, *, initialize_missing: bool = True) -> None:
+    if initialize_missing:
+        dotfiles = DOTFILES.resolve(strict=True)
+        # Finish dotfiles initialization before active/session lifetime locks,
+        # including when dotfiles and the active checkout are the same tree.
+        initialize_dotfiles(dotfiles)
+    repository = active_repository_root(initialize_missing=initialize_missing)
+    if not initialize_missing:
+        # validate-cd is active-only: no dotfiles lookup, guest mapping, request
+        # locks, source-view allocation or authority publication belongs here.
+        try:
+            metadata = discover_repository_metadata(repository, runner=run)
+        except WorkspaceError as error:
+            raise LauncherError(str(error)) from error
+        state.repository = metadata.host_root
+        state.git_repository = metadata.git_dir
+        state.git_mount_source = metadata.git_dir
+        state.metadata_roots = (repository / ".jj", metadata.jj_repo,
+                                metadata.git_dir, metadata.common_dir)
+        return
+    guest = container_repository_path(state.home, repository)
     try:
-        result = run(["jj", "git", "root", "--ignore-working-copy"], capture=True)
-        git_repository = Path(result.stdout.strip()).resolve(strict=True)
-        if not git_repository.is_dir() or git_repository.is_symlink():
-            raise LauncherError("Git metadata is missing or invalid")
-        result = run([
-            "git", "-C", str(git_repository), "rev-parse", "--path-format=absolute",
-            "--git-dir", "--git-common-dir",
-        ], capture=True)
-        lines = result.stdout.splitlines()
-        if len(lines) != 2:
-            raise LauncherError("Git returned an invalid metadata layout")
-        git_roots = [Path(line).resolve(strict=True) for line in lines]
-        git_mount_source = git_roots[0]
-    except (subprocess.CalledProcessError, FileNotFoundError) as error:
-        raise LauncherError("Git metadata indirection cannot be resolved safely") from error
-    try:
-        jj_repo_entry = jj / "repo"
-        if jj_repo_entry.is_file() and not jj_repo_entry.is_symlink():
-            if jj_repo_entry.lstat().st_nlink != 1:
-                raise LauncherError("Jujutsu repository pointer must not be hard linked")
-            value = jj_repo_entry.read_text(encoding="utf-8").strip()
-            if not value or "\0" in value or "\n" in value or "\r" in value:
-                raise LauncherError("Jujutsu repository pointer is invalid")
-            target = Path(value)
-            if not target.is_absolute():
-                target = jj_repo_entry.parent / target
-            jj_repo = target.resolve(strict=True)
-        else:
-            jj_repo = jj_repo_entry.resolve(strict=True)
-    except (FileNotFoundError, UnicodeError) as error:
-        raise LauncherError("Jujutsu repository metadata cannot be resolved safely") from error
-    for root in (jj, jj_repo, *git_roots):
-        if not root.is_dir() or root.is_symlink():
-            raise LauncherError(f"Repository metadata directory is invalid: {root}")
+        active = discover_workspace(repository, guest, state.home, runner=run)
+        dotfiles_guest = workspace_guest_root(
+            state.home, repository, guest, dotfiles, reserved=[
+                *active.metadata_mounts(),
+                *((active.host_root, alias) for alias in active.repository_aliases()),
+            ])
+        workspaces = [active]
+        if dotfiles != repository:
+            workspaces.append(discover_workspace(dotfiles, dotfiles_guest, state.home, runner=run))
+        for workspace in workspaces:
+            ensure_request_lock(workspace)
+    except WorkspaceError as error:
+        raise LauncherError(str(error)) from error
     state.repository = repository
-    state.git_repository = git_repository
-    state.git_mount_source = git_roots[0]
-    state.metadata_roots = (jj, jj_repo, *git_roots)
-    proxy_module().use_repository_metadata(repository, tuple(git_roots))
-    state.container_repository = container_repository_path(state.home, repository)
+    state.container_repository = guest
+    state.git_repository = active.git_dir
+    state.git_mount_source = active.git_dir
+    state.workspaces = workspaces
+    state.metadata_roots = tuple(dict.fromkeys(
+        path for workspace in workspaces for path in (
+            workspace.host_root / ".jj", workspace.jj_repo, workspace.git_dir, workspace.common_dir)))
+    state.workspaces_file = temporary_file()
+    state.workspaces_file.write_text(json.dumps([workspace.to_dict() for workspace in workspaces]))
+    _workspace_mount_plan(state)
+    proxy_module().use_repository_metadata(repository, (active.git_dir, active.common_dir))
 
 
 def load_repository_policy(state: State) -> None:
@@ -638,6 +673,7 @@ def load_accepted_session(state: State) -> None:
         helper(
             "join", "--repo", str(state.repository),
             "--container-repo", str(state.container_repository),
+            *(["--workspaces", str(state.workspaces_file)] if getattr(state, "workspaces_file", None) else []),
             "--state", str(state.proxy_state), "--manifest", str(state.manifest),
             "--images", str(state.prepared_images), "--accepted", str(accepted),
             "--uid", str(state.uid), "--gid", str(state.gid),
@@ -661,6 +697,7 @@ def attach_proxies(state: State) -> list[str]:
     arguments = [
         "attach", "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
+        *(["--workspaces", str(state.workspaces_file)] if getattr(state, "workspaces_file", None) else []),
         "--prefix", state.proxy_prefix,
         *(["--shared"] if state.proxy_lock.shared else []),
         "--state", str(state.proxy_state),
@@ -1624,10 +1661,14 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
     source_root = (state.home / "src").resolve()
     paths[str(source_root)] = "/src"
     paths[str(state.repository)] = str(state.container_repository)
+    paths.update({str(workspace.host_root): str(workspace.guest_root)
+                  for workspace in getattr(state, "workspaces", [])})
     # Pi reads this host file, but the worker no longer stages an unused copy.
     # Advertise its authoritative source when the source view exposes it.
     agents_source = installed_config_source("$HOME/.pi/agent/AGENTS.md")
     for host_root, guest_root in (
+        *((workspace.host_root, workspace.guest_root)
+          for workspace in getattr(state, "workspaces", [])),
         (state.repository, state.container_repository), (source_root, Path("/src")),
     ):
         if agents_source.is_relative_to(host_root):
@@ -1638,96 +1679,78 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
     return paths
 
 
-def agent_repository_mounts(state: State) -> list[str]:
-    """Build the writable workspace and read-only metadata mounts together."""
-    repository_path = state.container_repository
-    git_layout = run([
-        "git", "-C", str(state.git_repository), "rev-parse", "--path-format=absolute",
-        "--git-dir", "--git-common-dir",
-    ], capture=True).stdout.splitlines()
-    # Linked worktrees have a gitfile, not a directory mountpoint. Preserve
-    # that indirection and expose all backing roots at their referenced paths.
-    git_entry = state.repository / ".git"
-    gitfile = git_entry.is_file()
-    git_mount_source = git_entry if gitfile else state.git_mount_source
-    protected = [state.repository / ".jj"]
-    git_roots: list[Path] = []
-    for line in git_layout:
-        path = Path(line).resolve(strict=True)
-        if any(character in str(path) for character in (",", "\n", "\r")):
-            raise LauncherError("Git metadata path contains a container-mount delimiter")
-        if path not in git_roots:
-            git_roots.append(path)
-    external_git_roots: list[tuple[Path, Path]] = []
-    for path in git_roots if gitfile else git_roots[1:]:
-        try:
-            path.relative_to(state.repository)
-        except ValueError:
-            relative = Path(os.path.relpath(path, state.repository))
-            target = Path(os.path.normpath(state.container_repository / relative))
-            try:
-                target.relative_to("/src")
-            except ValueError as error:
-                raise LauncherError("Git metadata path escapes the container workspace") from error
-            if not any(path.is_relative_to(root) for root, _ in external_git_roots):
-                external_git_roots = [
-                    (root, root_target)
-                    for root, root_target in external_git_roots
-                    if not root.is_relative_to(path)
-                ]
-                external_git_roots.append((path, target))
+def _workspace_mount_plan(state: State) -> dict[Path, tuple[Path, bool]]:
+    workspaces = state.workspaces
+    mounts: dict[Path, tuple[Path, bool]] = {}
+
+    def add(source: Path, target: Path, readonly: bool) -> None:
+        if target in mounts and mounts[target] != (source, readonly):
+            raise LauncherError(f"Conflicting workspace mount destination: {target}")
+        mounts[target] = (source, readonly)
+
+    for workspace in workspaces:
+        add(workspace.host_root, workspace.guest_root, False)
+        for alias in workspace.repository_aliases():
+            add(workspace.host_root, alias, True)
+        for source, target in workspace.metadata_mounts():
+            add(source, target, True)
+        policy = workspace.host_root / ".agents/sandbox"
+        agents = workspace.host_root / ".agents"
+        if agents.is_symlink():
+            raise LauncherError(f"Invalid sandbox policy parent: {agents}")
+        if policy.exists() or policy.is_symlink():
+            if policy.is_symlink() or not policy.is_dir():
+                raise LauncherError(f"Invalid sandbox policy directory: {policy}")
+            add(policy, workspace.guest_root / ".agents/sandbox", True)
+
+    # A backing store may also be visible inside another writable workspace.
+    # Overlay each such alias, rather than trusting its primary mount alone.
+    protected = [(target, entry) for target, entry in mounts.items()
+                 if entry[0] not in {workspace.host_root for workspace in workspaces}]
+    for _, (source, readonly) in protected:
+        if not readonly:
             continue
-        if path not in protected:
-            protected.append(path)
-    repository_aliases: list[Path] = []
-    for source, relative_target in external_git_roots:
-        for metadata_target in (source, relative_target):
-            alias = Path(os.path.normpath(
-                metadata_target / os.path.relpath(state.repository, source)
-            ))
-            if metadata_target == source:
-                if alias != state.repository:
-                    raise LauncherError("Git metadata produced an invalid host worktree alias")
-            else:
-                try:
-                    alias.relative_to("/src")
-                except ValueError as error:
-                    raise LauncherError("Git metadata produced an unsafe worktree alias") from error
-                if alias == Path("/src"):
-                    raise LauncherError("Git metadata worktree alias is too broad")
-            if alias != state.container_repository and alias not in repository_aliases:
-                repository_aliases.append(alias)
-    return [
-        *source_mounts(state.home / 'src', [repository_path, *repository_aliases,
-                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
-        "--mount", f"type=bind,src={state.repository},dst={repository_path},{OUTER_RUNTIME.nonrecursive_bind}",
-        "--mount", f"type=bind,src={git_mount_source},dst={repository_path / '.git'},readonly",
-        *[
-            item
-            for target in repository_aliases
-            for item in (
-                "--mount",
-                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
-            )
-        ],
-        *[
-            item
-            for path in protected
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={repository_path / path.relative_to(state.repository)},readonly",
-            )
-        ],
-        *[
-            item
-            for path, relative_target in external_git_roots
-            for target in (path, relative_target)
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={target},readonly",
-            )
-        ],
-    ]
+        for workspace in workspaces:
+            if readonly and workspace.host_root.is_relative_to(source):
+                raise LauncherError(f"Writable workspace is inside protected metadata: {workspace.host_root}")
+            if source.is_relative_to(workspace.host_root):
+                add(source, workspace.guest_root / source.relative_to(workspace.host_root), True)
+    skills_source = getattr(state, "skills_source", None)
+    if skills_source is not None:
+        for _, (source, readonly) in protected:
+            if readonly and source.is_relative_to(skills_source):
+                add(source, GUEST_AGENT_SKILLS / source.relative_to(skills_source), True)
+    return mounts
+
+
+def agent_repository_mounts(state: State) -> list[str]:
+    """Assemble one source view, then writable roots and protected overlays."""
+    cached = getattr(state, "repository_mount_arguments", None)
+    if cached is not None:
+        return list(cached)
+    if not getattr(state, "workspaces", None):
+        raise LauncherError("Validated workspace authority is missing")
+    mounts = _workspace_mount_plan(state)
+    try:
+        view = source_mounts(state.home / "src", list(mounts), state.skills_tmp / "source-view")
+        # Source-view split binds can coincide with an explicit overlay; retain
+        # only the latter, which owns the final access mode for that destination.
+        result = []
+        for index in range(0, len(view), 2):
+            target = next(field[4:] for field in view[index + 1].split(",") if field.startswith("dst="))
+            if Path(target) not in mounts:
+                result.extend(view[index:index + 2])
+        for target, (source, readonly) in sorted(mounts.items(), key=lambda item: len(item[0].parts)):
+            options = "readonly" if readonly else OUTER_RUNTIME.nonrecursive_bind
+            if readonly and source in {workspace.host_root for workspace in state.workspaces}:
+                options += "," + OUTER_RUNTIME.nonrecursive_bind
+            result += ["--mount", f"type=bind,src={source},dst={target},{options}"]
+        check_mount_destinations(result)
+        state.repository_mount_arguments = result
+        return list(result)
+    except ValueError as error:
+        raise LauncherError(str(error)) from error
+
 
 
 def build_agent_command(
@@ -2021,6 +2044,8 @@ def execute(state: State) -> int:
         phase("policy binding", lambda: bind_repository_policy(state, manifest))
     phase("relay recovery", lambda: recover_relays(state))
     phase("skill staging", lambda: stage_skills(state))
+    if getattr(state, "workspaces", None):
+        phase("workspace mounts", lambda: agent_repository_mounts(state))
     if hasattr(state, "home"):
         phase("host Pi resources", lambda: prepare_host_pi_resources(state))
     if isinstance(OUTER_RUNTIME, VMRuntime):
@@ -2110,6 +2135,9 @@ def preflight_lima(state: State) -> None:
     # Check sources before builds or container/network creation. Container
     # overlays still determine which parts of a shared source the agent sees.
     writable = [state.repository, state.skills_source, *state.metadata_roots]
+    for workspace in getattr(state, "workspaces", []):
+        writable += [workspace.host_root, workspace.lock_file]
+    writable = list(dict.fromkeys(writable))
     pi_agent = state.home / ".pi/agent"
     for name in ("sessions", "npm", "git"):
         directory = pi_agent / name
@@ -2119,6 +2147,10 @@ def preflight_lima(state: State) -> None:
         writable.append(directory)
     readable = [state.home / "src", DOTFILES, state.skills_tmp,
                 state.home / ".codex/config.toml"]
+    if getattr(state, "workspaces", None):
+        readable.append(proxy_module().runtime_directory(state.repository))
+        if getattr(state, "workspaces_file", None) is not None:
+            readable.append(state.workspaces_file)
     host_pi_package = getattr(state, "host_pi_package", None)
     if host_pi_package is not None:
         readable += [host_pi_package / relative for relative in PI_RESOURCE_PATHS]
@@ -2275,6 +2307,7 @@ def cleanup(state: State) -> bool:
     for path in (
         state.proxy_state, state.proxy_args, state.manifest,
         state.prepared_images, getattr(state, "cd_request", None),
+        getattr(state, "workspaces_file", None),
     ):
         if path is not None and not keep_scratch:
             path.unlink(missing_ok=True)
