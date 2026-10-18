@@ -4,7 +4,10 @@
             [cheshire.core :as json]
             [clojure.edn :as edn]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]))
+            [clojure.test :refer [deftest is testing use-fixtures]]))
+
+(load-file "tools/agent-split/tests/fixtures/repo.clj")
+(require '[scripts.agent-split-test-repo :as fixture])
 
 (def script (str (fs/canonicalize "tools/agent-split/src/scripts/agent-split.clj")))
 (def scratch (System/getProperty "java.io.tmpdir"))
@@ -132,14 +135,17 @@
   (checked repo "jj" "op" "log" "--ignore-working-copy" "--limit" "1"
            "--no-graph" "-T" "id"))
 
-(defn- with-repo [f]
-  (fs/create-dirs scratch)
-  (let [root (fs/create-temp-dir {:dir scratch :prefix "repo-"})]
-    (try
-      (checked root "jj" "git" "init" "--colocate")
-      (put! root ".gitignore" "target/\n")
-      (f root)
-      (finally (fs/delete-tree root)))))
+(def ^:dynamic *copy-base!* nil)
+
+(defn- with-repo
+  ([f] (with-repo :empty f))
+  ([base f]
+   (fs/create-dirs scratch)
+   (let [root (fs/create-temp-dir {:dir scratch :prefix "repo-"})]
+     (try
+       (*copy-base!* base root)
+       (f root)
+       (finally (fs/delete-tree root))))))
 
 (defn- split! [repo patch revision]
   (let [path (fs/file repo "target" "jj-split" "selection.patch")]
@@ -153,7 +159,9 @@
 (defn- patch-for [repo revision & paths]
   (apply checked repo "jj" "diff" "--ignore-working-copy" "--git" "-r" revision "--" paths))
 
-(defn- rich-fixture! [repo]
+(defn- rich-base! [repo]
+  (checked repo "jj" "git" "init" "--colocate")
+  (put! repo ".gitignore" "target/\n")
   (doseq [[path content] {"alpha.txt" "old\nmiddle\nlast"
                         "run.sh" "#!/bin/sh\necho before\n"
                         "down.sh" "#!/bin/sh\necho stable\n"
@@ -165,7 +173,19 @@
   (executable! repo "down.sh" true)
   (fs/create-sym-link (fs/file repo "link") "old-target")
   (fs/create-sym-link (fs/file repo "dangling") "never-created")
-  (checked repo "jj" "commit" "-m" "base")
+  (checked repo "jj" "commit" "-m" "base"))
+
+(use-fixtures :once
+  (fn [f]
+    (fixture/with-templates
+      {:empty (fn [repo]
+                (checked repo "jj" "git" "init" "--colocate")
+                (put! repo ".gitignore" "target/\n"))
+       :rich rich-base!}
+      (fn [copy!]
+        (binding [*copy-base!* copy!] (f))))))
+
+(defn- rich-fixture! [repo]
   (let [base (revision-tree repo "@-")]
     (put! repo "alpha.txt" "new\nmiddle\nlast")
     (put! repo "run.sh" "#!/bin/sh\necho after\n")
@@ -233,7 +253,7 @@
                     :addition :rename :symlink :symlink-addition :symlink-deletion
                     :unselected-symlink-deletion :deletion]]
     (testing (name selection)
-      (with-repo
+      (with-repo :rich
         (fn [repo]
           (let [base (rich-fixture! repo)
                 _ (case selection
@@ -274,7 +294,7 @@
             (assert-split! repo patch "@" expected)))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj native-split-ancestor-does-not-select-working-copy-changes
-  (with-repo
+  (with-repo :rich
     (fn [repo]
       (let [base (rich-fixture! repo)
             expected (assoc base "alpha.txt" (text-entry "new\nmiddle\nlast"))]
@@ -413,7 +433,7 @@
 (deftest ^:needs/bb ^:needs/git ^:needs/jj native-rejects-stale-and-out-of-revision-selections
   (doseq [invalid [:invented-content :invented-mode :unchanged-path :nonapplying-context :wrong-revision]]
     (testing (name invalid)
-      (with-repo
+      (with-repo :rich
         (fn [repo]
           (rich-fixture! repo)
           (let [patch (case invalid
@@ -535,3 +555,50 @@
         (is (= [-1 110 101 119 10] (get-in (revision-tree repo "@") ["note.txt" :bytes])))
         (let [result (assert-rejected! repo patch "@")]
           (is (str/includes? (:err result) "canonical diff contains non-UTF-8 text")))))))
+
+(deftest ^:needs/git ^:needs/jj copied-repositories-own-working-copies-history-and-config
+  ;; A tempting hard-link/clone/workspace shortcut can share mutable state.
+  ;; Derive expectations from a sibling, not template filenames or JJ internals;
+  ;; distinct valid edits must both work and never leak into siblings/future cases.
+  (with-repo :rich
+    (fn [first]
+      (with-repo :rich
+        (fn [sibling]
+          (let [tree (working-tree sibling)
+                commit (commit-id sibling "@")
+                operation (operation-id sibling)
+                config (checked sibling "jj" "config" "get" "user.name")]
+            (is (= (str (fs/canonicalize first))
+                   (str/trim (checked first "jj" "root"))))
+            (is (= (str (fs/canonicalize first))
+                   (str/trim (checked first "jj" "workspace" "list" "-T" "root"))))
+            (is (= (str (fs/canonicalize (fs/file first ".git")))
+                   (str/trim (checked first "jj" "git" "root"))
+                   (str/trim (checked first "git" "rev-parse" "--absolute-git-dir"))))
+            (checked first "jj" "config" "set" "--repo" "user.name" "Independent fixture")
+            (checked first "git" "config" "--local" "fixture.marker" "first-only")
+            (doseq [content ["independent edit\n" "a different valid edit\n"]]
+              (put! first "alpha.txt" content)
+              (checked first "jj" "commit" "-m" content))
+            (put! first "binary.dat" [-128 0 7])
+            (executable! first "down.sh" false)
+            (fs/delete (fs/file first "dangling"))
+            (fs/create-sym-link (fs/file first "dangling") "different-missing-target")
+            (checked first "jj" "bookmark" "create" "first-only" "-r" "@-")
+            (checked first "jj" "status")
+            (is (not= commit (commit-id first "@")))
+            (is (= "a different valid edit\n"
+                   (checked first "jj" "file" "show" "-r" "@-" "alpha.txt")))
+            (is (str/blank? (checked sibling "jj" "bookmark" "list")))
+            (is (= 1 (:exit (run sibling "git" "config" "--local" "--get" "fixture.marker"))))
+            (is (= tree (working-tree sibling)))
+            (is (= commit (commit-id sibling "@")))
+            (is (= operation (operation-id sibling)))
+            (is (= config (checked sibling "jj" "config" "get" "user.name")))
+            (with-repo :rich
+              (fn [fresh]
+                (is (= tree (working-tree fresh)) "published base survives case mutations")
+                (is (= commit (commit-id fresh "@")))
+                (is (= operation (operation-id fresh)))
+                (is (= config (checked fresh "jj" "config" "get" "user.name")))
+                (is (= 1 (:exit (run fresh "git" "config" "--local" "--get" "fixture.marker"))))))))))))

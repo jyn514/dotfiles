@@ -3,7 +3,10 @@
             [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is]]))
+            [clojure.test :refer [deftest is use-fixtures]]))
+
+(load-file "tools/agent-split/tests/fixtures/repo.clj")
+(require '[scripts.agent-split-test-repo :as fixture])
 
 (def script (str (fs/canonicalize "tools/agent-split/src/scripts/agent-split.clj")))
 
@@ -39,25 +42,41 @@
 (defn- temp-root []
   (fs/create-temp-dir {:prefix "flower-jj-split-patch"}))
 
+(defn- init-base! [repo]
+  ;; A failed producer must never publish a partially prepared common base.
+  (let [checked! (fn [result]
+                   (when-not (zero? (:exit result))
+                     (throw (ex-info "cannot prepare common test base" {:result result})))
+                   result)]
+    (fs/create-dirs repo)
+    (let [init-result (run repo "jj" "git" "init" "--colocate")]
+      (when-not (zero? (:exit init-result))
+        (checked! (shell! repo "jj" "git" "init"))))
+    (write-file! (fs/file repo ".gitignore") "target/\n")
+    (write-file! (fs/file repo "note.txt")
+                 (str "one\n"
+                      "two\n"
+                      "three\n"
+                      "four\n"
+                      "five\n"
+                      "six\n"
+                      "seven\n"
+                      "eight\n"
+                      "nine\n"
+                      "ten\n"))
+    (checked! (run repo "jj" "file" "track" ".gitignore" "note.txt"))
+    (checked! (shell! repo "jj" "commit" "-m" "base"))))
+
+(def ^:dynamic *copy-base!* nil)
+
+(use-fixtures :once
+  (fn [f]
+    (fixture/with-templates {:note init-base!}
+      (fn [copy!]
+        (binding [*copy-base!* copy!] (f))))))
+
 (defn- init-repo! [repo]
-  (fs/create-dirs repo)
-  (let [init-result (run repo "jj" "git" "init" "--colocate")]
-    (when-not (zero? (:exit init-result))
-      (shell! repo "jj" "git" "init")))
-  (write-file! (fs/file repo ".gitignore") "target/\n")
-  (write-file! (fs/file repo "note.txt")
-               (str "one\n"
-                    "two\n"
-                    "three\n"
-                    "four\n"
-                    "five\n"
-                    "six\n"
-                    "seven\n"
-                    "eight\n"
-                    "nine\n"
-                    "ten\n"))
-  (run repo "jj" "file" "track" ".gitignore" "note.txt")
-  (shell! repo "jj" "commit" "-m" "base")
+  (*copy-base!* :note repo)
   (write-file! (fs/file repo "note.txt")
                (str "one\n"
                     "TWO\n"
@@ -646,3 +665,28 @@
         (is (= binary (vec (java.nio.file.Files/readAllBytes (fs/path target "binary")))))
         (is (= "#!/bin/sh\n" (slurp (fs/file target "run.sh"))))
         (is (fs/executable? (fs/file target "run.sh")))))))
+
+(deftest common-base-builders-publish-only-after-success
+  ;; A failed --colocate attempt can still use the existing compatibility fallback.
+  (let [published? (atom false)]
+    (with-redefs [run (fn [_ & args]
+                        {:exit (if (= ["jj" "git" "init" "--colocate"] (vec args)) 1 0)
+                         :out "" :err ""})
+                  shell! (fn [& _] {:exit 0 :out "" :err ""})]
+      (fixture/with-templates {:note init-base!}
+        (fn [_] (reset! published? true))))
+    (is (true? @published?) "successful fallback can publish a complete base"))
+  (doseq [failed-step [:init :track :commit]]
+    (let [published? (atom false)
+          command (fn [_ & args]
+                    {:exit (if (= failed-step
+                                  (case (vec (take 3 args))
+                                    ["jj" "git" "init"] :init
+                                    ["jj" "file" "track"] :track
+                                    :commit)) 1 0)
+                     :out "" :err "controlled producer failure"})]
+      (with-redefs [run command shell! command]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cannot prepare common test base"
+                             (fixture/with-templates {:note init-base!}
+                               (fn [_] (reset! published? true))))))
+      (is (false? @published?) (str failed-step " failure prevents publication")))))
