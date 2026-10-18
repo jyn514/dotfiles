@@ -37,7 +37,13 @@ Use existing goal, plan, or session state instead of creating another tracking s
 
 Before each task, name the acceptance case it closes and the missing evidence, reproduced failure, or demonstrated prerequisite it addresses. While the acceptance condition remains open, select only work that advances it or resolves a demonstrated prerequisite blocking its check. An unrelated unmet specification item alone does not justify displacement. Preserve milestone order and prerequisites.
 
-If prerequisite or hardening work displaces integration, show the failing check or concrete dependency and why the path cannot proceed without repair. Retain the displaced integration as the next action. An unrelated bug is not a prerequisite; do not repeatedly review an unchanged boundary or add defenses for hypothetical failures.
+Before adding a prerequisite, name the acceptance check it prevents and the failing evidence or concrete dependency.
+Distinguish governing requirements from restrictions introduced by the chosen design or experiment.
+Reconsider those restrictions before treating them as prerequisites.
+Where the governing acceptance permits partial results, keep unsupported cases explicitly held while supported cases reach the consumer.
+This does not narrow the milestone or certify held cases.
+If prerequisite or hardening work displaces integration, retain that integration as the next action.
+An unrelated bug is not a prerequisite; do not repeatedly review an unchanged boundary or add defenses for hypothetical failures.
 
 Switch acceptance conditions only when the current one passes or no authorized advancing work can proceed, with supporting blocker evidence. Retain blocked conditions as unmet and select the next permitted independent condition. Missing real inputs do not block integration using valid fixture inputs.
 
@@ -46,6 +52,12 @@ Do this even when the preceding probe produced useful partial evidence.
 Keep the original question visible and distinguish user requirements from experiment-imposed restrictions.
 Repair obvious mechanical failures directly when they require no new mechanism or change of question.
 Use [creative-inquiry](../creative-inquiry/SKILL.md) when the approach remains uncertain or local work repeatedly fails to advance integration.
+For end-to-end work, two consecutive completed subtasks without a new consumer-visible result trigger this reassessment.
+Do it before scheduling more prerequisite or capability work.
+Attempt the nearest intended-consumer check; if it cannot run, identify the exact missing dependency.
+Compare repairing that path with the smallest alternative that preserves the governing requirements.
+Do not produce another assessment unless its possible findings change the next action.
+Explicitly scoped feasibility or component milestones retain their own acceptance conditions.
 
 Record unspecified choices as assumptions or unresolved decisions, using only defaults permitted by the governing authority. If a choice changes the objective, ownership, preservation requirements, or selected design, ask for a decision and continue independent authorized work. Route a genuine design fork to [design-deliberation](../design-deliberation/SKILL.md), not to an improvised fixture restriction.
 
