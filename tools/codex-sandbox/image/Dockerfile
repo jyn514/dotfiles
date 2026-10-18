@@ -69,9 +69,11 @@ RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
     && chmod -R a+rX packages/ai/src/providers/data \
     && npm run build:offline --prefix /opt/agent-pi/src \
     &&  node scripts/build-coding-agent-binary.mjs --outfile packages/coding-agent/dist/pi \
-    && npm --prefix packages/coding-agent run copy-binary-assets \
-    && mkdir -p /opt/agent-pi/standalone \
-    && cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/
+    && npm --prefix packages/coding-agent run copy-binary-assets
+
+FROM pi-build AS pi-runtime-files
+COPY ./tools/codex-sandbox/image/stage-pi-runtime.mjs /opt/stage-pi-runtime.mjs
+RUN node /opt/stage-pi-runtime.mjs /opt/agent-pi /opt/pi-runtime
 
 FROM pi-build AS pi-extension-cache
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates
@@ -90,7 +92,7 @@ COPY ./tools/codex-sandbox/auth-proxy/pi-extension /home/codex/.pi/agent/extensi
 RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 
 FROM agent-deps AS pi-runtime
-COPY --from=pi-build /opt/agent-pi /opt/agent-pi
+COPY --from=pi-runtime-files /opt/pi-runtime /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 # Runtime libc follows BASE_IMAGE. Select the matching binary rather than using
 # gcompat to approximate glibc behavior beyond startup on Alpine.

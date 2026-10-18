@@ -23,15 +23,16 @@ sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
 from owned_images import jj_release_args
 
 
-def run(*args: str, input: str | None = None) -> str:
-    return subprocess.run(
+def run(*args: str, input: str | bytes | None = None) -> str:
+    output = subprocess.run(
         args,
         cwd=ROOT,
         check=True,
         stdout=subprocess.PIPE,
-        text=True,
+        text=not isinstance(input, bytes),
         input=input,
     ).stdout
+    return output.decode() if isinstance(output, bytes) else output
 
 
 def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> None:
@@ -130,9 +131,15 @@ def check_labels(tags: list[str], revision: str) -> None:
 
 
 def probe_guest(tag: str) -> list[str]:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w') as tar:
+        for path in (WRAPPED_COMMAND_PROBE,
+                     RUNTIME_PROBE.with_name('pi-runtime-package.mjs'),
+                     RUNTIME_PROBE.with_name('pi-runtime-worker.mjs')):
+            tar.add(path, arcname=path.name)
     return run(
         'docker', 'run', '--rm', '--interactive', '--entrypoint', 'sh', tag,
-        '-c', RUNTIME_PROBE.read_text(), input=WRAPPED_COMMAND_PROBE.read_text(),
+        '-c', RUNTIME_PROBE.read_text(), input=archive.getvalue(),
     ).splitlines()
 
 

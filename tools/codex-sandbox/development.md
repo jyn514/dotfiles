@@ -202,6 +202,11 @@ For allowed helper metadata and forbidden log contents, follow the Readiness and
 [the authenticated-egress specification](spec/proxy-design.typ).
 Passing admission checks alone does not establish compliance with its logging exclusions.
 
+The Pi runtime staging step uses `npm ls --omit=dev` for the coding-agent workspace's installed dependency graph.
+It copies linked workspaces using npm's published file lists and preserves ordinary production dependencies at their installed paths.
+Build tools, tests, and unrelated workspaces stay in the build stage.
+The standalone entrypoint shares the coding-agent `dist` tree through a symlink, including its binary assets.
+
 The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, network access, and local Git and JJ binaries:
 
 ```sh
@@ -222,6 +227,8 @@ its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
 Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `rg` aliases, and blocked nested wrapper operations in the produced images.
 It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
 Each guest's binary checksum, runtime, and wrapper checks share one container run.
+The same run checks packaged SDK imports, runtime assets, and real read and bash requests through the tool worker.
+It uses Node on Alpine and Bun on Debian, matching the Pi entrypoint's runtime selection.
 A mounted checkout probe calls the launcher's real JJ mount generator for a disposable repository.
 It stages the repository in an owned Docker volume and translates bind source paths for the remote daemon, leaving generated destinations and permissions unchanged.
 Through the mounted proxy, it checks out history that removes and restores `.agents/sandbox`, then checks that the working copy is not stale.
