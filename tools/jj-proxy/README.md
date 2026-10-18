@@ -121,7 +121,7 @@ From the repository root:
 
 ```sh
 dev/test-environment pytest -q -p no:cacheprovider tests/native/test_native_jj_proxy.py tools/jj-proxy/tests
-.agents/sandbox/jj-proxy-image
+dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration.py --jj-only
 ```
 
 The native pytest adapter runs Cargo and passes the test environment's selected real JJ binary as `JJ_PROXY_TEST_JJ`.

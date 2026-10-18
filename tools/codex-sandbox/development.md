@@ -205,10 +205,18 @@ Passing admission checks alone does not establish compliance with its logging ex
 The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, and network access:
 
 ```sh
-python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
+dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
 ```
 
-Use the full host commit recorded in `~/.local/share/pi/node/.source-revision`.
+To build and probe only the JJ proxy, without a Pi installation or revision:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration.py --jj-only
+```
+
+JJ-only mode builds, probes, and cleans only the JJ image; it retains the shared JJ cache alias.
+
+For the full run, use the host commit recorded in `~/.local/share/pi/node/.source-revision`.
 The test passes that commit as the required `PI_REVISION` build argument and checks
 its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
 Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `rg` aliases, and blocked nested wrapper operations in the produced images.
@@ -217,7 +225,7 @@ Each guest's binary checksum, runtime, and wrapper checks share one container ru
 The colocated-workspace probe computes the proxy binary's checksum without copying the binary out of its image.
 It also checks the TLS certificate-store alias and starts the proxy server to exercise HTTP/HTTPS fetch helpers under Landlock.
 That check uses refused loopback connections with networking disabled, so missing helpers or denied execution cannot pass as expected fetch failures.
-One Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.
+In the full run, one Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.
 Bake schedules independent work concurrently and shares common stages without publishing and resolving an intermediate JJ tag.
 All three images are built before the probes run.
 Both revision labels share one Docker inspect query, then the three container probes run concurrently.

@@ -29,12 +29,14 @@ def run(*args: str, input: str | None = None) -> str:
     ).stdout
 
 
-def build_images(pi_revision: str, tags: dict[str, tuple[str, str]]) -> None:
+def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> None:
     targets = {
         'jj': {'context': '.', 'dockerfile': 'tools/jj-proxy/Dockerfile',
                'args': jj_release_args(), 'tags': list(tags['jj'])},
     }
     for variant, base in (('pi-alpine', None), ('pi-debian', 'node:20-bookworm-slim')):
+        if variant not in tags:
+            continue
         arguments = {'PI_REVISION': pi_revision, 'JJ_IMAGE': 'jj-artifact'}
         if base is not None:
             arguments['BASE_IMAGE'] = base
@@ -85,9 +87,12 @@ def check_guest(output: list[str], revision: str, node_prefix: str, jj_checksum:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Build and check Alpine Node and Debian Bun runtimes.')
-    parser.add_argument('--expected-revision', required=True, help='expected Pi commit in the built images')
+    parser = argparse.ArgumentParser(description='Build and check the JJ proxy and Pi runtime images.')
+    parser.add_argument('--jj-only', action='store_true', help='build and probe only the JJ proxy image')
+    parser.add_argument('--expected-revision', help='expected Pi commit in the built images; required unless --jj-only')
     args = parser.parse_args()
+    if not args.jj_only and not args.expected_revision:
+        parser.error('--expected-revision is required unless --jj-only is selected')
     suffix = uuid.uuid4().hex
 
     def image_tags(variant: str) -> tuple[str, str]:
@@ -95,27 +100,26 @@ def main() -> None:
         # Checks use the per-run alias; only the shared cache alias outlives cleanup.
         return f'{repository}:{suffix}', f'{repository}:cache'
 
-    alpine, alpine_cache = image_tags('pi-alpine')
-    debian, debian_cache = image_tags('pi-debian')
-    jj_image, jj_cache = image_tags('jj')
+    tags = {'jj': image_tags('jj')}
+    if not args.jj_only:
+        tags.update({variant: image_tags(variant) for variant in ('pi-alpine', 'pi-debian')})
+    jj_image = tags['jj'][0]
     try:
-        build_images(args.expected_revision, {
-            'jj': (jj_image, jj_cache),
-            'pi-alpine': (alpine, alpine_cache),
-            'pi-debian': (debian, debian_cache),
-        })
-        check_labels([alpine, debian], args.expected_revision)
+        build_images(args.expected_revision, tags)
+        if not args.jj_only:
+            check_labels([tags['pi-alpine'][0], tags['pi-debian'][0]], args.expected_revision)
         # Leaving the executor waits for every probe, including on failure,
         # before the outer finally can remove their image aliases.
-        with ThreadPoolExecutor(max_workers=3) as probes:
+        with ThreadPoolExecutor(max_workers=len(tags)) as probes:
             colocated = probes.submit(
                 run, 'docker', 'run', '--rm', '--interactive', '--network', 'none',
                 '--tmpfs', '/tmp:mode=1777', '--tmpfs', '/run/sandbox-proxy:mode=1777',
                 '--entrypoint', '/trusted/bin/sh', jj_image,
                 input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
             )
-            guests = [(probes.submit(probe_guest, tag), expected_node)
-                      for tag, expected_node in ((alpine, 'v24.'), (debian, 'v20.'))]
+            guests = [(probes.submit(probe_guest, tags[variant][0]), expected_node)
+                      for variant, expected_node in (('pi-alpine', 'v24.'), ('pi-debian', 'v20.'))
+                      if variant in tags]
             output = colocated.result()
             checksum, _, workspace = output.partition('\n')
             if not workspace.endswith('jj-colocated-ok\n') or not checksum.split():
@@ -125,7 +129,7 @@ def main() -> None:
                 check_guest(guest.result(), args.expected_revision, expected_node, jj_checksum)
     finally:
         subprocess.run(
-            ["docker", "image", "rm", "-f", alpine, debian, jj_image],
+            ["docker", "image", "rm", "-f", *[aliases[0] for aliases in tags.values()]],
             cwd=ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -135,10 +139,10 @@ def main() -> None:
         'docker', 'image', 'ls', '--filter', f'reference={IMAGE_PREFIX}-*-test:*',
         '--format', '{{.Repository}}:{{.Tag}}',
     ).splitlines())
-    missing = {alpine_cache, debian_cache, jj_cache} - remaining
+    missing = {aliases[1] for aliases in tags.values()} - remaining
     if missing:
         raise RuntimeError(f'cleanup lost runtime image caches: {sorted(missing)}')
-    leaked = {alpine, debian, jj_image} & remaining
+    leaked = {aliases[0] for aliases in tags.values()} & remaining
     if leaked:
         raise RuntimeError(f'cleanup left per-run image aliases: {sorted(leaked)}')
 

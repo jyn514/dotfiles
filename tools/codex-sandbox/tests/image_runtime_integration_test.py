@@ -196,6 +196,71 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 self.assertEqual(1, len(captured))
                 self.assertFalse(captured[0].parent.exists())
 
+    def test_jj_only_bake_declares_no_pi_images_or_revision(self):
+        build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
+        tags = {'jj': ('selected-jj:unique', 'selected-jj:cache')}
+
+        def consume(command, *, cwd, check):
+            definition = json.loads(Path(command[command.index('--file') + 1]).read_text())
+            self.assertEqual(['jj'], definition['group']['default']['targets'])
+            self.assertEqual({'jj'}, set(definition['target']))
+            target = definition['target']['jj']
+            self.assertEqual(list(tags['jj']), target['tags'])
+            self.assertEqual('tools/jj-proxy/Dockerfile', target['dockerfile'])
+            self.assertNotIn('PI_REVISION', target['args'])
+
+        with mock.patch('subprocess.run', side_effect=consume):
+            build(None, tags)
+
+    def test_jj_only_runs_without_pi_revision_and_cleans_only_its_own_alias(self):
+        for failure in (None, 'build', 'probe', 'output'):
+            with self.subTest(failure=failure):
+                main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
+                tags = {}
+                error = subprocess.CalledProcessError(17, ['docker'])
+                calls = []
+
+                def build(revision, selected_tags):
+                    self.assertIsNone(revision)
+                    self.assertEqual({'jj'}, set(selected_tags))
+                    tags.update(selected_tags)
+                    if failure == 'build':
+                        raise error
+
+                def run(*command, **kwargs):
+                    calls.append(command)
+                    if command[1:3] == ('image', 'ls'):
+                        return tags['jj'][1] + '\n'
+                    self.assertEqual('run', command[1])
+                    self.assertIn(tags['jj'][0], command)
+                    self.assertEqual('none', command[command.index('--network') + 1])
+                    self.assertIn('/run/sandbox-proxy:mode=1777', command)
+                    if failure == 'probe':
+                        raise error
+                    marker = 'failed' if failure == 'output' else 'jj-colocated-ok'
+                    return 'a' * 64 + '  /trusted/bin/jj\n' + marker + '\n'
+
+                with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run}), \
+                        mock.patch('sys.argv', ['integration', '--jj-only']), \
+                        mock.patch('subprocess.run') as cleanup:
+                    if failure is None:
+                        main()
+                    else:
+                        with self.assertRaises(RuntimeError if failure == 'output' else subprocess.CalledProcessError):
+                            main()
+                cleanup.assert_called_once()
+                self.assertEqual(['docker', 'image', 'rm', '-f', tags['jj'][0]], cleanup.call_args.args[0])
+                self.assertEqual(0 if failure == 'build' else 1, sum(command[1] == 'run' for command in calls))
+
+    def test_full_mode_still_requires_revision_before_any_docker_operation(self):
+        main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
+        with mock.patch('sys.argv', ['integration']), mock.patch('subprocess.run') as docker, \
+                mock.patch('sys.stderr'):
+            with self.assertRaises(SystemExit) as error:
+                main()
+        self.assertEqual(2, error.exception.code)
+        docker.assert_not_called()
+
     def test_bake_failure_removes_the_definition_and_propagates_the_error(self):
         build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
         tags = {role: (f'{role}:unique', f'{role}:cache') for role in ('jj', 'pi-alpine', 'pi-debian')}
