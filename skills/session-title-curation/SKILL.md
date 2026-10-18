@@ -30,6 +30,12 @@ Search results are message hits, so keep searching and deduplicating until the r
 
 Read the opening request, important course corrections, and final outcome. A middle snippet alone often names an abandoned approach.
 
+For forks and clones, read the recorded parent when available and compare conversation text before attributing work to the continuation.
+Copying can change entry IDs; different IDs alone do not establish new work.
+Prefer a title that distinguishes the continuation's substantive work from inherited context.
+If there is no substantive continuation, a shared title is appropriate.
+If the boundary remains uncertain, state that limit rather than inventing a distinct result.
+
 For long sessions, inspect additional windows when:
 
 - the task changed materially;
