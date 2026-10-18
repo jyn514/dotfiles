@@ -8,6 +8,10 @@ If so, run the receiver with that packet or artifact and the evidence it would a
 Inspect the receiver's actual actions or outputs; investigate a failed check before expanding the replay.
 A passing handoff check does not establish better parent decisions or downstream task outcomes.
 
+Preserve normal coordinator tools and native completion delivery when assessing delegation, coordination, or latency.
+Removing tools can force extra delegation; manual result bridging can introduce pauses absent from the real workflow.
+If isolation changes either, record the differences and do not attribute the resulting delegation or waiting to the guidance under test.
+
 For paired behavioral trials, fix the comparison question, outcome criteria, historical cut, model, and task inputs before generation;
 vary only the skill under test.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
