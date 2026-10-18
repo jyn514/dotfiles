@@ -26,9 +26,12 @@ above 70% and red above 90%; unknown usage shows `?`. The provider appears when
 multiple providers are available and space permits. Directory, branch, session
 title, and extension statuses remain visible. Run `/reload` to activate it.
 
-`transport-diagnostics.ts` records Codex Responses HTTP attempt summaries in
-`~/.pi/agent/logs/transport-<pid>.jsonl`. Run `/reload` in existing Pi processes
-to enable it; new processes load it with the bundle. Successful and failed
+Transport tracing is disabled by default. Start `PI_TRANSPORT_DIAGNOSTICS=1 pi`
+to enable `transport-diagnostics.ts`, which records Codex Responses HTTP attempt
+summaries in `~/.pi/agent/logs/transport-<pid>.jsonl`. Start Pi without the variable
+to disable it. Existing ordinary sessions stop tracing after `/reload`;
+sessions launched with the opt-in variable need a new process without it.
+Disabling tracing preserves existing log files. Successful and failed
 attempts are logged, with private directory/file permissions. Each record includes the Pi
 session ID, destination origin/path, elapsed time, response status and header
 timing when available, `x-request-id`, `cf-ray`, error codes, and available socket addresses
@@ -45,6 +48,7 @@ or this extension before relying on response-ID and terminal-event correlation.
 
 For a sustained IPv4 comparison, start a new host Pi with `PI_HTTP_FAMILY=4 pi`
 and use the same model, SSE transport, and normal workload as the baseline.
+This explicit experiment also enables tracing.
 The diagnostics extension supplies Pi's installed Undici fetch with IPv4 DNS
 connections and automatic family fallback disabled for Codex HTTP/SSE requests.
 It uses five-minute header/body timeouts; use the default five-minute baseline

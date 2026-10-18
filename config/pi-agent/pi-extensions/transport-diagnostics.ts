@@ -390,6 +390,7 @@ export async function probeNetwork(hostname = "chatgpt.com", port = 443, timeout
 }
 
 export default function transportDiagnostics(pi: ExtensionAPI) {
+  if (process.env.PI_TRANSPORT_DIAGNOSTICS !== "1" && process.env.PI_HTTP_FAMILY !== "4") return;
   const ipv4 = process.env.PI_HTTP_FAMILY === "4" ? createIpv4Fetch(process.argv[1]) : undefined;
   const directory = join(homedir(), ".pi", "agent", "logs");
   const file = join(directory, `transport-${process.pid}.jsonl`);

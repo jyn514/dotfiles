@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { createRequire } from "node:module";
 import { once } from "node:events";
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile, symlink, copyFile, cp } from "node:fs/promises";
@@ -12,6 +12,30 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import transportDiagnostics, { observeTransport, instrumentProvider, probeNetwork, parseTcpSamples } from "../../config/pi-agent/pi-extensions/transport-diagnostics.ts";
+
+let previousDiagnostics;
+let previousFamily;
+beforeEach(() => {
+  previousDiagnostics = process.env.PI_TRANSPORT_DIAGNOSTICS;
+  previousFamily = process.env.PI_HTTP_FAMILY;
+  process.env.PI_TRANSPORT_DIAGNOSTICS = "1";
+  delete process.env.PI_HTTP_FAMILY;
+});
+afterEach(() => {
+  if (previousDiagnostics === undefined) delete process.env.PI_TRANSPORT_DIAGNOSTICS;
+  else process.env.PI_TRANSPORT_DIAGNOSTICS = previousDiagnostics;
+  if (previousFamily === undefined) delete process.env.PI_HTTP_FAMILY;
+  else process.env.PI_HTTP_FAMILY = previousFamily;
+});
+
+test("default configuration registers no observers, hooks, or commands", () => {
+  delete process.env.PI_TRANSPORT_DIAGNOSTICS;
+  const source = channel("undici:request:error");
+  assert.equal(source.hasSubscribers, false);
+  transportDiagnostics({ on() { assert.fail("unexpected hook"); },
+    registerCommand() { assert.fail("unexpected command"); } });
+  assert.equal(source.hasSubscribers, false);
+});
 
 async function installedAiModule(subpath = ".") {
   const packageDir = await realpath(process.env.PI_PACKAGE_DIR);
