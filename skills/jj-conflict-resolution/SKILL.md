@@ -86,6 +86,9 @@ For a multi-sided conflict, inspect every diff alternative and choose the requir
 
 ## Preserve Jujutsu history
 
+When other agents are editing the checkout, use a separate resolution workspace rather than switching their working-copy revision.
+Follow `jj-workflow`'s temporary-workspace procedure; this separates checkout files, not shared history.
+
 Before switching away, record the original working-copy change ID, its parent
 change IDs, and whether it is empty and undescribed. Jujutsu may automatically
 abandon an empty, undescribed working-copy change when you leave it.
@@ -96,12 +99,15 @@ Resolve in a fresh working-copy commit on top of the first conflicted change. Sq
 jj new CONFLICTED_CHANGE
 # edit and inspect the files
 jj diff --summary
-jj squash --from @ --into CONFLICTED_CHANGE
+jj squash --from @ --into CONFLICTED_CHANGE path/to/resolved-file
 ```
+
+Select only owned resolution paths; if a path also contains unrelated edits, separate the hunks through `jj-workflow` before squashing.
+Inspect any changes left in the resolution commit and preserve unrelated work.
 
 Use the stable change ID, not a nearby `@-`, as the squash target. Let descendants restack; then repeat inspection and resolution for each conflicted descendant. Do not abandon a change until its patch and resulting tree are understood.
 
-When returning, inspect `jj status` and `jj log` before using the recorded
+If you switched the original workspace, inspect `jj status` and `jj log` before returning to the recorded
 working-copy ID. If it still exists, return with `jj edit ORIGINAL_CHANGE`.
 If the recorded empty, undescribed change disappeared, verify its parents after
 restacking and create a new working copy with `jj new ORIGINAL_PARENT...`.
@@ -120,10 +126,14 @@ rg -n --hidden --glob '!node_modules/**' --glob '!.git/**' \
   '^(<<<<<<<|%%%%%%%|\+{7,}|>{7,})' path/to/resolved/files
 ```
 
-Then inspect `jj diff -r CHANGE_ID` and run the narrowest relevant tests. Before completion, verify:
+Review marker-scan matches; intentional conflict fixtures are not unresolved conflicts.
+Then inspect `jj diff -r CHANGE_ID` and run the narrowest relevant tests.
+After descendants restack, rerun affected tests at the final intended tip.
+Passing checks at an intermediate resolution do not establish that the assembled result works.
+Before completion, verify:
 
 - no intended conflict remains in the current commit or descendants;
-- no conflict markers remain in tracked source files;
+- no unintended conflict markers remain in tracked source files;
 - unrelated working-copy changes are preserved;
 - generated files were restored or regenerated from their authoritative source;
 - type checks and tests pass, or unrelated baseline failures are recorded precisely.
