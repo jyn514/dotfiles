@@ -92,7 +92,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn('install uv', result.stderr)
 
     def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True, jobs=3,
-                     environment_jobs=None):
+                     environment_jobs=None, installed_pytest=False, help_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
@@ -109,7 +109,8 @@ class TestRunnerTests(unittest.TestCase):
                 (bin_directory / command).symlink_to(shutil.which(command))
             (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "uvx.args"
-            if missing_plugin or broken_pytest:
+            help_log = root / "pytest-help.log"
+            if installed_pytest or missing_plugin or broken_pytest:
                 (bin_directory / "pytest").symlink_to(
                     ROOT / "tests/fixtures/native_test_runner_command.sh")
             if uv_available:
@@ -122,7 +123,8 @@ class TestRunnerTests(unittest.TestCase):
                 TEST_ARGV_LOG=str(log),
                 TEST_MISSING_PYTEST_PLUGIN="1" if missing_plugin else "0",
                 TEST_BROKEN_PYTEST="1" if broken_pytest else "0",
-                TEST_PYTEST_STATUS="99",
+                TEST_PYTEST_STATUS="99", TEST_PYTEST_HELP_LOG=str(help_log),
+                TEST_PYTEST_HELP_STATUS=str(help_status),
             )
             if environment_jobs is not None:
                 environment["TEST_JOBS"] = str(environment_jobs)
@@ -134,10 +136,12 @@ class TestRunnerTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
             )
-            return result, log.read_text().splitlines() if log.exists() else []
+            return (result, log.read_text().splitlines() if log.exists() else [],
+                    len(help_log.read_text().splitlines()) if help_log.exists() else 0)
 
     def test_missing_global_pytest_uses_pinned_requirements(self) -> None:
-        result, arguments = self.run_fallback()
+        result, arguments, probes = self.run_fallback()
+        self.assertEqual(0, probes)
         self.assertEqual(23, result.returncode, result.stderr)
         requirements = (ROOT / "install/test.txt").read_text().splitlines()
         self.assertEqual(
@@ -151,23 +155,37 @@ class TestRunnerTests(unittest.TestCase):
     def test_worker_count_and_distribution_use_existing_configuration(self) -> None:
         for jobs, environment_jobs, expected in ((None, None, "8"), (None, 6, "6"), (3, 6, "3")):
             with self.subTest(jobs=jobs, environment_jobs=environment_jobs):
-                result, arguments = self.run_fallback(jobs=jobs, environment_jobs=environment_jobs)
+                result, arguments, _ = self.run_fallback(jobs=jobs, environment_jobs=environment_jobs)
                 self.assertEqual(23, result.returncode, result.stderr)
                 self.assertEqual(expected, arguments[arguments.index("-n") + 1])
                 self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
 
     def test_installed_pytest_missing_a_plugin_uses_uvx(self) -> None:
-        result, arguments = self.run_fallback(missing_plugin=True)
+        result, arguments, probes = self.run_fallback(missing_plugin=True)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
+        self.assertEqual(1, probes)
+
+    def test_installed_pytest_checks_all_plugins_with_one_successful_probe(self) -> None:
+        result, arguments, probes = self.run_fallback(installed_pytest=True, uv_available=False)
+        self.assertEqual(99, result.returncode, result.stderr)
+        self.assertEqual(1, probes)
+        self.assertEqual("-n", arguments[0])
+
+    def test_failed_help_cannot_establish_plugin_availability(self) -> None:
+        result, arguments, probes = self.run_fallback(installed_pytest=True, help_status=7)
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertEqual(1, probes)
+        self.assertEqual("--from", arguments[0])
 
     def test_broken_installed_pytest_uses_uvx(self) -> None:
-        result, arguments = self.run_fallback(broken_pytest=True)
+        result, arguments, probes = self.run_fallback(broken_pytest=True)
+        self.assertEqual(1, probes)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
 
     def test_missing_uv_explains_how_to_get_pinned_test_dependencies(self) -> None:
-        result, arguments = self.run_fallback(uv_available=False)
+        result, arguments, _ = self.run_fallback(uv_available=False)
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn("install uv", result.stderr)
         self.assertIn("install/test.txt", result.stderr)

@@ -12,6 +12,9 @@ if [ "$name" = python3 ]; then
 	esac
 fi
 if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
+	if [ -n "${TEST_PYTEST_HELP_LOG:-}" ]; then
+		printf 'help\n' >> "$TEST_PYTEST_HELP_LOG"
+	fi
 	if [ "${TEST_BROKEN_PYTEST:-0}" = 1 ]; then
 		echo 'ModuleNotFoundError: No module named pytest' >&2
 		exit 1
@@ -21,7 +24,7 @@ if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
 	else
 		printf '%s\n' '--instafail --numprocesses --force-sugar'
 	fi
-	exit 0
+	exit "${TEST_PYTEST_HELP_STATUS:-0}"
 fi
 if [ "$name" = uvx ]; then
 	printf '%s\n' "$@" > "$TEST_ARGV_LOG"
