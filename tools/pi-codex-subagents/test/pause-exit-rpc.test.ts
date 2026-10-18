@@ -30,7 +30,10 @@ sourceTest("RPC pause --exit publishes Saved and closes captured child safely; a
     const childPid = child.childProcess!.pid;
     const childSessionId = SessionManager.open(child.sessionFile).getSessionId();
     const pause = rpc.request({ type: "prompt", message: "/pause --exit" });
+    void pause.catch(() => {}); // Cleanup may close an outstanding request after a failed assertion.
     await until(() => existsSync(files.pauseRequested), "child observes the real native pause fence");
+    // Child pause requests now overlap parent drain; neither completion proves the other.
+    await until(() => existsSync(groupFile) && !!group().parent, "parent handoff is durably captured while child remains held");
     expect(group().phase).toBe("preparing");
     expect(group().parent.handoff.wasActive).toBe(true);
     expect(jsonl(files.effects)).toHaveLength(0);
