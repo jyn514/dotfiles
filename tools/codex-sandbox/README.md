@@ -438,6 +438,9 @@ For interactive startup profiling, use
 
 ### Failure recovery
 
+If Docker and fresh SSH connections both stall while Lima reports `Running`, inspect QEMU.
+See [resuming after disk-space exhaustion](lima/docker.md#resume-a-qemu-vm-after-disk-space-exhaustion).
+
 For model-provider errors, use the [installed Pi inspection guide](../../config/pi-agent/README.md#inspect-the-installed-pi)
 to locate the provider and retry implementation. Pi owns model-request retries;
 the sandbox proxy does not retry application requests. An occasional

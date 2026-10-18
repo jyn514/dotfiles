@@ -263,6 +263,43 @@ exclusive launch archives the previous proxy session as
 It does this only when the recorded VM, generation, engine, and network
 identities have all changed; policy drift on the same VM still blocks cleanup.
 
+## Resume a QEMU VM after disk-space exhaustion
+
+If Docker API requests and fresh SSH connections both stall, inspect QEMU before restarting the VM.
+Lima can report `Running` while QEMU has paused guest execution after a disk write failed.
+This procedure requires `socat` on the host and applies to QEMU-backed instances.
+For another instance or Lima home, change `vm_dir` below.
+
+```sh
+vm_dir="${LIMA_HOME:-$HOME/.lima}/sandbox-host-docker"
+qmp="$vm_dir/qmp.sock"
+printf '%s\n' '{"execute":"qmp_capabilities"}' \
+  '{"execute":"query-status"}' '{"execute":"query-block"}' \
+  | socat -t 2 - UNIX-CONNECT:"$qmp"
+```
+
+`query-status` reporting `status: io-error` and `running: false` identifies a pause after an I/O error.
+For disk-space exhaustion, `query-block` also reports `io-status: nospace` for `boot-disk`.
+Check the host filesystem containing the backing image named in `query-block`:
+
+```sh
+df -h "$vm_dir/disk"
+```
+
+Restore available space on that filesystem before resuming.
+Even if space is already available, QEMU still needs an explicit resume command.
+Send QMP's `cont` command to resume the existing VM without rebooting it:
+
+```sh
+printf '%s\n' '{"execute":"qmp_capabilities"}' '{"execute":"cont"}' \
+  '{"execute":"query-status"}' | socat -t 2 - UNIX-CONNECT:"$qmp"
+docker container ls
+```
+
+Confirm that QEMU reports `running: true` and Docker responds.
+If QEMU pauses again, inspect the new disk error before retrying `cont`.
+The [QMP reference](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html) describes these commands.
+
 ## Troubleshoot published ports
 
 For a Python-equipped container publishing a UI on port 8084, run these from the
