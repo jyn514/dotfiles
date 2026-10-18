@@ -3,6 +3,11 @@
 Read this reference before preparing paired behavioral or summarization trial inputs.
 These protocols apply when conducting trials; skill edits and textual reviews do not require a trial by default.
 
+Before an expensive full-history or whole-workflow replay, check whether an existing real handoff can test the changed behavior.
+If so, run the receiver with that packet or artifact and the evidence it would actually have, rather than a researcher-written task.
+Inspect the receiver's actual actions or outputs; investigate a failed check before expanding the replay.
+A passing handoff check does not establish better parent decisions or downstream task outcomes.
+
 For paired behavioral trials, fix the comparison question, outcome criteria, historical cut, model, and task inputs before generation;
 vary only the skill under test.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
