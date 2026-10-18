@@ -109,6 +109,21 @@ While a goal is active, the extension:
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
 - Routes tracked implementation-through-verified-completion goals to the `autonomous-implementation` skill, when available, at start or resume and back to its recovery guidance when stuck.
   Standing tool guidance covers model-created goals too; plan-only, review, research, and writing goals do not activate the skill.
+- Instructs the agent to make a bounded search before extending repeated similar batches, including successful ones.
+  When a fresh-context subagent tool is available, delegate directly from existing task state without a separate scan or planning workflow.
+  Give one read-only scout the goal, governing constraints, ordered acceptance conditions and a brief progress snapshot for each goal condition.
+  Distinguish verified outcomes, unmet work and unknowns; activity and check counts are not substitutes for evidence of user-facing quality.
+  Include core product/source and observed output evidence, not only recent task ledgers and verification receipts.
+  Ask which important part of the goal has little demonstrated progress, and for one bounded investigation that could establish its priority.
+  Omit the parent's history, proposed next task, accumulated rationale and preferred answer.
+  The assignment allows four focused read/search calls and a result of at most 200 words, with no further delegation or changes.
+  Reserve at least one of those four calls for an example of the main user activity, not the build or validation process.
+  The scout selects the example from existing material without screening for poor results and inspects it before recommending a task.
+  Ask what the user can actually do, what remains difficult or unsupported, and what bounded check could resolve an unmeasured outcome.
+  The parent compares the finding with continuing its work, including verification and coordination costs.
+  It retains task-selection authority and all existing holds.
+  Without a fresh-context subagent tool, the agent performs the bounded search directly without claiming independence.
+  These are model instructions, not an enforced scheduler, lookup limit or guarantee of better prioritization.
 - Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
 - Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available.
 

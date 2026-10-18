@@ -30,7 +30,27 @@ const APPROACH_RECOVERY_GUIDELINE =
 const BLOCKED_GOAL_GUIDELINE =
   `Before calling ${goalToolReference("update_goal")} with status "blocked", compare the blocker with the current objective and governing requirements. Identify what it prevents, which unmet outcomes remain independent of it, and the next authorized action. Respect milestone order and explicit holds; do not substitute unrelated cleanup. A blocked investigation is not a blocked goal. If independent authorized work remains, do that work instead of blocking. If missing user input or external work prevents meaningful progress across the remaining goal, call ${goalToolReference("update_goal")} with status "blocked" and a dependency reason explaining why no independent authorized work remains, then explain what is needed to the user. Do not block while useful work remains. Only explicit /goal resume reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.`;
 
-const WORK_GUIDELINES = [GOAL_SCOPE_GUIDELINE, APPROACH_RECOVERY_GUIDELINE, AUTONOMOUS_SKILL_GUIDELINE];
+const BOUNDED_SCOUT_GUIDELINE = [
+  "Apply this scouting procedure only while a goal is active.",
+  "Before extending repeated similar batches of work, make one bounded search for a more valuable next task, even when the batches succeed.",
+  "If a fresh-context subagent tool is available, delegate directly from existing task state to one read-only scout; do not start a separate planning or project-scan workflow to prepare it.",
+  "Give it only the literal goal, governing constraints and ordered acceptance conditions, a short factual progress snapshot organized by each governing goal condition, and evidence paths.",
+  "For each condition, state the observed result and supporting evidence; distinguish verified outcomes, unmet work and unknowns, rather than substituting recent batch activity or passing checks for user-facing quality.",
+  "Include core product/source and observed output evidence, not only recent task ledgers and verification receipts.",
+  "Do not forward conversation history, your proposed next task, accumulated rationale, or a preferred answer.",
+  "Limit the scout to four focused read/search tool calls, no further delegation or changes, and a result of at most 200 words.",
+  "Reserve at least one of those four lookups for an example of the main activity the product supports, not its build or validation process; inspect it before recommending a task.",
+  "Have the scout select its example from existing material without screening for poor results.",
+  "Ask what the intended user can actually do, what remains difficult or unsupported, and, if that is not measured, what bounded check would resolve it.",
+  "Ask: Which important part of the goal has little demonstrated progress? Find one bounded investigation that could reveal whether it deserves priority over continuing current work.",
+  "Request a concrete action with supporting evidence, likely benefit, uncertainty and a stopping condition; no grounded alternative found is acceptable.",
+  "Compare its finding with continuing the current work, including implementation, verification and coordination costs, then choose an actual next action; a scout report alone is not progress.",
+  "The parent retains task-selection authority and must preserve milestone order, acceptance conditions, approvals and explicit holds.",
+  "If no fresh-context subagent tool is available, do the same bounded search directly without claiming independence.",
+  "Do not scout after every tool call or repeat an unchanged search without new evidence.",
+].join(" ");
+
+const WORK_GUIDELINES = [GOAL_SCOPE_GUIDELINE, APPROACH_RECOVERY_GUIDELINE, BOUNDED_SCOUT_GUIDELINE, AUTONOMOUS_SKILL_GUIDELINE];
 
 export const TOOL_PROMPT_GUIDELINES = [
   GOAL_TOOL_NAME_GUIDANCE,

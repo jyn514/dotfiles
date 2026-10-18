@@ -139,6 +139,17 @@ test("SDK completion report includes its calling response exactly once", async (
     assert.match(providerPrompt, /required by the requested outcome or only by your chosen approach/);
     assert.equal(providerPrompt.match(/compare the blocker with the current objective and governing requirements/g)?.length, 1,
       "all three goal tools share one whole-goal blocking procedure in the actual provider transcript");
+    assert.equal(providerPrompt.match(/Before extending repeated similar batches of work/g)?.length, 1,
+      "model-created goals receive one scout instruction through the native provider prompt, not one per goal tool");
+    assert.match(providerPrompt, /Apply this scouting procedure only while a goal is active/);
+    assert.match(providerPrompt, /progress snapshot organized by each governing goal condition/);
+    assert.match(providerPrompt, /Include core product\/source and observed output evidence/);
+    assert.match(providerPrompt, /Which important part of the goal has little demonstrated progress/);
+    assert.match(providerPrompt, /four focused read\/search tool calls, no further delegation or changes/);
+    assert.match(providerPrompt, /Reserve at least one of those four lookups for an example of the main activity the product supports/);
+    assert.match(providerPrompt, /scout select its example from existing material without screening for poor results/);
+    assert.match(providerPrompt, /what the intended user can actually do, what remains difficult or unsupported/);
+    assert.match(providerPrompt, /Do not forward conversation history, your proposed next task, accumulated rationale, or a preferred answer/);
     const updateGoal = runner.getToolDefinition("update_goal");
     assert.ok(updateGoal);
     assert.match(updateGoal.description, /whole goal/);
