@@ -99,4 +99,19 @@ Run it with Node so Bun's module mocks cannot replace the installed SDK:
 dev/test-environment node --test tests/pi/native_prompt_sections.mjs
 ```
 
+### Subagent templates
+
+For template-only changes, validate configuration delivery without starting an architecture workflow.
+Revisit architecture only if the change introduces a runtime-design or ownership decision.
+Run probes through `dev/test-environment`, using a private agent directory and a disposable RPC child without live provider calls.
+Use the configured subagent package's actual template loader and process launcher, not a separate frontmatter parser.
+Check that:
+
+- The loader discovers the template and advertises its caller hint.
+- Model and thinking settings inherit from the parent unless the template intentionally overrides them.
+- The launched tool allowlist matches the template, excluding mutation and delegation tools for read-only agents.
+- The child receives the template instructions and minimal caller input without coordinator restatement.
+- Changing the template reaches the child without a matching caller edit.
+
+These checks establish configuration delivery, not model compliance or better task ranking.
 See [testing and probes](../../dev/README.md#testing-and-probes) for shared prerequisites and isolation rules.
