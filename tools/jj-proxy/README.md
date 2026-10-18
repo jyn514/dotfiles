@@ -117,10 +117,13 @@ For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 From the repository root:
 
 ```sh
-cargo test --locked --manifest-path tools/jj-proxy/Cargo.toml
-python3 -m unittest discover -s tools/jj-proxy/tests -p '*_test.py'
+dev/test-environment pytest -q -p no:cacheprovider tests/native/test_native_jj_proxy.py tools/jj-proxy/tests
 .agents/sandbox/jj-proxy-image
 ```
+
+The native pytest adapter runs Cargo and passes the test environment's selected real JJ binary as `JJ_PROXY_TEST_JJ`.
+Set `DOTFILES_TEST_JJ_REAL` to select a specific binary.
+Direct Cargo runs can report success while skipping real-JJ integration tests if no binary is found.
 
 The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. These checks do not establish acceptance in a real container.
 
