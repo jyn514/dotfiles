@@ -205,6 +205,14 @@ Hold only the conflicting mutations, not unrelated file edits or the entire agen
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
 
+### When assessing threats
+
+Before treating an outcome as a threat, ask: “What makes this plausible here, and why is it undesirable under the user’s goals?”
+Assess likelihood and impact separately; distinguish evidence from assumptions.
+Account for existing controls and compare a proposed restriction’s benefit with its friction.
+Least privilege and conventional boundaries are not sufficient justification by themselves.
+Low-probability, high-impact risks can still justify protection; precise probabilities are not required.
+
 ### When diagnosing a failure
 
 Before recommending recovery actions, read the owning project's recovery documentation.
