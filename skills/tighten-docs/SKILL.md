@@ -34,13 +34,16 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
    - Design intent that constrains future choices: tradeoffs, rejected alternatives, compatibility posture, ownership boundaries, safety rationale, and "why not" explanations.
    - Rationale, examples, and analogies that change a future decision, define the reader's mental model, explain why a section exists, or prevent a repeated mistake — not rationale that only says a rule is good or recommended.
 
-3. Audit before editing. List candidate hunks; classify each as `duplicate`, `structural simplification`, `clearer rewrite`, `risky compression`, `word shave`, or `keep`.
+3. Audit before editing. Assess individual sentences and claims, not whole sections as indivisible `keep`.
+   A section containing requirements or important rationale may still contain redundant sentences.
+   List candidate hunks; classify each as `duplicate`, `structural simplification`, `clearer rewrite`, `risky compression`, `word shave`, or `keep`.
    - Eligible by default: `duplicate`, `structural simplification`, `clearer rewrite`.
    - `risky compression` is eligible only when the replacement keeps the concrete reason, failure mode, or boundary.
    - Never edit `word shave` or `keep`.
    - A hunk is eligible only if its win can be named without saying "shorter": duplicate removed, ambiguity fixed, structure clarified, reference made more direct, or an overlong sentence made easier to parse.
 
-   Do not edit a section unless most planned changes are eligible cuts. If the only available reductions are posture/rationale cuts or small line-count wins, report that the section is already tight enough — prefer no edit over a marginally shorter one.
+   Apply eligible changes independently.
+   Preserve necessary meaning, not every occurrence of it.
 
    Reject these micro-edits:
    - removing small orientation words, merging adjacent sentences, or swapping in shorter synonyms;
@@ -50,7 +53,8 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
    Classify repeated guidance before cutting it:
    - **Duplicate policy** states the same requirement authoritatively in several places. Keep one canonical owner and replace other copies with direct, task-specific references.
    - **Duplicate routing** exposes the same owner from different entry points or indexes. Usually keep it; readers and small models need local routes more than a perfectly normalized document graph.
-   - **Duplicate context** briefly repeats a safety constraint or prerequisite where a reader acts. Keep it when removing it would make the section unsafe or misleading in isolation.
+   - **Duplicate context** briefly repeats a safety constraint or prerequisite where a reader acts.
+     Name the concrete misunderstanding or unsafe action it prevents; otherwise test deletion or a direct reference.
 
    Before marking policies as duplicates, compare required behavior and conditions,
    not just shared words. A priority ranking does not replace a direct instruction:
@@ -98,18 +102,38 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
    - Check vocabulary against the project's guidance: preserve precise domain terms, explain unfamiliar terms for the intended reader, and apply banned-word rules by meaning rather than matching words mechanically.
    - For every changed hunk, defend it as clearer, more accurate, or easier to use. If the only defense is "shorter" or "fewer words", revert it.
    - After the first pass, name at least one reverted cut, or state explicitly that every hunk is a clear improvement — then scrutinize harder. Treat restored cuts as success, not failure.
+   - For large reviews, report actual inspected scope and any excluded or unread material.
+     Support a no-cut verdict with exact quotes of the strongest rejected candidates and specific reasons for keeping them.
+     Say "No further eligible cuts identified," not "already tight enough" or a claim that no possible cuts remain.
+     When that verdict lacks concrete support, the main agent arranges a bounded independent challenge through the delegation skill, or reports that independent review is unavailable.
+     If the challenge finds missed eligible cuts, withdraw the verdict and re-audit the affected scope before renewing it.
    - Confirm references still point to existing files or sections.
    - For skills: validate linked reference paths and examples, and confirm the YAML description still contains every trigger context — body-only trigger guidance is invisible until after selection.
 
 ## Example
 
-A cut to make. The original buries an action in throat-clearing but states a real failure mode:
+A cut to make: consolidate the same contract under different headings.
 
-> In order to ensure correctness, it is important that the validator runs before the writer, because the writer assumes well-formed input and will otherwise produce corrupt output that is hard to debug.
+> Shape: Declaration maps are keyed by name. A user value wholly replaces the bundled value at the same key.
+>
+> Merge rule: User declarations add new keys and wholly replace bundled values at matching keys; missing user keys retain bundled values.
 
-> Run the validator before the writer: it assumes well-formed input and silently corrupts output otherwise.
+Change Shape to:
 
-"In order to … it is important that" → the action; the failure mode ("assumes well-formed input," "corrupts output") stays because it tells a future editor *why the order matters*. Only "hard to debug" — praise that guides nothing — is dropped.
+> Declaration maps are keyed by name; see Merge rule for adding and overriding declarations.
+
+Keep Merge rule unchanged.
+Calling one copy "requirements" and the other "mechanics" does not make the replacement policy distinct.
+Shape retains the local editing task and routes its semantics to one canonical owner.
+
+Another cut to make: delete a summary that repeats a complete worked example.
+
+> Editing a post's body recomputes its metadata node, but the metadata stays equal, so pages that depend only on that metadata do not rebuild.
+> Changing its title changes the metadata and rebuilds those pages.
+> ~~The common case stays cheap: edit the body without changing metadata, and only that post rebuilds.~~
+
+Keep the mechanism and the contrasting title edit.
+The closing sentence adds no behavior or rationale.
 
 A cut to reject. The shorter version reads fine but deletes the actual instruction:
 
