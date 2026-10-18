@@ -32,6 +32,7 @@ async function fixture(t, native = false) {
   const bin = join(dir, "bin");
   const temp = join(dir, "temporary");
   await Promise.all([mkdir(home), mkdir(bin), mkdir(temp)]);
+  await writeFile(join(home, "dotfiles.config.toml"), "");
   if (native) {
     await symlink(native, join(bin, "codex"));
   } else await symlink(join(directory, "fixtures/codex.mjs"), join(bin, "codex"));
@@ -262,6 +263,40 @@ function nativeCodex() {
     if (existsSync(candidate) && realpathSync(candidate) !== wrapper) return realpathSync(candidate);
   }
 }
+
+test("imported threads use the dotfiles profile instead of base approval defaults", { timeout: 30000 }, async t => {
+  const native = nativeCodex();
+  if (!native) { t.skip("native Codex is not installed"); return; }
+  const f = await fixture(t, native);
+  await writeFile(join(f.home, "config.toml"), 'approvals_reviewer = "user"\nmodel = "base-model"\n');
+  for (const reviewer of ["auto_review", "user"]) {
+    await writeFile(join(f.home, "dotfiles.config.toml"),
+      `approvals_reviewer = "${reviewer}"\nmodel = "profile-model"\n`);
+    const imported = await launch(f).done;
+    assert.equal(imported.code, 0, imported.stderr);
+    const id = imported.stdout.match(/Codex thread ([0-9a-f-]+)/)?.[1];
+    assert.ok(id, imported.stdout);
+    const client = new CodexClient({ command: native, env: f.env });
+    try {
+      await client.initialize();
+      const resumed = await client.request("thread/resume", { threadId: id, excludeTurns: true });
+      assert.equal(resumed.approvalsReviewer, reviewer);
+      assert.equal(resumed.model, "profile-model");
+    } finally { await client.close(); }
+  }
+});
+
+test("missing and invalid profiles fail before creating an imported thread", async t => {
+  for (const contents of [null, "invalid = ["]) {
+    const f = await fixture(t);
+    const profile = join(f.home, "dotfiles.config.toml");
+    if (contents === null) await rm(profile);
+    else await writeFile(profile, contents);
+    const imported = await launch(f).done;
+    assert.notEqual(imported.code, 0);
+    assert.equal(existsSync(join(f.home, "fixture-pids.jsonl")), false);
+  }
+});
 
 test("real Codex terminal UI displays imported messages", { timeout: 20000 }, async t => {
   const native = nativeCodex();

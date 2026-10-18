@@ -20,13 +20,17 @@ For ambiguous IDs, pass one of the paths printed in the error.
 By default, the destination uses the cwd recorded in the Pi session.
 Use `--cwd` when that directory is unavailable on this machine or you want to continue elsewhere.
 The destination directory must already exist.
-Codex uses its own configured model and permissions; Pi credentials and model settings are not transferred.
+The importer reads `$CODEX_HOME/dotfiles.config.toml` (default `~/.codex/dotfiles.config.toml`) and applies it as configuration overrides on both import resumes.
+This includes the model, permissions, and approval reviewer; Pi credentials and model settings are not transferred.
+Codex's app-server rejects `--profile`, so these overrides take precedence over base and project configuration rather than loading as a native profile layer.
+A missing or invalid profile fails before thread creation.
+This applies to new imports; existing imported threads retain their saved settings.
 Saved Pi system prompts are omitted with a diagnostic; Codex uses its own instructions.
 Each invocation creates a distinct thread, including repeated imports of the same file.
 
 ## Requirements and compatibility
 
-Install Node, Pi, Codex, `cp`, and `cmp` on PATH.
+Install Node, Pi, Codex, Python 3.11 or later, `cp`, and `cmp` on PATH.
 The repository's normal bin PATH setup exposes `bin/pi-to-codex`; no extra bootstrap mapping is needed.
 The importer loads Pi's installed public SDK, not the repository's older unit-test dependencies.
 It searches `~/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent` and `/opt/agent-pi/src/packages/coding-agent`.

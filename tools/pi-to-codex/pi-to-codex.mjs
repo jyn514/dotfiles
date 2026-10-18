@@ -366,6 +366,11 @@ async function visible(client, id) {
 }
 
 export async function importSession(source, { cwd, signal, report = console.error } = {}) {
+  const profilePath = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "dotfiles.config.toml");
+  // app-server rejects --profile. Its thread API accepts configuration overrides.
+  const { stdout } = await execute("python3", [join(dirname(fileURLToPath(import.meta.url)), "read-profile.py"),
+    profilePath], { signal });
+  const config = JSON.parse(stdout);
   source = await resolveSessionSource(source, signal);
   report(`Reading selected Pi context from ${source}...`);
   const context = await readSession(source, cwd, signal);
@@ -379,14 +384,14 @@ export async function importSession(source, { cwd, signal, report = console.erro
     await withClient(async client => {
       attempted = true;
       const result = await client.request("thread/resume", { threadId: randomUUID(), history: context.history,
-        cwd: context.cwd, excludeTurns: true });
+        cwd: context.cwd, config, excludeTurns: true });
       thread = result.thread;
     }, signal);
     // The fresh ID has not been published. Its sole writer must exit before
     // appending native display history and the picker's visibility event.
     signal?.throwIfAborted();
     await appendDisplayHistory(thread, context);
-    await withClient(client => client.request("thread/resume", { threadId: thread.id, excludeTurns: true }), signal);
+    await withClient(client => client.request("thread/resume", { threadId: thread.id, config, excludeTurns: true }), signal);
     // Closing the second writer flushes the reconstructed has_user_event metadata.
     await withClient(async client => {
       if (!(await visible(client, thread.id))) throw new Error("imported thread is absent from Codex's resume index");
