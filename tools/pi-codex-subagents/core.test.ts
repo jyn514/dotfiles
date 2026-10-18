@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { afterAll, describe, expect, mock, test } from "bun:test";
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -943,6 +944,7 @@ describe("extension completion delivery and TUI", () => {
     const { default: subagentExtension } = await import("./index.js");
     try {
       subagentExtension({
+        events: new EventEmitter(),
         on(name: string, handler: any) { if (name === "session_shutdown") shutdown = handler; },
         registerTool() {},
         registerMessageRenderer() {},
@@ -975,6 +977,7 @@ describe("extension completion delivery and TUI", () => {
     const sentMessages: Array<{ message: any; options: any }> = [];
     let widget: any;
     const pi: any = {
+      events: new EventEmitter(),
       on(name: string, handler: (event: any, ctx: any) => any) {
         const entries = handlers.get(name) ?? [];
         entries.push(handler);

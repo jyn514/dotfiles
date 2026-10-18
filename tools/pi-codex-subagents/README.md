@@ -145,6 +145,28 @@ A thinking level written into an `enabledModels` pattern, such as `anthropic/cla
 
 A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` or `wait_all_agents` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
 
+## pi-link worker conversations
+
+When the parent also loads a pi-link version with the worker bridge, `link_send` with `to: { broadcast: true }` and `includeSubagents: true` reaches active workers directly through their owning manager.
+This includes the sender's workers.
+The parent model does not forward those messages.
+Completed, interrupted, suspended, and paused workers are not restarted or resumed for delivery.
+
+For link communication, children expose only `link_reply`, which accepts a full received message ID and reply text.
+The manager preserves this helper even when a template explicitly limits task tools or selects no task tools.
+Root link tools are excluded from the child's tool set.
+A queued message does not grant reply permission until it enters that child's native transcript.
+The manager validates the worker's stable ID and parent session before routing its reply.
+A root's answer returns only to that requesting worker, not its siblings or the owner's model context.
+Ordinary task completions still go to the parent.
+Loading pi-link explicitly in a child template does not give the child a root connection or root link tools.
+
+Worker delivery requires Pi's native fresh-input admission and pause APIs in children.
+Missing integration reports `unsupported`; stopped or paused destinations report `skipped`.
+Routing receipts acknowledge submission, not model read, and unknown outcomes are not retried automatically.
+No worker acknowledges a broadcast automatically, and several workers may independently ask the same question.
+See the installed pi-link skill for communication conventions.
+
 ## Commands and TUI
 
 While agents are starting or running, a compact one-line indicator appears above the editor. It shows the task name for one active agent or a count for multiple agents and points to `/subagents`. The indicator disappears when no agents are active.

@@ -12,6 +12,11 @@ import {
   CONTROL_COMMAND, CONTROL_VERSION, CONTINUATION_MESSAGE, controlRecord, hasUnresolvedInputs,
   assertSessionAuthority, type ControlRequest, type SavedSession,
 } from "./handoff.js";
+import {
+  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION, ROOT_LINK_TOOLS,
+  admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
+  type LinkResult, type LinkStatus, type LinkWorkerAddress,
+} from "./link.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
 export const PACKAGE_BASENAME = "pi-codex-subagents";
@@ -178,6 +183,7 @@ interface LiveAgent {
   settledWhileReleasing?: boolean;
   controlGeneration?: string;
   restoreFailure?: string;
+  startup?: Promise<void>;
 }
 
 export interface AgentCompletionEvent {
@@ -197,6 +203,7 @@ export interface AgentActivityEvent {
 }
 
 export interface AgentManagerOptions {
+  onLinkReply?: (event: { ownerSessionId: string; worker: LinkWorkerAddress; reference: LinkDelivery; message: string }) => Promise<LinkResult>;
   onActivityChange?: (event: AgentActivityEvent) => void;
   onUnclaimedCompletion?: (event: AgentCompletionEvent) => void;
   modelResponseTimeoutMs?: number;
@@ -1401,20 +1408,32 @@ export class AgentManager {
     ];
     if (info.thinking) args.push("--thinking", info.thinking);
     if (info.tools !== undefined) {
-      if (info.tools) args.push("--tools", info.tools);
-      else args.push("--no-builtin-tools");
+      // --tools is a registration allowlist: activation cannot resurrect an
+      // excluded extension tool. Derive the helper surface on every launch,
+      // including persisted workers whose task-tool list predates the bridge.
+      const configuredTools = info.tools.split(",").map(name => name.trim()).filter(Boolean);
+      const modifiers = configuredTools.some(name => name.startsWith("+") || name.startsWith("-"));
+      const taskTools = modifiers ? configuredTools : configuredTools.filter(name => !ROOT_LINK_TOOLS.has(name));
+      if (!taskTools.length) args.push("--no-builtin-tools");
+      const bridgeTools = modifiers ? [...ROOT_LINK_TOOLS].map(name => `-${name}`).concat("+link_reply") : ["link_reply"];
+      // Keep modifiers as modifiers; native CLI validation still rejects mixed
+      // or otherwise malformed tool lists rather than silently repairing them.
+      args.push("--tools", [...taskTools, ...bridgeTools].join(","));
     }
     args.push("--extension", fileURLToPath(new URL("./child-helper.ts", import.meta.url)));
     for (const extensionPath of info.extensionPaths ?? []) args.push("--extension", extensionPath);
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0",
+      PI_SUBAGENT_ID: info.id, PI_SUBAGENT_PARENT_SESSION_ID: info.parentSessionId };
+    delete childEnv.PI_LINK_NAME;
     let proc: ChildProcessWithoutNullStreams;
     try {
       logger.info("spawn", "starting child pi", { command: launch.command, args, cwd: info.cwd });
       proc = spawn(launch.command, args, {
         cwd: info.cwd,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0" },
+        env: childEnv,
         detached: process.platform !== "win32",
       });
     } catch (error) {
@@ -1441,6 +1460,8 @@ export class AgentManager {
       lastActivityPersistedAt: info.updatedAt,
       restoredHeld: held,
     };
+    let finishStartup!: () => void;
+    live.startup = new Promise<void>(resolve => { finishStartup = resolve; });
     this.live.set(info.id, live);
     const decoder = new RpcJsonlDecoder();
     const finishProcess = (error?: Error) => {
@@ -1532,7 +1553,7 @@ export class AgentManager {
       if (!live.finalizedRun) this.markFailed(live, error instanceof Error ? error.message : String(error));
       await this.terminateProcess(live);
       throw error;
-    }
+    } finally { finishStartup(); }
   }
 
   private sendCommand(live: LiveAgent, command: Record<string, unknown>, timeoutMs = DEFAULT_STARTUP_TIMEOUT_MS): Promise<any> {
@@ -1609,6 +1630,103 @@ export class AgentManager {
       this.notifyStatusChange(live.info);
       throw error;
     }
+  }
+
+  private linkUnavailable(live: LiveAgent, parentId: string): string | undefined {
+    if (live.info.parentSessionId !== parentId || this.live.get(live.info.id) !== live) return "worker_not_owned";
+    const saved = this.captures.get(parentId)?.[live.info.id];
+    const controlled = live.controlGeneration && (!saved || saved.marker !== "started" || hasUnresolvedInputs(saved));
+    if (this.pauses.has(parentId) || this.ordinaryPausedChildren.has(live.info.id)
+      || live.restoredHeld || live.releasing || controlled || live.handoffGeneration) return "worker_paused";
+    if (live.processFinished || live.expectedExit || live.finalizedRun
+      || !["starting", "running"].includes(live.info.status)) return "worker_inactive";
+  }
+
+  /** Selection is exclusively this manager's live, owned workers; never restart a saved task. */
+  async broadcastLink(parentId: string, message: LinkDelivery): Promise<Array<LinkWorkerAddress & { status: LinkStatus; reason?: string }>> {
+    const selected = [...this.live.values()].filter(live => live.info.parentSessionId === parentId
+      && ["starting", "running"].includes(live.info.status) && !live.expectedExit && !live.processFinished);
+    return Promise.all(selected.map(async live => ({ workerId: live.info.id, taskName: live.info.canonicalName,
+      ...await this.deliverLink(live, parentId, message) })));
+  }
+
+  async replyLink(parentId: string, worker: LinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }> {
+    const live = this.live.get(worker?.workerId);
+    if (!live || live.info.parentSessionId !== parentId) return { status: "skipped", reason: "worker_not_owned_or_inactive" };
+    return this.deliverLink(live, parentId, message);
+  }
+
+  private async deliverLink(live: LiveAgent, parentId: string, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }> {
+    if (!isLinkDelivery(message)) return { status: "failed", reason: "invalid_link_delivery" };
+    const deadline = Date.now() + LINK_TIMEOUT_MS;
+    const remaining = () => {
+      const ms = deadline - Date.now();
+      if (ms <= 0) throw new RpcRequestError("Worker link deadline exceeded", "unknown");
+      return ms;
+    };
+    const command = (value: Record<string, unknown>) => this.sendCommand(live, value, remaining());
+    try {
+      let reason = this.linkUnavailable(live, parentId);
+      if (reason) return { status: "skipped", reason };
+      if (live.startup) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try { await Promise.race([live.startup, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new RpcRequestError("Worker startup deadline exceeded", "unknown")), remaining());
+        })]); } finally { clearTimeout(timer); }
+      }
+      reason = this.linkUnavailable(live, parentId);
+      if (reason) return { status: "skipped", reason };
+      const state = await command({ type: "get_state" });
+      if (typeof state?.pauseState !== "string") return { status: "unsupported", reason: "native_pause_state_unavailable" };
+      if (state.pauseState !== "unpaused") return { status: "skipped", reason: "worker_paused" };
+      reason = this.linkUnavailable(live, parentId);
+      if (reason) return { status: "skipped", reason };
+      const requestId = randomUUID();
+      const request: LinkCommand = { version: LINK_VERSION, requestId, action: "deliver", ownerSessionId: parentId,
+        workerId: live.info.id, message };
+      const response = await command({ type: "prompt", message: `/${LINK_COMMAND} ${JSON.stringify(request)}` });
+      if (response?.disposition !== "handled") return { status: "unknown", reason: "link_command_not_handled" };
+      const entries = await command({ type: "get_entries" });
+      const record = entries?.entries?.findLast((entry: any) => entry.type === "custom" && entry.customType === LINK_CONTROL_ENTRY
+        && entry.data?.version === LINK_VERSION && entry.data.requestId === requestId)?.data;
+      if (!record || !["submitted", "failed", "skipped", "unsupported", "unknown"].includes(record.status)) {
+        return { status: "unknown", reason: "link_receipt_missing" };
+      }
+      return { status: record.status, ...(typeof record.reason === "string" ? { reason: record.reason } : {}) };
+    } catch (error) {
+      return { status: error instanceof RpcRequestError && error.outcome === "rejected" ? "failed" : "unknown",
+        reason: formatAgentError(error) };
+    }
+  }
+
+  private async handleLinkReply(live: LiveAgent, wire: string): Promise<void> {
+    let request: any;
+    try { request = JSON.parse(wire); } catch { return; }
+    if (request?.version !== LINK_VERSION || typeof request.requestId !== "string" || !request.requestId
+      || typeof request.replyTo !== "string" || !request.replyTo || typeof request.message !== "string" || !request.message.trim()) return;
+    const parentId = live.info.parentSessionId;
+    let result: LinkResult;
+    try {
+      let reason = this.linkUnavailable(live, parentId);
+      if (reason) result = linkFailure("skipped", reason);
+      else {
+        const state = await this.sendCommand(live, { type: "get_state" }, LINK_TIMEOUT_MS);
+        const data = await this.sendCommand(live, { type: "get_entries" }, LINK_TIMEOUT_MS);
+        reason = this.linkUnavailable(live, parentId);
+        const reference = data?.entries?.map((entry: any) => admittedLink(entry, parentId, live.info.id, state?.sessionId))
+          .findLast((delivery: LinkDelivery | undefined) => delivery?.id === request.replyTo);
+        if (reason) result = linkFailure("skipped", reason);
+        else if (typeof state?.pauseState !== "string") result = linkFailure("unsupported", "native_pause_state_unavailable");
+        else if (state.pauseState !== "unpaused") result = linkFailure("skipped", "worker_paused");
+        else if (typeof state?.sessionId !== "string" || !reference) result = linkFailure("failed", "link_reference_not_admitted");
+        else result = await this.options.onLinkReply?.({ ownerSessionId: parentId,
+          worker: { workerId: live.info.id, taskName: live.info.canonicalName }, reference, message: request.message })
+          ?? linkFailure("unsupported", "link_integration_unavailable");
+      }
+    } catch (error) { result = linkFailure("unknown", formatAgentError(error)); }
+    const command: LinkCommand = { version: LINK_VERSION, requestId: request.requestId, action: "result", result };
+    try { await this.sendCommand(live, { type: "prompt", message: `/${LINK_COMMAND} ${JSON.stringify(command)}` }, LINK_TIMEOUT_MS); }
+    catch (error) { live.logger.info("link", "could not return worker reply result", { error: formatAgentError(error) }); }
   }
 
   private async control(live: LiveAgent, request: ControlRequest) {
@@ -1870,6 +1988,12 @@ export class AgentManager {
     let event: any;
     try { event = JSON.parse(line); } catch {
       live.logger.info("rpc", "ignored invalid JSON line", { line: line.slice(0, 1000) });
+      return;
+    }
+    if (event.type === "extension_ui_request" && event.method === "notify"
+      && typeof event.message === "string" && event.message.startsWith(LINK_REPLY_NOTIFY)) {
+      // Notification handling must not block the RPC response loop (the tool is still running).
+      void this.handleLinkReply(live, event.message.slice(LINK_REPLY_NOTIFY.length));
       return;
     }
     live.broadcaster.broadcast(event);

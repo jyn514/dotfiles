@@ -20,11 +20,11 @@ export async function until(predicate: () => boolean | Promise<boolean>, descrip
 }
 
 /** Test-side JSONL peer; does not implement agent/session behavior. */
-export function sourceRpc(cwd: string, sessionFile: string, hold = false, extensions = [childHelper, heldExtension]) {
+export function sourceRpc(cwd: string, sessionFile: string, hold = false, extensions = [childHelper, heldExtension], environment: Record<string, string> = {}) {
   if (!process.env.PI_TEST_OWNED_ROOT || !process.env.PI_SUBAGENT_PI_BIN) throw new Error("Use run-source-tests.ts");
   const child = spawn(process.env.PI_SUBAGENT_PI_BIN, ["--mode", "rpc", "--session", sessionFile,
     ...extensions.flatMap(path => ["--extension", path])], {
-    cwd, env: { ...process.env, ...(hold ? { PI_SUBAGENT_HOLD: "1" } : {}) }, stdio: ["pipe", "pipe", "pipe"],
+    cwd, env: { ...process.env, ...environment, ...(hold ? { PI_SUBAGENT_HOLD: "1" } : {}) }, stdio: ["pipe", "pipe", "pipe"],
   });
   const records: any[] = [];
   let stderr = "";

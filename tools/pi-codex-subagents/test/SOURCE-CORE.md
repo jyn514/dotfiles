@@ -12,6 +12,17 @@ For a focused suite, pass its path and optional Bun flags to the driver:
 bun packages/pi-codex-subagents/test/run-source-tests.ts packages/pi-codex-subagents/test/parent-child-roundtrip.test.ts --rerun-each=5
 ```
 
+To include the independently deployed pi-link source in the cross-package native test:
+
+```sh
+PI_TEST_LINK_SOURCE=/src/dotfiles/tools/pi-link/index.ts bun run test:subagents
+```
+
+Without `PI_TEST_LINK_SOURCE`, that integration case reports a skip; the manager/helper suite still runs.
+The supplied pi-link directory must have its installed `ws` dependency.
+The fixture copies its TypeScript files into disposable storage, verifies the copies, and substitutes only the loopback port.
+It never changes the pi-link checkout or binds its usual port.
+
 `PI_TEST_CORE_ROOT` selects the core checkout (default `/src/llms/pi`).
 The driver reads its authoritative tsconfig aliases, rebases them to absolute source paths, and supplies an ephemeral config via Bun's `--tsconfig-override` to tests and child processes.
 Transitive workspace imports use source; no build or dependency changes are needed.
@@ -39,7 +50,9 @@ Only model I/O is faux; session execution, RPC framing, pause/handoff, extension
 Manager, production `index.ts`, and coordinator behavior are real.
 Tests need no private production or core-test imports.
 
-The fixture supports the tested CLI subset: `--session` and ordered `--extension` paths.
+The fixture supports the tested CLI subset: `--session`, ordered `--extension` paths, `--tools`, `--no-tools`, and `--no-builtin-tools`.
+Explicit tool selection goes through the real SDK's registration and activation rules, including plain lists and native modifiers.
+Without tool-selection flags, the fixture intentionally disables builtins.
 Model selection is faux; builtins and automatic resource discovery are disabled.
 Paths go through public `resourceLoaderOptions.additionalExtensionPaths` and Pi's shipped
 `DefaultResourceLoader`/jiti loader, including source SDK virtual modules and tsconfig-path handling.
@@ -65,6 +78,13 @@ Completed tool results prevent either batch from being resent on fresh continuat
 production options or fixture-only APIs.
 
 ## Coverage and limits
+
+`manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
+It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.
+It also checks refusal to wake paused or completed children and reply-tool availability with empty and modifier-based task-tool selections.
+`link-integration.test.ts` additionally loads the production subagent extension and pi-link in two real RPC roots connected over WebSocket.
+It checks sender-worker inclusion, two remote siblings independently asking the same question, worker author attribution, private replies, and the absence of worker root connections.
+Only provider responses are scripted; production routing and lifecycle behavior are unchanged.
 
 The suite covers source resolution (including rejection of stale installed `dist/index.js`),
 real RPC prompt/stream/session behavior, held-tool completion, and pause/reopen continuation

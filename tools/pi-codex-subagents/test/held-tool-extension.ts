@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, realpathSync, unlinkSync, writeFileSync } f
 import { dirname, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 export function heldToolFiles(path: string) {
   return { started: `${path}.started`, pauseRequested: `${path}.pause-requested`, release: `${path}.release`, effects: `${path}.effects.jsonl`, ended: `${path}.ended` };
@@ -19,6 +19,13 @@ function assertOwned(path: string): void {
 }
 export default function heldToolExtension(pi: ExtensionAPI): void {
   let lastHeldPath: string | undefined;
+  pi.on("tool_execution_start", event => {
+    if (event.toolName !== "link_reply" || !lastHeldPath) return;
+    assertOwned(lastHeldPath);
+    writeFileSync(`${lastHeldPath}.link-reply-started`, JSON.stringify({
+      holdEnded: existsSync(heldToolFiles(lastHeldPath).ended), toolCallId: event.toolCallId,
+    }));
+  });
   pi.on("agent_settled", (event) => {
     if (!event.aborted || !lastHeldPath || !existsSync(`${lastHeldPath}.defer`)) return;
     unlinkSync(`${lastHeldPath}.defer`);
@@ -49,9 +56,10 @@ export default function heldToolExtension(pi: ExtensionAPI): void {
       return outcome.result;
     },
   });
-  pi.registerTool({
+  const heldParameters = Type.Object({ path: Type.String() });
+  const heldTool: ToolDefinition<typeof heldParameters> = {
     name: "faux_hold", label: "Held integration tool", description: "Wait for an owned test release marker, then record one effect.",
-    parameters: Type.Object({ path: Type.String() }),
+    parameters: heldParameters,
     async execute(toolCallId, { path }, signal) {
       assertOwned(path);
       lastHeldPath = path;
@@ -68,5 +76,9 @@ export default function heldToolExtension(pi: ExtensionAPI): void {
       writeFileSync(files.ended, toolCallId);
       return { content: [{ type: "text", text: "held-tool-effect-recorded" }], details: { toolCallId, path } };
     },
-  });
+  };
+  pi.registerTool(heldTool);
+  // Only the queued-reference test selects this alias; ordinary holds retain
+  // native parallel scheduling for concurrency and pause coverage.
+  pi.registerTool({ ...heldTool, name: "faux_hold_sequential", executionMode: "sequential" });
 }

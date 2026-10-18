@@ -3,6 +3,7 @@
  */
 import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { providerCallsFile } from "./held-tool-extension.ts";
 import { CONTINUATION_MESSAGE } from "../handoff.ts";
@@ -42,7 +43,82 @@ const respond: FauxResponseFactory = (context) => {
   faux.appendResponses([respond]);
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
-  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, lastRole: context.messages.at(-1)?.role })}\n`);
+  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name) })}\n`);
+  const savedLinkTask = context.messages.filter(message => message.role === "user")
+    .map(messageText).map(text => text.match(/^saved-link-reference:(.+)$/m)).find(Boolean);
+  if (savedLinkTask) {
+    const request = JSON.parse(savedLinkTask[1]) as { path: string; replyTo: string };
+    if (text === CONTINUATION_MESSAGE) {
+      const userIndex = context.messages.findLastIndex(message => message === last);
+      const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+      if (completed) return fauxAssistantMessage("faux:saved-reference-replied");
+      const held = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult"
+        && message.toolName === "faux_hold" && message.details?.path === `${request.path}.resume`);
+      return held ? fauxAssistantMessage(fauxToolCall("link_reply", {
+        replyTo: request.replyTo, message: "reply after child recreation",
+      }), { stopReason: "toolUse" })
+        : fauxAssistantMessage(fauxToolCall("faux_hold", { path: `${request.path}.resume` }), { stopReason: "toolUse" });
+    }
+    const calls = context.messages.filter(message => message.role === "assistant")
+      .flatMap(message => message.content).filter(part => part.type === "toolCall");
+    const first = `${request.path}.first`;
+    const second = `${request.path}.second`;
+    if (!calls.some(call => call.name === "faux_hold" && call.arguments.path === first)) {
+      return fauxAssistantMessage(fauxToolCall("faux_hold", { path: first }), { stopReason: "toolUse" });
+    }
+    if (!calls.some(call => call.name === "faux_hold" && call.arguments.path === second)) {
+      return fauxAssistantMessage(fauxToolCall("faux_hold", { path: second }), { stopReason: "toolUse" });
+    }
+    return fauxAssistantMessage("faux:saved-reference-before-pause");
+  }
+  const queuedReply = text.match(/^queued-link-reply:(.+)$/m);
+  if (queuedReply) {
+    const request = JSON.parse(queuedReply[1]) as { path: string; replyTo: string };
+    const userIndex = context.messages.findLastIndex(message => message === last);
+    const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+    return completed ? fauxAssistantMessage("faux:queued-reply-complete") : fauxAssistantMessage([
+      fauxToolCall("faux_hold_sequential", { path: request.path }),
+      fauxToolCall("link_reply", { replyTo: request.replyTo, message: "queued attempt" }),
+    ], { stopReason: "toolUse" });
+  }
+  const invoke = text.match(/^invoke-tool:(.+)$/m);
+  if (invoke) {
+    const request = JSON.parse(invoke[1]) as { name: string; args: Record<string, unknown> };
+    const userIndex = context.messages.findLastIndex(message => message === last);
+    const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === request.name);
+    return completed ? fauxAssistantMessage(`faux:invoked:${request.name}`)
+      : fauxAssistantMessage(fauxToolCall(request.name, request.args), { stopReason: "toolUse" });
+  }
+  if (text.startsWith("[Link") && text.includes("ask-link-question")) {
+    const reference = text.match(/^Message ID: (.+)$/m)?.[1];
+    const originalHold = context.messages.filter(message => message.role === "user")
+      .map(messageText).map(text => text.match(/^hold-tool:(.+)$/m)).find(Boolean);
+    const userIndex = context.messages.findLastIndex(message => message === last);
+    const called = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+    if (reference && originalHold && !called) return fauxAssistantMessage([
+      fauxToolCall("link_reply", { replyTo: reference, message: "same question" }),
+      fauxToolCall("faux_hold", { path: `${originalHold[1]}.after-question` }),
+    ], { stopReason: "toolUse" });
+  }
+  const linkTask = context.messages.filter(message => message.role === "user")
+    .map(messageText).map(text => text.match(/^link-worker:(.+)$/m)).find(Boolean);
+  if (linkTask) {
+    const calls = context.messages.filter(message => message.role === "assistant")
+      .flatMap(message => message.content).filter(part => part.type === "toolCall");
+    const first = `${linkTask[1]}.first`;
+    const second = `${linkTask[1]}.second`;
+    if (!calls.some(call => call.name === "faux_hold" && call.arguments.path === first)) {
+      return fauxAssistantMessage(fauxToolCall("faux_hold", { path: first }), { stopReason: "toolUse" });
+    }
+    const delivered = context.messages.filter(message => message.role === "user").map(messageText)
+      .filter(text => text.startsWith("[Link")).map(text => text.match(/^Message ID: (.+)$/m)?.[1]).filter(Boolean);
+    const reference = delivered.find(id => !calls.some(call => call.name === "link_reply" && call.arguments.replyTo === id));
+    if (reference) return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference, message: "native worker reply" }), { stopReason: "toolUse" });
+    if (!calls.some(call => call.name === "faux_hold" && call.arguments.path === second)) {
+      return fauxAssistantMessage(fauxToolCall("faux_hold", { path: second }), { stopReason: "toolUse" });
+    }
+    return fauxAssistantMessage("faux:link-worker-complete");
+  }
   const parentTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^parent-(nested-|blocked-)?held-task:(.+)$/m)).find(Boolean);
   if (parentTask) {
@@ -87,7 +163,10 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, 
   });
   const result = await createAgentSessionFromServices({
     services, sessionManager, sessionStartEvent, model: faux.getModel(),
-    thinkingLevel: "off", noTools: "builtin",
+    thinkingLevel: "off",
+    tools: option("--tools")?.split(",").map(name => name.trim()).filter(Boolean),
+    noTools: argv.includes("--no-tools") ? "all"
+      : argv.includes("--no-builtin-tools") || option("--tools") === undefined ? "builtin" : undefined,
   });
   if (result.extensionsResult.errors.length) throw new Error(JSON.stringify(result.extensionsResult.errors));
   return { ...result, services, diagnostics: services.diagnostics };

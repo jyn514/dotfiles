@@ -4,8 +4,11 @@ import {
   type ControlRecord, type ControlRequest, type SavedSession,
 } from "./handoff.js";
 
+import { registerChildLink } from "./child-link.js";
+
 /** Explicitly loaded before template extensions; this helper owns no AgentInfo. */
 export default function childHelper(pi: ExtensionAPI): void {
+  registerChildLink(pi);
   const replay = new SessionReplay(pi);
   let generation: string | undefined;
   let snapshot: SavedSession | undefined;

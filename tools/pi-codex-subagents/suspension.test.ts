@@ -651,6 +651,7 @@ test("paused configured direct skill leaves input unhandled and never spawns bef
   const script = `
     import { mock } from "bun:test";
     import assert from "node:assert/strict";
+    import { EventEmitter } from "node:events";
     import { readFileSync, writeFileSync } from "node:fs";
     import { join } from "node:path";
     const root = ${JSON.stringify(root)};
@@ -678,6 +679,7 @@ test("paused configured direct skill leaves input unhandled and never spawns bef
     const { default: extension } = await import(${JSON.stringify(join(import.meta.dir, "index.ts"))});
     const handlers = new Map(), commands = new Map();
     const pi = {
+      events: new EventEmitter(),
       on(name, handler) { const list = handlers.get(name) ?? []; list.push(handler); handlers.set(name, list); },
       registerTool() {}, registerMessageRenderer() {}, registerShortcut() {},
       registerCommand(name, command) { commands.set(name, command); },

@@ -22,6 +22,7 @@ import {
   type ThinkingLevel,
   writeFullToolOutput,
 } from "./core.js";
+import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscovery, type LinkResult, type LinkWorkerReply } from "./link.js";
 import { SubagentPeekOverlay } from "./peek.js";
 import { SuspensionCoordinator } from "./suspension.js";
 
@@ -190,9 +191,36 @@ export default function (pi: ExtensionAPI) {
       refreshAgentWidget();
     },
     onUnclaimedCompletion: deliverCompletion,
+    onLinkReply: async (event) => {
+      const ctx = activeContext;
+      if (!ctx || !isCurrentSession(event.ownerSessionId)) return linkFailure("skipped", "parent_session_not_active");
+      if (suspension?.isPaused(event.ownerSessionId)) return linkFailure("skipped", "parent_paused");
+      let response: Promise<LinkResult> | undefined;
+      const request: LinkWorkerReply = { version: LINK_VERSION, ...event, respond(result) {
+        if (!response) response = Promise.resolve(result);
+      } };
+      pi.events.emit(LINK_REPLY, request);
+      if (!response) return linkFailure("unsupported", "link_integration_unavailable");
+      if (activeContext !== ctx || !isCurrentSession(event.ownerSessionId)) return linkFailure("skipped", "parent_session_changed");
+      return response;
+    },
   });
 
   suspension = new SuspensionCoordinator(pi, manager, completionMessage);
+
+  pi.events.on(LINK_DISCOVER, (value: unknown) => {
+    const request = value as LinkDiscovery;
+    if (!request || request.version !== LINK_VERSION || typeof request.ownerSessionId !== "string"
+      || typeof request.provide !== "function" || !isCurrentSession(request.ownerSessionId)) return;
+    const ctx = activeContext;
+    const owner = request.ownerSessionId;
+    const current = () => activeContext === ctx && isCurrentSession(owner);
+    request.provide({
+      broadcast: message => current() ? manager.broadcastLink(owner, message) : Promise.resolve([]),
+      reply: (worker, message) => current() ? manager.replyLink(owner, worker, message)
+        : Promise.resolve({ status: "skipped", reason: "parent_session_changed" }),
+    });
+  });
 
   pi.on("tool_call", (event: any, ctx: any) => {
     const id = parentSessionId(ctx);
