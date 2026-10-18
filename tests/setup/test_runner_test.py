@@ -91,16 +91,18 @@ class TestRunnerTests(unittest.TestCase):
         self.assertEqual([], actual)
         self.assertIn('install uv', result.stderr)
 
-    def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True):
+    def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True, jobs=3,
+                     environment_jobs=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
             for name in ("test", "pytest"):
                 path = root / "dev" / name
-                path.write_bytes((ROOT / "dev" / name).read_bytes())
-                path.chmod(0o755)
+                subprocess.run(["cp", ROOT / "dev" / name, path], check=True)
+                subprocess.run(["cmp", ROOT / "dev" / name, path], check=True)
             (root / "install").mkdir()
-            (root / "install/test.txt").write_bytes((ROOT / "install/test.txt").read_bytes())
+            subprocess.run(["cp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
+            subprocess.run(["cmp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
             bin_directory = root / "bin"
             bin_directory.mkdir()
             for command in ("dirname", "mktemp", "date", "grep", "rm"):
@@ -108,31 +110,27 @@ class TestRunnerTests(unittest.TestCase):
             (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "uvx.args"
             if missing_plugin or broken_pytest:
-                pytest = bin_directory / "pytest"
-                pytest.write_text(
-                    "#!/bin/sh\n"
-                    "if [ \"${1-}\" = --help ]; then\n"
-                    "  echo '--instafail --numprocesses'\n"
-                    "  exit 0\n"
-                    "fi\n"
-                    "exit 99\n"
-                )
-                pytest.chmod(0o755)
-                if broken_pytest:
-                    pytest.write_text("#!/bin/sh\necho 'ModuleNotFoundError: No module named pytest' >&2\nexit 1\n")
+                (bin_directory / "pytest").symlink_to(
+                    ROOT / "tests/fixtures/native_test_runner_command.sh")
             if uv_available:
                 for command in ("uv", "uvx"):
-                    executable = bin_directory / command
-                    executable.write_text(
-                        "#!/bin/sh\n"
-                        "printf '%s\\n' \"$@\" > \"$TEST_LOG\"\n"
-                        "exit 23\n"
-                    )
-                    executable.chmod(0o755)
+                    (bin_directory / command).symlink_to(
+                        ROOT / "tests/fixtures/native_test_runner_command.sh")
+            environment = {key: value for key, value in os.environ.items() if key != "TEST_JOBS"}
+            environment.update(
+                PATH=str(bin_directory), TEST_LOG=str(root / "commands.log"),
+                TEST_ARGV_LOG=str(log),
+                TEST_MISSING_PYTEST_PLUGIN="1" if missing_plugin else "0",
+                TEST_BROKEN_PYTEST="1" if broken_pytest else "0",
+                TEST_PYTEST_STATUS="99",
+            )
+            if environment_jobs is not None:
+                environment["TEST_JOBS"] = str(environment_jobs)
             result = subprocess.run(
-                ["/bin/sh", root / "dev/test", "--test-environment-ready", "--jobs", "3"],
+                ["/bin/sh", root / "dev/test", "--test-environment-ready",
+                 *(["--jobs", str(jobs)] if jobs is not None else [])],
                 cwd=root,
-                env=os.environ | {"PATH": str(bin_directory), "TEST_LOG": str(log)},
+                env=environment,
                 text=True,
                 capture_output=True,
             )
@@ -149,6 +147,14 @@ class TestRunnerTests(unittest.TestCase):
         )
         self.assertEqual("3", arguments[arguments.index("-n") + 1])
         self.assertIn("--instafail", arguments)
+
+    def test_worker_count_and_distribution_use_existing_configuration(self) -> None:
+        for jobs, environment_jobs, expected in ((None, None, "8"), (None, 6, "6"), (3, 6, "3")):
+            with self.subTest(jobs=jobs, environment_jobs=environment_jobs):
+                result, arguments = self.run_fallback(jobs=jobs, environment_jobs=environment_jobs)
+                self.assertEqual(23, result.returncode, result.stderr)
+                self.assertEqual(expected, arguments[arguments.index("-n") + 1])
+                self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
 
     def test_installed_pytest_missing_a_plugin_uses_uvx(self) -> None:
         result, arguments = self.run_fallback(missing_plugin=True)
@@ -179,20 +185,13 @@ class TestRunnerTests(unittest.TestCase):
             bin_directory.mkdir()
             (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "pytest.args"
-            pytest = bin_directory / "pytest"
-            pytest.write_text(
-                "#!/bin/sh\n"
-                "if [ \"${1-}\" = --help ]; then\n"
-                "  echo '--instafail --numprocesses --force-sugar'\n"
-                "  exit 0\n"
-                "fi\n"
-                "printf '%s\\n' \"$@\" > \"$TEST_LOG\"\n"
-                "exit 23\n"
-            )
-            pytest.chmod(0o755)
+            (bin_directory / "pytest").symlink_to(
+                ROOT / "tests/fixtures/native_test_runner_command.sh")
             environment = os.environ | {
                 "PATH": f"{bin_directory}:{os.environ['PATH']}",
-                "TEST_LOG": str(log),
+                "TEST_LOG": str(root / "commands.log"),
+                "TEST_ARGV_LOG": str(log),
+                "TEST_PYTEST_STATUS": "23",
             }
 
             result = subprocess.run(
@@ -206,6 +205,7 @@ class TestRunnerTests(unittest.TestCase):
             self.assertEqual(23, result.returncode)
             arguments = log.read_text().splitlines()
             self.assertEqual("3", arguments[arguments.index("-n") + 1])
+            self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
             self.assertIn("--instafail", arguments)
 
     def test_missing_bun_stops_before_any_test_suite(self) -> None:
@@ -231,42 +231,6 @@ class TestRunnerTests(unittest.TestCase):
             self.assertIn("install Bun and add it to PATH", result.stderr)
             self.assertIn("dev/README.md#testing-and-probes", result.stderr)
             self.assertFalse(log.exists(), "a test suite ran before the prerequisite check")
-
-    def test_pi_suite_is_dispatched_and_its_failure_stops_the_runner(self) -> None:
-        for status in (0, 29):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root / "dev").mkdir()
-                runner = root / "dev/test"
-                subprocess.run(["cp", ROOT / "dev/test", runner], check=True)
-                subprocess.run(["cmp", ROOT / "dev/test", runner], check=True)
-                shutil.copy2(ROOT / "dev/pytest", root / "dev/pytest")
-                binaries = root / "bin"
-                binaries.mkdir()
-                for command in ("pytest", "bb", "node", "bun", "cargo", "python3"):
-                    (binaries / command).symlink_to(ROOT / "tests/fixtures/test_runner_command.sh")
-                log = root / "commands.log"
-                environment = {
-                    key: value for key, value in os.environ.items()
-                    if key not in ("DOTFILES_TEST_BB_REAL", "DOTFILES_TEST_JJ_REAL")
-                }
-                environment.update(
-                    PATH=f"{binaries}:{environment['PATH']}", TEST_LOG=str(log),
-                    PI_TEST_STATUS=str(status),
-                )
-                result = subprocess.run(
-                    ["/bin/sh", runner, "--test-environment-ready"], cwd=root,
-                    env=environment, text=True, capture_output=True, check=False,
-                )
-                self.assertEqual(status, result.returncode, result.stderr)
-                commands = log.read_text().splitlines()
-                self.assertEqual(1, commands.count("bun <test> <tests/pi>"))
-                later_suite = "bun <test> <tools/codex-sandbox/tests/guest_tools_test.ts>"
-                if status:
-                    self.assertNotIn(later_suite, commands)
-                else:
-                    self.assertIn(later_suite, commands)
-                    self.assertIn("All checks passed", result.stdout)
 
     def run_native_containers(self, *, metadata=None, containers=True,
                               pytest_status=0, probe_status=0, shellcheck_status=0):

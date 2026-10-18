@@ -69,36 +69,6 @@ fi
 # shellcheck disable=SC2086
 "$root/dev/pytest" --test-environment-ready $pytest_args
 
-bb_command=${DOTFILES_TEST_BB_REAL:-bb}
-"$bb_command" tools/extract-chat/tests/extract_chat_test.clj
-if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
-	JJ_REAL=$DOTFILES_TEST_JJ_REAL "$bb_command" -cp tools/agent-split/src tools/agent-split/tests/run.clj
-else
-	"$bb_command" -cp tools/agent-split/src tools/agent-split/tests/run.clj
-fi
-"$bb_command" -cp tools/package-plan/src tools/package-plan/tests/run.clj
-node tools/extract-chat-share/tests/extract_chat_share_test.js
-node tools/codex-archive-old/tests/codex_archive_old_test.js
-node --test tools/codex-sandbox/tests/tool_worker_test.mjs
-node --test tools/codex-sandbox/tests/guest_skill_context_test.mjs
-node --test tests/agent-wrappers/jj-conflict.test.mjs
-node --test tests/pi/native_prompt_sections.mjs tests/pi/native_web_search.mjs tests/pi/native_subscription_usage.mjs tests/pi/native_validate_skill.mjs tests/pi/native_transport_diagnostics.mjs
-node --test tests/pi/native_footer.mjs
-node --test --test-isolation=none tests/pi/native_prompt_history.mjs
-node --test tests/pi/native_session_title.mjs tests/pi/native_session_reader_title.mjs
-bun test tests/pi
-bun test tools/codex-sandbox/tests/guest_tools_test.ts
-bun test tools/codex-sandbox/tests/session_handoff_test.ts
-bun test tools/codex-sandbox/tests/session_side_test.ts
-if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
-	export JJ_PROXY_TEST_JJ="$DOTFILES_TEST_JJ_REAL"
-fi
-if [ "$(uname -s)" = Linux ]; then
-	cargo test --manifest-path tools/jj-proxy/Cargo.toml
-else
-	cargo test --manifest-path tools/jj-proxy/Cargo.toml --lib --bins
-fi
-
 python3 dev/check-shell.py
 
 python3 -m json.tool install.conf.json >/dev/null

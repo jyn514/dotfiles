@@ -12,8 +12,20 @@ if [ "$name" = python3 ]; then
 	esac
 fi
 if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
-	printf '%s\n' '--instafail --numprocesses --force-sugar'
+	if [ "${TEST_BROKEN_PYTEST:-0}" = 1 ]; then
+		echo 'ModuleNotFoundError: No module named pytest' >&2
+		exit 1
+	fi
+	if [ "${TEST_MISSING_PYTEST_PLUGIN:-0}" = 1 ]; then
+		printf '%s\n' '--instafail --numprocesses'
+	else
+		printf '%s\n' '--instafail --numprocesses --force-sugar'
+	fi
 	exit 0
+fi
+if [ "$name" = uvx ]; then
+	printf '%s\n' "$@" > "$TEST_ARGV_LOG"
+	exit 23
 fi
 line=$name
 for argument do line="$line <$argument>"; done
@@ -23,6 +35,9 @@ if [ "$name" = python3 ] && [ "${1:-}" = dev/check-shell.py ]; then
 fi
 if [ "$name" = pytest ]; then
 	printf 'dispatch-home <%s>\n' "$HOME" >> "$TEST_LOG"
+	if [ -n "${TEST_ARGV_LOG:-}" ]; then
+		printf '%s\n' "$@" > "$TEST_ARGV_LOG"
+	fi
 	exit "${TEST_PYTEST_STATUS:-0}"
 fi
 if [ "$name" = python3 ] && [ "${1:-}" = tools/codex-sandbox/tests/image_runtime_integration.py ]; then
