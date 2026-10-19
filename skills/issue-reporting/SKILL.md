@@ -127,6 +127,9 @@ The writing, tightening, and delivery requirements apply only when a report or f
 - Preserve observed output verbatim in a fenced block. State when it is only an
   excerpt or came from an older version. Never relabel old output as a new test.
 
+After writing your report, use `tighten-docs` until you have no further cuts to make.
+Think about what information would be useful to a maintainer; say it as concisely as possible and omit the rest.
+
 ## Check and deliver
 
 Check the final body against the template, applicable contribution requirements,
