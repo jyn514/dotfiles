@@ -160,6 +160,8 @@ Start a new read without `after` to recover.
 Cursors are opaque and local to the selected session file; they are not portable bookmarks between machines or copied sessions.
 Changing `PI_SESSION_SEARCH_MAX_BYTES` also invalidates a cursor because it can change which records count as messages.
 Incomplete trailing JSON waits for a later call rather than advancing the cursor past it.
+Cursors issued before custom-message support keep their original byte boundary and do not replay earlier custom messages.
+Start a new read to include those earlier messages.
 
 Use at most one of `tail: true`, `after`, `aroundEntryId`, and `aroundTimestamp`.
 `maxMessages: 0` returns no messages and preserves the starting cursor position.
@@ -170,10 +172,14 @@ the cursor, `hasMore`, and skipped-record counts.
 Both file and ID selectors return this path, including empty reads; version lists omit the top-level `sessionFile`.
 The ID selector and positioning options are not echoed.
 
-Reads include nonempty user/assistant text and assistant tool-call summaries, not the entire raw transcript.
-They omit tool results, thinking-only messages, and custom entries.
+Reads include nonempty user/assistant text, assistant tool-call summaries, and text from Pi `custom_message` entries.
+Custom messages participate in every read mode, including when Pi hides them in the TUI (`display: false`).
+Their headers and structured message metadata preserve `role: "custom"` and the original `customType`.
+`aroundEntryId` accepts a custom message's entry ID just like a user or assistant entry ID.
+Search still matches only user/assistant messages.
+Reads omit tool results, thinking-only messages, images, custom state entries (`type: "custom"`), and custom-message `details`.
 Tool-call summaries mark truncated arguments with an ellipsis.
-Positions count only eligible messages and exclude oversized records.
+Positions count only eligible messages, including readable custom messages, and exclude oversized records.
 
 ### Codex versions and inherited history
 

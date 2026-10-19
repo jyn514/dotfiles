@@ -25,6 +25,9 @@ const header = JSON.stringify({ type: "session", id: "navigation-session", cwd: 
 function message(id: string | undefined, text: string, role = "user", timestamp = time): string {
 	return JSON.stringify({ type: "message", id, timestamp, message: { role, content: text } });
 }
+function customMessage(id: string, content: unknown, customType: unknown = "scout-result", timestamp = time): string {
+	return JSON.stringify({ type: "custom_message", id, timestamp, customType, content, display: false });
+}
 
 describe("session navigation", () => {
 	let root: string;
@@ -270,8 +273,11 @@ try {
 
 	it("keeps centered reads within the requested radius and retains every positive-limit anchor", async () => {
 		let cases = 0;
+		const observedRoles = new Set<string>();
 		for (const count of [1, 2, 7]) {
-			write(Array.from({ length: count }, (_, i) => message(`entry-${i}`, `message-${i}`)));
+			write(Array.from({ length: count }, (_, i) => i % 3 === 1
+				? customMessage(`entry-${i}`, `message-${i}`)
+				: message(`entry-${i}`, `message-${i}`, i % 3 === 2 ? "assistant" : "user")));
 			for (let target = 0; target < count; target++) {
 				for (const contextMessages of [0, 1, 6]) {
 					for (const maxMessages of [0, 1, 2, 3, 30]) {
@@ -282,6 +288,7 @@ try {
 						if (maxMessages > 0) assert.ok(result.messages.some(m => m.entryId === `entry-${target}`), label);
 						for (let i = 0; i < result.messages.length; i++) {
 							const actual = result.messages[i];
+							observedRoles.add(actual.role);
 							assert.ok(Math.abs(actual.index - (target + 1)) <= contextMessages, label);
 							if (i > 0) assert.equal(actual.index, result.messages[i - 1].index + 1, label);
 						}
@@ -291,6 +298,147 @@ try {
 			}
 		}
 		assert.equal(cases, 150, "all boundary/radius/limit combinations execute without filtering");
+		assert.deepEqual([...observedRoles].sort(), ["assistant", "custom", "user"]);
+	});
+
+	it("reads native hidden and displayed custom messages without exposing state or details", async () => {
+		const source = SessionManager.create(root, join(root, "--native--"));
+		source.appendMessage({ role: "user", content: "preceding context", timestamp: 1 });
+		source.appendCustomEntry("fixture-state", { content: "state-only-marker" });
+		const cases = [
+			{ customType: "scout-result", content: "hidden scout conclusion", display: false, text: "hidden scout conclusion" },
+			{ customType: 'α/quoted"\nkind', display: true, text: "visible conclusion\nadditional evidence",
+				content: [{ type: "text" as const, text: "visible conclusion" },
+					{ type: "image" as const, data: "image-only-marker", mimeType: "image/png" },
+					{ type: "text" as const, text: "additional evidence" }] },
+		];
+		for (const [i, item] of cases.entries()) {
+			const id = source.appendCustomMessageEntry(item.customType, item.content, item.display, { secret: "details-only-marker" });
+			const result = await readSession({ sessionId: source.getSessionId(), aroundEntryId: id, maxMessages: 1 });
+			assert.deepEqual(result.messages, [{ index: i + 2, entryId: id, role: "custom", customType: item.customType,
+				timestamp: source.getEntry(id)!.timestamp }]);
+			assert.ok(result.text.includes(`## custom ${JSON.stringify(item.customType)} @ `));
+			assert.ok(result.text.includes(item.text));
+			assert.ok(!result.text.includes("preceding context"));
+		}
+		const all = await readSession({ sessionId: source.getSessionId() });
+		for (const excluded of ["state-only-marker", "details-only-marker", "image-only-marker"]) {
+			assert.ok(!all.text.includes(excluded), excluded);
+		}
+	});
+
+	it("includes custom text in reads but not search, and excludes malformed or nontext custom entries", async () => {
+		write([
+			message("before", "ordinary context"),
+			customMessage("custom", [{ type: "text", text: "custom-only-needle" },
+				{ type: "toolCall", name: "not-an-assistant-call", arguments: {} }], ""),
+			customMessage("empty", ""), customMessage("image", [{ type: "image", data: "image-marker" }]),
+			customMessage("bad-type", "bad-type-marker", 42),
+			JSON.stringify({ type: "custom_message", id: "missing-type", content: "missing-type-marker" }),
+			JSON.stringify({ type: "custom", customType: "state", content: "state-marker" }),
+			message("tool", "tool-result-marker", "toolResult"),
+			message("after", "assistant context", "assistant"),
+		]);
+		const read = await readSession({ sessionFile });
+		assert.deepEqual(read.messages.map(m => m.entryId), ["before", "custom", "after"]);
+		assert.ok(read.text.includes("custom-only-needle"));
+		for (const marker of ["not-an-assistant-call", "image-marker", "bad-type-marker", "missing-type-marker", "state-marker", "tool-result-marker"]) {
+			assert.ok(!read.text.includes(marker), marker);
+		}
+		assert.equal((await searchSessions({ query: "custom-only-needle" })).hits.length, 0);
+		assert.equal((await searchSessions({ query: "ordinary context" })).hits.length, 1);
+	});
+
+	it("pages mixed message kinds without collapsing identical custom bodies and follows custom appends", async () => {
+		const records = [message("user", "context"), customMessage("first", "same conclusion"),
+			customMessage("second", "same conclusion"), message("assistant", "response", "assistant")];
+		write(records);
+		const expected = ["user", "first", "second", "assistant"];
+		for (const size of [1, 2, 3, 5]) {
+			let result = await readSession({ sessionFile, maxMessages: size });
+			const seen = [...result.messages];
+			while (result.hasMore) {
+				assert.ok(result.messages.length > 0, "every nonterminal page advances");
+				result = await readSession({ sessionFile, after: result.nextCursor, maxMessages: size });
+				seen.push(...result.messages);
+			}
+			assert.deepEqual(seen.map(m => m.entryId), expected, `page size ${size}`);
+			assert.deepEqual(seen.map(m => m.index), [1, 2, 3, 4]);
+		}
+		const tail = await readSession({ sessionFile, tail: true, maxMessages: 3 });
+		assert.deepEqual(tail.messages.map(m => m.entryId), ["first", "second", "assistant"]);
+		const parked = await readSession({ sessionFile, tail: true, maxMessages: 0 });
+		const pending = customMessage("appended", "later scout", "scout-result", "2026-10-13T00:00:00Z");
+		const split = Math.floor(pending.length / 2);
+		appendFileSync(sessionFile, pending.slice(0, split));
+		const incomplete = await readSession({ sessionFile, after: parked.nextCursor });
+		assert.deepEqual(incomplete.messages, []);
+		appendFileSync(sessionFile, pending.slice(split) + "\n");
+		const appended = await readSession({ sessionFile, after: incomplete.nextCursor });
+		assert.deepEqual(appended.messages.map(m => [m.index, m.entryId]), [[5, "appended"]]);
+		const centered = await readSession({ sessionFile, aroundTimestamp: "2026-10-13T00:00:00Z", maxMessages: 1 });
+		assert.deepEqual(centered.messages.map(m => m.entryId), ["appended"]);
+	});
+
+	it("applies the raw record cap to custom messages even when only their details are oversized", async () => {
+		process.env.PI_SESSION_SEARCH_MAX_BYTES = "512";
+		write([JSON.stringify({ type: "custom_message", id: "large", timestamp: time, customType: "scout",
+			content: "small body", details: { data: "x".repeat(1024) }, display: false }),
+			customMessage("small", "readable conclusion")]);
+		const result = await readSession({ sessionFile });
+		assert.equal(result.skippedRecords, 1);
+		assert.deepEqual(result.messages.map(m => [m.index, m.entryId]), [[1, "small"]]);
+		assert.ok(!result.text.includes("small body"));
+	});
+
+	it("resumes legacy Pi cursors at their committed boundary using the new message positions", async () => {
+		for (const [prefix, terminated] of [["ordinary", true], ["mixed", true], ["custom-only", true],
+			["mixed", false], ["custom-only", false]] as const) {
+			const consumed = prefix === "ordinary" ? [message("before", "context")]
+				: prefix === "mixed" ? [customMessage("old-custom", "old result"), message("before", "context")]
+					: [customMessage("old-custom", "old result")];
+			writeFileSync(sessionFile, [header, ...consumed].join("\n") + (terminated ? "\n" : ""));
+			const receipt = await readSession({ sessionFile, tail: true });
+			// v1 used the same byte/hash/identity receipt but counted only ordinary
+			// messages. Its consumed custom messages must not be replayed on upgrade.
+			const legacy = JSON.parse(Buffer.from(receipt.nextCursor!, "base64url").toString("utf8"));
+			legacy.index = prefix === "custom-only" ? 0 : 1;
+			if (prefix !== "ordinary") {
+				await assert.rejects(readSession({ sessionFile, after: Buffer.from(JSON.stringify(legacy)).toString("base64url") }),
+					/stale|boundary/i, "new cursors must not accept the old message count");
+			}
+			legacy.v = 1;
+			const after = Buffer.from(JSON.stringify(legacy)).toString("base64url");
+			const unchanged = await readSession({ sessionFile, after, maxMessages: 0 });
+			assert.deepEqual(unchanged.messages, []);
+			appendFileSync(sessionFile, "\n" + customMessage("new-custom", "new result") + "\n" + message("after", "more context") + "\n");
+			for (const cursor of [after, unchanged.nextCursor]) {
+				const next = await readSession({ sessionFile, after: cursor, maxMessages: 1 });
+				assert.deepEqual(next.messages.map(m => [m.index, m.entryId]), [[consumed.length + 1, "new-custom"]], prefix);
+				const last = await readSession({ sessionFile, after: next.nextCursor });
+				assert.deepEqual(last.messages.map(m => [m.index, m.entryId]), [[consumed.length + 2, "after"]], prefix);
+			}
+			legacy.index += 4;
+			await assert.rejects(readSession({ sessionFile, after: Buffer.from(JSON.stringify(legacy)).toString("base64url") }), /stale|boundary/i);
+		}
+	});
+
+	it("returns native custom messages through Pi's real extension loader", async () => {
+		const source = SessionManager.create(root, join(root, "--native--"));
+		source.appendMessage({ role: "user", content: "context", timestamp: 1 });
+		const id = source.appendCustomMessageEntry("scout-result", "native scout conclusion", false, { data: "private-details-marker" });
+		const loaded = await discoverAndLoadExtensions([fileURLToPath(new URL("../", import.meta.url))], root, join(root, "agent"));
+		assert.deepEqual(loaded.errors, []);
+		const read = loaded.extensions[0].tools.get("read_session")?.definition;
+		assert.ok(read);
+		const result = await read.execute("custom-exact", { sessionId: source.getSessionId(), aroundEntryId: id, maxMessages: 1 },
+			undefined, undefined, {} as Parameters<typeof read.execute>[4]);
+		assert.notEqual(result.isError, true);
+		assert.match(JSON.stringify(result.content), /native scout conclusion/);
+		assert.ok(!JSON.stringify(result.content).includes("private-details-marker"));
+		assert.ok(result.details && typeof result.details === "object" && "messages" in result.details);
+		assert.deepEqual(result.details.messages, [{ index: 2, entryId: id, role: "custom", customType: "scout-result",
+			timestamp: source.getEntry(id)!.timestamp }]);
 	});
 
 	it("returns native Pi entry IDs that round-trip through exact reads", async () => {

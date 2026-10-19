@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `read_session` includes Pi custom-message text in exact, centered, tail, and cursor reads, including hidden messages.
+  Headers and metadata preserve the custom role and `customType`; custom state and message `details` remain excluded.
+  Existing Pi cursors keep their original byte boundary without replaying earlier custom messages.
 - Transcript read details include the selected file's resolved absolute `sessionFile`, for both file and ID selectors.
   Version lists omit this top-level field because no single transcript is selected.
 - Search Pi and Codex JSONL history together with both tools and `/find-sessions`.

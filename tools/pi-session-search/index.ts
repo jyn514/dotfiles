@@ -555,28 +555,38 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 		duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 }
 
-interface WindowEntry {
+type ReadMessageOrigin = { role: "user" | "assistant" } | { role: "custom"; customType: string };
+
+type WindowEntry = ReadMessageOrigin & {
 	ts: number;
 	timestamp: string;
 	entryId?: string;
-	role: "user" | "assistant";
 	text: string;
-}
+};
 
 function windowEntry(record: unknown, source: SessionSource = "pi"): WindowEntry | undefined {
-	const obj = conversationRecord(record, source);
+	const raw = object(record);
+	const custom = source === "pi" && raw?.type === "custom_message";
+	const obj = custom ? raw : conversationRecord(record, source);
 	if (!obj) return;
-	if (obj.type !== "message" || !obj.message || typeof obj.message !== "object") return;
-	const msg = obj.message as { role?: unknown; content?: unknown };
-	if (msg.role !== "user" && msg.role !== "assistant") return;
+	const msg = custom ? obj : object(obj.message);
+	if (!msg) return;
+	let origin: ReadMessageOrigin;
+	if (custom) {
+		if (typeof msg.customType !== "string") return;
+		origin = { role: "custom", customType: msg.customType };
+	} else {
+		if (msg.role !== "user" && msg.role !== "assistant") return;
+		origin = { role: msg.role };
+	}
 	const text = extractText(msg.content);
-	const tools = msg.role === "assistant" ? extractToolCallText(msg.content) : "";
+	const tools = origin.role === "assistant" ? extractToolCallText(msg.content) : "";
 	const combined = [text, tools].filter(Boolean).join("\n");
 	if (!combined) return;
 	return { ts: Date.parse(String(obj.timestamp ?? "")) || 0,
 		timestamp: String(obj.timestamp ?? ""),
 		...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
-		role: msg.role, text: combined };
+		...origin, text: combined };
 }
 
 function parseRecord(line: string): unknown {
@@ -779,13 +789,12 @@ export interface ReadSessionOptions {
 	signal?: AbortSignal;
 }
 
-export interface ReadSessionMessage {
+export type ReadSessionMessage = ReadMessageOrigin & {
 	/** 1-based eligible position in the selected history, not timestamp order. */
 	index: number;
 	entryId?: string;
-	role: "user" | "assistant";
 	timestamp: string;
-}
+};
 
 export interface ReadSessionResult {
 	text: string;
@@ -800,7 +809,8 @@ export interface ReadSessionResult {
 }
 
 interface ReadCursor {
-	v: 1;
+	/** v1 counted only user/assistant messages; v3 also counts Pi custom messages. */
+	v: 1 | 3;
 	file: string;
 	dev: string;
 	ino: string;
@@ -831,7 +841,7 @@ function decodeCursor(raw: string): SessionCursor {
 	catch { throw new Error("Invalid read_session cursor."); }
 	if (!value || typeof value !== "object") throw new Error("Invalid read_session cursor.");
 	const c = value as SessionCursor;
-	if ((c.v !== 1 && c.v !== 2) || !cursorPath(c.file) || (c.v === 2 && !cursorPath(c.at)) ||
+	if ((c.v !== 1 && c.v !== 2 && c.v !== 3) || !cursorPath(c.file) || (c.v === 2 && !cursorPath(c.at)) ||
 		typeof c.dev !== "string" || typeof c.ino !== "string" ||
 		!Number.isFinite(c.birth) || !Number.isSafeInteger(c.offset) || c.offset < 0 ||
 		!Number.isSafeInteger(c.index) || c.index < 0 || !Number.isSafeInteger(c.cap) || c.cap < 1 ||
@@ -917,7 +927,7 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		if (previous) {
 			if (previous.file !== last.relativeFile || previous.dev !== last.identity.dev || previous.ino !== last.identity.ino ||
 				previous.birth !== last.identity.birth || previous.cap !== maxRecordBytes ||
-				(source === "codex" ? previous.v !== 2 : previous.v !== 1) || previousAt < 0 ||
+				(source === "codex" ? previous.v !== 2 : previous.v === 2) || previousAt < 0 ||
 				previous.offset > segments[previousAt].limit) {
 				throw new Error("Stale read_session cursor: file identity or history changed.");
 			}
@@ -927,6 +937,8 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		}
 
 		let total = 0;
+		let ordinaryTotal = 0;
+		let previousIndex = previous?.index ?? 0;
 		let skippedRecords = 0;
 		let nearest = 0;
 		let anchorFound = false;
@@ -947,14 +959,21 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 						nearest = total; anchorFound = true;
 					}
 					total += 1;
+					if (entry.role !== "custom") ordinaryTotal += 1;
 				}
 				if (previous && segmentIndex === previousAt) {
-					if (item.end === previous.offset) previousBoundaryFound = total === previous.index;
-					else if (item.start < previous.offset && previous.offset < item.end &&
-						item.line !== null && record !== undefined && total === previous.index) {
+					// Validate old receipts in their original count, then translate the
+					// position without moving the committed byte boundary.
+					const committedCount = previous.v === 1 ? ordinaryTotal : total;
+					if (item.end === previous.offset) {
+						previousBoundaryFound = committedCount === previous.index;
+						previousIndex = total;
+					} else if (item.start < previous.offset && previous.offset < item.end &&
+						item.line !== null && record !== undefined && committedCount === previous.index) {
 						// A complete final JSON record may later acquire its LF.
 						const prefix = Buffer.from(item.line).subarray(0, previous.offset - item.start).toString("utf8");
 						previousBoundaryFound = parseRecord(prefix) !== undefined;
+						previousIndex = total;
 					}
 				}
 			}
@@ -962,7 +981,7 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		if (previous && !previousBoundaryFound) throw new Error("Stale read_session cursor: committed record boundary changed.");
 		if (opts.aroundEntryId !== undefined && !anchorFound) throw new Error(`No eligible message with entry ID "${opts.aroundEntryId}".`);
 
-		let startIdx = previous?.index ?? 0;
+		let startIdx = previousIndex;
 		let endIdx = Math.min(total, startIdx + max);
 		if (opts.tail) { startIdx = Math.max(0, total - max); endIdx = total; }
 		else if ((Number.isFinite(target) || opts.aroundEntryId !== undefined) && total) {
@@ -976,7 +995,7 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		}
 		const entries: Array<{ entry: WindowEntry; index: number }> = [];
 		let cursorOffset = previous?.offset ?? 0;
-		let cursorIndex = previous?.index ?? 0;
+		let cursorIndex = previousIndex;
 		let cursorAt = previousAt;
 		if (endIdx > startIdx) {
 			let index = 0;
@@ -998,12 +1017,15 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		}
 		const common = { file: last.relativeFile, ...last.identity, offset: cursorOffset, index: cursorIndex, cap: maxRecordBytes };
 		const cursor: SessionCursor = source === "pi"
-			? { v: 1, ...common, hash: await prefixHash(last.handle, cursorOffset, opts.signal) }
+			? { v: 3, ...common, hash: await prefixHash(last.handle, cursorOffset, opts.signal) }
 			: { v: 2, ...common, at: segments[cursorAt].relativeFile,
 				hash: await historyPrefixHash(segments, cursorAt, cursorOffset, opts.signal) };
 		const nextCursor = Buffer.from(JSON.stringify(cursor)).toString("base64url");
-		const messages: ReadSessionMessage[] = entries.map(({ entry, index }) => ({ index,
-			...(entry.entryId === undefined ? {} : { entryId: entry.entryId }), role: entry.role, timestamp: entry.timestamp }));
+		const messages: ReadSessionMessage[] = entries.map(({ entry, index }) => {
+			const origin: ReadMessageOrigin = entry.role === "custom"
+				? { role: entry.role, customType: entry.customType } : { role: entry.role };
+			return { index, ...(entry.entryId === undefined ? {} : { entryId: entry.entryId }), ...origin, timestamp: entry.timestamp };
+		});
 		const hasMore = cursorIndex < total;
 		const out: string[] = [];
 		if (last.header) out.push(`# Session ${last.header.id} — cwd: ${last.header.cwd} — started: ${last.header.timestamp}`);
@@ -1011,7 +1033,8 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		if (skippedRecords) out.push(`# Incomplete coverage: skipped ${skippedRecords} oversized record${skippedRecords === 1 ? "" : "s"}.`);
 		out.push("");
 		for (const { entry, index } of entries) {
-			out.push(`## ${entry.role} @ ${new Date(entry.ts).toISOString()} — message ${index}${entry.entryId === undefined ? "" : ` — entryId: ${JSON.stringify(entry.entryId)}`}`);
+			const label = entry.role === "custom" ? `custom ${JSON.stringify(entry.customType)}` : entry.role;
+			out.push(`## ${label} @ ${new Date(entry.ts).toISOString()} — message ${index}${entry.entryId === undefined ? "" : ` — entryId: ${JSON.stringify(entry.entryId)}`}`);
 			out.push(entry.text, "");
 		}
 		out.push(`# Navigation ${JSON.stringify({ nextCursor, hasMore, skippedRecords })}`);
@@ -1233,7 +1256,7 @@ export default function (pi: ExtensionAPI) {
 				description: "Opaque nextCursor from an earlier transcript read. Continue the same file/version after its committed boundary; safe across appends, errors if consumed history changed or a file was replaced. Transcript reads return cursors even when empty; version lists do not. hasMore covers only the initial snapshot. Mutually exclusive with tail=true and centered modes.",
 			})),
 			aroundEntryId: Type.Optional(Type.String({
-				description: "Exact entryId from a search hit; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
+				description: "Exact entry ID, including Pi custom-message IDs; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
 			})),
 			aroundTimestamp: Type.Optional(
 				Type.String({ description: "Center on the nearest message to a search hit's timestamp (ISO date/time; invalid dates rejected). Ties prefer the first message in file order. Mutually exclusive with other selection modes." }),
