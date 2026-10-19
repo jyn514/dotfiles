@@ -100,7 +100,6 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
     assert.match(prompt, /inspect an existing product-use example/);
     assert.match(prompt, /bounded next action by user benefit and work required/);
     assert.match(prompt, /or report no better alternative/);
-    assert.match(prompt, /If benefit is unknown, choose a cheap check that could decide whether to proceed, rather than defaulting to implementation/);
     assert.doesNotMatch(prompt, /identify one evidence-grounded investigation/);
     assert.match(prompt, /without claiming independence/);
     // Worker policy belongs to the configured template, whose name and report
@@ -115,6 +114,18 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
     assert.match(prompt, /parent retains task-selection authority/);
     assert.match(prompt, /preserve milestone order, acceptance conditions, approvals and explicit holds/);
     assert.match(prompt, /Do not scout after every tool call or repeat an unchanged search without new evidence/);
+  });
+}
+
+for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
+  test(`${kind} scouting compares broader opportunities instead of only the incumbent`, () => {
+    // Regression: a well-researched candidate can still omit a stronger route
+    // through existing machinery when caller evidence covers only that candidate.
+    assert.match(prompt, /including main-pipeline entrypoints/);
+    assert.match(prompt, /Look beyond the current subsystem for missing core capabilities, including incomplete use of existing machinery/);
+    assert.match(prompt, /Compare your recommendation with the strongest credible competing action as well as continuing current work/);
+    assert.match(prompt, /check that distinguishes the competing actions, rather than defaulting to implementation/);
+    assert.match(prompt, /compared with continuing the current work and the strongest credible competing action/);
   });
 }
 

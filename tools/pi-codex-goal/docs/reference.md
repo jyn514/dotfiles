@@ -114,12 +114,15 @@ While a goal is active, the extension:
   This applies even when those tasks differ and none has stalled.
   Use a configured fresh-context scout template when available; its caller contract owns the worker procedure and report format.
   Supply the literal goal, current acceptance condition, latest relevant user correction quoted if any, governing references, and evidence paths.
+  Include main-pipeline entrypoints, not only files for the candidate under discussion.
   Omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale.
   Templates are optional and installation-specific; this package neither installs one nor requires a particular template name.
   Without one, inspect an existing product-use example and assess a next action, not just another investigation.
+  Look beyond the current subsystem for missing core capabilities, including incomplete use of existing machinery.
+  Compare the recommendation with the strongest credible competing action as well as continuing current work.
   The agent decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
-  Do not claim independence; if benefit is unknown, choose a cheap check before implementation.
-  Before accepting an alternative, the parent states why its evidenced or estimated user benefit justifies the work compared with continuing.
+  Do not claim independence; if uncertain benefit or cost determines the choice, use a check that distinguishes the competing actions before implementation.
+  Before accepting an alternative, the parent states why its evidenced or estimated user benefit justifies the work compared with continuing and the strongest credible competitor.
   Include implementation, integration, verification and coordination costs; a technical gap alone does not justify priority.
   No better alternative is a successful result.
   The parent retains task-selection authority and all existing holds.
