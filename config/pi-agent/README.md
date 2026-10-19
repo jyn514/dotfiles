@@ -30,10 +30,13 @@ Use the explicit `parent` template to bypass automatic routing or for generic de
 
 Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) to look for a better next action before extending repeated work toward an active goal.
 Pass the literal goal, current acceptance condition, latest relevant user correction verbatim (if any), governing references, and product/output/current-work evidence entrypoints.
+Include main-pipeline entrypoints, not only files for the candidate currently under discussion.
 Include a complete file path to a current product-use example when available, even if repository searches ignore the file.
 Do not prepare a per-outcome assessment, repeat the scout procedure, or supply a preferred next task.
 The template owns evidence inspection and the benefit/cost report; another investigation is not the required outcome.
-The parent owns when to scout and which task to choose, and must explain why accepting a recommendation beats continuing the current work.
+Discovery can look beyond the current subsystem for missing core capabilities; the selected next action remains bounded.
+Compare against the strongest credible competing action as well as continuing current work, using a discriminating check if uncertainty determines the choice.
+The parent owns when to scout and which task to choose, and must explain why accepting a recommendation beats the competing actions.
 A correct finding alone does not justify selection; no better alternative is a successful scout result.
 The scout inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
 The scout decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
