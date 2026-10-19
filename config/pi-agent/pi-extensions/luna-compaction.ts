@@ -11,8 +11,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 export const COMPACTION_MODEL = {
-  provider: "openai-codex",
-  id: "gpt-5.6-luna",
+  provider: "openai",
+  id: "gpt-6-luna",
 } as const;
 
 // Installed entrypoints are symlinks; resolve the source checkout, not ~/.pi.
