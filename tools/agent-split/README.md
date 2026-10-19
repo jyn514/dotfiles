@@ -69,6 +69,8 @@ bb agent-split --json target/jj-split/my-change.patch \
 ```
 
 The revision defaults to `@`. `--json` emits full selected and remaining change IDs for automation. Use `--` to stop wrapper-option parsing.
+Preflight and selected-tree verification fetch file contents only for paths named in the patch, not every changed file in the revision.
+Revision-wide checks still reject unexpected selected paths and require the complete remainder tree to match the actual split input.
 Verification uses immutable commit IDs from the split operation; the reported change IDs can acquire newer edits afterward.
 Jujutsu's evolution entries identify the actual split input and original remainder, including when split snapshots edits made after preflight.
 Unselected edits made before or after the split are preserved and reported on stderr without corrupting the success JSON.
@@ -139,6 +141,7 @@ Boundary cases distinguish whole-section deletion across empty separators from u
 The Git oracle reads a tree's blobs in one `git cat-file --batch` process, preserving binary bytes and separate paths/modes for identical contents.
 A native regression verifies that increasing blob count does not increase the oracle's process count.
 Other regressions check independent parent-tree copying and symlink metadata queries scoped to each materialization.
+A real-repository regression adds unrelated new and modified files, verifies unchanged per-file read counts, and checks that the split preserves the complete input tree.
 The tests cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection.
 Repositories are disposable and outside the source repository; test artifacts remain ignored.
 `tests/run.clj` registers these tests and is invoked by `dev/test`.

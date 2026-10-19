@@ -755,3 +755,61 @@
                              (fixture/with-templates {:note init-base!}
                                (fn [_] (reset! published? true))))))
       (is (false? @published?) (str failed-step " failure prevents publication")))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj matching-description-does-not-hide-unselected-paths
+  (with-repo*
+    (fn [{:keys [repo] :as ctx}]
+      ;; The selected path already matches the desired selection in full, but
+      ;; another changed file means this is not an already-completed split.
+      (write-file! (fs/file repo "note.txt")
+                   "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n")
+      (write-file! (fs/file repo "other.txt") "keep in remainder\n")
+      (shell! repo "jj" "describe" "-m" "selected")
+      (let [result (run-wrapper-with-args ctx selected-patch "--json")]
+        (is (= 0 (:exit result)) (:err result))
+        (when (zero? (:exit result))
+          (let [{:strs [selected remaining]} (json/parse-string (:out result))]
+            (is (= "note.txt\n" (:out (shell! repo "jj" "diff" "-r" selected "--name-only"))))
+            (is (= "keep in remainder\n"
+                   (:out (shell! repo "jj" "file" "show" "-r" remaining "other.txt"))))))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj unrelated-changes-do-not-add-blob-reads
+  ;; Preserve every input byte, but do not fetch unrelated blobs to select note.txt.
+  ;; Both new and modified files matter: the latter also exist in the parent.
+  (let [reads-per-run (atom [])]
+    (doseq [unrelated-count [0 32]]
+      (with-repo*
+        (fn [{:keys [root repo]}]
+          (let [note (slurp (fs/file repo "note.txt"))]
+            (write-file! (fs/file repo "note.txt")
+                         "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n")
+            (doseq [n (range unrelated-count)]
+              (write-file! (fs/file repo (str "existing/" n ".txt")) "before\n"))
+            (shell! repo "jj" "commit" "-m" "unrelated base")
+            (write-file! (fs/file repo "note.txt") note))
+          (doseq [n (range unrelated-count)]
+            (write-file! (fs/file repo (str "existing/" n ".txt")) "after\n")
+            (write-file! (fs/file repo (str "added/" n ".txt")) "new\n"))
+          (let [input (str/trim (:out (shell! repo "jj" "log" "-r" "@" "--no-graph" "-T" "commit_id")))
+                patch (fs/file repo "target/jj-split/selected.patch")
+                log (fs/file root "reads.jsonl")
+                driver (str (fs/canonicalize "tools/agent-split/tests/fixtures/record_reads.clj"))
+                _ (write-file! patch selected-patch)
+                result (run repo "env" "-u" "SANDBOX_PROXY_DIR"
+                            "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent"
+                            "bb" driver script (str log) "--json" (str patch) "-m" "selected")
+                reads (map #(json/parse-string %) (str/split-lines (slurp log)))
+                blob-reads (filter #(= ["file" "show"] (vec (take 2 %))) reads)]
+            (is (= 0 (:exit result)) (:err result))
+            (swap! reads-per-run conj (count blob-reads))
+            (is (seq blob-reads) "recording observes actual JJ blob reads")
+            (is (every? #(= "note.txt" (last %)) blob-reads)
+                "only selected paths cross the per-file read boundary")
+            (when (zero? (:exit result))
+              (let [{:strs [selected remaining]} (json/parse-string (:out result))]
+                (is (= "note.txt\n" (:out (shell! repo "jj" "diff" "-r" selected "--name-only"))))
+                (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
+                       (:out (shell! repo "jj" "file" "show" "-r" selected "note.txt"))))
+                (is (str/blank? (:out (shell! repo "jj" "diff" "--from" input "--to" remaining "--name-only")))
+                    "the remainder preserves the entire input tree, including unrelated edits")))))))
+    (is (apply = @reads-per-run) "adding unrelated changes does not add per-file reads")))

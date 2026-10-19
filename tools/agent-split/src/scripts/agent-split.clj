@@ -355,16 +355,17 @@
 
 (defn- preflight! [patch-text revision helper-root]
   (validate-patch-paths! patch-text)
-  (let [original-patch (:out (run-jj-read "preflight" "diff" "--git" "-r" revision))
-        original-paths (patch-file-paths original-patch)
+  ;; Containment only needs the patch's paths. Whole-revision checks below still
+  ;; reject unexpected selected files and verify the complete remainder tree.
+  (let [selected-paths (vec (patch-file-paths patch-text))
         left-revision (format "(%s)-" revision)
         left (fs/file helper-root "left")
         right (fs/file helper-root "right")
         selected (fs/file helper-root "selected")
         remaining-patch (fs/file helper-root "remaining.patch")]
     (doseq [tree [left right selected]] (fs/create-dirs tree))
-    (materialize-patch-paths! left-revision original-paths left)
-    (materialize-patch-paths! revision original-paths right)
+    (materialize-patch-paths! left-revision selected-paths left)
+    (materialize-patch-paths! revision selected-paths right)
     ;; Apply to an independent copy of the exact parent tree already read.
     ;; Archive copy preserves raw bytes, executable bits and dangling symlinks.
     (run "preflight" "cp" "-a" (str left "/.") (str selected))
@@ -373,7 +374,7 @@
     (validate-contained!
      (diff-change-index (normalize-diff-paths (diff-output left right) left right))
      (diff-change-index (normalize-diff-paths (diff-output left selected) left selected)))
-    {:original-paths original-paths
+    {:selected-paths selected-paths
      :expected-selected-tree selected}))
 
 (defn- script-dir []
@@ -485,7 +486,7 @@
 (defn- parent-commit-ids [revision]
   (set (revision-ids (str "parents(" revision ")") commit-id-template)))
 
-(declare revision-matches-selected-tree?)
+(declare revision-matches-selected-tree? changed-paths)
 
 (defn- matching-selected-commit [preflight change-id message original-parents helper-root]
   (let [candidates (filter #(and (= message (revision-description %))
@@ -557,16 +558,19 @@
   (run "verify" "jj" "describe" "-r" revision "-m" message))
 
 (defn- revision-matches-selected-tree?
-  [{:keys [original-paths expected-selected-tree]} revision helper-root]
-  (let [actual-tree (fs/file helper-root "already-selected")]
-    (when (fs/exists? actual-tree)
-      (fs/delete-tree actual-tree))
-    (fs/create-dirs actual-tree)
-    (materialize-patch-paths! revision original-paths actual-tree)
-    (str/blank?
-     (normalize-diff-paths (diff-output expected-selected-tree actual-tree)
-                           expected-selected-tree
-                           actual-tree))))
+  [{:keys [selected-paths expected-selected-tree]} revision helper-root]
+  ;; A matching projection is not a matching commit if other paths changed.
+  ;; This also keeps the duplicate-split check from rejecting a valid subset.
+  (and (set/subset? (changed-paths revision) (set selected-paths))
+       (let [actual-tree (fs/file helper-root "already-selected")]
+         (when (fs/exists? actual-tree)
+           (fs/delete-tree actual-tree))
+         (fs/create-dirs actual-tree)
+         (materialize-patch-paths! revision selected-paths actual-tree)
+         (str/blank?
+          (normalize-diff-paths (diff-output expected-selected-tree actual-tree)
+                                expected-selected-tree
+                                actual-tree)))))
 
 (defn- reject-already-applied! [preflight revision message helper-root]
   (when (and (= message (revision-description revision))
@@ -584,15 +588,15 @@
        (remove str/blank?)
        set))
 
-(defn- verify! [{:keys [original-paths expected-selected-tree]}
+(defn- verify! [{:keys [selected-paths expected-selected-tree]}
                 original-commit split-revisions helper-root]
   (let [{:keys [selected-revision remaining-revision]} split-revisions
-        expected-paths (set original-paths)
+        expected-paths (set selected-paths)
         actual-paths (changed-paths selected-revision)
         unexpected-paths (set/difference actual-paths expected-paths)
         actual-selected-tree (fs/file helper-root "verify-selected")
         _ (fs/create-dirs actual-selected-tree)
-        _ (materialize-patch-paths! selected-revision original-paths actual-selected-tree)
+        _ (materialize-patch-paths! selected-revision selected-paths actual-selected-tree)
         selected-diff (normalize-diff-paths
                        (diff-output expected-selected-tree actual-selected-tree)
                        expected-selected-tree

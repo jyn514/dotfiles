@@ -198,7 +198,7 @@
                                     diff-output (fn [& _] "")
                                     run-command (fn [& _] {:out ""})}
                      (fn []
-                       (verify! {:original-paths ["expected.txt"]
+                       (verify! {:selected-paths ["expected.txt"]
                                  :expected-selected-tree expected}
                                 "original"
                                 {:selected "selected-change"
@@ -231,7 +231,7 @@
                                        (spit (fs/file target "note.txt")
                                              (if (= kind :selected) "wrong\n" "wanted\n")))
                         read! (fn [& _] {:out (if (= kind :remaining) "note.txt\n" "")})}
-                       #(verify! {:original-paths ["note.txt"] :expected-selected-tree expected}
+                       #(verify! {:selected-paths ["note.txt"] :expected-selected-tree expected}
                                  "input" {:selected-revision "selected" :remaining-revision "remaining"}
                                  helper))]
           (if diagnostic
@@ -355,24 +355,15 @@
 (deftest ^:needs/git preflight-copies-the-parent-once-with-independent-bytes-modes-and-links
   (let [root (fs/create-temp-dir {:prefix "agent-split-parent-copy"})
         materialize! (ns-resolve 'scripts.jj-split-patch 'materialize-patch-paths!)
-        read! (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
         preflight! (ns-resolve 'scripts.jj-split-patch 'preflight!)
         calls (atom [])
         patch (str "diff --git a/note.txt b/note.txt\n--- a/note.txt\n+++ b/note.txt\n"
                    "@@ -1 +1 @@\n-before\n+after\n")
-        inventory (str patch
-                       "diff --git a/binary b/binary\n"
-                       "diff --git a/nested/run.sh b/nested/run.sh\n"
-                       "diff --git a/link b/link\n"
-                       "diff --git a/dangling b/dangling\n")
         raw-bytes [0 -1 -128 13 10]
         link-target " target with spaces\n"]
     (try
       (with-redefs-fn
-        {read! (fn [_ & args]
-                 (is (= ["diff" "--git" "-r" "revision"] (vec args)))
-                 {:out inventory})
-         materialize! (fn [revision _ target]
+        {materialize! (fn [revision _ target]
                         ;; Negative control: the old third materialization fails.
                         (when (some #{revision} @calls)
                           (throw (ex-info "parent tree was redundantly read" {:revision revision})))

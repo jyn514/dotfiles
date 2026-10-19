@@ -197,7 +197,7 @@ bb agent-split target/jj-split/selected.patch -m 'Extract focused change' @
 ```
 ]
 
-#requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left tree for the touched paths, dry-runs and applies the patch there, and checks that the selected diff is contained in the original `jj diff --git -r <revision>` output.
+#requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left and right trees only for paths named in the patch, dry-runs and applies the patch to an independent left-tree copy, and checks that the selected diff is contained in the canonical Git diff of those paths.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.
 Containment errors identify the selected parent/base line range or insertion gap and the failed comparison.
 They identify the original edit region when applicable; binary and file-mode errors have no invented text coordinates.]
@@ -223,6 +223,8 @@ The wrapper describes the discovered remainder before post-split verification co
 
 #requirement[After the split, the wrapper verifies resulting trees rather than comparing textual diff fragments.
 The selected tree must equal the left tree with the supplied patch applied, and the original remainder's tree must equal the actual split input.
+Selected-tree verification materializes only paths named in the patch and rejects any selected changes outside those paths with a revision-wide changed-path check.
+Remainder verification compares the complete trees, including all unselected paths.
 Jujutsu's selected-commit evolution entry identifies the exact input predecessor and split operation.
 The remainder's evolution entry from that same operation identifies its immutable output, even after later working-copy snapshots.
 If the input tree changed after preflight, containment is rechecked against that input; changed selected source fails verification even when a protected editor applied the patch.
