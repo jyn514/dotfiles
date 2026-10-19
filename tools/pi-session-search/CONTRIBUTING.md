@@ -40,6 +40,16 @@ node --test --test-reporter=tap --experimental-strip-types 'test/**/*.test.ts'
 Check the process exit status and assertion diagnostics, not just reporter text,
 to distinguish an expected regression failure from a setup or import failure.
 
+For native Pi 1.0.2 fixtures, `SessionManager.create()` assigns a session-file path before creating the file.
+`getSessionFile()` returning a path does not establish that the file exists.
+Pi first writes the file after a user or assistant message; custom messages alone remain in memory.
+For transcript-read fixtures, append a user or assistant message before invoking the reader to avoid a setup-time `ENOENT`.
+That first write also persists earlier custom entries and messages.
+
+If the fixture must remain empty or custom-only, write its JSONL explicitly in the disposable sessions root.
+Include a valid session header rather than creating a zero-byte file.
+If a `SessionManager` must continue appending, call `setSessionFile(sessionFile)` after writing the fixture to reload its persisted entries.
+
 To check real Codex recordings without adding their contents to the test suite, supply a read-only corpus explicitly:
 
 ```bash
