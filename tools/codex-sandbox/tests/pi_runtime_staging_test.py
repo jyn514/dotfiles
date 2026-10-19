@@ -1,4 +1,4 @@
-"""Runtime packaging uses npm's dependency graph and published package contents."""
+"""Runtime packaging keeps production packages and their inspectable workspace sources."""
 
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ STAGE = ROOT / "tools/codex-sandbox/image/stage-pi-runtime.mjs"
 
 @unittest.skipUnless(shutil.which("node") and shutil.which("npm"), "Node and npm required")
 class PiRuntimeStagingTest(unittest.TestCase):
-    def test_production_graph_keeps_assets_and_workspace_links_without_build_inputs(self):
+    def test_production_graph_keeps_assets_sources_and_workspace_links_without_build_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             built = Path(directory) / "built"
             source = built / "src"
@@ -62,11 +62,22 @@ class PiRuntimeStagingTest(unittest.TestCase):
                 "docs/usage.md": "runtime documentation",
                 "examples/extension.ts": "runtime example",
                 "src/index.ts": "uncompiled source",
+                "src/tools/edit.ts": "nested source",
                 "test/example.js": "test fixture",
+                "scripts/build.mjs": "build script",
+                "tsconfig.json": "{}",
             })
-            package("runtime", {}, {"dist/index.js": "export const value = 42;\n"})
-            package("compiler", {}, {"dist/index.js": "throw Error('build-only');\n"})
-            package("unrelated", {}, {"dist/index.js": "throw Error('unrelated');\n"})
+            package("runtime", {"dependencies": {"@fixture/js-runtime": "1.0.0"}}, {
+                "dist/index.js": "export const value = 42;\n",
+                "src/index.ts": "export const value: number = 42;\n",
+            })
+            package("js-runtime", {}, {"dist/index.js": "export const js = true;\n"})
+            package("compiler", {}, {
+                "dist/index.js": "throw Error('build-only');\n", "src/index.ts": "build-only source",
+            })
+            package("unrelated", {}, {
+                "dist/index.js": "throw Error('unrelated');\n", "src/index.ts": "unrelated source",
+            })
             subprocess.run([
                 "npm", "install", "--ignore-scripts", "--offline", "--no-audit", "--no-fund",
             ], cwd=source, check=True, capture_output=True, text=True)
@@ -87,8 +98,16 @@ class PiRuntimeStagingTest(unittest.TestCase):
                     self.assertTrue((staged / "docs/usage.md").is_file())
                     self.assertTrue((staged / "examples/extension.ts").is_file())
                     self.assertEqual(include_asset, (staged / "extra-runtime.json").exists())
-                    self.assertFalse((staged / "src").exists())
+                    self.assertEqual("uncompiled source", (staged / "src/index.ts").read_text())
+                    self.assertEqual("nested source", (staged / "src/tools/edit.ts").read_text())
+                    self.assertEqual("export const value: number = 42;\n",
+                                     (output / "src/packages/runtime/src/index.ts").read_text())
+                    self.assertTrue((output / "src/packages/js-runtime/dist/index.js").is_file())
+                    self.assertFalse((output / "src/packages/js-runtime/src").exists())
                     self.assertFalse((staged / "test").exists())
+                    self.assertFalse((staged / "scripts").exists())
+                    self.assertFalse((staged / "tsconfig.json").exists())
+                    self.assertFalse((output / "src/packages/compiler").exists())
                     self.assertFalse((output / "src/node_modules/@fixture/compiler").exists())
                     self.assertFalse((output / "src/packages/unrelated").exists())
                     self.assertTrue((output / "standalone").is_symlink())

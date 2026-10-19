@@ -44,6 +44,11 @@ for (const workspace of workspaces) {
     for (const { path } of packed.files) {
         copy(join(workspace, path), join(destination, relative(source, workspace), path));
     }
+    // Retain the matching sources for inspection without bringing build tools or tests.
+    const workspaceSource = join(workspace, "src");
+    if (existsSync(workspaceSource)) {
+        copy(workspaceSource, join(destination, relative(source, workspace), "src"));
+    }
 }
 
 // npm's .bin links are not packages. Retain only links whose runtime target survived.

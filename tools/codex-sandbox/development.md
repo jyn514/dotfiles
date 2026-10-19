@@ -204,7 +204,9 @@ Passing admission checks alone does not establish compliance with its logging ex
 
 The Pi runtime staging step uses `npm ls --omit=dev` for the coding-agent workspace's installed dependency graph.
 It copies linked workspaces using npm's published file lists and preserves ordinary production dependencies at their installed paths.
-Build tools, tests, and unrelated workspaces stay in the build stage.
+It also retains each selected workspace's `src/` directory for inspecting the exact source used to build the installed Pi.
+Runtime imports still use the published entrypoints in `dist/`.
+Build tools, tests, build configuration, and unrelated workspaces stay in the build stage.
 The standalone entrypoint shares the coding-agent `dist` tree through a symlink, including its binary assets.
 
 Before building images or requesting a host rerun, run the native fixture checks:
