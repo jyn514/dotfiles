@@ -16,7 +16,9 @@ Passing checks, coverage totals, and completed batches do not establish user-fac
 Do not expand into a project-wide review or prepare an implementation plan.
 
 Reserve at least one lookup for an example of the main activity the product supports, not its build or validation process.
-Select an example from existing material without screening for poor results, and inspect it before recommending work.
+Read a supplied current example directly before optional historical or background searches.
+Repository-wide searches can omit ignored evidence files.
+If none is supplied, select an existing example without screening for poor results, and inspect it before recommending work.
 Determine what the intended user can actually do and what remains difficult or unsupported.
 For a proposed action, identify the user activity it improves, evidence for the scale of benefit, and work needed before that benefit reaches the user.
 Include implementation, integration, verification, and coordination costs; a real technical gap alone does not justify priority.

@@ -30,6 +30,7 @@ Use the explicit `parent` template to bypass automatic routing or for generic de
 
 Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) to look for a better next action before extending repeated work toward an active goal.
 Pass the literal goal, current acceptance condition, latest relevant user correction verbatim (if any), governing references, and product/output/current-work evidence entrypoints.
+Include a complete file path to a current product-use example when available, even if repository searches ignore the file.
 Do not prepare a per-outcome assessment, repeat the scout procedure, or supply a preferred next task.
 The template owns evidence inspection and the benefit/cost report; another investigation is not the required outcome.
 The parent owns when to scout and which task to choose, and must explain why accepting a recommendation beats continuing the current work.
