@@ -15,7 +15,9 @@ Discover and follow the target repository's guidance for review thresholds, test
 
 ## Evidence and integration status
 
-These standards define what checks prove during implementation and at completion; consulting them early does not start the full audit. [Design-for-change](../design-for-change/SKILL.md#design-for-testing) owns test construction. [Autonomous-implementation](../autonomous-implementation/SKILL.md) applies these standards to milestone readiness during explicitly authorized unattended work.
+These standards define what checks prove during implementation and at completion; consulting them early does not start the full audit.
+[Design-for-change](../design-for-change/SKILL.md#design-for-testing) owns test construction.
+[Autonomous-work](../autonomous-work/SKILL.md) applies these standards to implementation milestone readiness during explicitly authorized autonomous work.
 
 A worker report, aggregate test count, correct helper, or atomic commit is not evidence that the assembled path works. Distinguish:
 

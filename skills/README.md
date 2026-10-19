@@ -140,7 +140,10 @@ After choosing a design and before implementation:
 Use these independently when their target is already selected:
 
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
-- [autonomous-implementation](autonomous-implementation/SKILL.md) — control explicitly requested autonomous or unattended runs, including milestone order and resumable state; links to [design-for-change](design-for-change/SKILL.md) for implementation/testing and [double-check](double-check/SKILL.md) for evidence standards and completion audits.
+- [autonomous-work](autonomous-work/SKILL.md) — pursue explicitly authorized autonomous runs and active user-authorized goals.
+  Covers implementation, research, writing, planning, and review while preserving activity, acceptance order, independent progress, and resumable state.
+  Implementation testing, integration, audit, and commit procedures apply only when that activity and its effects are authorized.
+  The former [autonomous-implementation](autonomous-implementation/SKILL.md) entry forwards existing callers to this owner.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `design-for-change` — resolve modeling, invariant, interface, ownership, enforcement-mechanism, regression-test, or oracle decisions; skip routine edits with an established shape.
 - `double-check` — audit substantial completed work across components, specifications, migrations, or consequential boundaries; use a diff review and native check for localized edits.
@@ -160,7 +163,10 @@ You do not need the whole chain every time.
 - Simple configuration edit: inspect the diff and validate with the native parser; no design or completion-audit skill is required.
 - Architecture decision: use [design-deliberation](design-deliberation/SKILL.md) to run scouting, independent planning, critique, and fixed-set review.
 - Legacy subsystem: start with `pain-axis` before scouting.
-- Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its conditional companion-skill routes. Add `ratchet` only for unresolved enforcement-policy decisions about baselines, violation identity or counts, bounded exceptions, or replacing guarantees.
+- Explicit autonomous run or active user-authorized goal: start with [autonomous-work](autonomous-work/SKILL.md).
+  Preserve the requested activity and follow its conditional companion-skill routes.
+  A paused goal alone or an ordinary bounded request does not activate it.
+  Add `ratchet` only for unresolved enforcement-policy decisions about baselines, violation identity or counts, bounded exceptions, or replacing guarantees.
 
 ## Important rule
 
