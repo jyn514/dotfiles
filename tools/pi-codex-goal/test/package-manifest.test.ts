@@ -49,11 +49,15 @@ test("create-goal prompt preserves task scope, evidence, replacement and budget 
   assert.match(prompt, /Never complete a blocked goal/);
 });
 
-test("create-goal routes implementation workflow without embedding it in the objective", () => {
+test("create-goal routes every active goal without changing its objective or permissions", () => {
   const prompt = readFileSync("prompts/create-goal.md", "utf8");
   assert.match(prompt, /Keep standing workflow instructions out of the saved objective/);
-  assert.match(prompt, /For a tracked goal requesting implementation through verified completion, read the `autonomous-implementation` skill file at its advertised path, if available, before starting work/);
-  assert.match(prompt, /Do not activate that skill for plan-only, review, research, or writing goals/);
+  assert.match(prompt, /After creating an active goal, read the `autonomous-work` skill file at its advertised path, if available, when work starts or resumes/);
+  assert.match(prompt, /work selection, iteration, recovery, and activity-specific verification/);
+  assert.match(prompt, /does not expand the task's authorized activity or effects/);
+  assert.match(prompt, /Research and review do not authorize fixes, planning does not authorize execution, and drafting does not authorize publication/);
+  assert.match(prompt, /An unavailable optional skill is not a blocker/);
+  assert.doesNotMatch(prompt, /autonomous-implementation|Do not activate that skill for plan-only|\/skill:autonomous-work/);
   assert.doesNotMatch(prompt, /Iteration policy/);
   assert.doesNotMatch(prompt, /Do not leave unapproved shortcuts/);
   assert.doesNotMatch(prompt, /Phrases like "for the scope this is complete"/);

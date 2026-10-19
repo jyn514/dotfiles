@@ -21,8 +21,16 @@ Include:
 3. Task-specific constraints: preserve the user's permissions, protected behavior and files, acceptance boundaries, and any explicit stopping or review points. Preserve existing behavior unless the task changes it, and do not discard user changes.
 4. Completion condition: every explicit requirement must have concrete verification evidence and no required work may remain.
 
-Keep standing workflow instructions out of the saved objective. For a tracked goal requesting implementation through verified completion, read the `autonomous-implementation` skill file at its advertised path, if available, before starting work. Do not activate that skill for plan-only, review, research, or writing goals. The skill owns work selection, iteration, recovery, and completion-review procedure; the goal tools own status changes.
+Keep standing workflow instructions out of the saved objective.
+After creating an active goal, read the `autonomous-work` skill file at its advertised path, if available, when work starts or resumes.
+The skill owns work selection, iteration, recovery, and activity-specific verification; the goal tools own status changes.
+It does not expand the task's authorized activity or effects.
+Research and review do not authorize fixes, planning does not authorize execution, and drafting does not authorize publication.
+An unavailable optional skill is not a blocker.
 
-If missing user input or external work prevents meaningful progress, call `update_goal` with status `blocked` and a dependency reason, then explain what is needed. Do not block while useful work remains. Only explicit `/goal resume` reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.
+If missing user input or external work prevents meaningful progress across the remaining goal, call `update_goal` with status `blocked` and a dependency reason, then explain what is needed.
+Do not block while useful work remains.
+Only explicit `/goal resume` reactivates a blocked goal; ordinary input does not.
+Never complete a blocked goal.
 
 Use concise imperative language in the goal. If the task is blank or only whitespace, infer the goal based on the conversation context or ask the user to clarify.

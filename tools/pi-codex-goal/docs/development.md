@@ -30,6 +30,13 @@ On this maintainer machine, the active global/user Git package already points at
 The historical cases are reduced reconstructions, not full session replays; the milestone-hold case is a contract-derived control.
 These cases are not automatic model tests in `npm run check`.
 
+Distinguish extension-only goal-contract checks from optional `autonomous-work` strategy evaluation.
+Core contracts apply without the skill; prerequisite diagnosis and work selection require a separate skill-present evaluation.
+For that evaluation, retain the exact skill version, advertised path, and evidence that the model actually read its body, not merely that the source changed.
+Include implementation, research, writing, planning, and review goals, plus ordinary bounded-task and inactive-goal controls.
+Check that persistence does not grant unrequested edits, execution, or publication.
+The existing goal-scope fixtures alone do not qualify those activity boundaries.
+
 Compare baseline and candidate standing guidance, the exposed `update_goal` definition, and the compact continuation together.
 Use the same model and case inputs in separate fresh contexts, with disposable action-recording tools rather than a request for a checklist.
 Score the recorded tool choices against `expectedActions`, keeping the answer keys out of model inputs.
@@ -72,6 +79,8 @@ Sessions lacking recorded system rules, goal declarations, an active goal, or mo
 Only `get_goal` calls receive results, using frozen goal state reconstructed from the original branch.
 All other requests stop the replay before execution, including filesystem tools, workers, human questions, and goal mutations.
 A different valid tool request counts as avoiding the block at this decision point; no subsequent progress or continued avoidance is established.
+This includes requesting a skill-file read: the replay does not execute that read or expose its result.
+It cannot qualify skill loading or subsequent workflow behavior.
 Answer-only responses, completion, objective replacement, invalid requests, provider errors, and query exhaustion are inconclusive.
 Mixed batches containing a valid block request count as requesting a block even if they also request another action.
 

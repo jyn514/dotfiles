@@ -105,8 +105,8 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "update_goal",
     label: "Update Goal",
     description:
-      "Mark the whole goal complete only after the objective is achieved, or blocked only after checking remaining unmet outcomes and authorized alternative approaches. A blocked investigation is not a blocked goal. Blocking requires a dependency reason and stops automatic continuation until explicit /goal resume.",
-    promptSnippet: "Complete after an evidence-backed audit. Before blocking, check the whole goal for independent authorized work and alternative approaches. Only /goal resume reactivates blocked goals.",
+      "Mark the whole goal complete only after the objective is achieved, or blocked only when remaining unmet outcomes and independent authorized work cannot progress. A blocked investigation is not a blocked goal. Blocking requires a dependency reason and stops automatic continuation until explicit /goal resume.",
+    promptSnippet: "Complete only after verified achievement of the whole objective; block only when no authorized progress remains. Only /goal resume reactivates blocked goals.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",

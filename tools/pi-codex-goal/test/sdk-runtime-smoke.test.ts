@@ -130,34 +130,23 @@ test("SDK completion report includes its calling response exactly once", async (
     assert.deepEqual(providerPrompt.match(/\bpi__\w+_goal\b/g), ["pi__update_goal"]);
     assert.match(providerPrompt, /every explicit requirement has concrete verification evidence and no required work remains/);
     assert.match(providerPrompt, /Only explicit \/goal resume reactivates a blocked goal; ordinary input does not/);
-    assert.equal(providerPrompt.match(/For a tracked goal requesting implementation through verified completion/g)?.length, 1,
-      "model-created goals receive skill routing through standing guidance without a command continuation");
-    assert.match(providerPrompt, /read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work/);
-    assert.match(providerPrompt, /Do not activate this skill for plan-only, review, research, or writing goals/);
-    assert.match(providerPrompt, /which unmet outcomes remain independent/);
-    assert.match(providerPrompt, /If independent authorized work remains, do that work instead of blocking/);
-    assert.match(providerPrompt, /required by the requested outcome or only by your chosen approach/);
-    assert.equal(providerPrompt.match(/compare the blocker with the current objective and governing requirements/g)?.length, 1,
-      "all three goal tools share one whole-goal blocking procedure in the actual provider transcript");
-    assert.equal(providerPrompt.match(/Before extending repeated similar batches of work/g)?.length, 1,
-      "model-created goals receive one scout instruction through the native provider prompt, not one per goal tool");
-    assert.match(providerPrompt, /Apply this scouting procedure only while a goal is active/);
-    assert.equal(providerPrompt.match(/Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition/g)?.length, 1,
-      "successful but unproductive prerequisite chains receive a scout trigger in the actual provider transcript");
-    assert.match(providerPrompt, /even when those tasks differ and none has stalled/);
-    assert.match(providerPrompt, /Use a configured fresh-context scout template when available/);
-    assert.match(providerPrompt, /follow its caller contract instead of restating its procedure/);
-    assert.match(providerPrompt, /literal goal, current acceptance condition, latest relevant user correction quoted if any/);
-    assert.match(providerPrompt, /omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
-    assert.match(providerPrompt, /user benefit justifies implementation, integration, verification and coordination costs compared with continuing/);
-    assert.match(providerPrompt, /If no scout template is available/);
-    assert.match(providerPrompt, /without claiming independence/);
-    assert.doesNotMatch(providerPrompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);
-    assert.doesNotMatch(providerPrompt, /goal-scout|pi-codex-subagents\/agents/);
+    assert.equal(providerPrompt.match(/For an active goal, read the autonomous-work skill file/g)?.length, 1,
+      "model-created goals receive one optional skill route through standing guidance without a command continuation");
+    assert.match(providerPrompt, /at its advertised path, if available, when starting or resuming work/);
+    assert.match(providerPrompt, /does not expand the task's authorized activity or effects/);
+    assert.match(providerPrompt, /An unavailable optional skill is not a blocker/);
+    assert.equal(providerPrompt.match(/across the remaining goal and no independent authorized work remains/g)?.length, 1,
+      "all three goal tools share one whole-goal blocking contract in the actual provider transcript");
+    // Run strategy is optional and owned outside this package, including in
+    // standing guidance for model-created goals. This host has no skills loaded.
+    assert.equal(loader.getSkills().skills.length, 0);
+    assert.doesNotMatch(providerPrompt, /autonomous-implementation|before adding instrumentation|only by your chosen approach/);
+    assert.doesNotMatch(providerPrompt, /scout|strongest credible competing action|main-pipeline entrypoints/);
     const updateGoal = runner.getToolDefinition("update_goal");
     assert.ok(updateGoal);
     assert.match(updateGoal.description, /whole goal/);
-    assert.match(updateGoal.description, /remaining unmet outcomes and authorized alternative approaches/);
+    assert.match(updateGoal.description, /remaining unmet outcomes and independent authorized work/);
+    assert.doesNotMatch(updateGoal.description, /alternative approaches/);
     assert.match(JSON.stringify(updateGoal.parameters), /why no independent authorized work remains/);
 
     const entries = session.sessionManager.getBranch();

@@ -14,44 +14,28 @@ export function goalToolReference(toolName: GoalToolName): string {
   return toolName;
 }
 
-// The completion invariant applies even when implementation skills are unavailable.
+// Goal-state contracts apply independently of the optional work-strategy skill.
 const COMPLETION_GUIDELINE =
   `Call ${goalToolReference("update_goal")} with status "complete" only when every explicit requirement has concrete verification evidence and no required work remains.`;
 
-const AUTONOMOUS_SKILL_GUIDELINE =
-  "For a tracked goal requesting implementation through verified completion, read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work. If you are stuck or repeatedly making no progress on that implementation goal, re-read its recovery guidance before choosing the next action. Do not activate this skill for plan-only, review, research, or writing goals.";
+const AUTONOMOUS_WORK_GUIDELINE =
+  "For an active goal, read the autonomous-work skill file at its advertised path, if available, when starting or resuming work. If you are stuck or repeatedly making no progress, re-read its recovery guidance before choosing the next action. The skill does not expand the task's authorized activity or effects. An unavailable optional skill is not a blocker.";
 
 const GOAL_SCOPE_GUIDELINE =
-  "Distinguish the governing objective, the current investigation, and other unmet outcomes in existing task state. Narrowing an investigation does not narrow the goal; derive remaining outcomes from the user's objective and governing requirements, not worker assignments or optional cleanup.";
-
-const APPROACH_RECOVERY_GUIDELINE =
-  "When an investigation stalls, before adding instrumentation or delegating more prerequisite work, check whether the dependency is required by the requested outcome or only by your chosen approach. Prefer an existing, simpler approach that advances the same acceptance condition without changing scope, constraints, or the selected design.";
+  "Narrowing an investigation does not narrow the goal; preserve the user's full objective and acceptance conditions.";
 
 const BLOCKED_GOAL_GUIDELINE =
-  `Before calling ${goalToolReference("update_goal")} with status "blocked", compare the blocker with the current objective and governing requirements. Identify what it prevents, which unmet outcomes remain independent of it, and the next authorized action. Respect milestone order and explicit holds; do not substitute unrelated cleanup. A blocked investigation is not a blocked goal. If independent authorized work remains, do that work instead of blocking. If missing user input or external work prevents meaningful progress across the remaining goal, call ${goalToolReference("update_goal")} with status "blocked" and a dependency reason explaining why no independent authorized work remains, then explain what is needed to the user. Do not block while useful work remains. Only explicit /goal resume reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.`;
+  `If missing user input or external work prevents meaningful progress across the remaining goal and no independent authorized work remains, call ${goalToolReference("update_goal")} with status "blocked" and a dependency reason explaining what it prevents and why no independent authorized work remains, then explain what is needed to the user. Do not block while useful work remains. Only explicit /goal resume reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.`;
 
-const SCOUT_GUIDELINE = [
-  "Apply this scouting procedure only while a goal is active.",
-  "Before extending repeated similar batches of work, make one focused search for a more valuable next task, even when the batches succeed.",
-  "Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition, also make one focused search, even when those tasks differ and none has stalled.",
-  "Use a configured fresh-context scout template when available; follow its caller contract instead of restating its procedure.",
-  "Supply the literal goal, current acceptance condition, latest relevant user correction quoted if any, constraint/acceptance references and product/output/current-work evidence paths, including main-pipeline entrypoints rather than only files for the candidate under discussion; omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale.",
-  "If no scout template is available, make a read-only search yourself: inspect an existing product-use example, then assess a bounded next action by user benefit and work required or report no better alternative, without claiming independence. Look beyond the current subsystem for missing core capabilities, including incomplete use of existing machinery. Compare your recommendation with the strongest credible competing action as well as continuing current work. Decide when you have enough evidence for a recommendation or identify a concrete blocker. If the choice depends on uncertain benefit or cost, identify the smallest bounded check that distinguishes the competing actions, rather than defaulting to implementation.",
-  "Before accepting an alternative, state why its evidenced or estimated user benefit justifies implementation, integration, verification and coordination costs compared with continuing the current work and the strongest credible competing action; correctness, novelty or a newly found gap alone is not enough.",
-  "Treat no better alternative as a successful scout result, then choose an actual next action; a scout report alone is not progress.",
-  "The parent retains task-selection authority and must preserve milestone order, acceptance conditions, approvals and explicit holds.",
-  "Do not scout after every tool call or repeat an unchanged search without new evidence.",
-].join(" ");
-
-const WORK_GUIDELINES = [GOAL_SCOPE_GUIDELINE, APPROACH_RECOVERY_GUIDELINE, SCOUT_GUIDELINE, AUTONOMOUS_SKILL_GUIDELINE];
+const GOAL_GUIDELINES = [GOAL_SCOPE_GUIDELINE, AUTONOMOUS_WORK_GUIDELINE];
 
 export const TOOL_PROMPT_GUIDELINES = [
   GOAL_TOOL_NAME_GUIDANCE,
   `Use ${goalToolReference("get_goal")} when you need to inspect the current long-running user objective.`,
   `Use ${goalToolReference("create_goal")} only when the user explicitly asks you to start tracking a concrete goal; do not infer goals from ordinary tasks and do not create a second goal while a non-complete goal already exists. After a goal is complete, ${goalToolReference("create_goal")} replaces it with a new active goal.`,
   COMPLETION_GUIDELINE,
-  ...WORK_GUIDELINES,
-  "When a goal is active, keep working through clear low-risk next steps instead of stopping at a plan.",
+  ...GOAL_GUIDELINES,
+  "When a goal is active, continue clear authorized next steps toward its requested outcome.",
   BLOCKED_GOAL_GUIDELINE,
 ];
 
@@ -140,7 +124,7 @@ export function compactContinuationPrompt(goal: ThreadGoal): string {
     "",
     ...budgetPromptLines(goal, true),
     "",
-    ...WORK_GUIDELINES,
+    ...GOAL_GUIDELINES,
     "",
     COMPLETION_GUIDELINE,
     BLOCKED_GOAL_GUIDELINE,
@@ -158,7 +142,7 @@ export function continuationPrompt(goal: ThreadGoal): string {
     "",
     ...budgetPromptLines(goal, true),
     "",
-    ...WORK_GUIDELINES,
+    ...GOAL_GUIDELINES,
     "",
     COMPLETION_GUIDELINE,
     "",

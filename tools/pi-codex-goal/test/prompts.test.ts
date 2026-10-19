@@ -37,10 +37,7 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
 for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
   test(`${kind} prompt blocks only on dependencies and requires explicit resume`, () => {
     assert.match(prompt, /missing user input or external work prevents meaningful progress/);
-    assert.match(prompt, /compare the blocker with the current objective and governing requirements/);
-    assert.match(prompt, /which unmet outcomes remain independent/);
-    assert.match(prompt, /If independent authorized work remains, do that work instead of blocking/);
-    assert.match(prompt, /Respect milestone order and explicit holds/);
+    assert.match(prompt, /across the remaining goal and no independent authorized work remains/);
     assert.match(prompt, /why no independent authorized work remains/);
     assert.match(prompt, /status "blocked" and a dependency reason/);
     assert.match(prompt, /explain what is needed to the user/);
@@ -51,12 +48,14 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
 }
 
 for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
-  test(`${kind} prompt routes tracked implementation through verified completion to available skill guidance`, () => {
-    assert.match(prompt, /For a tracked goal requesting implementation through verified completion, read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work/);
-    assert.match(prompt, /stuck or repeatedly making no progress on that implementation goal/);
+  test(`${kind} prompt routes every active goal to optional autonomous-work without expanding authority`, () => {
+    assert.match(prompt, /For an active goal, read the autonomous-work skill file at its advertised path, if available, when starting or resuming work/);
+    assert.match(prompt, /stuck or repeatedly making no progress/);
     assert.match(prompt, /re-read its recovery guidance before choosing the next action/);
-    assert.match(prompt, /Do not activate this skill for plan-only, review, research, or writing goals/);
-    assert.doesNotMatch(prompt, /\/skill:autonomous-implementation/);
+    assert.match(prompt, /does not expand the task's authorized activity or effects/);
+    assert.match(prompt, /An unavailable optional skill is not a blocker/);
+    assert.doesNotMatch(prompt, /autonomous-implementation|For a tracked goal requesting implementation|Do not activate this skill for plan-only/);
+    assert.doesNotMatch(prompt, /\/skill:autonomous-work/);
   });
 }
 
@@ -68,76 +67,46 @@ for (const [kind, prompt] of Object.entries({ full, compact })) {
 }
 
 for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
-  test(`${kind} prompt distinguishes investigation scope and checks approach-imposed prerequisites`, () => {
-    assert.match(prompt, /governing objective, the current investigation, and other unmet outcomes in existing task state/);
+  test(`${kind} prompt preserves whole-goal scope without embedding execution strategy`, () => {
     assert.match(prompt, /Narrowing an investigation does not narrow the goal/);
-    assert.match(prompt, /before adding instrumentation or delegating more prerequisite work/);
-    assert.match(prompt, /required by the requested outcome or only by your chosen approach/);
-    assert.match(prompt, /without changing scope, constraints, or the selected design/);
+    assert.match(prompt, /preserve the user's full objective and acceptance conditions/);
+    // The optional skill owns these procedures. Reintroducing them here creates
+    // two independently deployed policies and bypasses its activity boundaries.
+    assert.doesNotMatch(prompt, /before adding instrumentation|delegating more prerequisite work|only by your chosen approach/);
+    assert.doesNotMatch(prompt, /scout|strongest credible competing action|main-pipeline entrypoints/);
+    assert.doesNotMatch(prompt, /read\/search calls|product-use example|at most 200 words/);
   });
 }
 
-for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
-  test(`${kind} prompt delegates scout procedure to an optional template and keeps parent decisions`, () => {
-    // Regression: putting scouting only in the full start prompt leaves model-created
-    // goals and compact resumes following the old work-selection procedure.
-    assert.match(prompt, /Apply this scouting procedure only while a goal is active/);
-    assert.match(prompt, /Before extending repeated similar batches of work/);
-    assert.match(prompt, /even when the batches succeed/);
-    assert.match(prompt, /Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition/);
-    assert.match(prompt, /even when those tasks differ and none has stalled/);
-    assert.match(prompt, /Use a configured fresh-context scout template when available/);
-    assert.match(prompt, /follow its caller contract instead of restating its procedure/);
-    assert.match(prompt, /literal goal, current acceptance condition/);
-    assert.match(prompt, /latest relevant user correction quoted if any/);
-    assert.match(prompt, /constraint\/acceptance references and product\/output\/current-work evidence paths/);
-    assert.match(prompt, /omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
-    assert.match(prompt, /If no scout template is available/);
-    // The former four-call cap stopped scouts before they reached current evidence.
-    // Preserve evidence-based stopping without fixing a replacement call count.
-    assert.match(prompt, /Decide when you have enough evidence for a recommendation or identify a concrete blocker/);
-    assert.doesNotMatch(prompt, /at most (?:four|\d+) read\/search calls/);
-    assert.match(prompt, /inspect an existing product-use example/);
-    assert.match(prompt, /bounded next action by user benefit and work required/);
-    assert.match(prompt, /or report no better alternative/);
-    assert.doesNotMatch(prompt, /identify one evidence-grounded investigation/);
-    assert.match(prompt, /without claiming independence/);
-    // Worker policy belongs to the configured template, whose name and report
-    // budget can change without editing this independently distributed package.
-    assert.doesNotMatch(prompt, /progress snapshot organized|at most 200 words|Which important part of the goal/);
-    assert.doesNotMatch(prompt, /goal-scout|pi-codex-subagents\/agents/);
-    assert.match(prompt, /Before accepting an alternative, state why/);
-    assert.match(prompt, /user benefit justifies implementation, integration, verification and coordination costs compared with continuing/);
-    assert.match(prompt, /correctness, novelty or a newly found gap alone is not enough/);
-    assert.match(prompt, /no better alternative as a successful scout result/);
-    assert.match(prompt, /a scout report alone is not progress/);
-    assert.match(prompt, /parent retains task-selection authority/);
-    assert.match(prompt, /preserve milestone order, acceptance conditions, approvals and explicit holds/);
-    assert.match(prompt, /Do not scout after every tool call or repeat an unchanged search without new evidence/);
-  });
-}
-
-for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
-  test(`${kind} scouting compares broader opportunities instead of only the incumbent`, () => {
-    // Regression: a well-researched candidate can still omit a stronger route
-    // through existing machinery when caller evidence covers only that candidate.
-    assert.match(prompt, /including main-pipeline entrypoints/);
-    assert.match(prompt, /Look beyond the current subsystem for missing core capabilities, including incomplete use of existing machinery/);
-    assert.match(prompt, /Compare your recommendation with the strongest credible competing action as well as continuing current work/);
-    assert.match(prompt, /check that distinguishes the competing actions, rather than defaulting to implementation/);
-    assert.match(prompt, /compared with continuing the current work and the strongest credible competing action/);
-  });
+const activities = {
+  implementation: "Implement CSV export and verify it",
+  research: "Research the failure and report evidence; do not repair it",
+  writing: "Write a checked draft; do not publish it",
+  planning: "Produce a repository-grounded plan; do not execute it",
+  review: "Review the selected revision; do not change files",
+};
+for (const [activity, objective] of Object.entries(activities)) {
+  for (const [kind, render] of Object.entries({ full: continuationPrompt, compact: compactContinuationPrompt })) {
+    test(`${kind} continuation routes an active ${activity} goal without changing its requested outcome`, () => {
+      const prompt = render({ ...created, objective });
+      assert.ok(prompt.includes(`<untrusted_objective>\n${objective}\n</untrusted_objective>`));
+      assert.match(prompt, /For an active goal, read the autonomous-work skill file/);
+      assert.match(prompt, /does not expand the task's authorized activity or effects/);
+      assert.doesNotMatch(prompt, /autonomous-implementation|Do not activate this skill for/);
+    });
+  }
 }
 
 test("budget-limit prompt does not request skill recovery, scouting or alternative work after work has stopped", () => {
-  assert.doesNotMatch(budget, /autonomous-implementation|independent authorized work|simpler approach|scout|bounded search/);
+  assert.doesNotMatch(budget, /autonomous-work|autonomous-implementation|independent authorized work|simpler approach|scout|bounded search/);
 });
 
 test("standing guidance preserves explicit goal creation authorization", () => {
   assert.match(standing, /only when the user explicitly asks you to start tracking a concrete goal/);
   assert.match(standing, /do not infer goals from ordinary tasks/);
   assert.match(standing, /do not create a second goal while a non-complete goal already exists/);
-  assert.match(standing, /When a goal is active, keep working through clear low-risk next steps instead of stopping at a plan/);
+  assert.match(standing, /When a goal is active, continue clear authorized next steps toward its requested outcome/);
+  assert.doesNotMatch(standing, /instead of stopping at a plan/);
 });
 
 test("full continuation reports usage only after successful completion", () => {
@@ -154,7 +123,7 @@ test("compact continuation keeps the authoritative objective, marker, budget and
   assert.match(compact, /Tokens remaining: 10/);
   assert.match(compact, /status "complete" only when every explicit requirement has concrete verification evidence/);
   assert.match(compact, /status "blocked"/);
-  assert.match(compact, /dependency reason explaining why no independent authorized work remains/);
+  assert.match(compact, /dependency reason explaining what it prevents and why no independent authorized work remains/);
   assert.match(compact, /explicit \/goal resume/);
   assert.ok(compact.length < full.length);
 });
