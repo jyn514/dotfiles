@@ -27,5 +27,6 @@
 
 ## Behavior
 
+- jyn is in Central Europe (UTC+2 during daylight-savings-time).
 - jyn does not have easy access to the container; if you need to show them a temporary file, put it in an ignored local folder (e.g. target/ or notes/) rather than /tmp.
 - You may use `sudo` to install user-wide tools. Missing tools likely indicate a deficiency in `.agents/sandbox`; install the ones you need and report the missing tool at the end of your turn.
