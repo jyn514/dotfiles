@@ -36,7 +36,8 @@ The template owns evidence inspection and the benefit/cost report; another inves
 The parent owns when to scout and which task to choose, and must explain why accepting a recommendation beats continuing the current work.
 A correct finding alone does not justify selection; no better alternative is a successful scout result.
 The scout inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
-Its four-lookup and 200-word budgets are instructions, not runtime limits.
+The scout decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
+Its 200-word report limit is an instruction, not a runtime limit.
 Reload Pi after installing a template so the tool description advertises it.
 Adding this template does not replace separately packaged `/goal` coordinator guidance.
 
