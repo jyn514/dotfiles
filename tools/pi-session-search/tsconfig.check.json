@@ -13,6 +13,6 @@
 		"allowImportingTsExtensions": true,
 		"types": ["node"]
 	},
-	"include": ["index.ts", "test/**/*.ts"],
+	"include": ["cli.ts", "index.ts", "test/**/*.ts"],
 	"exclude": ["node_modules", "dist"]
 }

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pi-session-search search` and `pi-session-search read` expose the existing
+  Pi and Codex session APIs as bounded JSON for scripts and non-Pi agents.
+  The CLI preserves API validation and security boundaries, reports usage and
+  operation failures separately, and cancels without emitting partial JSON.
 - `read_session` includes Pi custom-message text in exact, centered, tail, and cursor reads, including hidden messages.
   Headers and metadata preserve the custom role and `customType`; custom state and message `details` remain excluded.
   Existing Pi cursors keep their original byte boundary without replaying earlier custom messages.

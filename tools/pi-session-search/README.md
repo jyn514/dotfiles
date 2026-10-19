@@ -26,9 +26,13 @@ prior Pi and Codex transcripts on disk **without resuming them**.
 - **Command `/find-sessions [flags] <query>`** — manual search from the TUI.
   Flags: `--cwd=substr`, `--role=user|assistant`, `--since=ISO`, `--max=N`.
   Results are printed into the current session as a custom message.
+- **CLI `pi-session-search`** — expose the same search and read operations to
+  scripts and agents outside Pi. Successful operations return structured JSON.
 
-The current session is excluded from results by default (you can override per
-tool call). Read-only — never modifies session files.
+The Pi tool excludes the current session from results by default (you can
+override per tool call). The CLI has no active session; use
+`--exclude-session-id` when needed. All interfaces are read-only and never
+modify session files.
 
 ## Prerequisites
 
@@ -80,6 +84,33 @@ pi -e ~/code/pi-session-search/index.ts
 ```
 
 ## Usage
+
+### Use the CLI
+
+Search both Pi and Codex sessions from a shell:
+
+```bash
+pi-session-search search --cwd cocoa --role user --max-results 5 "dictionary evidence"
+```
+
+Read context around a returned entry without resuming its session:
+
+```bash
+pi-session-search read \
+  --file '<sessionFile from search>' \
+  --around-entry-id '<entryId from search>' \
+  --max-messages 5
+```
+
+`search` returns `SearchResult` as JSON and `read` returns
+`ReadSessionResult` as JSON. Pass each `sessionFile`, `entryId`, and
+`nextCursor` back unchanged. Run `pi-session-search --help`,
+`pi-session-search search --help`, or `pi-session-search read --help` for the
+complete option list.
+
+Errors write one diagnostic to stderr and leave stdout empty. Exit status `2`
+means invalid command syntax, `1` means the session operation failed, and `130`
+means `SIGINT` cancelled the operation.
 
 ### Let the LLM drive
 
