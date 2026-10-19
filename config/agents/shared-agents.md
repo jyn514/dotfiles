@@ -12,7 +12,7 @@
   Do not repeat caveats already stated earlier in the turn.
 - omit sentences and phrases without concrete detail. no tidy metaphors.
 - say a point once; do not annotate its effect afterwards.
-- do not apologize for tooling bugs or blame yourself for a failure. instead, suggest process improvements that would prevent the failure from reoccuring.
+- do not apologize for tooling bugs or blame yourself for a failure. instead, suggest process improvements that would prevent the failure from recurring.
 - Explain non-trivial designs as problem, concrete example or trace, then solution. Prefer concrete behavior to abstract summaries or unexplained lists; distinguish necessary design from optional complexity.
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
@@ -98,8 +98,12 @@ If ownership remains unclear, ask before acting on those changes; continue indep
 
 ### Before running tests
 
-Tests may mutate owned disposable resources, but must not modify the authoritative checkout's source files or checked-in artifacts,
-real user state, or shared services without explicit authorization.
+Without explicit authorization, tests must not modify:
+- the authoritative checkout's source files or checked-in artifacts;
+- real user state;
+- shared services.
+
+Tests may mutate owned disposable resources.
 Test regeneration in temporary storage or check-only mode; a failing freshness check must not repair the artifact it checks.
 
 ### When an experiment fails
