@@ -42,7 +42,7 @@ class TestRunnerTests(unittest.TestCase):
                 '#!/bin/sh\n'
                 'if [ "${1:-}" = --help ]; then\n'
                 + ('  [ -e "$HOME/.pytest-ready" ] || exit 1\n' if user_installed_pytest else '')
-                + '  echo "--instafail --numprocesses --force-sugar"\n'
+                + '  echo "--numprocesses --force-sugar"\n'
                 '  exit 0\nfi\n' + dispatch
             )
             pytest.chmod(0o755)
@@ -82,7 +82,7 @@ class TestRunnerTests(unittest.TestCase):
         requirements = (ROOT / 'install/test.txt').read_text().splitlines()
         self.assertEqual([
             '--from', requirements[0], '--with', requirements[1],
-            '--with', requirements[2], '--with', requirements[3], 'pytest',
+            '--with', requirements[2], 'pytest',
         ], actual[:-len(expected)])
 
     def test_focused_runner_explains_missing_fallback_after_isolation(self):
@@ -92,7 +92,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn('install uv', result.stderr)
 
     def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True, jobs=3,
-                     environment_jobs=None, installed_pytest=False, help_status=0):
+                     environment_jobs=None, installed_pytest=False, help_status=0, verbose=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
@@ -130,7 +130,8 @@ class TestRunnerTests(unittest.TestCase):
                 environment["TEST_JOBS"] = str(environment_jobs)
             result = subprocess.run(
                 ["/bin/sh", root / "dev/test", "--test-environment-ready",
-                 *(["--jobs", str(jobs)] if jobs is not None else [])],
+                 *(["--jobs", str(jobs)] if jobs is not None else []),
+                 *(["--verbose"] if verbose else [])],
                 cwd=root,
                 env=environment,
                 text=True,
@@ -146,11 +147,30 @@ class TestRunnerTests(unittest.TestCase):
         requirements = (ROOT / "install/test.txt").read_text().splitlines()
         self.assertEqual(
             ["--from", requirements[0], "--with", requirements[1],
-             "--with", requirements[2], "--with", requirements[3], "pytest"],
-            arguments[:9],
+             "--with", requirements[2], "pytest"],
+            arguments[:7],
         )
         self.assertEqual("3", arguments[arguments.index("-n") + 1])
-        self.assertIn("--instafail", arguments)
+        self.assertIn("--force-sugar", arguments)
+        self.assertNotIn("--instafail", arguments)
+
+    def test_required_plugins_count_each_test_once(self) -> None:
+        for verbose in (False, True):
+            with self.subTest(verbose=verbose), tempfile.TemporaryDirectory() as directory:
+                result, arguments, _ = self.run_fallback(
+                    installed_pytest=True, uv_available=False, verbose=verbose)
+                self.assertEqual(99, result.returncode, result.stderr)
+                root = Path(directory)
+                test = root / "test_one.py"
+                test.write_text("def test_one():\n    assert True\n")
+                # Exercise the dispatched flags with real plugins, not just fake --help output.
+                result = subprocess.run(
+                    [ROOT / "dev/pytest", *arguments, "--force-sugar", "-c", "/dev/null", str(test)],
+                    cwd=root, text=True, capture_output=True,
+                    env=os.environ | {"PYTEST_ADDOPTS": "", "PYTEST_PLUGINS": ""},
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertRegex(result.stdout, r"\b1\s+passed\b")
 
     def test_worker_count_and_distribution_use_existing_configuration(self) -> None:
         for jobs, environment_jobs, expected in ((None, None, "8"), (None, 6, "6"), (3, 6, "3")):
@@ -224,7 +244,8 @@ class TestRunnerTests(unittest.TestCase):
             arguments = log.read_text().splitlines()
             self.assertEqual("3", arguments[arguments.index("-n") + 1])
             self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
-            self.assertIn("--instafail", arguments)
+            self.assertIn("--force-sugar", arguments)
+            self.assertNotIn("--instafail", arguments)
 
     def test_missing_bun_stops_before_any_test_suite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

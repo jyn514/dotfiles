@@ -22,7 +22,6 @@ RUN python3 -m venv /opt/test-venv \
        pytest==9.1.1 \
        pytest-xdist==3.8.0 \
        pytest-sugar==1.1.1 \
-       pytest-instafail==0.5.0 \
        docker==7.2.0
 
 # Repositories mount beneath /src, so Bun resolves these shared Pi test

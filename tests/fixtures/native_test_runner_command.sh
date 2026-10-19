@@ -20,9 +20,9 @@ if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
 		exit 1
 	fi
 	if [ "${TEST_MISSING_PYTEST_PLUGIN:-0}" = 1 ]; then
-		printf '%s\n' '--instafail --numprocesses'
+		printf '%s\n' '--numprocesses'
 	else
-		printf '%s\n' '--instafail --numprocesses --force-sugar'
+		printf '%s\n' '--numprocesses --force-sugar'
 	fi
 	exit "${TEST_PYTEST_HELP_STATUS:-0}"
 fi

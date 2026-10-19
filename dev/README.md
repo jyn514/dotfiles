@@ -97,6 +97,9 @@ Installed-Pi tests need that build's APIs, not the older locked unit-test SDK in
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
 It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically.
+The runner uses pytest-sugar for progress and immediate failure output, including noninteractive runs.
+Do not also enable pytest-instafail; it conflicts with sugar and inflates pass counts.
+See [pytest-sugar #222](https://github.com/Teemu/pytest-sugar/issues/222).
 The runner uses installed pytest only after a successful plugin check.
 Otherwise it uses `uv` and the pinned requirements in `install/test.txt`, or prints installation guidance if `uv` is unavailable.
 Python tests and the native-suite adapters in `tests/native/` share the existing pytest-xdist scheduler: eight workers and `--dist loadfile`.

@@ -2,7 +2,7 @@
 set -eu
 name=${0##*/}
 if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
-	printf '%s\n' '--instafail --numprocesses --force-sugar'
+	printf '%s\n' '--numprocesses --force-sugar'
 	exit 0
 fi
 printf '%s' "$name" >> "$TEST_LOG"
