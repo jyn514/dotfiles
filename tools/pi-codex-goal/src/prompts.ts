@@ -30,20 +30,20 @@ const APPROACH_RECOVERY_GUIDELINE =
 const BLOCKED_GOAL_GUIDELINE =
   `Before calling ${goalToolReference("update_goal")} with status "blocked", compare the blocker with the current objective and governing requirements. Identify what it prevents, which unmet outcomes remain independent of it, and the next authorized action. Respect milestone order and explicit holds; do not substitute unrelated cleanup. A blocked investigation is not a blocked goal. If independent authorized work remains, do that work instead of blocking. If missing user input or external work prevents meaningful progress across the remaining goal, call ${goalToolReference("update_goal")} with status "blocked" and a dependency reason explaining why no independent authorized work remains, then explain what is needed to the user. Do not block while useful work remains. Only explicit /goal resume reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.`;
 
-const BOUNDED_SCOUT_GUIDELINE = [
+const SCOUT_GUIDELINE = [
   "Apply this scouting procedure only while a goal is active.",
-  "Before extending repeated similar batches of work, make one bounded search for a more valuable next task, even when the batches succeed.",
-  "Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition, also make one bounded search, even when those tasks differ and none has stalled.",
+  "Before extending repeated similar batches of work, make one focused search for a more valuable next task, even when the batches succeed.",
+  "Before extending a chain of supporting tasks that repeatedly succeed locally without advancing the user's acceptance condition, also make one focused search, even when those tasks differ and none has stalled.",
   "Use a configured fresh-context scout template when available; follow its caller contract instead of restating its procedure.",
   "Supply the literal goal, current acceptance condition, latest relevant user correction quoted if any, constraint/acceptance references and product/output/current-work evidence paths; omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale.",
-  "If no scout template is available, make a read-only search yourself using at most four read/search calls: inspect an existing product-use example, then assess a bounded next action by user benefit and work required or report no better alternative, without claiming independence. If benefit is unknown, choose a cheap check that could decide whether to proceed, rather than defaulting to implementation.",
+  "If no scout template is available, make a read-only search yourself: inspect an existing product-use example, then assess a bounded next action by user benefit and work required or report no better alternative, without claiming independence. Decide when you have enough evidence for a recommendation or identify a concrete blocker. If benefit is unknown, choose a cheap check that could decide whether to proceed, rather than defaulting to implementation.",
   "Before accepting an alternative, state why its evidenced or estimated user benefit justifies implementation, integration, verification and coordination costs compared with continuing the current work; correctness, novelty or a newly found gap alone is not enough.",
   "Treat no better alternative as a successful scout result, then choose an actual next action; a scout report alone is not progress.",
   "The parent retains task-selection authority and must preserve milestone order, acceptance conditions, approvals and explicit holds.",
   "Do not scout after every tool call or repeat an unchanged search without new evidence.",
 ].join(" ");
 
-const WORK_GUIDELINES = [GOAL_SCOPE_GUIDELINE, APPROACH_RECOVERY_GUIDELINE, BOUNDED_SCOUT_GUIDELINE, AUTONOMOUS_SKILL_GUIDELINE];
+const WORK_GUIDELINES = [GOAL_SCOPE_GUIDELINE, APPROACH_RECOVERY_GUIDELINE, SCOUT_GUIDELINE, AUTONOMOUS_SKILL_GUIDELINE];
 
 export const TOOL_PROMPT_GUIDELINES = [
   GOAL_TOOL_NAME_GUIDANCE,

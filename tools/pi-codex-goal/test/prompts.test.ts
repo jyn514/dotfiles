@@ -93,7 +93,10 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
     assert.match(prompt, /constraint\/acceptance references and product\/output\/current-work evidence paths/);
     assert.match(prompt, /omit broader conversation history, per-outcome assessments, proposed tasks and accumulated rationale/);
     assert.match(prompt, /If no scout template is available/);
-    assert.match(prompt, /at most four read\/search calls/);
+    // The former four-call cap stopped scouts before they reached current evidence.
+    // Preserve evidence-based stopping without fixing a replacement call count.
+    assert.match(prompt, /Decide when you have enough evidence for a recommendation or identify a concrete blocker/);
+    assert.doesNotMatch(prompt, /at most (?:four|\d+) read\/search calls/);
     assert.match(prompt, /inspect an existing product-use example/);
     assert.match(prompt, /bounded next action by user benefit and work required/);
     assert.match(prompt, /or report no better alternative/);
