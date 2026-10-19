@@ -5,7 +5,7 @@ description: Draft or revise a bug report to another maintainer from observed be
 
 # Issue reporting
 
-When the target project's AI policy permits drafting, produce a maintainer-ready title and issue body.
+Draft only when a report or follow-up is warranted and the target project's AI policy permits it.
 Use the project and bug from the conversation; ask for the target repository only when it cannot be identified.
 Assume jyn is reporting to another maintainer. Transfer the evidence they need to
 investigate without relying on shared context. For a feature request, use the
@@ -26,9 +26,19 @@ Apply project-specific disclosure requirements instead of this skill's default w
 Before drafting, search the target project's open and closed issues and pull requests for existing reports or fixes.
 Search by the visible failure, relevant component, and distinctive error messages or function names.
 Read plausible matches, including relevant comments, and compare their reproductions and affected versions with the current evidence.
-If a matching report exists, recommend adding the new evidence there rather than opening a duplicate, following the project's reporting rules.
+When a matching report exists, read its resolution and relevant maintainer comments before proposing further communication.
+Recommend a follow-up there rather than a duplicate only when new evidence could change the diagnosis, resolution, or requested action.
+Reproducing a known unsupported configuration on newer versions does not, by itself, justify another comment.
 Link related reports and explain the connection when they describe a different failure.
 If search is unavailable or finds no match, state that limit outside the report; do not claim the bug has never been reported.
+
+If the reproduction depends on an explicitly unsupported configuration, identify who selects that configuration.
+Recommend correcting it at its owner rather than reporting the known incompatibility again.
+This does not authorize implementing the correction.
+
+If existing guidance resolves the problem, explain the applicable resolution and stop.
+Do not draft a report or comment merely to satisfy this skill.
+The writing, tightening, and delivery requirements apply only when a report or follow-up is warranted.
 
 1. Read the target project's `CONTRIBUTING.md` and current issue template before
    drafting. Follow its issue-reporting requirements, including instructions it
