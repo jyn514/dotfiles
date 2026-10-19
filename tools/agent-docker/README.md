@@ -53,6 +53,11 @@ Start checks the VM configuration, identity, running network policy, and
 rootless engine before publishing its current SSH port. Restart the sandbox
 after a port change. Setup reruns start for a ready provision; it does not
 upgrade its immutable installation snapshot.
+`doctor` allows 30 seconds for its checks and fails immediately if another lifecycle operation holds its lock.
+For QEMU VMs, it checks execution state through QMP before contacting the guest.
+Lima can report `Running` while QEMU is paused after a disk write failure.
+If it reports `io-error` with `nospace`, follow [resume after disk-space exhaustion](../codex-sandbox/lima/docker.md#resume-a-qemu-vm-after-disk-space-exhaustion).
+The check never resumes or restarts a VM automatically.
 The build service uses a persistent guest-root-owned SSH host key; Lima's
 per-boot administrator host-key rotation does not change this pin.
 

@@ -9,9 +9,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import stat
 import subprocess
 import sys
+import time
 import uuid
 
 SOURCE = Path(__file__).resolve().parent
@@ -22,6 +24,52 @@ from lima.docker_platform import current
 from network_policy import policy_bytes
 
 USER = "agentbuilder"
+DOCTOR_SECONDS = 30
+
+
+def check_qemu(machine, deadline):
+    """Read QMP directly: Lima's Running state does not establish guest execution."""
+    if machine.get("vmType") != "qemu":
+        return
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        def remaining():
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise TimeoutError("QMP inspection deadline exceeded")
+            connection.settimeout(seconds)
+
+        remaining()
+        connection.connect(str(Path(machine["dir"]) / "qmp.sock"))
+        with connection.makefile("rb") as stream:
+            def receive():
+                remaining()
+                line = stream.readline()
+                if not line:
+                    raise ValueError("QMP connection closed")
+                return json.loads(line)
+
+            def execute(name):
+                remaining()
+                connection.sendall(json.dumps({"execute": name, "id": name}).encode() + b"\n")
+                while True:
+                    reply = receive()
+                    if reply.get("id") == name:
+                        if "error" in reply:
+                            raise ValueError(f"QMP {name} failed: {reply['error']}")
+                        return reply["return"]
+
+            if "QMP" not in receive():
+                raise ValueError("QMP greeting is missing")
+            execute("qmp_capabilities")
+            status = execute("query-status")
+            if status["running"]:
+                return
+            blocks = execute("query-block")
+            disks = ", ".join(f"{block['device']}: {block['io-status']}"
+                              for block in blocks if block.get("io-status", "ok") != "ok")
+    raise ValueError(
+        f"QEMU is paused ({status['status']}{'; ' + disks if disks else ''}) despite Lima's Running status; "
+        "inspect host disk space and follow tools/codex-sandbox/lima/docker.md#resume-a-qemu-vm-after-disk-space-exhaustion")
 
 
 def private_file(path):
@@ -67,9 +115,12 @@ class BuildVM:
         self.record_path = self.state / "vm.json"
 
     @contextmanager
-    def locked(self):
+    def locked(self, *, wait=True):
         with (self.state / "lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+            except BlockingIOError as error:
+                raise ValueError("another build VM lifecycle operation holds the lock; retry after it finishes") from error
             yield
 
     def record(self):
@@ -81,8 +132,8 @@ class BuildVM:
             raise ValueError("build VM state has a different identity")
         return record
 
-    def machine(self, record):
-        machine = machines().get(record["instance"])
+    def machine(self, record, *, timeout=900):
+        machine = machines(timeout=timeout).get(record["instance"])
         if machine is None:
             raise ValueError("owned build VM is missing; retain state and provision a new identity")
         digest = hashlib.sha256(json.dumps(machine["config"], sort_keys=True).encode()).hexdigest()
@@ -93,8 +144,8 @@ class BuildVM:
     def guest(self, record, *args, **kwargs):
         return command("limactl", "shell", "--workdir=/", record["instance"], *args, **kwargs)
 
-    def build_ssh(self, record, *args, **kwargs):
-        machine = self.machine(record)
+    def build_ssh(self, record, *args, machine=None, **kwargs):
+        machine = machine if machine is not None else self.machine(record)
         return command("ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes",
                        "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
                        "-o", "HostKeyAlias=agent-docker", "-o", "ConnectTimeout=10",
@@ -211,13 +262,29 @@ class BuildVM:
         self.publish_text(self.access / "connection.env", "".join(f"{key}={value}\n" for key, value in values.items()))
 
     def doctor(self, record):
-        self.machine(record)
-        identity = self.guest(record, "cat", "/etc/machine-id", capture_output=True, text=True).stdout.strip()
+        deadline = time.monotonic() + DOCTOR_SECONDS
+
+        def remaining():
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise ValueError(f"build VM checks exceeded {DOCTOR_SECONDS} seconds")
+            return seconds
+
+        machine = self.machine(record, timeout=remaining())
+        if machine["status"] != "Running":
+            raise ValueError(f"build VM is {machine['status']}; run tools/agent-docker/vm.py start on the host")
+        try:
+            check_qemu(machine, min(deadline, time.monotonic() + 3))
+        except OSError as error:
+            raise ValueError(f"cannot inspect QEMU execution state: {error}; inspect the VM's QMP socket") from error
+        identity = self.guest(record, "cat", "/etc/machine-id", capture_output=True, text=True,
+                              timeout=remaining()).stdout.strip()
         if identity != record["machine_id"]:
             raise ValueError("build VM machine identity changed")
-        self.guest(record, "sudo", "python3", "/usr/local/share/agent-docker/guest-install.py", "--check")
+        self.guest(record, "sudo", "python3", "/usr/local/share/agent-docker/guest-install.py", "--check",
+                   timeout=remaining())
         info = json.loads(self.build_ssh(record, "docker", "info", "--format", "'{{json .}}'",
-                                         capture_output=True, text=True).stdout)
+                                         machine=machine, capture_output=True, text=True, timeout=remaining()).stdout)
         if not any("rootless" in option for option in info["SecurityOptions"]):
             raise ValueError("build Docker daemon is not rootless")
         if record.get("engine_id", info["ID"]) != info["ID"]:
@@ -272,7 +339,7 @@ def main():
     args = parser.parse_args()
     try:
         owner = BuildVM(args.state, args.access)
-        with owner.locked():
+        with owner.locked(wait=args.operation != "doctor"):
             if args.operation == "setup":
                 owner.setup(args.instance)
             elif args.operation == "doctor":

@@ -113,8 +113,8 @@ def bind_source(record, raw, writable=False):
     return path
 
 
-def machines():
-    output = command("limactl", "list", "--json", capture_output=True, text=True).stdout
+def machines(*, timeout=900):
+    output = command("limactl", "list", "--json", capture_output=True, text=True, timeout=timeout).stdout
     return {item["name"]: item for line in output.splitlines() if line for item in [json.loads(line)]}
 
 
