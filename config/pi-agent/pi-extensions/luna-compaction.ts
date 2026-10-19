@@ -36,16 +36,15 @@ export function requireCheckpointHeader(text: string): void {
   }
 }
 
-const REPOSITORY_STATE_LIMIT = 8192;
+const REPOSITORY_STATE_LIMIT = 1536;
 type RepositoryState = {
   cwd: string;
   capturedAt: string;
   state: "observed" | "unknown";
 } & (ExecResult | { error: string });
 
-function repositoryStateText(state: RepositoryState): string {
-  const full = JSON.stringify(state, null, 2);
-  if (full.length <= REPOSITORY_STATE_LIMIT) return full;
+function repositoryStateView(state: RepositoryState) {
+  if (JSON.stringify(state, null, 2).length <= REPOSITORY_STATE_LIMIT) return state;
 
   // Keep both ends (jj puts revision IDs last), without interpreting status lines.
   // Bound the serialized text too: JSON escaping can multiply output length.
@@ -55,12 +54,8 @@ function repositoryStateText(state: RepositoryState): string {
       const half = Math.floor(limit / 2);
       return [key, `${value.slice(0, half)}\n[${value.length - 2 * half} characters omitted]\n${half ? value.slice(-half) : ""}`];
     }));
-    const text = JSON.stringify({
-      ...visible,
-      truncated: true,
-      fullCapture: "Saved compaction entry details.repositoryState",
-    }, null, 2);
-    if (text.length <= REPOSITORY_STATE_LIMIT) return text;
+    const view = { ...visible, truncated: true };
+    if (JSON.stringify(view, null, 2).length <= REPOSITORY_STATE_LIMIT) return view;
   }
 }
 
@@ -72,24 +67,6 @@ function previousCompaction(event: SessionBeforeCompactEvent) {
 function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
   const entry = previousCompaction(event);
   return entry ? checkpointText(entry) : event.preparation.previousSummary;
-}
-
-function fileOperationPointers(modifiedFiles: string[]): string {
-  if (!modifiedFiles.length) return "";
-  const view = {
-    modifiedFiles: [] as string[],
-    omittedFiles: modifiedFiles.length,
-    fullCapture: "Saved compaction entry details.modifiedFiles",
-  };
-  let text = JSON.stringify(view, null, 2);
-  for (const path of modifiedFiles) {
-    view.modifiedFiles.push(path);
-    view.omittedFiles--;
-    const next = JSON.stringify(view, null, 2);
-    if (next.length > 8192) break;
-    text = next;
-  }
-  return `\n\n## Recorded edit/write targets (caller-preserved)\n\nRecovery pointers from recorded tool-call arguments, including failed attempts. These do not establish successful edits, authorship, current working-copy state, or commit coverage.\n\n${text}`;
 }
 
 export default function lunaCompaction(pi: ExtensionAPI): void {
@@ -147,6 +124,9 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       }
       if (checkpoint === undefined) throw new Error("No compaction model is available");
 
+      // The hook runs before Pi assigns the compaction entry ID. Give the raw
+      // capture its own locator so recovery does not depend on summary prose.
+      const captureId = randomUUID();
       let repositoryState: RepositoryState;
       try {
         // Keep the subcommand first for the sandbox's jj wrapper.
@@ -179,13 +159,22 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       }
       const modifiedFiles = [...modified].sort();
       const readFiles = [...preparation.fileOps.read].filter((file) => !modified.has(file)).sort();
+      const capturedContext = {
+        repository: repositoryStateView(repositoryState),
+        recordedEditWriteTargets: modifiedFiles.length,
+        recovery: {
+          sessionId: ctx.sessionManager.getSessionId(),
+          sessionFile: ctx.sessionManager.getSessionFile() ?? null,
+          captureId,
+        },
+      };
       return {
         compaction: {
-          summary: `${checkpoint}${fileOperationPointers(modifiedFiles)}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${repositoryStateText(repositoryState)}`,
+          summary: `${checkpoint}\n\n## Captured context (caller-preserved)\n\nStatus is a snapshot; recorded targets include failed attempts and committed work.\nNeither establishes authorship, commit coverage, or completion.\nFor persisted sessions, recover full records from the raw compaction entry whose \`details.captureId\` matches \`recovery.captureId\`.\nIf the path differs here, find the JSONL filename containing \`recovery.sessionId\` under this environment's Pi session root.\n\`read_session\` omits these capture details.\n\n${JSON.stringify(capturedContext, null, 2)}`,
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
-          details: { readFiles, modifiedFiles, checkpointLength: checkpoint.length, repositoryState },
+          details: { readFiles, modifiedFiles, checkpointLength: checkpoint.length, repositoryState, captureId },
         },
       };
     } catch (error) {

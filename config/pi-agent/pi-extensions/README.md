@@ -296,41 +296,55 @@ and start a new sandbox to deploy the host extension and worker together;
 
 ## Compaction
 
-The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
-covering history and any split-turn prefix.
-The instructions group each activity's permission, progress, holds, reasoning, and recorded next action under **Current work**.
-They omit a separate final action list so continuation instructions stay with the affected activity.
-Under **Open obligations**, they separate required outcomes from unanswered questions rather than deriving tasks from questions.
-They distinguish checks that block committing or claiming completion from dependencies that prevent further work.
+The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
+Its three sections are **Objective and authority**, **Current work**, and **Recovery**.
+Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owners, holds, and recorded next action together.
 Generated checkpoints must include an `Objective and authority` Markdown heading; the extension does not evaluate the meaning of their prose.
 If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
 If generation fails, session history is kept.
 
-The extension appends a repository-state snapshot with `jj status`, the working
-directory, and a capture timestamp. Its serialized JSON is limited to 8,192
-characters. Oversized captures retain the beginning and end of text fields,
-mark omissions, and set `truncated: true`; omitted paths are not evidence of a
-clean working copy. The complete capture is saved in the compaction entry's
-`details.repositoryState`, outside model-visible context.
+The caller appends a short `jj status` excerpt, working directory, capture time, recorded-target count, and recovery locator.
+Oversized status retains the beginning and end of text fields, marks omissions, and sets `truncated: true`.
+The end preserves revision information without parsing individual status lines.
+Failed captures report unknown state; omitted paths do not establish a clean working copy.
+Status can become stale and is not evidence of task completion.
 
-Failed captures report unknown state. The snapshot can become stale and is not
-evidence of task completion. It is excluded from later compaction requests
-rather than summarized again.
+The complete status remains in `details.repositoryState`; all recorded edit/write targets remain in `details.modifiedFiles`.
+Targets come from tool-call arguments, including failed attempts and already committed work, not from current dirty status.
+They do not prove successful edits, authorship, current ownership, or commit coverage.
+Targets from the matching previous checkpoint carry forward, but no target inventory is appended to model-visible context.
+The caller appendix is excluded from later compaction requests using `details.checkpointLength`.
+Task-specific ownership and uncertain-operation paths still belong beside the relevant activity in the generated checkpoint.
 
-The extension also appends recorded edit/write paths as recovery pointers, independently of the generated prose.
-These come from tool-call arguments and can include failed attempts or already committed work;
-they do not prove successful edits, authorship, current working-copy state, or commit coverage.
-Targets from the matching previous checkpoint carry forward without being summarized again or filtered by current status.
-The visible JSON is limited to 8,192 characters without splitting paths and reports how many paths are omitted.
-The complete list remains in `details.modifiedFiles`.
-This preserves recovery paths, not hunk-level provenance or an uncommitted-work inventory.
+### Recover a compaction capture
 
-Instructions are read afresh for each compaction; instruction-only edits need no
-reload. After changing extension code, use `/reload` as described above. Follow
-the [testing guide](../../../dev/README.md#testing-and-probes) to install locked
-dependencies and run the offline compaction tests, including native extension
-loading and resumed-context reconstruction. See [compaction replay](../../../dev/README.md#replay-a-compaction)
-to compare instruction changes against saved sessions.
+The visible `recovery` object identifies the session by `sessionId` and `sessionFile`, and the raw capture by `captureId`.
+The capture ID is also saved as `details.captureId`; it does not depend on the generated prose or timestamp.
+Set `session_file` and `capture_id` to the corresponding visible values, then read the matching raw JSONL entry:
+
+```sh
+jq --arg capture "$capture_id" \
+  'select(.type == "compaction" and .details.captureId == $capture) | .details' \
+  "$session_file"
+```
+
+Select a specific field or status range when the complete capture would exceed tool-output limits.
+If the path uses a different host/guest namespace, find the JSONL filename containing `recovery.sessionId` under this environment's Pi session root.
+For example, with `session_root` and `session_id` set to that root and visible ID:
+
+```sh
+find "$session_root" -type f -name "*_${session_id}.jsonl"
+```
+
+Use the local path for the raw query; `read_session` omits capture details and does not show its resolved path in model-visible output.
+A null `recovery.sessionFile` means an in-memory session with no saved file to query.
+Older compactions have no capture ID; inspect their raw entries by native entry ID instead.
+
+Instructions are read afresh for each compaction; instruction-only edits need no reload.
+After changing extension code, use `/reload` as described above.
+Follow the [testing guide](../../../dev/README.md#testing-and-probes) for locked dependencies and offline compaction tests.
+These include native extension loading, persisted-context reconstruction, and recovery of full captures through their visible locators.
+See [compaction replay](../../../dev/README.md#replay-a-compaction) to compare instruction changes against saved sessions.
 
 ## Side conversations: `/split`
 
