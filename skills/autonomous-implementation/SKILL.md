@@ -35,17 +35,21 @@ Use existing goal, plan, or session state instead of creating another tracking s
 
 ## Choose work that closes the path
 
-Before each task, name the acceptance case it closes and the missing evidence, reproduced failure, or demonstrated prerequisite it addresses. While the acceptance condition remains open, select only work that advances it or resolves a demonstrated prerequisite blocking its check. An unrelated unmet specification item alone does not justify displacement. Preserve milestone order and prerequisites.
+Before each task, name the acceptance case it advances and the missing evidence, reproduced failure, or demonstrated prerequisite it addresses.
+Work may advance the current condition, a demonstrated prerequisite, or another independent authorized part of the governing objective.
+Preserve required milestone order and current integration obligations; another unmet specification item alone does not justify abandoning them.
 
 Before adding a prerequisite, name the acceptance check it prevents and the failing evidence or concrete dependency.
 Distinguish governing requirements from restrictions introduced by the chosen design or experiment.
 Reconsider those restrictions before treating them as prerequisites.
 Where the governing acceptance permits partial results, keep unsupported cases explicitly held while supported cases reach the consumer.
 This does not narrow the milestone or certify held cases.
-If prerequisite or hardening work displaces integration, retain that integration as the next action.
+If prerequisite or hardening work displaces integration, retain that integration as the next action for its acceptance condition.
 An unrelated bug is not a prerequisite; do not repeatedly review an unchanged boundary or add defenses for hypothetical failures.
 
-Switch acceptance conditions only when the current one passes or no authorized advancing work can proceed, with supporting blocker evidence. Retain blocked conditions as unmet and select the next permitted independent condition. Missing real inputs do not block integration using valid fixture inputs.
+Keep unmet acceptance conditions and their scoped blockers visible while independent work proceeds.
+Advance milestone acceptance and integration only when governing prerequisites and required evidence permit.
+Missing real inputs do not block integration using valid fixture inputs.
 
 Before a diagnostic follow-up adds instrumentation or changes its question, compare it with the smallest existing-tool alternative.
 Do this even when the preceding probe produced useful partial evidence.
@@ -63,7 +67,7 @@ Record unspecified choices as assumptions or unresolved decisions, using only de
 
 ## Integrate handoffs before advancing
 
-For unresolved test or fixture decisions, use [design-for-change's testing procedure](../design-for-change/SKILL.md#design-for-testing); otherwise follow the established test pattern. Connect each handoff to the intended consumer or remove the temporary path before starting another fixture-only capability. If blocked, apply [Choose work that closes the path](#choose-work-that-closes-the-path) rather than silently deferring it. An explicitly scoped feasibility probe may stop at its declared acceptance, with downstream integration still unmet.
+For unresolved test or fixture decisions, use [design-for-change's testing procedure](../design-for-change/SKILL.md#design-for-testing); otherwise follow the established test pattern. Connect each handoff to the intended consumer or remove the temporary path before extending that path with another fixture-only capability. If blocked, apply [Choose work that closes the path](#choose-work-that-closes-the-path) rather than silently deferring it. An explicitly scoped feasibility probe may stop at its declared acceptance, with downstream integration still unmet.
 
 When a downstream consumer fails, reuse producer outputs that remain valid for the required consumer and repair the failing boundary. Regenerate only what is missing or invalidated.
 
@@ -81,6 +85,11 @@ You can use `ask_user` to ask me questions and I will answer them when I have ti
 Continue independent authorized work while waiting. If none remains, mark the goal blocked with the missing decision; see [Scope blockers and preserve resumable state](#scope-blockers-and-preserve-resumable-state).
 
 ## Delegated work and integrated milestones
+
+Before awaiting a long-running check or milestone decision, identify valuable authorized work independent of its result and advance or delegate it.
+Preserve the candidate under verification; isolate parallel edits when they would invalidate its inputs or evidence.
+Serialize only dependent decisions, conflicting mutations, and resource-constrained operations, not all work toward the goal.
+If no useful independent work remains, wait rather than inventing work.
 
 Delegate only tasks permitted by [Choose work that closes the path](#choose-work-that-closes-the-path).
 Use [delegation](../delegation/SKILL.md) for assignments, useful parallel work, waiting, review, and integration.
