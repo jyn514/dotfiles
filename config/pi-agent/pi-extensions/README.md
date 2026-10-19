@@ -298,7 +298,8 @@ and start a new sandbox to deploy the host extension and worker together;
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
 Its three sections are **Objective and authority**, **Current work**, and **Recovery**.
-Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owners, holds, and recorded next action together.
+Checkpoints carry forward the last established user request when no newer request is recorded.
+Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owning session or agent, holds, and recorded next action together.
 Generated checkpoints must include an `Objective and authority` Markdown heading; the extension does not evaluate the meaning of their prose.
 If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
 If generation fails, session history is kept.

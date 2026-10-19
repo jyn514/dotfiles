@@ -57,6 +57,7 @@ Use these sections in order, omitting empty or inapplicable content; state neces
 ### Objective and authority
 
 State the governing objective, its source and goal status, and latest request separately.
+When no newer request is recorded, carry forward the last established user request instead of reporting only “no new request.”
 Resolve short follow-ups such as “review,” “fix,” or “implement” against the most recently selected task, not automatically against the ongoing goal or previous checkpoint.
 Preserve unrelated pauses and approval boundaries.
 Include explicit user corrections from earlier and latest turns, including for paused work, as “When doing [kind of work], [corrected instruction],” using the user's rule and wording where possible; do not turn domain-specific corrections into global prohibitions.
@@ -64,6 +65,8 @@ Include explicit user corrections from earlier and latest turns, including for p
 ### Current work
 
 Start with the current local task, then relevant background activities.
+Name each activity's owning session or agent when established, distinguishing this conversation's work from work owned elsewhere.
+Do not use “parent” alone when it could refer to different conversations or coordinators.
 Keep all established unmet obligations visible, including paused or externally blocked work.
 For each activity, keep its permission and phase, progress, unmet outcome or actual question, selected next action and why, state and qualified evidence/limits, pending worker identity, owned files or interfaces and return status, and scoped holds/blockers together.
 State what a hold affects and preserve consequential source wording, prerequisites, concurrent-edit warnings, and uncertain effects.
