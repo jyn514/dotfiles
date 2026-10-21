@@ -104,6 +104,9 @@ Legacy continuations without objective blocks remain readable; saved session ent
 
 ## Behavior
 
+Inactive goals stop automatic goal continuation, not ordinary authorized requests or their tool calls.
+Handling an ordinary request does not by itself reactivate the saved goal.
+
 While a goal is active, the extension:
 
 - Tracks elapsed active time between turns and tool completions.
