@@ -2,6 +2,6 @@
   "name": "dotfiles-pi-extensions",
   "private": true,
   "dependencies": {
-    "pi-mcp-adapter": "2.26.0"
+    "pi-mcp-adapter": "5.2.0"
   }
 }
