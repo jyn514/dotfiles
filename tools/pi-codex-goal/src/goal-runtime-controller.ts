@@ -20,9 +20,9 @@ import {
   resetRecoveryMachine,
   setRecoveryPausedAttention,
 } from "./recovery-machine.ts";
-import { goalWithLiveUsage, updateGoalStatus, validateObjective } from "./state.ts";
+import { goalWithLiveUsage, updateGoalFromTool, updateGoalStatus, validateObjective } from "./state.ts";
 import { registerGoalTools } from "./tools.ts";
-import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
+import type { GoalToolStatus, GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalForDisplay(): ThreadGoal | null;
@@ -30,7 +30,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
   editGoalObjective(goalId: string, objective: string, ctx: StatusContext): GoalResult;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: GoalToolStatus, reason?: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -175,7 +175,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     source: GoalEntrySource,
     ctx: ExtensionContext,
     toolCallId: string,
-    status: "complete" | "blocked",
+    status: GoalToolStatus,
     reason?: string,
   ): GoalResult => {
     const goal = stateController.getGoal();
@@ -186,10 +186,11 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
         goal,
       };
     }
-    const validation = updateGoalStatus(goal, status, reason);
+    const validation = updateGoalFromTool(goal, status, reason);
     if (!validation.ok) {
       return validation;
     }
+    if (status === "paused") return stateController.updateGoal(source, ctx, status, reason);
     providerLimitAutoResume.clear();
     if (status === "blocked") {
       continuation.clearPostCompactContinuationFallback();

@@ -26,7 +26,7 @@ test("blocking clears continuation timers and makes already accepted continuatio
   } finally { mock.timers.reset(); }
 });
 
-test("blocking a provider-paused goal cancels its pending auto-resume", async () => {
+test("annotating a provider-paused goal after ordinary input keeps it paused without auto-resume", async () => {
   mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   try {
     const h = createRuntimeHarness();
@@ -34,10 +34,12 @@ test("blocking a provider-paused goal cancels its pending auto-resume", async ()
     h.sentMessages.length = 0;
     await emitPersistentAssistantError(h, 0, "usage limit has been reached");
     assert.match(h.footerStatuses.at(-1) ?? "", /Auto-resume/);
-    await h.runTool("update_goal", { status: "blocked", reason: "Need user approval" });
+    await assert.rejects(() => h.runTool("update_goal", { status: "blocked", reason: "Need user approval" }), /already-paused/);
+    await h.emit("input", { type: "input", text: "Explain the pause", source: "interactive" });
+    await h.runTool("update_goal", { status: "paused", reason: "Need user approval" });
     fireProviderLimitAutoResume();
     flushContinuationScheduler();
-    assert.equal(h.snapshot().goal?.status, "blocked");
+    assert.equal(h.snapshot().goal?.status, "paused");
     assert.equal(h.sentUserMessages.length, 0);
     assert.equal(h.sentMessages.length, 0);
     assert.equal(h.abortCount, 0);
@@ -69,7 +71,7 @@ test("blocked goal cannot be completed, replaced by a stale response, or bypass 
   await h.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   const message = { ...assistantMessage("toolUse", { input: 500_000, output: 2 }), content: [{ type: "toolCall" as const, id: "block", name: "update_goal", arguments: { status: "blocked", reason: "Missing file" } }] };
   h.appendMessage(message);
-  await assert.rejects(() => h.runTool("update_goal", { status: "blocked", reason: "Missing file" }, "block"), /Only active or paused goals/);
+  await assert.rejects(() => h.runTool("update_goal", { status: "blocked", reason: "Missing file" }, "block"), /Only active goals/);
   assert.equal(h.snapshot().goal?.status, "budgetLimited");
   assert.equal(h.snapshot().goal?.usage.tokensUsed, 500_002);
   await h.runCommand("resume");

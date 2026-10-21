@@ -9,6 +9,7 @@ import {
   type GoalSnapshot,
   type GoalStatus,
   type GoalUsage,
+  type GoalToolStatus,
   type RuntimeUsageGoalStatus,
   type SessionEntryLike,
   type ThreadGoal,
@@ -51,6 +52,7 @@ export function goalsEquivalent(left: ThreadGoal, right: ThreadGoal): boolean {
     left.objective === right.objective &&
     left.status === right.status &&
     left.blockedReason === right.blockedReason &&
+    left.pausedReason === right.pausedReason &&
     left.tokenBudget === right.tokenBudget &&
     left.createdAt === right.createdAt &&
     left.updatedAt === right.updatedAt &&
@@ -200,6 +202,7 @@ export function isThreadGoal(goal: unknown): goal is ThreadGoal {
     typeof candidate.goalId === "string" &&
     typeof candidate.objective === "string" &&
     isGoalStatus(candidate.status) &&
+    (candidate.pausedReason === undefined || typeof candidate.pausedReason === "string") &&
     (candidate.blockedReason === undefined || typeof candidate.blockedReason === "string") &&
     (candidate.status !== "blocked" || Boolean(candidate.blockedReason?.trim())) &&
     (candidate.tokenBudget === null || typeof candidate.tokenBudget === "number") &&
@@ -359,8 +362,8 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
   }
 
   if (status === "blocked") {
-    if (current.status !== "active" && current.status !== "paused") {
-      return { ok: false, message: "Only active or paused goals can be blocked.", goal: current };
+    if (current.status !== "active") {
+      return { ok: false, message: 'Only active goals can be blocked. To record a dependency on an already-paused goal, use update_goal with status "paused" and a reason.', goal: current };
     }
     if (typeof blockedReason !== "string" || !blockedReason.trim()) {
       return { ok: false, message: "A non-empty reason describing the missing input or external dependency is required.", goal: current };
@@ -375,6 +378,7 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
   if (status === "complete") {
     const goal = cloneGoal(current);
     goal.status = "complete";
+    delete goal.pausedReason;
     goal.updatedAt = unixSeconds();
     return {
       ok: true,
@@ -401,6 +405,7 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
 
   const goal = cloneGoal(current);
   delete goal.blockedReason;
+  delete goal.pausedReason;
   if (current.status === "budgetLimited" && (status === "active" || status === "paused")) {
     goal.status = "budgetLimited";
   } else {
@@ -413,6 +418,24 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     message: `Goal marked ${goal.status}.`,
     goal,
   };
+}
+
+// Tool authority differs from command pause/resume authority.
+export function updateGoalFromTool(current: ThreadGoal | null, status: GoalToolStatus, reason?: string): GoalResult {
+  if (status !== "paused") return updateGoalStatus(current, status, reason);
+  if (!current || current.status !== "paused") {
+    return { ok: false, message: "Only an already-paused goal can receive a pause reason.", goal: current };
+  }
+  if (typeof reason !== "string" || !reason.trim()) {
+    return { ok: false, message: "A non-empty reason for the paused goal is required.", goal: current };
+  }
+  if (current.pausedReason === reason.trim()) {
+    return { ok: true, message: "Pause reason unchanged.", goal: current };
+  }
+  const goal = cloneGoal(current);
+  goal.pausedReason = reason.trim();
+  goal.updatedAt = unixSeconds();
+  return { ok: true, message: "Pause reason recorded; goal remains paused.", goal };
 }
 
 export function applyUsage(

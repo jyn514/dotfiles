@@ -13,6 +13,7 @@ export interface GoalToolRecord {
   objective: string;
   status: GoalStatus;
   blockedReason?: string;
+  pausedReason?: string;
   tokenBudget: number | null;
   tokensUsed: number;
   timeUsedSeconds: number;
@@ -121,6 +122,10 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
     lines.push(`Blocked on: ${goal.blockedReason}`);
   }
 
+  if (goal.status === "paused" && goal.pausedReason) {
+    lines.push(`Paused because: ${goal.pausedReason}`);
+  }
+
   lines.push(`Hint: ${commandHint(goal.status)}`);
   return lines.join("\n");
 }
@@ -190,6 +195,7 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
     objective: goal.objective,
     status: goal.status,
     ...(goal.blockedReason !== undefined ? { blockedReason: goal.blockedReason } : {}),
+    ...(goal.pausedReason !== undefined ? { pausedReason: goal.pausedReason } : {}),
     tokenBudget: goal.tokenBudget,
     tokensUsed: goal.usage.tokensUsed,
     timeUsedSeconds: goal.usage.activeSeconds,

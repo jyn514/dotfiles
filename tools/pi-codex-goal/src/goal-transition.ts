@@ -149,6 +149,7 @@ function requireStatus(current: ThreadGoal, expected: GoalStatus, kind: string):
 function deriveGoalWithStatus(current: ThreadGoal, status: GoalStatus): ThreadGoal {
   const next = cloneGoal(current);
   next.status = statusAfterBudgetLimit(status, next.usage.tokensUsed, next.tokenBudget);
+  if (next.status !== "paused") delete next.pausedReason;
   next.updatedAt = unixSeconds();
   return next;
 }

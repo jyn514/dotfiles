@@ -13,11 +13,14 @@ export interface ThreadGoal {
 	objective: string;
 	status: GoalStatus;
 	blockedReason?: string;
+	pausedReason?: string;
 	tokenBudget: number | null;
 	usage: GoalUsage;
 	createdAt: number;
 	updatedAt: number;
 }
+
+export type GoalToolStatus = "complete" | "blocked" | "paused";
 
 export type GoalEntrySource = "command" | "tool" | "runtime";
 

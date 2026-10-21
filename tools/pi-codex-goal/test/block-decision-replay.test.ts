@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test, { type TestContext } from "node:test";
 
 import {
-  createAssistantMessageEventStream, InMemoryCredentialStore, InMemoryModelsStore, Type,
+  createAssistantMessageEventStream, getCurrentTools, InMemoryCredentialStore, InMemoryModelsStore, Type, validateToolCall,
   type AssistantMessage, type Tool, type ToolCall,
 } from "@earendil-works/pi-ai";
 import * as sdk from "@earendil-works/pi-coding-agent";
@@ -124,7 +124,7 @@ const cases: [string, ToolCall[], AssistantMessage["stopReason"], DecisionKind][
   ["read requests need no existing file", [call("read", { path: "/missing/ignored.json" })], "toolUse", "action_requested"],
   ["answer-only is not a demonstrated action", [], "stop", "answer_only"],
   ["missing tool call at a tool-use boundary", [], "toolUse", "inconclusive"],
-  ["invalid status", [call("update_goal", { status: "paused" })], "toolUse", "inconclusive"],
+  ["invalid status", [call("update_goal", { status: "unrecognized" })], "toolUse", "inconclusive"],
   ["missing block reason", [call("update_goal", { status: "blocked" })], "toolUse", "inconclusive"],
   ["unknown tool", [call("unavailable")], "toolUse", "inconclusive"],
   ["truncated response", [call("read", { path: "x" })], "length", "inconclusive"],
@@ -137,6 +137,58 @@ for (const [name, calls, stopReason, expected] of cases) {
     assert.equal(result.responses.length, 1);
   });
 }
+
+test("registered candidate declarations do not turn ineligible updates into block avoidance", async t => {
+  const candidate = await loadGuidance(resolve("src"));
+  const input = applyGuidance(context, { guidelines: ["Old goal guidance"], tools: [] }, candidate);
+  const declarations = getCurrentTools(input.messages);
+  assert.equal(goal.status, "active", "replay eligibility is defined for active seeds");
+  const blockCall = call("update_goal", { status: "blocked", reason: "External dependency" });
+  validateToolCall(declarations, blockCall);
+  const block = await replayDecision(input, goal, async () => response([blockCall]));
+  assert.equal(block.kind, "block_requested");
+
+  for (const status of ["paused", "active"] as const) {
+    const update = call("update_goal", {
+      status, reason: "Dependency resolved or pause annotated",
+      ...(status === "active" ? { goal_id: goal.goalId } : {}),
+    });
+    let available = true;
+    try { validateToolCall(declarations, update); }
+    catch (error) {
+      // Activation is exposed in the second logical implementation step. Once
+      // registered, this same case must reach eligibility, not schema rejection.
+      if (status !== "active") throw error;
+      assert.match(String(error), /status: must be equal to one of the allowed values/);
+      available = false;
+      t.diagnostic("active is not registered yet; paused must still exercise replay eligibility");
+    }
+    for (const calls of [[update], [call("read", { path: "/missing/ignored.json" }), update]]) {
+      const result = await replayDecision(input, goal, async () => response(calls));
+      assert.equal(result.kind, "inconclusive", `${status}, batch size ${calls.length}`);
+      assert.equal(compareDecisions(block, result).outcome, "inconclusive");
+      assert.match(result.reason, available ? /ineligible on the active replay seed/ : /Invalid or unavailable tool call/);
+      assert.deepEqual(result.calls, calls);
+      assert.equal(result.responses.length, 1);
+    }
+  }
+
+  for (const action of [call("read", { path: "/missing/ignored.json" }), call("bash", { command: "echo not-executed" })]) {
+    validateToolCall(declarations, action);
+    const result = await replayDecision(input, goal, async () => response([action]));
+    assert.equal(result.kind, "action_requested");
+    assert.equal(compareDecisions(block, result).outcome, "avoided_at_decision_point");
+  }
+  for (const [update, expected] of [
+    [call("update_goal", { status: "complete" }), "completion_requested"],
+    [call("create_goal", { objective: "Different task", replace_existing: true }), "goal_change_requested"],
+  ] as const) {
+    validateToolCall(declarations, update);
+    const result = await replayDecision(input, goal, async () => response([update]));
+    assert.equal(result.kind, expected);
+    assert.equal(compareDecisions(block, result).outcome, "inconclusive");
+  }
+});
 
 test("a proposed bash mutation is recorded but never executes", async t => {
   const canary = join(temporary(t), "must-not-exist");

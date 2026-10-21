@@ -32,7 +32,7 @@ The template follows the goal-writing practices in OpenAI's [Codex follow-goals 
 `/goal` with no arguments reports the current objective, status, token budget, token usage, and elapsed active time. A plain `/goal <objective>` starts a new unlimited goal or replaces the current one after confirmation. `/goal copy` copies the objective for active, paused, blocked, budget-limited, and completed goals.
 
 `/goal edit` opens a multiline editor prefilled with the current objective in interactive and supported RPC clients.
-Saving changes only the objective and its update timestamp; it preserves the goal ID, usage, budget, status, and any blocked reason.
+Saving changes only the objective and its update timestamp; it preserves the goal ID, usage, budget, status, and any blocked or paused reason.
 The revised objective reaches subsequent model turns without interrupting a running turn or starting or resuming work.
 Completed goals remain completed.
 Canceling or saving unchanged text leaves the goal untouched; saving after the goal was cleared or replaced discards the edit.
@@ -71,6 +71,11 @@ The reason should explain what the dependency prevents and why no independent au
 These are model instructions, not a mechanical proof that the goal is blocked; the tool still enforces only the existing status and non-empty-reason rules.
 
 Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction. It cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool. Use `/goal` to inspect the dependency and explicit `/goal resume` to reactivate the goal. Ordinary input or reopening the session cannot resume it, and completion is rejected while blocked. Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
+
+Use `status: "paused"` with a non-empty `reason` only to annotate an already-paused goal.
+This does not pause an active goal or resume work; it preserves saved usage, and repeating the same trimmed reason adds no entry.
+`/goal` and tool output show the reason; objective edits and reload preserve it, while resume and completion clear it.
+An agent cannot change a paused goal to blocked.
 
 Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries. The extension accounts the assistant response calling either status change before persisting it; completion reports final token and elapsed-time usage.
 

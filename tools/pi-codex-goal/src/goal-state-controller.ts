@@ -21,9 +21,9 @@ import {
   hostOverflowCapResetEntry,
   reconstructGoal,
   reconstructHostOverflowCapNeedsUserReset,
-  updateGoalStatus,
+  updateGoalFromTool,
 } from "./state.ts";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalToolStatus, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
 
 interface GoalStateControllerDeps {
   pi: Pick<ExtensionAPI, "appendEntry">;
@@ -39,7 +39,7 @@ export interface GoalStateController {
     ctx: StatusContext | null,
   ) => boolean;
   beginOverflowRecovery: (ctx: StatusContext) => void;
-  updateGoal: (source: GoalEntrySource, ctx: ExtensionContext, status: "complete" | "blocked", reason?: string) => GoalResult;
+  updateGoal: (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string) => GoalResult;
   flushGoalPersistence: GoalPersistence["flushGoalPersistence"];
   getGoal: () => ThreadGoal | null;
   isCurrentActiveGoalId: (goalId: string) => boolean;
@@ -173,9 +173,9 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     applyGoalTransition({ kind: "resume_active" }, ctx);
   };
 
-  const updateGoal = (source: GoalEntrySource, ctx: ExtensionContext, status: "complete" | "blocked", reason?: string): GoalResult => {
+  const updateGoal = (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string): GoalResult => {
     const goal = getGoal();
-    const result = updateGoalStatus(goal, status, reason);
+    const result = updateGoalFromTool(goal, status, reason);
     if (!result.ok || !result.goal) {
       return result;
     }
