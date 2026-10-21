@@ -68,7 +68,12 @@ Start with the current local task, then relevant background activities.
 Name each activity's owning session or agent when established, distinguishing this conversation's work from work owned elsewhere.
 Do not use “parent” alone when it could refer to different conversations or coordinators.
 Keep all established unmet obligations visible, including paused or externally blocked work.
-For each activity, keep its permission and phase, progress, unmet outcome or actual question, selected next action and why, state and qualified evidence/limits, pending worker identity, owned files or interfaces and return status, and scoped holds/blockers together.
+For each activity, keep these together:
+- Its permission and phase, progress, and unmet outcome or actual question.
+- Selected next action and why, and state and qualified evidence/limits.
+- Pending worker identity, owned files or interfaces and return status.
+- Scoped holds/blockers.
+
 State what a hold affects and preserve consequential source wording, prerequisites, concurrent-edit warnings, and uncertain effects.
 If no next action is recorded, say so; do not derive one from a goal or question.
 Keep unselected approaches conditional and preserve selection/rejection rationale when not recoverable elsewhere.
