@@ -1,489 +1,293 @@
 = TicGit command proxy
 
-*Status:* Draft design; not implemented.
-The `tic` capability follows the existing `jj-proxy` pattern: admit a native argument vector, run the pinned CLI, and return its output.
-Its one argument-language extension, `views save NAME [LIST_ARGS...]`, runs a serial native list-and-save operation.
-One persistent service per Git common directory serves host `ti` and every opted-in worktree through one serial request loop.
-Ordinary host `ti` therefore requires the accepted container runtime even when no sandbox is running.
-It does not replace Flower's `bug` bridge, migrate tickets, or authorize implementation.
-The #link("proxy-design.typ")[proxy design] owns transport, mounts, and host routing;
-the #link("trusted-service-lifecycle.typ")[trusted-service lifecycle] owns startup, joining, cleanup, and recovery.
-This document owns TicGit-specific admission, store selection, and outcome semantics.
+*Status:* Selected draft; not implemented.
+Agents use a restricted host-native endpoint owned by their workspace session.
+Ordinary host `ti` runs unmodified native TicGit through a runtime-independent storage wrapper.
+Agents use Anthropic Sandbox Runtime with a dedicated writable store directory.
+The storage arrangement below is the only application-behavior adaptation; otherwise accept native behavior.
+Writeups remain in scope; saved views and reviews are deferred from agent access.
+This design does not replace Flower's `bug` bridge, migrate tickets, or authorize implementation.
 
-== Problem and selected approach
+== Native behavior <tic-transactions>
 
-Native TicGit selects `git-meta.sqlite` inside the discovered repository's Git directory, with adjacent WAL and SHM files.
-In a linked worktree, that directory is worktree-specific, not the Git common directory.
-This design deliberately selects the common-directory database for all host and agent operations.
-An agent needs ticket operations without direct write access to that metadata.
-For example:
+Native TicGit owns parsing, validation, storage, schema creation/migration, metadata loading, rendering, and concurrency.
+Accept its initialization effects, incomplete metadata results, contention errors, command interleaving, and partial mutations.
+The proxy does not open SQLite, inspect schema markers, check hydration or referenced blobs, repair data, or add command transactions.
+Add no external command locks, writer registry, persistent store service, or native TicGit patches.
+Separate endpoints and host commands may execute concurrently; an endpoint may use a sequential request loop without store-wide serialization.
+Power-loss durability and host resource containment are not required.
 
-```sh
-ti new -F /tmp/ticket.md --tags cleanup --markdown
-ti show TICKET_ID --markdown
-ti comment -t TICKET_ID -- 'The retained relays are outside this issue.'
-ti close TICKET_ID --markdown
+Runtime verification used unmodified Linux `v0.3.1`, source tag `82246613185604888c08f8f28627b18679ecfbad`,
+with `git-meta-lib` `0.1.10`.
+It runs in linked worktrees but uses worktree-local databases while sharing metadata refs.
+Successful syncs in disposable linked-worktree tests left the databases separate and replaced the remote ticket snapshot
+with one worktree's ticket set; an independent clone imported from the same remote successfully.
+These observations justify sharing the database, not a native storage or synchronization reimplementation.
+
+Disposable Linux probes verified relative and absolute database symlinks with this release, including native creation through a dangling link.
+Live native file descriptors and inode identities confirmed shared database, WAL, and SHM files.
+A canonical-database writer lock blocked a linked caller while an unaliased worktree could still write.
+Concurrent native writes and repeated syncs retained the same ticket IDs in an independent clone.
+This verifies the native mechanism, not a future wrapper or confinement; other supported host platforms still require verification.
+
+Install one supported unmodified native build for the host wrapper and executor, with a matching installed agent policy.
+Bind compatibility to build provenance, not version text alone: inspected revision `d0bda85fa593e5d4488dd13af1216b0d2766d6dc`
+also reports `0.3.1` but differs from the release.
+Requests never install or upgrade tools.
+Replacing the accepted native build or executor requires new sessions through the existing lifecycle owner.
+Host initialization, sync/import, updates, and recovery remain ordinary native operations through the same storage wrapper,
+not a coordinated store-administration service.
+
+== Shared store directory
+
+The shared database is `ticgit-store/git-meta.sqlite` beneath the canonical host Git common directory.
+The dedicated directory also contains SQLite's sidecars.
+Granting this dedicated directory permits native SQLite creation and removal without granting writes to other Git metadata.
+Resolve canonical absolute Git-directory and common-directory paths through Git before host invocation or agent endpoint startup.
+Prepare a database symlink in both the common directory and the current checkout's Git directory, deduplicating identical locations.
+Each link points directly to the database inside the dedicated directory, never through the other alias.
+For conventional metadata locations:
+
+```text
+.git/git-meta.sqlite                 -> ticgit-store/git-meta.sqlite
+.git/worktrees/NAME/git-meta.sqlite  -> ../../ticgit-store/git-meta.sqlite
 ```
 
-The guest client reads `/tmp/ticket.md`, sends its bounded contents with the arguments, and substitutes a file-input placeholder.
-The trusted server stages the contents privately, substitutes its own path, and runs native `ti new`.
-Native TicGit parses the title and description and produces the Markdown output.
-The proxy returns that output and the native exit status; it never opens the guest-supplied path.
+Do not infer metadata locations from this example or look up the main checkout's root.
+SQLite resolves each database alias and uses the dedicated directory's sidecars; create no sidecar symlinks.
+The directory must exist before confinement starts; the database may be absent and native TicGit creates it through the link.
 
-A host invocation and an agent in another worktree connect to the same service, not separately owned proxies.
-The trusted host launcher starts it on demand and keeps it after the final sandbox session exits.
-Explicit store shutdown and maintenance are the only transitions back to native host administration.
-This removes the native/proxy handoff, multi-proxy invocation lock, and index of workspace service owners.
+The trusted host wrapper and adapter startup prepare the directory and aliases; native request children cannot create or retarget aliases.
+Preparation never replaces an existing path; concurrent preparation may accept the same valid directory and links.
+Accept an existing link only if its direct target is the selected database, resolving relative targets against the link's parent.
+Validate all selected paths before preparation; reject wrong occupants and SQLite sidecars beside either alias without modifying existing data.
+An existing database at a native alias location requires an explicit migration outside startup, with no active database users.
+Do not silently hide, migrate, merge, or delete tickets; no inventory of unrelated worktrees is required.
+At preparation, validate the directory, aliases, their parents, and the expected database target against the accepted storage layout.
+Only these exact database links are symlink exceptions; reject a symlinked store directory or canonical database at preparation.
+Confinement protects surrounding Git metadata and alias directory entries, not the store directory's inode identity.
+Replacement of the store directory need not be prevented; it contains only files native TicGit may already modify.
+The directory and aliases persist after session cleanup; SQLite alone owns sidecar lifecycle during native operation.
+Direct native calls that bypass preparation without the accepted layout are outside the shared-store contract.
 
-Keep native `ti` rather than building a replacement ticket API around `ticgit-lib`.
-Native TicGit owns ordinary option parsing, field validation, ticket-prefix resolution, filters, persisted data, and rendering.
-In particular, `--markdown`, `--json`, and ordinary text output remain native behavior.
-The proxy owns authority checks and generic token scanning, not an independently maintained TicGit grammar.
+The host wrapper leaves cwd and argv unchanged in every checkout, including nested directories.
+Relative file inputs, branch defaults, editor cwd, and repository-local installation destinations retain native caller context.
+The agent executor fixes cwd to the accepted host workspace root, including for linked worktrees; requests cannot change it.
+Verify repository discovery selects the accepted common-directory store, including when the database does not yet exist.
+The host wrapper does not inspect arguments and retains human authority, native interaction, and native session state
+without the agent allowlist, sandbox metadata, credentials, endpoint, or container runtime.
 
-Use the same separation as `tools/jj-proxy/client`, `src/policy.rs`, and `src/main.rs`:
-a forwarding client, a compact command policy, and a serial native-command server.
-Reuse the generic sandbox transport and lifecycle, not Jujutsu-specific author updates, inspection routing, or execution permissions.
-Do not introduce a shared proxy framework as a prerequisite.
+== Endpoint ownership <tic-ownership>
 
-== Native baseline and execution boundary
+Select the proposed default-off version 2 boolean `capabilities.tic` under the #link("launcher-interface.typ")[launcher contract].
+It selects an installed host capability, not a project `commands.tic` command or native-TicGit image.
+Reject a simultaneous project command named `tic`; host availability alone cannot enable the capability.
 
-Build `schacon/ticgit` revision `d0bda85fa593e5d4488dd13af1216b0d2766d6dc`, version `0.3.1`, with its unchanged Cargo lockfile.
-It selects `git-meta-lib` `0.1.10` and requires Rust at least `1.88`.
-The relevant native owners are `commands/new.rs`, `commands/edit.rs`, `commands/mod.rs`, `commands/setup.rs`,
-`commands/list.rs`, `commands/view.rs`, `commands/writeup.rs`, `commands/review.rs`, `session_state.rs`,
-and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
-An upgrade requires reviewing the admitted commands' file, subprocess, setup, and network effects, and regenerating grammar metadata.
-Pin the toolchain and image through existing image resolution; do not install or update tools at runtime.
+Use the #link("trusted-service-lifecycle.typ")[existing shared-session lifecycle] with a host-native command-proxy adapter.
+Session identity remains canonical workspace root plus Git common directory.
+Worktrees may share the database without sharing accepted policy or endpoint ownership.
+The adapter fixes repository/store identity, execution cwd, native build, command and file-path policy, configuration, and confinement.
+The accepted-session representation must version host process ownership, authenticated endpoint identity, and implementation provenance;
+container identities do not represent host process authority.
 
-Select `tic` as an opt-in version 2 repository manifest command using the existing image binding.
-Its fixed entrypoint is `tic-proxy serve`, with `workdir` set to `.` and `network` set to `false`.
-The manifest selects agent access; the launcher acquires the store-scoped service instead of starting a workspace-owned instance.
-Host setup installs the trusted `tic` service definition and image binding so host-first startup does not require a sandbox manifest opt-in.
-Both entrypoints use the same trusted planner and existing image resolver; requests cannot supply service definitions or images.
-Declare the existing Git mount:
+Use existing runtime-provider transport and host-relay authentication to expose only the accepted endpoint to the guest.
+A relay has neither database-write access nor authority to execute native commands.
+Transport owns connection authentication with a session capability credential and accepted peer/reachability restrictions.
+Keep that credential outside application argv and native environment; no unauthenticated host listener is permitted.
 
-```json
-{"builtin":"git","proxy":"read-write","agent":"read-only"}
-```
+The supervisor owns publication, readiness, joining, cancellation, descendant cleanup, and abandoned-session recovery.
+Readiness checks the fixed authority, protected paths, confinement, and endpoint; it does not inspect database contents or run a mutating native probe.
+Use existing protected-metadata validation with only the database-link exceptions defined under Shared store directory.
+An absent database is not a readiness error: native TicGit may create it under the same confinement as later commands.
+Final-holder cleanup stops only this session's endpoint, transport resources, and native descendants, never ticket data or unrelated writers.
+A failed published endpoint stays unavailable until normal cleanup; do not restart it beneath attached agents.
+No cross-workspace endpoint registry or separate store lifecycle is required.
 
-The guest receives protected read-only Git metadata and the read-only socket-volume mount at `/run/sandbox-proxies/tic/`.
-The proxy receives the existing read-only repository view, no writable working tree, and private temporary storage.
-Neither side receives an outer daemon socket through this capability.
-The proxy receives no host HOME, credentials, or SSH agent.
-Its immutable image contains the server, native `ti`, required fixed runtime binaries, and the conventional generic forwarding client.
-Use a read-only root filesystem and fail-closed filesystem and execution restrictions following the JJ pattern,
-but permit writes only to the accepted Git metadata, request-private storage, and service-private saved-view storage,
-not `.jj` or ordinary working-tree files.
-Executable lookup never uses the working tree.
+== Host execution boundary <tic-execution>
 
-The launcher supplies the canonical Git common directory as `SANDBOX_GIT_DIR` through its existing Git built-in mount.
-The server fixes native cwd there and verifies that native store discovery selects the accepted database.
-Requests cannot choose cwd, repository, environment, executable, or configuration.
-Invoke native `ti` directly, with no terminal, closed child stdin, an empty inherited environment, and fixed private HOME/XDG paths.
-Use a fresh `TICGIT_STATE_FILE` in each private request directory.
-For `list` and the composite view-save operation, seed it with only the accepted named views as described below.
-For other commands, leave it initially absent.
-No request inherits current-ticket state or last-used filters from a previous request.
-Native current-ticket writes never select a later request's target.
-Without an explicit target, native `resolve_ticket()` reports that no current ticket exists before changing tickets.
-Do not duplicate that target check in proxy admission.
+All SQLite connections and sidecar access stay on the host's local supported filesystem.
+Neither the guest nor relay opens SQLite, including for readiness; cross-VM shared-filesystem WAL access is unsupported.
+Requests cannot select repository, cwd, environment, configuration, executable, or endpoint.
+Use a trusted absolute executable path, closed stdin, no terminal, a cleared inherited environment, and private HOME/XDG paths.
+Give each request an initially absent `TICGIT_STATE_FILE` and discard it after descendant cleanup.
+This keeps native current-ticket and filter state separate from other requests and the human.
+Use a trusted failing `GIT_EDITOR` for native noninteractive editor failures; caller text never becomes shell code.
 
-Fix `GIT_EDITOR` to a trusted executable that exits unsuccessfully with a noninteractive-use diagnostic.
-The pinned `soe` library and TicGit's Markdown editor path give this variable highest precedence
-and propagate editor failure rather than trying a built-in editor.
-Its external-editor path uses `sh`; supply a fixed trusted shell with only the fixed editor command and private temporary path as inputs.
-Caller text never becomes shell code.
-Admitted commands capture editor input before writing ticket changes.
-Let native TicGit report missing/blank non-file titles, missing comment bodies, and editor requests through this failing editor.
-Blank transported titles instead fail native file parsing without invoking an editor.
-Do not reproduce those argument checks in the proxy.
-Keep child stdin closed and provide no terminal; requests cannot override the editor or environment.
+Provide a private configuration overlay with only accepted authorship, repository format, and `meta.namespace`.
+Exclude includes, remotes, hooks, signing commands, filters, credential helpers, human HOME, and credential agents.
+Authorship is the accepted workspace identity; `meta.namespace` selects serialized refs, not a separate SQLite store.
+Leave repository-format support and diagnostics to native TicGit.
 
-At startup, snapshot accepted authorship, repository format, and `meta.namespace` into a private read-only configuration overlay.
-Exclude includes, remotes, hooks, signing commands, filters, credential helpers, and other executable or network configuration.
-The overlay never changes host configuration.
-`meta.namespace` selects serialized metadata refs; it does not partition the SQLite database.
-Initially admit only SHA-1 repositories with the files ref backend.
+Use Anthropic Sandbox Runtime (`@anthropic-ai/sandbox-runtime`) through its supported public API for host confinement.
+Select its Linux bubblewrap and macOS Seatbelt backends; lock a reviewed runtime version and dependencies when packaging the executor.
+The host wrapper does not import or require this runtime.
+Permit writes to the selected dedicated store directory and request-private directories, not the surrounding Git directory.
+Deny writes to code refs, `.jj`, host configuration, and working-tree files.
+Protect alias directory entries through their parents without denying writes through the links to the selected database.
+Do not put database aliases in SRT's `denyWrite`: on Linux the denial follows the link and makes the database target read-only.
+Account for runtime-added default write paths; the configured write allowlist alone does not establish this boundary.
+Explicitly deny default writable locations outside the accepted directories and account for platform-required device access.
+Deny network/credential access and arbitrary host-file reads, including through caller-selected file arguments.
+Launch only the fixed native entrypoint; subprocesses inherit filesystem and network confinement.
+No executable allowlist is required: permitted effects, not subprocess names, define the boundary.
+Native `open_store()` may attempt automatic setup even when the `setup` command is excluded.
+The execution checkout is mutable: confinement must prevent unsafe setup effects even if `.git-meta` appears or changes after startup.
+Do not use a `.git-meta`-absence check as a substitute for confinement.
+Missing or ineffective confinement rejects capability startup; there is no unsandboxed retry.
 
-== Compact command policy <tic-admission>
+Review of runtime `0.0.81` found Linux policy generation skips nonexistent individually allowed write paths.
+An existing dedicated directory avoids depending on grants for future database or sidecar names.
+Generated-policy checks and the native symlink probe do not establish confinement acceptance.
+Verify the composed layout, default-path restrictions, and SQLite creation/recreation on real Linux and macOS hosts before shipping.
+The host-native adapter, runtime integration, and supported-platform enforcement remain unimplemented.
 
-As in `jj-proxy/policy.toml`, a trusted declarative policy lists allowed command prefixes and forbidden security-sensitive options.
-Load it once from the immutable image; requests cannot select or edit it.
-The server validates direct socket requests, not merely wrapper-produced requests.
+== Command admission <tic-admission>
 
-Admit these native command families:
+The host executor enforces the installed policy on every authenticated request, even when the guest wrapper is bypassed.
+Admit these native families and their native aliases (`ls`, `dep`, `status`):
 
-- Inspection: `list`, `show`, `history`, `recent`, `stats`, `next`, `writeup list`, `writeup show`, `review list`, and `review show`.
+- Inspection: `list`, `show`, `history`, `recent`, `stats`, `next`, `writeup list`, and `writeup show`.
 - Mutation: `new`, `edit`, `comment`, `state`, `claim`, `close`, `tag`, `assign`, `priority`, `points`, `milestone`,
-  `code`, `depends`, `subissue`, `meta`, `spec`, and all other native `writeup` and `review` subcommands.
+  `code`, `depends`, `subissue`, `meta`, `spec`, and other native `writeup` subcommands.
 
-An empty argument vector means native `list`.
-Admit the native aliases `ls`, `dep`, and `status` with the corresponding command policy.
-The accepted grammar is the pinned native CLI restricted by this policy and the authority checks below.
-Do not hand-maintain each family's ordinary flags, validate their values, or rebuild ordinary argv.
-Pass admitted arguments unchanged except for transported file inputs and the view-save expansion below.
-Native TicGit rejects unknown or conflicting ordinary options and renders completed results.
+Empty argv means native `list`.
+Reject `init`, `setup`, `update`, `pull`, `push`, `sync`, `import`, `tui`, `agent`, `checkout`, `users`, `mine`, `views`, and `review`.
+Reject authority overrides and file operands outside the accepted shared-workspace mapping.
+Let native TicGit handle `list NAME` and `new --checkout` using request-private state.
+Saved-view lookup retains native missing-view errors; checkout selection does not persist across requests.
+Help/version use the generated restricted interface below without opening the store.
+All other validation, target resolution, option conflicts, errors, writeup formats, and output remain native.
+Admit `tag --writeup` without reproducing writeup resolution.
 
-The command policy excludes `init`, `setup`, `update`, `pull`, `push`, `sync`, `import`, `tui`, `agent`, `checkout`,
-`users` and `mine`.
-Admit only the `views save` extension below; other `views` forms remain excluded.
-`users` remains host administration; `mine` cannot identify individual agents under the store's shared authorship identity.
-Initialization, upgrades, sync, import, serialization, and recovery remain coordinated host operations.
-Help and version use packaged information without opening the store.
-Help describes the admitted subset, request-private current-ticket state, file-based editing, and explicit view-save filters.
+=== File-option inspection
 
-Command-specific inspection rejects `new --checkout`, repository/configuration/executable overrides,
-and file options not replaced by the transport placeholder.
-Admit native `tag --writeup` targets without reproducing writeup resolution.
-Admit transported file input only for native `new`, `edit`, `meta`, `spec`, `writeup new`, and `writeup edit` as described below.
-Missing ticket targets and editor-triggering forms are native errors, not proxy admission failures.
+Use a bounded handwritten scanner for `-F` / `--file` in `new`, `edit`, `meta`, `spec`, `writeup new`, and `writeup edit`.
+Preserve native CLI syntax; add no upload option or file placeholder.
+Recognize separate operands, attached values (`--file=PATH`, `-FPATH`, and `-F=PATH`), and short-option clusters.
+Keep token positions and value spans so only the file operand changes; stop option recognition at `--`.
+Use a small reviewed table of short-option value arities for these commands, not a full CLI grammar.
+For example, `-cFfile.md` contains a file option, whereas `-tFunny` contains a title and must remain unchanged.
+Option-looking text inside another option's attached value remains data.
+If file inspection is ambiguous for the supported build, reject rather than guessing.
+Leave native validation, option conflicts, repeated-option errors, and file-content parsing to TicGit.
 
-Writeup creation requires a noninteractive title and body or transported file; native TicGit owns missing-input diagnostics.
-For `writeup new`, `--file` supplies only the body; `--title` supplies the title separately.
-For `writeup edit`, `--body` adds a complete new body version, while `--file` uses native title-and-description parsing.
-Do not reinterpret either file format or render writeups in the proxy.
-Native writeup promotion, linking, and ticket-field updates run inside the same serial request loop.
+Share one scanner and arity table between guest path translation and authoritative host checks.
+Review them against the supported native build and compare with native parsing in compatibility tests.
+Do not generate runtime option/positional metadata, scrape help, or copy native validators.
+Command admission remains an installed command/alias policy; other arguments need no full-CLI parser.
 
-Review operations read local Git refs and objects and write review metadata, not code refs or working-tree files.
-Their Git subprocesses use the fixed trusted Git binary, isolated configuration, disabled networking, and ordinary descendant cleanup.
-`review integrate` records an integration commit; it does not execute a merge.
-Inline review `--path` values are metadata, not transported files or permission to open caller-selected paths.
-Native remote-URL discovery sees no excluded remote configuration; it cannot contact or configure a remote.
-Review defaults use the common-directory Git HEAD, not the invoking agent's or host's worktree branch.
-The skill uses explicit branch/review references; the proxy neither infers a caller branch nor rewrites native defaults.
-The pinned `review new` evaluates `current_branch()` even with `--branch`, so a detached common-directory HEAD remains a native error.
+=== Restricted help
 
-=== Explicit view-save filters <tic-views>
+Generate packaged help at build time from the supported native Clap definitions and the installed admission policy.
+Use those authorities for command/alias admission and help; maintain no separate CLI catalog.
+The bounded file-option scanner is maintained separately and checked against native parsing, not generated from Clap.
+Generate help for every admitted command, even when its arguments need no runtime inspection.
+Filter rejected commands, aliases, options, and operands from both displayed usage and detailed help.
+Replace the native hardcoded help template and its embedded examples in the generated view; filtering the Clap tree alone is insufficient.
+A companion build target may compile private native CLI modules; this help-generation source-layout dependency requires review on upgrades.
+Do not scrape native help or change the installed native executable.
+Add fixed explanations of file-path translation, shared-workspace visibility, request-private state, and noninteractive editor failures.
+Use the generated command definitions for native syntax and descriptions, not independently maintained wrapper descriptions.
 
-Native `views save NAME` saves the last-used list filters from session state.
-With shared state, agent A's `list --tag bug`, agent B's `list --tag cleanup`, and A's `views save bugs`
-would save B's filters under A's view name even when individual commands run serially.
-The proxy instead requires the complete filter selection in one request:
+Guest and authenticated direct-endpoint help use the same packaged artifacts for top-level and subcommand help, including native help aliases.
+Help/version never open the store or invoke native application dispatch.
+Bind artifacts to native-build and admission-policy provenance.
+Failed generation prevents package publication; missing or mismatched artifacts reject agent startup.
+Changes to native definitions or admission policy regenerate help rather than retaining stale output.
+Ordinary host help remains native and needs no generated artifacts.
+Other native output remains unchanged, including Markdown suggestions that may recommend rejected commands such as `checkout`.
 
-```sh
-ti views save bugs --tag bug
-ti list bugs --markdown
-```
+== File paths and outcomes <tic-bounds>
 
-`views save NAME [LIST_ARGS...]` is proxy syntax, not a change to native TicGit.
-The server takes the view name from the native save-name operand and treats all following arguments as native `list` arguments.
-The trusted policy owns this expansion; classify its trailing tokens with the generated native `list` grammar.
-Apply ordinary list admission, including named-view selection, to that invocation.
-Do not forward the trailing list arguments to native `views save` or recreate their filter semantics.
-Packaged help describes the extended syntax; help requests do not execute either child or publish a view.
-Direct socket requests follow the same rules as the host and guest shims.
-
-Seed one private native state file with the accepted named views and empty current-ticket and last-filter maps.
-Run native `ti list LIST_ARGS...`, then native `ti views save NAME` with that same file.
-Run both children and publish the saved views before accepting another request.
-With no trailing arguments, run native `ti list` with its defaults; never use another request's last-used filters.
-Discard successful list output and return the native save result after publication.
-Both children retain the ordinary output and process-cleanup bounds.
-If listing fails, return its native status and diagnostics without running save or publishing state.
-
-Native `list` ignores state-file write failures, so its successful exit alone does not authorize save.
-Require a valid state file containing freshly written last-used filters for the accepted repository before starting the save child.
-The initially empty last-filter map makes a missing write distinguishable from success without comparing timestamps or reproducing filters.
-Missing or malformed state, verification failure, save failure, or publication failure prevents publication of the request's views.
-State-verification and publication failures return `125`; native failures preserve their status and diagnostics.
-Only a completed save with validated native state may durably and atomically replace the persistent view snapshot.
-A response failure after publication has an uncertain outcome and never causes replay.
-Two successful requests saving the same name replace that view in execution order.
-
-The service owns one persistent named-view snapshot per accepted Git common directory.
-Keep it in a dedicated protected data directory, separate from lifecycle records, locks, credentials, and ticket metadata.
-The supervisor mounts only that data directory into the service; the guest cannot access it directly.
-Preserve it through service shutdown, recovery, and host restart; native ticket sync does not synchronize these local views.
-An absent snapshot means no saved views; an existing malformed or incompatible snapshot blocks startup rather than silently discarding views.
-
-Use the pinned native saved-view representation; persist only the accepted repository's named views from its `views` map.
-Native repository-path keys are request-local; bind the stored views to the current instance's canonical native Git directory when seeding.
-A different container mount path after service restart cannot hide the saved views.
-Default every other native state field when seeding a request, and never persist current-ticket selections or last-used filters.
-This projection is a private-format integration with `session_state.rs`, not a public TicGit API.
-Validate it against the pinned native definitions and review it whenever the native pin changes.
-Native TicGit remains the owner of saved filter values and view rendering.
-Ordinary `list NAME` reads the accepted views through its private state file; its last-filter writes are discarded.
-
-=== Generated grammar metadata
-
-At image build time, compile a metadata extractor against the same pinned TicGit CLI definitions and locked Clap dependencies as native `ti`.
-The extractor reads the built Clap command tree through its reflection APIs; do not scrape Rust source, help output, or shell completions.
-A build-only companion target may compile the existing private CLI modules; native `ti`'s source and runtime behavior remain unchanged.
-This integration depends on TicGit's internal source layout and must be reviewed when the native pin changes.
-Generate command and option names and aliases, positional order, value arities, and all settings needed to classify tokens under the pinned parser.
-Keep command admission and security-sensitive field selection in the separate trusted policy, not the generated grammar.
-Do not reproduce ordinary value validators, required-field checks, or option conflicts in the scanner.
-
-Package one generated artifact for the server, guest client, and host shim; do not maintain separate grammar descriptions.
-Bind its schema and native-build provenance to the immutable image and load it once from trusted packaged data.
-Requests cannot select or replace metadata, and runtime startup never generates it.
-Generation failure or unsupported token-classification settings fail the image build without consuming stale or partial output.
-Missing, malformed, unsupported, or mismatched packaged metadata fails startup rather than selecting a hard-coded fallback.
-
-The security scanner distinguishes options, their values, and operands using this generated metadata.
-The client uses the same token classification only to locate transported file inputs; server admission remains authoritative.
-The scanner retains each token's original argv position and any attached-value span so file substitution changes only the file value.
-It must account for native option aliases, attached values, short-option clusters, and `--` so those forms cannot bypass the checks.
-A literal operand or option value is data, not another option; preserve its position and bytes.
-Reject forms the scanner cannot safely classify rather than guessing.
-This scanner checks authority and transported files, not ordinary flag conflicts, required targets, field values, or ticket existence.
-
-== File input and protocol
-
-The client locates native `-F PATH` and `--file PATH` forms to transport file contents; it does not decide command admission.
-It reads the file in the guest, enforcing the payload bound incrementally, replaces its argument value with `-`,
-and sends the contents in the request's `stdin` field.
-Client input checks provide early failures and bound local memory use; they do not replace server validation.
-For `-F -`, read bounded guest stdin instead.
-The placeholder is a proxy convention, not native TicGit stdin support.
-
-Use the existing framed JSON transport with protocol version `1` and exactly these request fields:
+Reuse the #link("proxy-design.typ")[generic framed JSON protocol, validation, and fail-closed transport rules].
+After transport authentication, the request has exactly these application fields:
 
 ```json
-{"version":1,"command":"tic","argv":["new","-F","-","--markdown"],"stdin":"TITLE\n\nBODY\n"}
+{"version":1,"command":"tic","argv":["new","-F","/accepted/host/workspace/draft.md","--markdown"],"stdin":""}
 ```
 
-Require `command` to equal `tic`.
+Require `command` to equal `tic` and `stdin` to be empty; reject NULs in arguments.
 The response has exactly `version`, `exit`, `stdout`, and `stderr`.
-Apply the generic framing, field validation, EOF, process cleanup, and fail-closed rules.
-Reject NUL bytes in arguments.
-No request field names a host file or selects execution authority.
+The guest resolves each file operand against its own cwd and maps it through the accepted guest-to-host shared-workspace mapping.
+Send the corresponding absolute host path; this preserves caller-relative file selection without changing the executor's workspace-root cwd.
+Resolve symlinks when mapping guest paths; reject guest-only files and paths outside the accepted mapping with a clear error.
+Do not add stdin semantics: `-F -` names a literal file called `-` in the guest caller's directory, mapped like any other file.
+Neither wrapper reads or transports file contents, stages payload files, or rewrites unrelated arguments.
+The confined native child opens the mapped file directly and retains native file-content parsing and errors.
+For `writeup new`, the file is the body and `--title` remains separate; `writeup edit --file` uses native title/description parsing.
 
-The server decides whether the command admits file input and accepts payload only with exactly one admitted file option whose value is `-`;
-other commands require empty `stdin`.
-After decoding, the server enforces the argument count, individual and aggregate UTF-8 byte limits, and decoded payload UTF-8 byte limit
-from #link(<tic-bounds>)[Bounds and uncertain outcomes] before staging files or spawning a native child.
-The request-frame limit does not replace these decoded-input checks.
-An empty transported file is valid transport input and reaches native validation unchanged.
-Stage it as a mode-`0600` file in a private request directory, substitute that server-owned path, and preserve the contents.
-Remove request-private files only after all native children stop.
-Neither the wrapper nor the server parses the ticket body or recreates native Markdown rendering.
+The host rescans every authenticated request, including requests that bypass the guest client.
+Require recognized file operands to be absolute paths within the accepted host shared workspace, never arbitrary host paths.
+Confinement enforces actual read authority, including symlink redirection; path translation is not a substitute for read restrictions.
+Mapping paths requires no caller-selected execution cwd or environment.
+File changes between translation and native reading retain ordinary native behavior; no content snapshot or file-identity guarantee is added.
 
-== Prepared store
+Keep the existing command-proxy categories of bounds, with these TicGit values:
 
-The host initializes the common-directory store, performs required sync/import, and fully materializes metadata used by admitted
-ticket, writeup, and review operations before first use.
-Initialization, upgrades, sync, import, serialization, user-map administration, and recovery require explicit coordinated shutdown of the store service.
-Database-using administration selects the same common-directory database as the service, regardless of the caller's worktree.
-Ordinary host ticket inspection and mutation instead use the service route below.
+- Frames: request 8 MiB, response 32 MiB; stdout 4 MiB; stderr 256 KiB.
+  No file payload is transported; file size and contents remain native concerns.
+- Arguments: 128 tokens, 64 KiB each, 256 KiB aggregate decoded UTF-8.
+- Authentication/framing/admission: 10 seconds; native execution including SQLite waits: 30 seconds.
+- Response delivery: one absolute 3-second deadline; client exchange including waiting/cleanup: 45 seconds.
+- Child termination grace: 2 seconds before forced termination and reaping.
 
-Before each fresh service publication, inspect the common directory's linked-worktree metadata for worktree-local `git-meta.sqlite` entries
-and their WAL/SHM sidecars without following symlinks or opening those databases.
-Any such entry blocks startup and reports the conflicting paths and required human consolidation or repair.
-Do not silently hide existing worktree-local tickets, merge their databases, delete them, or recreate them from serialized refs.
-Ticket migration remains outside this design.
+Enforce input bounds while reading and before spawning; server checks remain authoritative.
+An unread or partially read response cannot extend its delivery deadline.
+Preserve native exit status and UTF-8 stdout/stderr; invalid UTF-8 or oversized output is an output failure.
+Admission rejection returns `2`; transport/output/client-deadline failure returns `125`; execution timeout returns `124`, when deliverable.
+Guest transport failure never falls back to local native execution or another route.
+Native host execution is independent, not recovery for a guest failure.
 
-The service validates the store before endpoint publication, while the supervisor holds exclusive store creation coordination.
-Read-only SQLite validation must include committed WAL state; the main database file alone is not the complete store.
-Committed WAL left by an earlier service instance does not require a host checkpoint before normal startup.
-Allow SQLite synchronization sidecars in protected metadata if needed for reading, but do not migrate, checkpoint, repair, or change ticket data.
-Store preparation uses only the bounded preparation deadline.
-Require SQLite `user_version` `1` and the initialized project `ticgit:schema-version` string `"1"`.
-Reject unresolved promised keys or missing referenced blobs used by admitted ticket, writeup, and review operations.
-This includes project metadata and review-referenced branch and commit metadata; native bulk reads can otherwise silently omit results.
-Check database and existing WAL/SHM files without following symlinks; require regular files with one hard link.
-The generic mount validation rejects metadata indirection and agent-writable aliases.
-Publish only after validation; no other service or host administrator may access the store during preparation.
-Protected mounts and the host-administration restriction preserve file identity and store compatibility between requests.
-Later sidecars stay inside the protected directory.
-Do not duplicate the native schema with a table/column/index catalogue or require a full integrity scan at startup.
-Other database failures use native diagnostics; preparation does not promise to detect all damage.
-An absent, uninitialized, unsupported, or incompletely materialized store requires host repair, not automatic recreation.
-
-Blocking the `setup` command is insufficient: native `open_store()` calls `auto_setup_if_needed()` even for ordinary operations.
-Run in the common Git directory so working-tree `.git-meta` is outside native cwd.
-Reject any `.git-meta` entry there before publication, including symlinks.
-The immutable runtime contains no `git-meta` command helper.
-Configuration isolation and disabled networking are additional controls; local-URL setup is not considered safe.
-Readiness validates the prepared store and policy and binds the socket; it never runs a mutating native probe.
-
-== Persistent ownership and routing
-
-Workspace-session identity remains the pair of canonical workspace root and Git common directory.
-Other proxies remain workspace-session resources; TicGit alone uses the proposed `persistent-store` lifecycle scope.
-Its sole logical identity is the canonical Git common directory, independent of any workspace or attached agent.
-The generic supervisor owns one accepted service record, resource registry, endpoint publication, and cleanup for that store.
-Workspace records reference its accepted owner and implementation identity rather than copying its endpoint or acquiring cleanup ownership.
-
-=== Acquire or join
-
-Use one private host state directory keyed by the canonical Git common directory.
-Its service and recovery records survive host restart; a lost transient runtime directory cannot authorize a replacement writer.
-Its stable host-kernel coordination lock serializes service creation, publication, explicit shutdown, and host administration.
-Never unlink or replace this lock file.
-The trusted host launcher, not the request server or guest client, acquires it and uses the generic supervisor:
-
-- With generic discovery/recovery proving a fresh or fully cleaned store scope, plan and resolve one instance,
-  durably record its fresh resource owner before effects,
-  prepare the protected store, and publish its ready endpoint atomically.
-  Newly created resources are registered before any database-using process starts.
-- With a published instance, validate its store identity, owner, runtime, image, endpoint, and readiness before joining.
-  Use its accepted definition and image; current worktree declarations cannot replace it or create a second instance.
-- With preparing, stopping, failed, unavailable, malformed, or inconsistent state, wait within the existing acquisition deadline or fail.
-  Never treat uncertain state or an unavailable runtime as permission to create another service.
-  Owner-validated recovery must finish before a fresh instance can access the database.
-  A missing record alone does not prove freshness; unaccounted store resources block startup and require recovery, not guessed deletion.
-
-Accepted identity includes the runtime owner and policy, VM generation where applicable, native baseline, image,
-configuration overlay, and lifecycle-state schema.
-An incompatible runtime or worktree rejects only that join; it cannot start an alternative writer.
-For sandbox attachment, register a generic endpoint dependency under store coordination before any guest mount is created.
-The dependency reserves the accepted owner against shutdown while attachment is preparing, not just after workspace publication.
-Finish acquisition and dependency registration before taking workspace-session coordination; never wait for workspace locks under store coordination.
-Release store coordination before sending an application request.
-Startup uses the existing bounded image-resolution and service-startup deadlines; the request exchange begins only after endpoint acquisition.
-Cancellation or failure before publication joins startup workers and cleans that unpublished attempt through the generic supervisor.
-Cleanup failure keeps its durable recovery record; cancellation after publication does not stop the persistent service.
-
-A sandbox opting into `tic` must acquire this service before exposing its validated socket volume.
-Several worktrees may attach concurrently without merging their other proxy sets.
-Session exit, failed workspace startup after store publication, and final-holder cleanup release only that session's dependency and reference.
-Release the dependency after its guest mount holders stop and workspace coordination is released.
-They never stop a published store service or remove its resources.
-
-=== Ordinary requests
-
-The host `ti` shim reads host file inputs with the caller's authority and uses the same protocol and admission policy as agent requests.
-It acquires or joins the store service even without a running sandbox or a manifest opt-in in the caller's worktree.
-The trusted host router resolves and validates the endpoint from the single accepted store record.
-Neither callers nor workspace records select endpoints, containers, images, or runtime owners.
-Host `ti` always uses that route; there is no ordinary native-host execution path.
-Runtime, connection, protocol, and native-command failures never trigger local fallback or replay.
-
-The server retains JJ's sequential accept-and-execute loop, without an application queue or worker pool.
-It runs one complete request, including reads, all native children, saved-view publication, and descendant cleanup, before starting another.
-This sole execution owner replaces a multi-proxy invocation lock; SQLite transactions alone would not serialize whole native commands.
-Do not start work after a lost connection or expired framing/admission deadline.
-The client bounds its complete exchange, including socket waiting.
-Serialization prevents overlapping operations, not partial mutations or uncertain delivery.
-
-=== Explicit shutdown and administration
-
-A trusted host stop-and-admin operation holds store coordination through dependency checks, admission revocation, administration, and child cleanup.
-First check preparing endpoint dependencies and attached socket-volume holders through generic resource ownership.
-If any remain, report the required detach and fail without stopping the service or admitting administration.
-Otherwise disable endpoint acquisition, then ask the generic supervisor to stop the service and reap every database-using descendant.
-Do not silently terminate unrelated workloads.
-Failed cleanup, a surviving native child, or an unavailable runtime blocks host administration and replacement startup.
-Server death alone never proves that its native child stopped.
-
-Only after owner-validated shutdown may this operation invoke native host initialization, upgrades, sync, import,
-serialization, user-map administration, or recovery with the human's authority.
-For database-using administration, fix native cwd to the accepted canonical Git common directory and verify repository discovery selects it.
-Caller cwd, repository-selection environment variables, and command options cannot redirect administration to a worktree-local or other store.
-This store selection applies to initialization even when the accepted database does not yet exist.
-The administrator child inherits the host coordination lock so wrapper death cannot admit another service while it writes.
-Keep the store record non-routable through descendant cleanup; release coordination only after administration has stopped.
-Do not restart the service automatically; the next ordinary request plans a fresh instance through normal acquisition.
-Direct native `ti` outside this coordinated operation is unsupported, even when no agent is running.
-
-The existing supervisor remains the only lifecycle and recovery owner; add this scope there, not a TicGit daemon manager or health monitor.
-A failed published instance stays recorded until explicit owner-validated recovery; requests cannot restart or replace it in place.
-Recovery preserves the database and WAL and never replays the failed operation.
-
-== Bounds and uncertain outcomes <tic-bounds>
-
-Fix the protocol bounds in the image:
-
-- Request frame: 8 MiB; arguments: 128 tokens, 64 KiB each, 256 KiB aggregate decoded UTF-8.
-- File payload: 1 MiB decoded UTF-8; stdout: 4 MiB; stderr: 256 KiB; response frame: 32 MiB.
-- Framing, EOF, and admission: 10 seconds from connection acceptance; native execution: 30 seconds from the first child start.
-  A composite view-save request shares that deadline across both children, state verification, and view publication.
-- Server response delivery: 3 seconds from the start of response writing, using one absolute deadline for the complete frame.
-- Client exchange: 45 seconds from connection attempt, including waiting, framing, response delivery, and cleanup.
-- Child termination grace: 2 seconds before forced process-group termination and reaping; store preparation: 30 seconds.
-
-The client deadline permits one accepted request's framing, execution, cleanup, and response delivery; contention can exhaust it before execution.
-The server enforces its response-delivery deadline independently of the client.
-A peer that does not read cannot block the serial loop indefinitely.
-On delivery timeout or failure, close the connection and proceed only after all native children stop; the operation may already have mutated the store.
-Preserve valid UTF-8 native output; invalid UTF-8 is an output failure, not silent replacement.
-Completed ordinary native execution preserves exit status, stdout, and stderr.
-The #link(<tic-views>)[view-save operation] owns its intermediate-output suppression and state-publication failures.
-Admission rejection returns `2` without spawning a child; transport/output/client-deadline failures return `125`, and execution timeout returns `124`,
-when a response can be delivered.
-Inside the sandbox, missing or failed proxy transport never falls back to a local CLI.
-On the host, native execution is permitted only inside explicit coordinated administration, never as an ordinary route or failed-request recovery.
-
-There is no automatic replay after any request byte is sent.
-A native error, timeout, disconnect, or output failure can follow a partial or complete mutation.
-Distinguish rejection before execution from a possibly executed operation; transport loss may prevent any diagnostic.
-Do not claim rollback, add deduplication state, or recreate the database from serialized refs.
-On execution failure requiring cancellation, terminate and reap the complete process group before the next command.
-Cleanup preserves the database, WAL, and stable host coordination lock.
-Store recovery stops the recorded service and every database-using descendant through its generic owner before host administration.
-Inspect an uncertain `new` before a human decides whether to retry it.
+Never replay automatically once request bytes may have been accepted.
+Native errors, timeouts, cancellation, or lost output may leave partial or complete mutations; do not infer command rollback.
+On cancellation, terminate and reap all request-owned native descendants without stopping unrelated writers.
+Preserve the database and sidecars; native SQLite owns its transaction recovery.
+A client that loses the response may need to inspect the result before deciding whether to retry `new` or promotion.
 
 == Acceptance evidence
 
-Implementation must verify the boundary with disposable repositories and the actual pinned CLI:
+Verify the wrapper and security boundary with disposable host-local repositories and the supported unmodified CLI:
 
-- Compare client and direct-socket operations with equivalent native commands, including exact Markdown/JSON output,
-  field changes, invalid values, ambiguous ticket references, and native file-body parsing.
-- Generate metadata from the actual pinned CLI definitions and compare scanner classification with the native Clap parser without command dispatch.
-  Exercise option aliases, attached values, clusters, `--`, option-looking data, and optional values such as `show --filter`.
-  Verify original argv positions and attached-value spans, including exact preservation of non-file arguments during file substitution.
-  Verify that a changed CLI option definition updates all grammar consumers through regeneration without scanner edits.
-  Failed generation cannot publish an image or reuse stale metadata; missing, malformed, unsupported, or mismatched metadata fails startup.
-  Verify authority/path/setup/sync rejection before spawning; ordinary option errors remain native.
-  Missing targets fail natively against fresh state, even after another request selected a current ticket.
-  Blank non-file titles, missing comment bodies, editor flags, and fileless editing invoke only the fixed failing editor.
-  Blank transported titles fail native file parsing without an editor; both error paths leave ticket data unchanged.
-- Compare admitted writeup and review subcommands and writeup-targeted field updates with the actual pinned CLI.
-  Exercise transported writeup creation and editing with their distinct native file formats, explicit bodies, promotion, and linking.
-  Missing titles/bodies and interactive forms use only the failing editor before ticket or writeup changes.
-  Review reads and mutations preserve native output and metadata while leaving code refs and working-tree files unchanged.
-  Include review creation, revision refresh and patch-id Git subprocesses, inline path metadata, approvals, and integration recording.
-  Use different caller worktree branches to verify explicit references and native common-directory default behavior.
-  A detached common-directory HEAD retains the pinned `review new` failure even with an explicit branch.
-  Review metadata preparation rejects promised branch/commit values and missing blobs rather than silently omitting results.
-  `users`, `mine`, and top-level `update` remain rejected; admitting `review update` does not admit executable updates.
-- Exercise `views save NAME LIST_ARGS...` through both clients and direct socket requests with the actual pinned CLI.
-  Compare stored views and save output with equivalent native list-and-save operations, including defaults, aliases, and option-looking data.
-  Interleave agent A's ordinary bug listing, agent B's cleanup listing, and A's explicit bug-view save.
-  The saved view uses only A's supplied filters; no request starts between the composite children and publication.
-  Verify named-view reads, replacement of one name in execution order, preservation of other views, and persistence across service restart.
-  Restart with a different accepted container mount path; request-local repository keys cannot hide or duplicate persistent views.
-  Ordinary listing and `next` cannot supply later save filters or current-ticket targets.
-  Force list-state write failure after a successful list, and inject native save, state-validation, and publication failures.
-  No failure publishes stale filters or partial view state; failed listing never starts save.
-  Successful intermediate list output is suppressed; help neither runs children nor changes state.
-  Both children share one execution deadline; timeout, disconnect, and output failure stop the operation without replay.
-  A response failure after publication preserves the possibly completed save.
-  Missing view snapshots start empty; corrupt or incompatible existing snapshots fail startup without discarding views.
-- Prove that guest-only file input succeeds without opening caller-selected proxy paths;
-  malformed/oversized frames fail, and client bypass does not bypass admission.
-  Direct-socket requests exercise each argument-count, individual argument-byte, aggregate argument-byte, and decoded payload-byte bound
-  at the limit and just above it while remaining within the request-frame limit.
-  Over-limit decoded inputs fail before file staging or native child creation.
-  Direct-socket file-input requests exercise disallowed commands, repeated file options, non-placeholder paths, and unexpected payloads.
-- Submit a valid direct-socket request whose response exceeds socket buffering, then stop reading.
-  Verify that the server closes the connection within its absolute response-delivery deadline and serves the next request after child cleanup.
-  Partial response progress cannot reset the deadline; delivery failure never replays the operation.
-- Prove read-only guest metadata through every visible alias, private configuration and execution restrictions,
-  offline native execution, and unchanged code refs, host configuration, and working-tree files.
-  Include malicious config includes, editor settings, and `.git-meta` inputs.
-- Run simultaneous sessions in linked worktrees and issue host and agent requests from different worktrees.
-  Verify one shared service and one active native operation, native output preservation, and no shared current-ticket state.
-  Final session exit and failed workspace startup leave a published store service available to host requests.
-- Race host-first startup against launches from multiple worktrees; prove one owner, one endpoint publication, and no duplicate writer.
-  Reject incompatible runtime/VM generations, store aliases, images, and stale accepted-owner references before store access.
-- Exercise acquisition during preparation, publication, endpoint loss, explicit shutdown, and abandoned-service recovery.
-  Missing/corrupt existing state, surviving children, and unavailable runtimes must never authorize native fallback or replacement startup.
-  Fresh state permits only normal planned startup, not local ticket execution; failed published instances require explicit recovery.
-- Kill the server while its native child survives; prove new startup and host administration remain blocked until descendant cleanup.
-  Race ordinary acquisition against stop-and-admin; prove admission revocation, inherited host-lock lifetime, no overlap, and no replay.
-  Preparing attachments and socket-volume holders prevent unsafe cleanup; initialization/sync/recovery run only after complete service shutdown.
-  Runtime-free host `ti` fails rather than bypassing the service.
-- Create tickets natively in a linked worktree before enabling the proxy.
-  Its worktree-local database or sidecars block startup with a diagnostic identifying the conflicting store; no ticket data is changed or migrated.
-  Invoke coordinated initialization, import, sync, and recovery from a linked worktree and with repository-selection overrides.
-  Every admitted database-using administrator operation selects only the accepted common-directory store, including first initialization.
-  Worktree-local stores remain unchanged; rejected overrides cause no database access.
-- Test missing/incompatible/partially materialized stores, symlink/hard-link aliases, pending WAL, and native database errors.
-  A fresh instance starts against a valid stopped store with committed WAL without requiring a host checkpoint.
-  Startup and final-holder cleanup preserve unsynchronized ticket state without schema repair or deletion.
-- Interrupt after a native field write and exceed output limits after mutation.
-  Verify uncertain outcomes, no replay, process-group cleanup, and no execution after lost connections or expired admission deadlines.
-- Real-container checks establish the generic mount, publication, join, network isolation, and recovery contracts.
+- Compare representative host, guest, and direct-endpoint results with native execution in the corresponding context.
+  Test admission and transport behavior, not a stronger replacement for native ticket correctness, schema handling, or atomicity.
+  Missing/uninitialized/incompatible or incompletely loaded stores retain native initialization effects, omissions, and errors.
+- Verify unchanged host cwd/argv in ordinary and linked checkouts, including nested directories and native branch/editor context.
+  Host calls do not inspect arguments; identically named caller/main files have different contents and missing caller files have no fallback.
+  Test directory and alias preparation in ordinary and linked checkouts with nonstandard metadata locations,
+  relative/absolute links, dangling targets, and concurrent creators.
+  Wrong occupants, databases at either alias location, and sidecars beside aliases fail without replacement or migration.
+  Preparation rejects a symlinked store directory or canonical database; no main-checkout lookup is required.
+  Inspect native open-file identities for shared database/WAL/SHM access and verify shared writer locking on each supported host platform.
+  Exercise concurrent native commands, repeated sync, independent-clone import, reopening, and persistent directories/aliases after cleanup.
+  Under the selected runtime, initialize through dangling aliases, remove/recreate sidecars, and run concurrent unconfined host writers.
+- Exercise all six guest file-option sites with absolute and caller-relative inputs, attached values, clusters, spaces, symlinks, and `..`.
+  Cover nested guest cwd, linked workspaces, differing guest/host roots, missing files, and guest-only paths without host mappings.
+  Guest and host `-F -` both retain literal-file semantics; nonempty request stdin is rejected.
+  Verify only file operand spans change and native code/review metadata remains unchanged.
+- Compare the bounded scanner with native Clap without dispatch, including `--`, option-looking data, short-option value arities,
+  `--file=PATH`, `-FPATH`, `-F=PATH`, and clusters such as `-cFfile.md` versus `-tFunny`.
+  Exercise malformed and repeated file options without replacing native validation.
+  Review native upgrades against this compatibility suite; no runtime grammar-metadata generation is required.
+- Verify generated top-level/subcommand help and native help aliases through both guest and authenticated direct-endpoint paths.
+  Rejected commands, aliases, options, operands, and native hardcoded examples do not appear as available operations.
+  Cover file-path mapping and its visibility limits, explicit ticket IDs with request-private state, and noninteractive editor failures.
+  Native-definition and admission-policy changes update help through regeneration; generation failure cannot publish or reuse stale artifacts.
+  Help/version leave an absent database absent; ordinary host help works without the generated package.
+- Bypass the guest client with authenticated raw requests; reject forbidden commands, unmapped host paths, nonempty stdin,
+  malformed frames, and invalid credentials/peers.
+  Verify actual reads through redirected file paths remain confined; native-required read access does not expose human secrets.
+  Valid inputs at each limit are accepted; inputs above it are rejected before spawning.
+  Native file parsing, errors, and output remain native after path translation.
+- Prove host filesystem, configuration, subprocess, and offline confinement on each supported platform.
+  Include malicious includes/editors, `.git-meta` creation/replacement after startup, aliases, and attempted reads/writes outside permitted paths.
+  Verify runtime defaults do not add writable host locations outside the accepted directories and required devices.
+  Missing or ineffective confinement rejects startup; guest transports receive no writable metadata, human credentials, or daemon access.
+- Run host calls and endpoints from different worktrees concurrently against one host-local database without external command locks.
+  Host calls work without a runtime or endpoint; request-private state never becomes another request's or the human's state.
+  `list NAME` retains native missing-view errors; `new --checkout` cannot select a ticket for the next request.
+  The `views` and `checkout` command families remain rejected.
+  Shared database identity does not merge workspace policies, endpoints, or process ownership.
+- Verify the existing lifecycle's host-native publication, join, cancellation, and final-holder cleanup with surviving native descendants.
+  Stop only the owning session's processes; retain ticket data and other workspaces/host writers.
+  Disconnect before execution, between writes, and during output; a non-reading peer cannot extend response deadlines.
+  Failures never replay requests or promise whole-command rollback.

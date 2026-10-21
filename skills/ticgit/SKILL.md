@@ -7,7 +7,7 @@ description: How to use TicGit (`ti`) to track Git-native tickets in a local rep
 
 Use `ti` for planning, progress notes, triage, and resolving work.
 Prefer `--markdown` when the command supports it.
-Use explicit ticket IDs and branch/review references; do not rely on current-ticket or current-branch defaults.
+Use explicit ticket and writeup IDs; do not rely on current-ticket defaults.
 Native Markdown can suggest commands unavailable through the proxy; follow the supported workflows below instead.
 
 ## Basic Workflow
@@ -38,26 +38,28 @@ Claiming can reopen a closed ticket or replace an in-progress or blocked state; 
 ti claim -t <id>
 ```
 
-The proxy uses one authorship identity for the store, not a separate identity for each agent or subagent.
+The proxy uses its accepted workspace authorship identity, not a separate identity for each agent or subagent.
 Assignment and explicit ticket IDs do not reserve work for an agent.
 Filter assignments explicitly with `ti list --assigned <email>`.
 
 ## Create And Edit Tickets
 
+For proxy calls, save input files inside the shared checkout and use paths relative to the caller's cwd.
+Guest-only temporary files are unavailable.
 Create a ticket from a UTF-8 file whose first line is the title and remaining lines are the description:
 
 ```sh
-ti new -F /tmp/ticket.md --tags bug,parser --markdown
+ti new -F ticket.md --tags bug,parser --markdown
 ```
 
 Edit the title and description with the same file format:
 
 ```sh
-ti edit <id> -F /tmp/ticket.md
+ti edit <id> -F ticket.md
 ```
 
 Supply files or explicit text instead of requesting an interactive editor.
-Through the proxy, `-F -` transports bounded standard input; native TicGit does not itself implement file-stdin input.
+`-F -` names a literal file called `-`; it does not read stdin.
 
 ## Progress Notes
 
@@ -104,7 +106,7 @@ Use the ticket's `spec` field when it is the chosen home for those requirements 
 Do not create a spec for every change or duplicate a maintained repository specification:
 
 ```sh
-ti spec -t <id> -F /tmp/spec.md
+ti spec -t <id> -F spec.md
 ti show <id> --filter .spec
 ```
 
@@ -119,19 +121,6 @@ ti dep <blocker-id> -t <id> --remove
 
 `ti next` skips tickets whose dependencies are not closed; it does not require those dependencies to be closed as resolved.
 
-## Saved Views
-
-Use this proxy-only syntax only when `ti views save --help` advertises explicit list arguments:
-
-```sh
-ti views save bugs --tag bug
-ti list bugs --markdown
-```
-
-The proxy runs listing and saving as one serial request using only the supplied filters.
-With no filters, it saves the default list filters, not an earlier request's filters.
-Plain native TicGit does not accept the extended arguments; do not substitute a list-then-save workflow when agents share state.
-
 ## Writeups
 
 Use a writeup when the task calls for a versioned draft, not as a required step before creating tickets.
@@ -140,7 +129,7 @@ Create a ticket directly for actionable work; use ticket comments for incrementa
 Create and inspect a draft:
 
 ```sh
-ti writeup new --title "Parser cleanup" -F /tmp/writeup-body.md
+ti writeup new --title "Parser cleanup" -F writeup-body.md
 ti writeup list
 ti writeup show <writeup-id>
 ```
@@ -149,7 +138,7 @@ For `writeup new`, the file contains only the body; supply the title separately.
 To revise the draft:
 
 ```sh
-ti writeup edit <writeup-id> -F /tmp/revised-writeup.md
+ti writeup edit <writeup-id> -F revised-writeup.md
 ```
 
 For `writeup edit -F`, the first line is the updated title and remaining lines supply a new body version when present.
@@ -172,41 +161,20 @@ ti writeup promote <writeup-id>
 
 Promotion creates a ticket and closes the writeup; use the returned ticket ID for later work.
 
-## Code Reviews
-
-Create a review only when the repository uses TicGit review metadata and you are authorized to hand off a named Git branch.
-Making commits or completing subagent work does not by itself require a review.
-Use explicit branch and base refs:
-
-```sh
-ti review new --branch <branch-name> --base <base-ref> --ticket <id>
-ti review show <branch-name> --markdown
-```
-
-Refresh an existing review after its branch changes:
-
-```sh
-ti review update <branch-name>
-```
-
-The proxy sees the common-directory Git HEAD, not the caller's worktree branch.
-The pinned native `review new` can fail on a detached common-directory HEAD even with `--branch`; report that failure rather than changing HEAD.
-Review integration commands record metadata; they do not merge code.
-
 ## Boundaries And Failures
 
 Leave store initialization, sync/import, user-map administration, and tool/schema upgrades to coordinated host administration.
 Do not use `checkout`, `users`, `mine`, interactive UI/editor, or self-update commands.
-Only the explicit view-save form is admitted from the views command family.
+Saved views and reviews are deferred; do not use their command families through the proxy.
+`ti list <view-name>` reaches native lookup but finds no saved views in request-private state.
 
 A failed or disconnected mutation may already have changed metadata.
-Inspect the affected ticket, writeup, or review before deciding whether to retry; never retry automatically or bypass a failed proxy.
+Inspect the affected ticket or writeup before deciding whether to retry; never retry automatically or bypass a failed proxy.
 
 ## Agent Practices
 
-- Use ticket IDs or unique prefixes and explicit branch/review references.
+- Use explicit ticket/writeup IDs or unique prefixes.
 - Read existing requirements and clarify missing decisions; add a ticket spec only when it is the appropriate owner.
 - Comment when you learn something important or finish a meaningful step.
-- Create reviews only for an authorized TicGit review handoff; refresh existing reviews when their branches change.
 - Mark blockers with an explicit state update and dependencies with `ti dep`.
 - Resolve tickets only after implementation and verification are complete.

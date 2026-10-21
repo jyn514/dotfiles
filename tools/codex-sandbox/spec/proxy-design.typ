@@ -357,10 +357,13 @@ The owner-validated mode-`0600` metadata contains authenticated-egress session t
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
-The #link("tic-proxy.typ")[TicGit capability] instead uses one persistent store-scoped service per Git common directory.
-Workspace publication references its separately accepted owner; workspace teardown does not stop it.
-Its host shim always acquires or joins that service, even without agents; ordinary native-host fallback is forbidden.
-For other capabilities, the router chooses one path:
+The proposed #link("tic-proxy.typ")[TicGit capability] instead provides a restricted host-native endpoint owned by the workspace session.
+Its guest transport never opens the database; ordinary host `ti` uses a storage wrapper around the native CLI without this router or a runtime dependency.
+Both execution paths prepare the dedicated store directory and protected database aliases under the TicGit contract without changing native cwd.
+Agent execution uses Anthropic Sandbox Runtime; ordinary host calls do not depend on it.
+Host cwd/argv and native concurrency semantics remain unchanged.
+This adds no cross-VM writer lock or persistent service scope and does not change routing for other capabilities.
+For host-routable capabilities, the router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
 + If the launcher holds the lock and valid metadata exists, use the recorded runtime's transport to the validated proxy socket

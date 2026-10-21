@@ -339,6 +339,10 @@ normalization; it selects no service. Prompt editing uses host Pi's native edito
 
 Capability values are booleans. `zulip` defaults on;
 explicit `false` disables it. `nested-containers` and `flower-r2` default off.
+The proposed #link("tic-proxy.typ")[`tic` capability] is also a default-off version 2 boolean.
+It selects an installed, workspace-session-owned host executor, not a project command or native-TicGit image.
+Reject a simultaneous project `commands.tic` declaration.
+This extension is not implemented; older loaders continue to reject the unknown capability.
 These capability keys select separate services, subject to their existing
 host-authorization rules. Zulip requires available host credentials;
 when disabled, it does not validate or mount those credentials. These keys cannot
@@ -667,10 +671,14 @@ Active legacy records reject the join without reading current configuration or d
 Legacy records remain parseable only for owner-validated stale recovery. Final-holder
 cleanup permits the next launch to migrate from current configuration.
 
-The proposed #link("tic-proxy.typ")[TicGit persistent-store scope] is independent of this shared-session lifetime.
-Its accepted owner remains authoritative across worktree sessions; workspace records retain only a validated reference.
-Final-holder cleanup and image refresh do not replace it; accepting a new definition or image requires explicit store shutdown and fresh acquisition.
-This requires a separately versioned store record and a shared-session schema extension for its reference, not reinterpretation of schema 4.
+The proposed #link("tic-proxy.typ")[TicGit host executor] retains this workspace shared-session lifetime.
+Its accepted policy fixes the canonical host store, workspace-root cwd, installed native build, executor, confinement, and authenticated guest transport.
+The TicGit adapter prepares the dedicated store directory and protected database aliases under the TicGit contract.
+It uses Anthropic Sandbox Runtime for host confinement; requests never select cwd or store.
+The capability requests no native-TicGit image; guest transport helpers, if needed, use installed helper ownership.
+A versioned accepted-session extension must represent host process ownership, endpoint credentials, and implementation identity.
+Do not reinterpret schema 4 container service records as host process authority.
+Native host calls remain independent of sandbox sessions; separate worktrees share a database, not accepted policy or endpoint ownership.
 
 == Acceptance evidence
 

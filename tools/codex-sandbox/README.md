@@ -510,8 +510,18 @@ a join cannot rewrite shared metadata.
 ## Design and reference
 
 The authoritative [sandbox design specification](spec/main.typ) aggregates the sandbox contracts, including the trust model, proxy manifest, image resolution, and lifecycle.
-The [TicGit proxy design](spec/tic-proxy.typ) proposes one persistent offline service per Git common directory for host and agent ticket operations.
-It is not implemented; ordinary host `ti` would require the container runtime even with no sandbox running.
+The [TicGit proxy design](spec/tic-proxy.typ) proposes a restricted host-native executor per opted-in workspace session.
+The runtime-independent host `ti` wrapper leaves cwd and argv unchanged in every checkout.
+Its only application adaptation is preparing a dedicated shared store directory and protected database aliases in ordinary and linked checkouts.
+Agent executors prepare the same layout while retaining their accepted workspace cwd.
+Anthropic Sandbox Runtime is selected for agent confinement, with directory-scoped writes rather than individual SQLite filename grants.
+A bounded `-F` / `--file` scanner maps agent file inputs from their caller's cwd into the shared host workspace without changing CLI syntax.
+Guest-only files outside that mapping are unavailable; file contents are not transported.
+For ordinary host calls, native branch defaults, editor cwd, and caller-relative file inputs are unchanged.
+Otherwise native behavior applies, including initialization, schema handling, incomplete metadata results, errors, and concurrency.
+No custom database-content validator, external command lock, or native TicGit change is required.
+Runtime and endpoint integration remain unimplemented; the composed storage layout and confinement still need Linux and macOS verification.
+Writeups remain in scope; saved views and reviews are deferred from agent access.
 The [pending Codex broker-removal proposal](host-pi-implementation-plan.md#pending-proposal-remove-the-unused-codex-model-broker) records an alternative to the selected authentication contract.
 It is not selected; the model-authentication contract remains unchanged.
 Read the relevant contracts before changing a security boundary.
