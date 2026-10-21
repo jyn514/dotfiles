@@ -346,11 +346,13 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
         goal: current,
       };
     }
-    return {
-      ok: false,
-      message: "Completed goals are terminal; use /goal <objective> to replace or /goal clear before changing status.",
-      goal: current,
-    };
+    if (status !== "active") {
+      return {
+        ok: false,
+        message: "Completed goals must be resumed with /goal resume before changing status, or replaced with /goal <objective>.",
+        goal: current,
+      };
+    }
   }
 
   if (current.status === "blocked" && status !== "active" && status !== "paused") {
@@ -395,10 +397,10 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     };
   }
 
-  if (status === "active" && current.status !== "paused" && current.status !== "blocked") {
+  if (status === "active" && current.status !== "paused" && current.status !== "blocked" && current.status !== "complete") {
     return {
       ok: false,
-      message: "Only paused or blocked goals can be resumed.",
+      message: "Only paused, blocked, or completed goals can be resumed.",
       goal: current,
     };
   }

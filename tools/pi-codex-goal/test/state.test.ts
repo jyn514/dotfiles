@@ -268,7 +268,7 @@ test("maximum goal objective length remains 8000 Unicode scalars in this package
   assert.equal(createGoal(null, "😀".repeat(8_001)).ok, false);
 });
 
-test("updateGoalStatus rejects pause and resume on completed goals", () => {
+test("updateGoalStatus allows resuming but not pausing completed goals", () => {
   const created = createGoal(null, "finish").goal;
   assert.ok(created);
   const completed = updateGoalStatus(created, "complete").goal;
@@ -278,7 +278,9 @@ test("updateGoalStatus rejects pause and resume on completed goals", () => {
   assert.equal(updateGoalStatus(completed, "complete").ok, true);
   assert.equal(updateGoalStatus(completed, "complete").message, "Goal already complete.");
   assert.equal(updateGoalStatus(completed, "paused").ok, false);
-  assert.equal(updateGoalStatus(completed, "active").ok, false);
+  const resumed = updateGoalStatus(completed, "active");
+  assert.equal(resumed.ok, true);
+  assert.deepEqual(resumed.goal, { ...completed, status: "active", updatedAt: resumed.goal?.updatedAt });
 });
 
 test("updateGoalStatus only allows pause from active and resume from paused", () => {

@@ -28,7 +28,7 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 | `/goal` | Show the objective, status, token budget, usage, and active time. |
 | `/goal <objective>` | Set the exact objective. Confirm replacement of an unfinished goal. |
 | `/goal pause` | Pause an active or blocked goal. |
-| `/goal resume` | Continue a paused or blocked goal. |
+| `/goal resume` | Continue a paused, blocked, or completed goal with its existing usage and budget. |
 | `/goal resume cancel` | Cancel a scheduled provider-limit retry. |
 | `/goal copy` | Copy the objective to the system clipboard. |
 | `/goal edit` | Edit the objective without resetting or resuming the goal. |

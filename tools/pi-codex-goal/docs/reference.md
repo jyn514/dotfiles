@@ -90,7 +90,11 @@ Calling `update_goal` on an already-complete goal is idempotent and does not app
 The extension accounts the assistant response calling `complete` or `blocked` before persisting the change;
 completion reports final token and elapsed-time usage.
 
-Completed goals are terminal for automatic transitions: pause, resume, and hidden continuations do not reopen them. To recover from premature completion, use `/goal <objective>` to replace the goal, call `create_goal` with `replace_existing: true`, or `/goal clear` before starting again.
+Completed goals remain inactive until you explicitly run `/goal resume` or replace them.
+`/goal resume` reopens the same goal, preserving its objective, ID, usage, and token budget, and queues a continuation.
+An exhausted budget leaves the goal budget-limited without starting work.
+Agent tools, automatic recovery, and hidden continuations cannot reopen completed goals.
+To start a new goal instead, use `/goal <objective>` or `create_goal`.
 
 ### MCP tool names
 
@@ -117,7 +121,7 @@ While a goal is active, the extension:
 - Recovers from provider assistant errors without immediate hidden continuation loops. Context-window overflow triggers automatic compaction and then resumes the active goal; transient errors use bounded backoff retries; recognized provider usage-limit pauses schedule a conservative auto-resume retry. Use `/goal resume cancel` to stop the scheduled retry.
 - Prompts on session resume before reactivating a paused goal when a UI is available, and supports explicit `/goal resume`.
 - Pauses a hidden continuation that only inspects goal status with `get_goal` without doing actionable work.
-- Rejects `/goal pause` unless the goal is active or blocked and rejects `/goal resume` unless the goal is paused or blocked.
+- Rejects `/goal pause` unless the goal is active or blocked and rejects `/goal resume` unless the goal is paused, blocked, or complete.
   After host overflow recovery, an active goal can receive another continuation without changing status.
 - Sends all goal start and continuation prompts as hidden custom messages, including manual, session, and provider-limit resumes.
   These do not reset Pi's exhausted overflow recovery allowance.

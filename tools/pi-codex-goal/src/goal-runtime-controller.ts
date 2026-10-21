@@ -137,15 +137,15 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     ctx: StatusContext,
   ): GoalResult => {
     const current = stateController.getGoal();
-    if (current?.status === "blocked" && source !== "command") {
-      return { ok: false, message: "Automatic recovery does not resume blocked goals.", goal: current };
+    if ((current?.status === "blocked" || current?.status === "complete") && source !== "command") {
+      return { ok: false, message: `Automatic recovery does not resume ${current.status} goals.`, goal: current };
     }
     const result = updateGoalStatus(current, "active");
     if (!result.ok || !result.goal || result.goal.goalId !== goalId) {
       return result;
     }
     providerLimitAutoResume.clear();
-    if (current?.status === "blocked") {
+    if (current?.status === "blocked" || current?.status === "complete") {
       stateController.applyGoalTransition({ kind: "set", nextGoal: result.goal, source }, ctx);
     } else {
       stateController.resumePausedGoal(ctx);

@@ -264,13 +264,13 @@ test("/goal pause rejects completed and paused goals", async () => {
 
   await handleGoalCommand(harness.pi, harness.host, "pause", harness.ctx);
   assert.equal(harness.goal?.status, "complete");
-  assert.match(harness.notifications.at(-1) ?? "", /Completed goals are terminal/);
+  assert.match(harness.notifications.at(-1) ?? "", /Completed goals must be resumed/);
 
   const paused = updateGoalStatus(completed, "paused");
   assert.equal(paused.ok, false);
 });
 
-test("/goal resume rejects completed and ordinarily active goals", async () => {
+test("/goal resume reopens completed goals but rejects ordinarily active goals", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
@@ -278,9 +278,12 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
   assert.ok(completed);
   harness.setGoal(completed);
 
+  harness.sentMessages.length = 0;
   await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
-  assert.equal(harness.goal?.status, "complete");
-  assert.match(harness.notifications.at(-1) ?? "", /Completed goals are terminal/);
+  assert.equal(harness.goal?.status, "active");
+  assert.equal(harness.goal?.goalId, completed.goalId);
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal((harness.sentMessages[0]?.message.details as { kind: string }).kind, "command_resume");
 
   await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
   assert.equal(harness.goal?.status, "active");
@@ -288,7 +291,7 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
 
   await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
   assert.equal(harness.goal?.status, "active");
-  assert.match(harness.notifications.at(-1) ?? "", /Only paused or blocked goals can be resumed/);
+  assert.match(harness.notifications.at(-1) ?? "", /Only paused, blocked, or completed goals can be resumed/);
 });
 
 test("/goal resume restarts an active goal after host overflow recovery", async () => {
