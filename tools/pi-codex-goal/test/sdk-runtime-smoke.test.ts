@@ -129,7 +129,10 @@ test("SDK completion report includes its calling response exactly once", async (
     // just one producer's guidelines. Repeated inline aliases are noise.
     assert.deepEqual(providerPrompt.match(/\bpi__\w+_goal\b/g), ["pi__update_goal"]);
     assert.match(providerPrompt, /every explicit requirement has concrete verification evidence and no required work remains/);
-    assert.match(providerPrompt, /Only explicit \/goal resume reactivates a blocked goal; ordinary input does not/);
+    assert.match(providerPrompt, /Ordinary input does not automatically reactivate a blocked goal/);
+    assert.match(providerPrompt, /new information resolves its recorded dependency within existing authorization/);
+    assert.match(providerPrompt, /matching goal_id/);
+    assert.match(providerPrompt, /Never reactivate a paused or budget-limited goal/);
     assert.equal(providerPrompt.match(/For an active goal, read the autonomous-work skill file/g)?.length, 1,
       "model-created goals receive one optional skill route through standing guidance without a command continuation");
     assert.match(providerPrompt, /at its advertised path, if available, when starting or resuming work/);

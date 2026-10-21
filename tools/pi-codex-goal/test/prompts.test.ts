@@ -42,7 +42,11 @@ for (const [kind, prompt] of Object.entries({ standing, full, compact })) {
     assert.match(prompt, /status "blocked" and a dependency reason/);
     assert.match(prompt, /explain what is needed to the user/);
     assert.match(prompt, /Do not block while useful work remains/);
-    assert.match(prompt, /Only explicit \/goal resume reactivates a blocked goal; ordinary input does not/);
+    assert.match(prompt, /Ordinary input does not automatically reactivate a blocked goal/);
+    assert.match(prompt, /new information resolves its recorded dependency/);
+    assert.match(prompt, /matching goal_id/);
+    assert.match(prompt, /Never reactivate a paused or budget-limited goal/);
+    assert.match(prompt, /running subagent is not a dependency block/);
     assert.match(prompt, /Never complete a blocked goal/);
   });
 }
@@ -124,7 +128,8 @@ test("compact continuation keeps the authoritative objective, marker, budget and
   assert.match(compact, /status "complete" only when every explicit requirement has concrete verification evidence/);
   assert.match(compact, /status "blocked"/);
   assert.match(compact, /dependency reason explaining what it prevents and why no independent authorized work remains/);
-  assert.match(compact, /explicit \/goal resume/);
+  assert.match(compact, /status "active", matching goal_id/);
+  assert.match(compact, /human \/goal resume retains its authority/);
   assert.ok(compact.length < full.length);
 });
 

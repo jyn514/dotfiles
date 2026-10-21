@@ -45,7 +45,10 @@ test("create-goal prompt preserves task scope, evidence, replacement and budget 
   assert.match(prompt, /Do not add requirements or narrow scope without user approval/);
   assert.match(prompt, /call `update_goal` with status `blocked` and a dependency reason/);
   assert.match(prompt, /Do not block while useful work remains/);
-  assert.match(prompt, /Only explicit `\/goal resume` reactivates a blocked goal; ordinary input does not/);
+  assert.match(prompt, /Ordinary input does not automatically reactivate a blocked goal/);
+  assert.match(prompt, /new information resolves its recorded dependency within existing authorization/);
+  assert.match(prompt, /matching `goal_id`, and a resolution `reason`/);
+  assert.match(prompt, /Never use tool activation to bypass a human pause or budget limit/);
   assert.match(prompt, /Never complete a blocked goal/);
 });
 

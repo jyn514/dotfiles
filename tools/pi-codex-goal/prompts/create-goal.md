@@ -30,7 +30,11 @@ An unavailable optional skill is not a blocker.
 
 If missing user input or external work prevents meaningful progress across the remaining goal, call `update_goal` with status `blocked` and a dependency reason, then explain what is needed.
 Do not block while useful work remains.
-Only explicit `/goal resume` reactivates a blocked goal; ordinary input does not.
+Ordinary input does not automatically reactivate a blocked goal.
+If new information resolves its recorded dependency within existing authorization, use `update_goal` with status `"active"`, matching `goal_id`, and a resolution `reason`.
+Never use tool activation to bypass a human pause or budget limit.
+On an already-paused goal, use status `"paused"` and a reason only to annotate it; do not change it to blocked.
+A running subagent is not a dependency block: use `wait_agent`.
 Never complete a blocked goal.
 
 Use concise imperative language in the goal. If the task is blank or only whitespace, infer the goal based on the conversation context or ask the user to clarify.

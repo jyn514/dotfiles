@@ -30,7 +30,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
   editGoalObjective(goalId: string, objective: string, ctx: StatusContext): GoalResult;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: GoalToolStatus, reason?: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: GoalToolStatus, reason?: string, goalId?: string, signal?: AbortSignal): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -138,7 +138,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
   ): GoalResult => {
     const current = stateController.getGoal();
     if (current?.status === "blocked" && source !== "command") {
-      return { ok: false, message: "Blocked goals require explicit /goal resume.", goal: current };
+      return { ok: false, message: "Automatic recovery does not resume blocked goals.", goal: current };
     }
     const result = updateGoalStatus(current, "active");
     if (!result.ok || !result.goal || result.goal.goalId !== goalId) {
@@ -177,6 +177,8 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     toolCallId: string,
     status: GoalToolStatus,
     reason?: string,
+    goalId?: string,
+    signal?: AbortSignal,
   ): GoalResult => {
     const goal = stateController.getGoal();
     if (goal && runtimeState.completionGoalId !== null && runtimeState.completionGoalId !== goal.goalId) {
@@ -186,11 +188,23 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
         goal,
       };
     }
-    const validation = updateGoalFromTool(goal, status, reason);
+    if (signal?.aborted) {
+      return { ok: false, message: "Goal update canceled; inspect the current goal before continuing.", goal };
+    }
+    const validation = updateGoalFromTool(goal, status, reason, goalId);
     if (!validation.ok) {
       return validation;
     }
     if (status === "paused") return stateController.updateGoal(source, ctx, status, reason);
+    if (status === "active") {
+      // Publish against current state without command resume's extra hidden turn.
+      const result = stateController.updateGoal(source, ctx, status, reason, goalId);
+      if (result.ok) {
+        providerLimitAutoResume.clear();
+        goalAccounting.beginAccounting(false);
+      }
+      return result;
+    }
     providerLimitAutoResume.clear();
     if (status === "blocked") {
       continuation.clearPostCompactContinuationFallback();

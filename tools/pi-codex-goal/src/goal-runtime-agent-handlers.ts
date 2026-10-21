@@ -33,8 +33,8 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
       }, 0);
       goalAccounting.accountProgress(ctx, false, abortedTurnTokens, true);
       stateController.flushGoalPersistence("runtime");
-      if (abortedMessages.length > 0) {
-        stateController.pauseForAbort(ctx);
+      if (abortedMessages.length > 0 || ctx.signal?.aborted) {
+        stateController.pauseForAbort(ctx, runtimeState.completionGoalId);
         return;
       }
       const errorMessages = event.messages.filter(isErrorAssistantMessage);

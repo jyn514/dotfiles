@@ -1,6 +1,7 @@
 # Blocked-goal resumption implementation plan
 
-Status: selected for implementation; no live activation or release is authorized.
+Status: implemented; local and selected-host verification pass.
+No live activation or release is authorized.
 
 ## Contract
 
@@ -95,3 +96,33 @@ Tests must not modify checked-in artifacts, real user state, or shared services,
 Host-sensitive qualification uses the existing workflow's exact official and maintained-fork targets and retained SDK/CLI evidence.
 Locked development dependencies alone do not qualify host compatibility; manual interactive evidence remains a release requirement.
 Deterministic tests do not prove the model correctly interprets clarification or approval as resolving a dependency.
+
+## Implementation evidence
+
+The implementation adds neither an annotation-specific transition nor a generated action-sequence framework.
+The isolated `npm run check` passes all 457 tests, TypeScript checking, and the package dry run.
+The retained local log is `.artifacts/blocked-goal-verification/local/check.log`.
+
+Qualification also passes all 457 tests, TypeScript, and native Git/packed consumer CLI checks on official Pi 1.3.0
+and maintained fork `997a2575e0dde7c6690024184feec970d395f9b4`, using their actual companion graphs.
+Both lanes use Node 24.16.0 and npm 12.2.0, with workflow-pinned automation and once-resolved host identities.
+Exact SDK/CLI hashes, source manifests, and results are retained in `.artifacts/blocked-goal-verification/final-summary.json`.
+Only this document's status and qualification result were updated after qualification;
+production source, tests, and shipped files remain identical to the qualified snapshot.
+
+| Acceptance area | Evidence |
+| --- | --- |
+| Paused annotation, admission, trimming, duplicate no-entry, display, and old snapshots | `test/paused-reasons.test.ts` |
+| Ordinary provider-paused input cancels retry before annotation | `test/blocked-goals.test.ts` |
+| Blocked-only activation matrix, identity/reason/budget refusal, elapsed time, and replacement protection | `test/blocked-resumption.test.ts` |
+| Native direct/child activation, exact-once response accounting, no duplicate resume, and later budget crossing | `test/native-lifecycle.test.ts` |
+| Native cancellation before/after activation, human pause before publication, and pause persistence through compact/reload/fork | `test/native-lifecycle.test.ts` |
+| Command, provider-auto-resume, and UI-confirmed resume preserve authority and clear annotated reasons | `test/paused-reasons.test.ts`, `test/continuation.test.ts` |
+| Source-registered replay declarations reject ineligible status requests as avoidance evidence | `test/block-decision-replay.test.ts` |
+| Completion idempotence, native recovery, shutdown, tree reload, and stale-work protections | Existing persistence, recovery, native lifecycle, and stale queued-work suites in `npm run check` |
+
+Independent review found no blocking implementation issue.
+Its accounting-documentation correction and reason-specific resume and combined budget-crossing coverage gaps are resolved.
+Native tool-hook cancellation initially reproduced an interrupted goal remaining blocked because its assistant message still said `toolUse`.
+The same native regression passes after terminal handlers also inspect the current abort signal, following stale-work filtering and goal-identity checks.
+Manual interactive and model-judgment evidence remain outside this implementation verification; neither has been claimed.

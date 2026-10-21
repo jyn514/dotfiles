@@ -22,6 +22,7 @@ import {
   reconstructGoal,
   reconstructHostOverflowCapNeedsUserReset,
   updateGoalFromTool,
+  updateGoalStatus,
 } from "./state.ts";
 import { CUSTOM_ENTRY_TYPE, type GoalToolStatus, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
 
@@ -39,12 +40,12 @@ export interface GoalStateController {
     ctx: StatusContext | null,
   ) => boolean;
   beginOverflowRecovery: (ctx: StatusContext) => void;
-  updateGoal: (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string) => GoalResult;
+  updateGoal: (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string, goalId?: string) => GoalResult;
   flushGoalPersistence: GoalPersistence["flushGoalPersistence"];
   getGoal: () => ThreadGoal | null;
   isCurrentActiveGoalId: (goalId: string) => boolean;
   maybeFlushRuntimePersistence: GoalPersistence["maybeFlushRuntimePersistence"];
-  pauseForAbort: (ctx: ExtensionContext) => void;
+  pauseForAbort: (ctx: ExtensionContext, expectedGoalId: string | null) => void;
   pauseForRecovery: (ctx: ExtensionContext, recoveryReason: string) => void;
   persistHostOverflowUserReset: (needsReset: boolean) => void;
   reloadFromSession: (ctx: ExtensionContext) => void;
@@ -146,13 +147,15 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     deps.refreshUi(ctx);
   };
 
-  const pauseForAbort = (ctx: ExtensionContext): void => {
+  const pauseForAbort = (ctx: ExtensionContext, expectedGoalId: string | null): void => {
     const goal = getGoal();
-    if (!goal || goal.status !== "active") {
-      return;
+    if (!goal || goal.goalId !== expectedGoalId) return;
+    if (goal?.status === "blocked") {
+      const result = updateGoalStatus(goal, "paused");
+      if (result.ok && result.goal) applyGoalTransition({ kind: "set", nextGoal: result.goal, source: "runtime" }, ctx);
+    } else if (goal?.status === "active") {
+      applyGoalTransition({ kind: "abort_pause" }, ctx);
     }
-
-    applyGoalTransition({ kind: "abort_pause" }, ctx);
   };
 
   const pauseForRecovery = (ctx: ExtensionContext, recoveryReason: string): void => {
@@ -173,9 +176,9 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     applyGoalTransition({ kind: "resume_active" }, ctx);
   };
 
-  const updateGoal = (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string): GoalResult => {
+  const updateGoal = (source: GoalEntrySource, ctx: ExtensionContext, status: GoalToolStatus, reason?: string, goalId?: string): GoalResult => {
     const goal = getGoal();
-    const result = updateGoalFromTool(goal, status, reason);
+    const result = updateGoalFromTool(goal, status, reason, goalId);
     if (!result.ok || !result.goal) {
       return result;
     }

@@ -135,10 +135,10 @@ async function resumeAndComplete(h: Awaited<ReturnType<typeof fixture>>): Promis
   assert.ok(h.session.sessionManager.getEntries().some((entry) => entry.type === "custom_message" && entry.customType === CUSTOM_ENTRY_TYPE && (entry.details as { kind?: string })?.kind === "command_resume"));
 }
 
-test("native blocked goal stays blocked across input, compaction, reload and fork until explicit resume", async (t) => {
+test("native blocked goal stays blocked without a valid unblock across input, compaction, reload and fork", async (t) => {
   const h = await fixture(t);
   const blocking = fauxAssistantMessage(fauxToolCall("update_goal", { status: "blocked", reason: "Need the report filename" }), { stopReason: "toolUse" });
-  h.faux.setResponses([blocking, fauxAssistantMessage("Please supply a filename and use /goal resume.")]);
+  h.faux.setResponses([blocking, fauxAssistantMessage("Please supply a filename.")]);
   await h.session.prompt("Work until the filename is needed.");
   await h.session.waitForIdle();
   const saved = h.goal();
@@ -149,7 +149,7 @@ test("native blocked goal stays blocked across input, compaction, reload and for
   assert.equal(saved?.usage.tokensUsed, response.message.usage.input + response.message.usage.output, "the status-changing response is counted once; its receipt is not goal work");
   assert.equal(h.faux.state.callCount, 2, "blocking must stop hidden continuations without aborting the tool receipt");
 
-  h.faux.setResponses([complete(), fauxAssistantMessage("The goal still requires explicit resume.")]);
+  h.faux.setResponses([complete(), fauxAssistantMessage("Completion alone cannot resolve the blocked goal.")]);
   await h.session.prompt("Use report.md; mark the goal complete.");
   await h.session.waitForIdle();
   assert.deepEqual(h.goal(), saved, "ordinary user work cannot complete or reactivate a blocked goal");
@@ -169,6 +169,236 @@ test("native blocked goal stays blocked across input, compaction, reload and for
   assert.equal(h.goal()?.status, "complete");
   assert.equal(h.goal()?.goalId, saved?.goalId);
   assert.equal(h.goal()?.blockedReason, undefined);
+});
+
+function nativeResponse(name: string | null, args: Parameters<typeof fauxToolCall>[1]) {
+  const message = name === null
+    ? fauxAssistantMessage("Receipt delivered.")
+    : fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+  const call = message.content.find((part) => part.type === "toolCall");
+  if (call) call.id = "reused/unblock";
+  return message;
+}
+
+function nativeAssistantUsage(h: Awaited<ReturnType<typeof fixture>>) {
+  return h.session.sessionManager.getEntries().flatMap((entry) =>
+    entry.type === "message" && entry.message.role === "assistant"
+      ? [entry.message.usage.input + entry.message.usage.output] : []);
+}
+
+async function blockNativeGoal(h: Awaited<ReturnType<typeof fixture>>) {
+  h.faux.setResponses([
+    nativeResponse("update_goal", { status: "blocked", reason: "Need the report filename" }),
+    nativeResponse(null, {}),
+  ]);
+  await h.session.prompt("Work until the filename is needed.");
+  await h.session.waitForIdle();
+  const goal = h.goal();
+  assert.equal(goal?.status, "blocked");
+  assert.equal(goal?.usage.tokensUsed, nativeAssistantUsage(h)[0], "the blocked receipt is not goal work");
+  assert.ok(goal);
+  return goal;
+}
+
+for (const route of ["direct", "nested"] as const) {
+test(`native ${route} unblock continues its receipt turn without duplicate resume or retroactive usage`, async (t) => {
+  const children: Array<{ id: string; parent: string | undefined; status: unknown; tokens: unknown }> = [];
+  const h = await fixture(t, false, [(pi) => {
+    if (route === "nested") {
+      pi.registerTool({
+        name: "resolve_goal", label: "Resolve goal", description: "Resolve a goal through native child tools",
+        parameters: Type.Object({ goal_id: Type.String() }),
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+          const before = await ctx.executeTool("get_goal", {});
+          assert.equal(before.isError, false);
+          const activated = await ctx.executeTool("update_goal", {
+            status: "active", goal_id: params.goal_id, reason: "The user supplied report.md",
+          });
+          assert.equal(activated.isError, false);
+          const after = await ctx.executeTool("get_goal", {});
+          assert.equal(after.isError, false);
+          return activated.result;
+        },
+      });
+      pi.on("tool_result", (event) => {
+        if (event.toolName !== "update_goal" || !event.parentToolCallId) return;
+        const details = event.details as { goal?: { status?: unknown; tokensUsed?: unknown } };
+        children.push({ id: event.toolCallId, parent: event.parentToolCallId,
+          status: details.goal?.status, tokens: details.goal?.tokensUsed });
+      });
+    }
+  }]);
+  const blocked = await blockNativeGoal(h);
+  const starts: string[] = [];
+  h.session.subscribe((event) => { if (event.type === "agent_start") starts.push("start"); });
+  h.faux.setResponses([
+    nativeResponse(route === "nested" ? "resolve_goal" : "update_goal", route === "nested"
+      ? { goal_id: blocked.goalId }
+      : { status: "active", goal_id: blocked.goalId, reason: "The user supplied report.md" }),
+    nativeResponse("get_goal", {}),
+    nativeResponse("update_goal", { status: "complete" }),
+    nativeResponse(null, {}),
+  ]);
+  await h.session.prompt("The filename is report.md; resolve the dependency and finish the goal.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.goalId, blocked.goalId);
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.blockedReason, undefined);
+  const usage = nativeAssistantUsage(h);
+  assert.equal(usage.length, 6);
+  assert.equal(h.goal()?.usage.tokensUsed, usage[0]! + usage[3]! + usage[4]!,
+    "count the blocking response and later active responses once, excluding the unblock response and terminal receipts");
+  assert.equal(h.faux.state.callCount, 6, "two blocking responses and four clarification responses; no hidden resume call");
+  assert.equal(starts.length, 1, "unblock stays inside the ordinary input's native agent run");
+  const entries = h.session.sessionManager.getEntries();
+  assert.equal(entries.filter((entry) => entry.type === "custom_message" && entry.customType === CUSTOM_ENTRY_TYPE
+    && (entry.details as { kind?: string })?.kind === "command_resume").length, 0,
+  "tool activation must not enqueue command-resume work");
+  const receipts = entries.filter((entry) => entry.type === "message" && entry.message.role === "toolResult");
+  const activation = receipts.find((entry) => entry.type === "message" && entry.message.role === "toolResult"
+    && (entry.message.details as { goal?: { status?: string } })?.goal?.status === "active");
+  assert.ok(activation?.type === "message" && activation.message.role === "toolResult");
+  assert.partialDeepStrictEqual(activation.message.details, { goal: { status: "active", tokensUsed: blocked.usage.tokensUsed } });
+  if (route === "nested") {
+    assert.deepEqual(children, [{ id: "reused/unblock/2", parent: "reused/unblock", status: "active", tokens: blocked.usage.tokensUsed }]);
+    assert.partialDeepStrictEqual(activation.message.nestedCalls, { complete: true, calls: [
+      { id: "reused/unblock/1", name: "get_goal", status: "ok" },
+      { id: "reused/unblock/2", name: "update_goal", status: "ok" },
+      { id: "reused/unblock/3", name: "get_goal", status: "ok" },
+    ] });
+  }
+});
+}
+
+test("native unblocking cannot bypass a subsequent token-budget crossing", async (t) => {
+  const h = await fixture(t);
+  await h.session.setModel({ ...h.faux.getModel(), contextWindow: 1_000_000 });
+  const runner = h.session.extensionRunner;
+  const create = runner.getToolDefinition("create_goal");
+  assert.ok(create);
+  await create.execute("limited", { objective: "Limited report work", token_budget: 500_000, replace_existing: true },
+    undefined, undefined, runner.createToolContext("limited", undefined));
+  const blocked = await blockNativeGoal(h);
+  const responses = [
+    nativeResponse("update_goal", { status: "active", goal_id: blocked.goalId, reason: "Use report.md" }),
+    fauxAssistantMessage("Performed the report work."),
+    fauxAssistantMessage("Budget reached; stopping."),
+  ];
+  let requests = 0;
+  h.session.agent.streamFunction = (model) => {
+    const response = responses[requests++];
+    assert.ok(response, "no continuation may bypass the budget");
+    const input = requests === 2 ? 500_000 : 1;
+    const message = { ...response, api: model.api, provider: model.provider, model: model.id,
+      usage: { ...response.usage, input, output: 1, totalTokens: input + 1 } };
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: message.stopReason === "toolUse" ? "toolUse" : "stop", message });
+      stream.end();
+    });
+    return stream;
+  };
+  await h.session.prompt("The filename is report.md; resolve the dependency and work.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "budgetLimited");
+  assert.equal(h.goal()?.usage.tokensUsed, blocked.usage.tokensUsed + 500_001);
+  assert.equal(requests, 3, "activation, active work, and budget warning; no extra resume or continuation");
+  const saved = h.goal();
+  const update = runner.getToolDefinition("update_goal");
+  assert.ok(update);
+  await assert.rejects(() => update.execute("retry", { status: "active", goal_id: blocked.goalId, reason: "Still have report.md" },
+    undefined, undefined, runner.createToolContext("retry", undefined)), /Only a blocked goal/);
+  assert.deepEqual(h.goal(), saved);
+});
+
+for (const stage of ["before", "after"] as const) {
+test(`native abort ${stage} activation pauses the blocked-goal-bound input`, async (t) => {
+  let cancelled = false;
+  let activationSucceeded = false;
+  let statusAtAbort: string | undefined;
+  const h = await fixture(t, false, [(pi) => {
+    if (stage === "before") {
+      pi.on("tool_call", (event, ctx) => {
+        if (event.toolName !== "update_goal" || event.input.status !== "active") return;
+        statusAtAbort = reconstructGoal(ctx.sessionManager.getBranch()).goal?.status;
+        cancelled = true;
+        ctx.abort();
+      });
+    }
+    pi.on("tool_result", (event, ctx) => {
+      if (event.toolName !== "update_goal" || event.input.status !== "active" || event.isError) return;
+      activationSucceeded = true;
+      if (stage === "after") {
+        statusAtAbort = reconstructGoal(ctx.sessionManager.getBranch()).goal?.status;
+        cancelled = true;
+        ctx.abort();
+      }
+    });
+  }]);
+  const blocked = await blockNativeGoal(h);
+  h.faux.setResponses([
+    nativeResponse("update_goal", { status: "active", goal_id: blocked.goalId, reason: "Use report.md" }),
+    nativeResponse(null, {}),
+  ]);
+  await h.session.prompt("Use report.md; resolve the dependency.");
+  await h.session.waitForIdle();
+  assert.equal(cancelled, true, "cancellation must reach the native tool hook");
+  assert.equal(statusAtAbort, stage === "before" ? "blocked" : "active");
+  assert.equal(activationSucceeded, stage === "after", "an aborted pending call must not publish activation");
+  assert.equal(h.goal()?.goalId, blocked.goalId);
+  assert.equal(h.goal()?.status, "paused", "an interrupted ordinary bound turn is a human stop, not a resumable block");
+  assert.equal(h.goal()?.usage.tokensUsed, blocked.usage.tokensUsed, "activation must not reassign ownership of the response that began blocked");
+  assert.equal(h.faux.state.callCount, 3, "abort prevents a receipt response or hidden continuation");
+  await h.session.reload();
+  assert.equal(h.goal()?.status, "paused", "cancellation survives native reload without restart");
+});
+}
+
+test("native human pause wins before a pending unblock executes", { timeout: 5_000 }, async (t) => {
+  const pending = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  t.after(() => release.resolve());
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("tool_call", async (event) => {
+      if (event.toolName !== "update_goal" || event.input.status !== "active") return;
+      pending.resolve();
+      await release.promise;
+    });
+  }]);
+  const blocked = await blockNativeGoal(h);
+  h.faux.setResponses([
+    nativeResponse("update_goal", { status: "active", goal_id: blocked.goalId, reason: "Use report.md" }),
+    nativeResponse(null, {}),
+  ]);
+  const running = h.session.prompt("Use report.md; resolve the dependency.");
+  try {
+    await pending.promise;
+    await h.session.prompt("/goal pause");
+    assert.equal(h.goal()?.status, "paused");
+    assert.equal(h.goal()?.pausedReason, blocked.blockedReason, "human pause retains the dependency explanation");
+    assert.equal(h.goal()?.blockedReason, undefined);
+  } finally {
+    release.resolve();
+  }
+  await running;
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.goalId, blocked.goalId);
+  assert.equal(h.goal()?.status, "paused", "the pending call cannot override the newer human pause");
+  assert.equal(h.goal()?.pausedReason, blocked.blockedReason);
+  assert.equal(h.goal()?.usage.tokensUsed, blocked.usage.tokensUsed);
+  assert.equal(h.faux.state.callCount, 4, "the rejected unblock receives its ordinary receipt but queues no work");
+  const receipt = h.session.sessionManager.getEntries().findLast((entry) => entry.type === "message" && entry.message.role === "toolResult");
+  assert.ok(receipt?.type === "message" && receipt.message.role === "toolResult");
+  assert.equal(receipt.message.isError, true, "the saved transcript records rejection of the pending activation");
+  const saved = h.goal();
+  await h.session.compact();
+  await h.session.reload();
+  assert.deepEqual(h.goal(), saved, "native compaction and reload preserve the human pause and its explanation");
+  const file = h.session.sessionManager.getSessionFile();
+  assert.ok(file);
+  const fork = SessionManager.forkFrom(file, h.session.sessionManager.getCwd(), join(h.session.sessionManager.getSessionDir(), "fork"));
+  assert.deepEqual(reconstructGoal(fork.getBranch()).goal, saved, "a native fork preserves pausedReason");
+  assert.equal(h.faux.state.callCount, 4, "compaction/reload/fork do not schedule work for the paused goal");
 });
 
 test("real compact-and-retry settles only after the active goal continuation completes", async (t) => {

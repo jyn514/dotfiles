@@ -83,6 +83,7 @@ This includes requesting a skill-file read: the replay does not execute that rea
 It cannot qualify skill loading or subsequent workflow behavior.
 Answer-only responses, completion, objective replacement, invalid requests, provider errors, and query exhaustion are inconclusive.
 Mixed batches containing a valid block request count as requesting a block even if they also request another action.
+Paused annotations and blocked-goal activation requests are ineligible on the active replay seed and remain inconclusive, including mixed batches with ordinary actions.
 
 A comparison is conclusive only when the baseline requests a block.
 Exit codes are 0 for decision-point avoidance, 1 when both arms request a block, and 2 for inconclusive results or setup errors.

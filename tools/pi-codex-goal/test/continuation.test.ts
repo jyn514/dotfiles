@@ -134,9 +134,12 @@ test("session resume prompt can reactivate a paused goal", async () => {
   });
   harness.sentMessages.length = 0;
 
+  await harness.runTool("update_goal", { status: "paused", reason: "Recorded pause explanation" });
+  assert.equal(harness.snapshot().goal?.pausedReason, "Recorded pause explanation");
   await harness.emit("session_start", { type: "session_start", reason: "resume" });
 
   assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.snapshot().goal?.pausedReason, undefined);
   assert.equal(harness.sentMessages.length, 1);
   assert.equal(harness.sentUserMessages.length, 0);
   const sentMessage = harness.sentMessages[0];
@@ -908,11 +911,15 @@ test("provider-limit pauses schedule auto-resume", async () => {
     assert.match(harness.footerStatuses.at(-1) ?? "", /Auto-resume will retry in about 5 minutes/);
     assert.equal(harness.sentUserMessages.length, 0);
 
+    await harness.runTool("update_goal", { status: "paused", reason: "Provider allowance exhausted" });
+    assert.equal(harness.snapshot().goal?.pausedReason, "Provider allowance exhausted");
+    assert.deepEqual(harness.snapshot().goal?.usage, paused?.usage);
     fireProviderLimitAutoResume();
 
     const resumed = harness.snapshot().goal;
     assert.equal(resumed?.goalId, paused?.goalId);
     assert.equal(resumed?.status, "active");
+    assert.equal(resumed?.pausedReason, undefined);
     assert.equal(harness.sentUserMessages.length, 0);
     assert.equal(harness.sentMessages.length, 1);
     const sent = harness.sentMessages[0];

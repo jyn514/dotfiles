@@ -353,10 +353,10 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     };
   }
 
-  if (current.status === "blocked" && status !== "active") {
+  if (current.status === "blocked" && status !== "active" && status !== "paused") {
     return {
       ok: false,
-      message: "Goal is blocked; use /goal resume before changing its status or marking it complete.",
+      message: "Goal is blocked; resolve the recorded dependency and explicitly reactivate it before marking it complete, or use human /goal resume.",
       goal: current,
     };
   }
@@ -372,7 +372,7 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     goal.status = "blocked";
     goal.blockedReason = blockedReason.trim();
     goal.updatedAt = unixSeconds();
-    return { ok: true, message: "Goal blocked. Use /goal resume when the dependency is resolved.", goal };
+    return { ok: true, message: "Goal blocked. Explicitly reactivate it when new information resolves the dependency, or use /goal resume.", goal };
   }
 
   if (status === "complete") {
@@ -387,10 +387,10 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     };
   }
 
-  if (status === "paused" && current.status !== "active") {
+  if (status === "paused" && current.status !== "active" && current.status !== "blocked") {
     return {
       ok: false,
-      message: "Only active goals can be paused.",
+      message: "Only active or blocked goals can be paused.",
       goal: current,
     };
   }
@@ -406,6 +406,9 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
   const goal = cloneGoal(current);
   delete goal.blockedReason;
   delete goal.pausedReason;
+  if (status === "paused" && current.status === "blocked" && current.blockedReason !== undefined) {
+    goal.pausedReason = current.blockedReason;
+  }
   if (current.status === "budgetLimited" && (status === "active" || status === "paused")) {
     goal.status = "budgetLimited";
   } else {
@@ -421,7 +424,22 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
 }
 
 // Tool authority differs from command pause/resume authority.
-export function updateGoalFromTool(current: ThreadGoal | null, status: GoalToolStatus, reason?: string): GoalResult {
+export function updateGoalFromTool(current: ThreadGoal | null, status: GoalToolStatus, reason?: string, goalId?: string): GoalResult {
+  if (status === "active") {
+    if (!current || current.status !== "blocked") {
+      return { ok: false, message: "Only a blocked goal can be reactivated by the agent; a human pause or budget limit requires human action.", goal: current };
+    }
+    if (typeof goalId !== "string" || goalId !== current.goalId) {
+      return { ok: false, message: "A matching goal_id is required to unblock the current goal; inspect it with get_goal.", goal: current };
+    }
+    if (typeof reason !== "string" || !reason.trim()) {
+      return { ok: false, message: "A non-empty reason explaining how the dependency was resolved is required.", goal: current };
+    }
+    if (current.tokenBudget !== null && current.usage.tokensUsed >= current.tokenBudget) {
+      return { ok: false, message: "The goal has reached its token budget and cannot be reactivated by the agent.", goal: current };
+    }
+    return updateGoalStatus(current, "active");
+  }
   if (status !== "paused") return updateGoalStatus(current, status, reason);
   if (!current || current.status !== "paused") {
     return { ok: false, message: "Only an already-paused goal can receive a pause reason.", goal: current };

@@ -146,6 +146,7 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
     GoalRuntimeState,
     | "agentRunFromContinuation"
     | "agentRunSequence"
+    | "completionGoalId"
     | "agentRunToolNames"
     | "staleQueuedWorkGuard"
   >;

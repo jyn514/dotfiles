@@ -50,8 +50,9 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
       goalAccounting.accountProgress(ctx, true, completedTurnTokens);
       runtimeState.accounting.turnGoalId = null;
       stateController.flushGoalPersistence("runtime");
-      if (isAbortedAssistantMessage(event.message)) {
-        stateController.pauseForAbort(ctx);
+      // Aborting during tool hooks leaves the assistant message marked toolUse.
+      if (isAbortedAssistantMessage(event.message) || ctx.signal?.aborted) {
+        stateController.pauseForAbort(ctx, runtimeState.completionGoalId);
         return;
       }
       if (isErrorAssistantMessage(event.message)) {

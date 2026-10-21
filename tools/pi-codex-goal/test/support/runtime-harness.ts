@@ -109,7 +109,7 @@ export function createRuntimeHarness(options: {
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: SentUserMessage[] = [];
-  const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>>();
+  const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>>();
   const compactCalls: Array<{
     customInstructions?: string;
     onComplete?: (result: {
@@ -207,11 +207,11 @@ export function createRuntimeHarness(options: {
     },
     registerShortcut() {},
     registerTool(tool) {
-      tools.set(tool.name, (toolCallId, params) =>
+      tools.set(tool.name, (toolCallId, params, signal) =>
         tool.execute(
           toolCallId,
           params as Parameters<typeof tool.execute>[1],
-          undefined,
+          signal,
           undefined,
           ctx,
         ),
@@ -298,6 +298,9 @@ export function createRuntimeHarness(options: {
 
   ctx = {
     ...{
+      runInBackground() {
+        return unsupportedHarnessMethod("ctx.runInBackground");
+      },
       isBashRunning() {
         return unsupportedHarnessMethod("ctx.isBashRunning");
       },
@@ -403,10 +406,10 @@ export function createRuntimeHarness(options: {
     return results;
   }
 
-  async function runTool(name: string, params: Record<string, unknown>, toolCallId = "tool-call") {
+  async function runTool(name: string, params: Record<string, unknown>, toolCallId = "tool-call", signal?: AbortSignal) {
     const tool = tools.get(name);
     assert.ok(tool, `Expected tool ${name} to be registered.`);
-    return tool(toolCallId, params);
+    return tool(toolCallId, params, signal);
   }
 
   function appendMessage(message: SessionMessageEntry["message"]): void {

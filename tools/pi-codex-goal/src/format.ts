@@ -94,7 +94,8 @@ function commandHint(status: GoalStatus): string {
   if (status === "active") {
     return "/goal copy, /goal pause, /goal clear";
   }
-  if (status === "paused" || status === "blocked") {
+  if (status === "blocked") return "/goal copy, /goal pause, /goal resume, /goal clear";
+  if (status === "paused") {
     return "/goal copy, /goal resume, /goal clear";
   }
   if (status === "complete") {

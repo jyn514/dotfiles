@@ -68,16 +68,27 @@ Use `status: "blocked"` with a non-empty `reason` only when missing input or ext
 The agent must not block while independent authorized work toward the objective remains.
 Narrowing an investigation does not narrow the saved goal or its acceptance conditions.
 The reason should explain what the dependency prevents and why no independent authorized work remains.
-These are model instructions, not a mechanical proof that the goal is blocked; the tool still enforces only the existing status and non-empty-reason rules.
+These are model instructions, not a mechanical proof that the goal is blocked; the tool enforces status, identity, reason, cancellation, and budget checks, but cannot prove the dependency is resolved.
 
-Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction. It cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool. Use `/goal` to inspect the dependency and explicit `/goal resume` to reactivate the goal. Ordinary input or reopening the session cannot resume it, and completion is rejected while blocked. Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
+Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction.
+It cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool.
+Use `/goal` to inspect the dependency.
+Ordinary input or reopening the session does not automatically resume it, and completion is rejected while blocked.
+When new information resolves the recorded dependency within existing authorization, the agent may explicitly call `update_goal` with `status: "active"`, the matching `goal_id`, and a non-empty resolution `reason`.
+This continues the current turn without queuing a command-resume turn, rejects aborted calls and exhausted budgets, and cannot reactivate paused goals.
+The response that began blocked is not retroactively charged; elapsed active time starts at activation, and later active responses count once.
+Human `/goal resume` remains available.
+Human `/goal pause` also accepts blocked goals, carries their explanation into the pause reason, and prevents tool activation.
+Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
 
 Use `status: "paused"` with a non-empty `reason` only to annotate an already-paused goal.
 This does not pause an active goal or resume work; it preserves saved usage, and repeating the same trimmed reason adds no entry.
 `/goal` and tool output show the reason; objective edits and reload preserve it, while resume and completion clear it.
 An agent cannot change a paused goal to blocked.
 
-Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries. The extension accounts the assistant response calling either status change before persisting it; completion reports final token and elapsed-time usage.
+Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries.
+The extension accounts the assistant response calling `complete` or `blocked` before persisting the change;
+completion reports final token and elapsed-time usage.
 
 Completed goals are terminal for automatic transitions: pause, resume, and hidden continuations do not reopen them. To recover from premature completion, use `/goal <objective>` to replace the goal, call `create_goal` with `replace_existing: true`, or `/goal clear` before starting again.
 
@@ -103,7 +114,7 @@ While a goal is active, the extension:
 - Recovers from provider assistant errors without immediate hidden continuation loops. Context-window overflow triggers automatic compaction and then resumes the active goal; transient errors use bounded backoff retries; recognized provider usage-limit pauses schedule a conservative auto-resume retry. Use `/goal resume cancel` to stop the scheduled retry.
 - Prompts on session resume before reactivating a paused goal when a UI is available, and supports explicit `/goal resume`.
 - Pauses a hidden continuation that only inspects goal status with `get_goal` without doing actionable work.
-- Rejects `/goal pause` unless the goal is active and rejects `/goal resume` unless the goal is paused or blocked.
+- Rejects `/goal pause` unless the goal is active or blocked and rejects `/goal resume` unless the goal is paused or blocked.
   After host overflow recovery, an active goal can receive another continuation without changing status.
 - Sends all goal start and continuation prompts as hidden custom messages, including manual, session, and provider-limit resumes.
   These do not reset Pi's exhausted overflow recovery allowance.
@@ -126,9 +137,17 @@ Token counts use commas and compact abbreviations, for example `123M (123,456,78
 
 ## Durable recovery and accounting
 
-Native custom entries remain the source of truth across resume, tree/fork, reload, and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals remain blocked until explicitly resumed. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
+Native custom entries remain the source of truth across resume, tree/fork, reload, and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals require explicit tool activation after dependency resolution or human resume.
+Interruption pauses an ordinary goal-bound turn, including one that starts blocked or has just activated the goal.
+Stale continuation aborts and an older response after goal replacement do not pause the replacement. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
 
-Turn accounting consumes the current native response once, including a status-changing tool's calling response. Native `ctx.executeTool()` child calls are correlated to their calling response, and repeated tool-call IDs are correlated to the latest response rather than older entries. Multiple children do not charge that response again; the completion receipt is not goal work. Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`, and does not assume boundary drafts are committed inside handlers.
+Turn accounting consumes each response owned by the active goal once.
+A complete/block call settles that response before publishing the status.
+Native `ctx.executeTool()` child calls are correlated to their calling response;
+repeated tool-call IDs are correlated to the latest response rather than older entries.
+Multiple children do not charge that response again; the completion receipt is not goal work.
+Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`,
+and does not assume boundary drafts are committed inside handlers.
 
 ## Compatibility contract
 

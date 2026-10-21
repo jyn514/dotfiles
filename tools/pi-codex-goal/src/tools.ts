@@ -29,16 +29,17 @@ function createGoalParams(policy: TokenBudgetPolicy) {
 }
 
 const UpdateGoalParams = Type.Object({
-  status: StringEnum(["complete", "blocked", "paused"] as const, {
-    description: "Complete only when no required work remains; blocked only when a dependency prevents all remaining authorized work toward the whole goal, not just the current investigation.",
+  status: StringEnum(["complete", "blocked", "paused", "active"] as const, {
+    description: "Complete only when no required work remains; blocked only when a dependency prevents all remaining authorized work. Paused only annotates an already-paused goal; active only reactivates an identified blocked goal after dependency resolution.",
   }),
-  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the dependency, what it prevents, and why no independent authorized work remains. Required for paused: annotate an already-paused goal without resuming it." })),
+  goal_id: Type.Optional(Type.String({ minLength: 1, description: "Required only for active: use the exact current goalId to reactivate a blocked goal." })),
+  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the dependency, what it prevents, and why no independent authorized work remains. Required for paused: annotate an already-paused goal without resuming it. Required for active: explain how new information resolves the recorded dependency." })),
 });
 
 export interface ToolHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: GoalToolStatus, reason?: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: GoalToolStatus, reason?: string, goalId?: string, signal?: AbortSignal): GoalResult;
 }
 
 function textResult(
@@ -105,16 +106,16 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "update_goal",
     label: "Update Goal",
     description:
-      "Mark the whole goal complete only after the objective is achieved, or blocked only when remaining unmet outcomes and independent authorized work cannot progress. A blocked investigation is not a blocked goal. Blocking requires a dependency reason and stops automatic continuation until explicit /goal resume.",
-    promptSnippet: "Complete only after verified achievement of the whole objective; block only when no authorized progress remains. Only /goal resume reactivates blocked goals. Use paused with a reason only to annotate an already-paused goal.",
+      "Mark the whole goal complete only after the objective is achieved, or blocked only when remaining unmet outcomes and independent authorized work cannot progress. A blocked investigation is not a blocked goal. Blocking requires a dependency reason and stops automatic continuation until explicit reactivation. Use active with goal_id and a resolution reason only when new information resolves the blocked dependency; never bypass a human pause or budget limit. Use paused with a reason to annotate an already-paused goal.",
+    promptSnippet: "Complete only after verified achievement of the whole objective; block only when no authorized progress remains. Reactivate only blocked goals with active, matching goal_id, and a resolution reason; never bypass a human pause or budget limit. Use paused with a reason only to annotate an already-paused goal.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",
-    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
-      if (params.status !== "complete" && params.status !== "blocked" && params.status !== "paused") {
-        throwToolError("Status must be complete, blocked, or paused.");
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
+      if (params.status !== "complete" && params.status !== "blocked" && params.status !== "paused" && params.status !== "active") {
+        throwToolError("Status must be complete, blocked, paused, or active.");
       }
-      const result = host.updateGoal("tool", ctx, toolCallId, params.status, params.reason);
+      const result = host.updateGoal("tool", ctx, toolCallId, params.status, params.reason, params.goal_id, signal);
       if (!result.ok || !result.goal) {
         throwToolError(result.message);
       }

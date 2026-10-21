@@ -27,16 +27,19 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 | --- | --- |
 | `/goal` | Show the objective, status, token budget, usage, and active time. |
 | `/goal <objective>` | Set the exact objective. Confirm replacement of an unfinished goal. |
-| `/goal pause` | Pause the active goal. |
+| `/goal pause` | Pause an active or blocked goal. |
 | `/goal resume` | Continue a paused or blocked goal. |
 | `/goal resume cancel` | Cancel a scheduled provider-limit retry. |
 | `/goal copy` | Copy the objective to the system clipboard. |
 | `/goal edit` | Edit the objective without resetting or resuming the goal. |
 | `/goal clear` | Remove the current goal. |
 
-Press Esc to stop the current assistant turn and pause its active goal.
+Press Esc to stop the current assistant turn and pause its active or blocked goal.
 
-A blocked goal needs input or external work. Run `/goal` to read the reason. Resolve the dependency. Run `/goal resume`.
+A blocked goal needs input or external work.
+Run `/goal` to read the reason.
+After new information resolves the dependency, the agent can explicitly reactivate it with `update_goal`; you can also use `/goal resume`.
+Use `/goal pause` to prevent agent reactivation.
 
 Completed goals stay complete. Create a new goal for more work.
 

@@ -138,7 +138,7 @@ for (const [name, calls, stopReason, expected] of cases) {
   });
 }
 
-test("registered candidate declarations do not turn ineligible updates into block avoidance", async t => {
+test("registered candidate declarations do not turn ineligible updates into block avoidance", async () => {
   const candidate = await loadGuidance(resolve("src"));
   const input = applyGuidance(context, { guidelines: ["Old goal guidance"], tools: [] }, candidate);
   const declarations = getCurrentTools(input.messages);
@@ -153,21 +153,12 @@ test("registered candidate declarations do not turn ineligible updates into bloc
       status, reason: "Dependency resolved or pause annotated",
       ...(status === "active" ? { goal_id: goal.goalId } : {}),
     });
-    let available = true;
-    try { validateToolCall(declarations, update); }
-    catch (error) {
-      // Activation is exposed in the second logical implementation step. Once
-      // registered, this same case must reach eligibility, not schema rejection.
-      if (status !== "active") throw error;
-      assert.match(String(error), /status: must be equal to one of the allowed values/);
-      available = false;
-      t.diagnostic("active is not registered yet; paused must still exercise replay eligibility");
-    }
+    validateToolCall(declarations, update);
     for (const calls of [[update], [call("read", { path: "/missing/ignored.json" }), update]]) {
       const result = await replayDecision(input, goal, async () => response(calls));
       assert.equal(result.kind, "inconclusive", `${status}, batch size ${calls.length}`);
       assert.equal(compareDecisions(block, result).outcome, "inconclusive");
-      assert.match(result.reason, available ? /ineligible on the active replay seed/ : /Invalid or unavailable tool call/);
+      assert.match(result.reason, /ineligible on the active replay seed/);
       assert.deepEqual(result.calls, calls);
       assert.equal(result.responses.length, 1);
     }

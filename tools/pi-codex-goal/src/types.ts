@@ -20,7 +20,7 @@ export interface ThreadGoal {
 	updatedAt: number;
 }
 
-export type GoalToolStatus = "complete" | "blocked" | "paused";
+export type GoalToolStatus = "complete" | "blocked" | "paused" | "active";
 
 export type GoalEntrySource = "command" | "tool" | "runtime";
 
