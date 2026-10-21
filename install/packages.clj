@@ -14,7 +14,7 @@
 
  :additions
  {:alpine [:bash :less :libgcc :shadow :cargo-audit :difftastic]
-  :arch [:bacon]
+  :arch [:bacon :kernel-modules-hook]
   :wsl [:keychain]
   :conditional [:powershell :onepassword]
   :brew-fallback [:bacon]}

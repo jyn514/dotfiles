@@ -12,6 +12,8 @@ options can install packages or change system configuration; read the relevant
 function before running them on a new machine.
 Global setup can migrate an unencrypted home with fscrypt.
 It retains the unencrypted backup unless the final confirmation reads `y` successfully.
+On Arch, global package setup installs `kernel-modules-hook` to preserve the running kernel's modules across upgrades.
+`./setup sudo` (also included in `./setup all`) enables cleanup of old modules on future boots.
 
 Run `./setup services` separately from package installation to configure local
 user services. It refreshes configuration links and, on Linux, enables lingering

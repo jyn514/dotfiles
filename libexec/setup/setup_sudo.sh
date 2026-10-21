@@ -195,6 +195,11 @@ fi
 
 main() {
 	set -x
+	if exists pacman; then
+		# Preserve modules until reboot; only enable cleanup for future boots.
+		systemctl daemon-reload
+		systemctl enable linux-modules-cleanup.service
+	fi
 	install_security
 	install_device
 	set +x
