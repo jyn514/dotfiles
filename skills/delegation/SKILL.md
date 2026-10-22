@@ -21,7 +21,7 @@ Look for evidence to analyze, preparation useful under either outcome, or anothe
 Do not reserve invented cleanup or repeat an unchanged review merely to stay busy.
 If no useful independent action exists, compare direct execution with the capability or time saved by delegation.
 
-For coupled implementation with unsettled shared contracts, use [boundary-declaration](../boundary-declaration/SKILL.md#delegation-readiness).
+For coupled implementation with unsettled shared contracts, use [the shared-contract check](references/shared-contracts.md).
 Reuse settled contracts; separate files alone do not establish independence.
 
 ## Give a self-contained assignment
@@ -75,7 +75,7 @@ Choose acceptance evidence that can verify the result without repeating the enti
 A worker's summary or test count alone is not verification.
 Use independent review for consequential judgment.
 
-Apply [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status) when reporting local-only, integrated, or blocked results; this does not automatically start its full audit.
+Apply [review evidence standards](../review/references/evidence.md) when reporting local-only, integrated, or blocked results; this does not automatically start its full audit.
 Worker completion alone does not establish readiness for dependent work.
 Proceed only within the scope supported by verified evidence, including permitted partial results.
 Integrate the remaining work or resolve its blockers before starting work that depends on it.

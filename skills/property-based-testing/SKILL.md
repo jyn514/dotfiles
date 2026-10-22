@@ -19,7 +19,7 @@ concluding there is nothing to assert.
 
 Inspect the requested surfaces, their contracts, existing tests, and test runner.
 Choose properties whose expected results are independent of the implementation.
-Use [design-for-change](../design-for-change/SKILL.md) for regression/valid-change
+Use [testing guidance](../references/testing.md) for regression/valid-change
 evidence, executed-case coverage, isolation, and top-level test reachability; this
 skill owns property and generator design, not production refactoring or broader
 coverage policy. Review-only requests

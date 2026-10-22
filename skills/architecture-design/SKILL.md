@@ -1,12 +1,14 @@
 ---
 name: architecture-design
-description: "Design or assess a bounded software architecture: subsystem decomposition, module ownership, dependency direction, data/effect boundaries, facade/API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, how a subsystem should be factored, or whether a split/refactor is worth doing. Not for broad opportunity discovery, choosing among competing architectures, implementation planning, or current-change review."
+description: "Design, assess, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, routine local edits with settled boundaries, or current-change review."
 ---
 
 # Architecture Design
 
-Design one selected subsystem and decide whether implementation is worth the churn.
+Design or assess one selected subsystem and decide whether changing it is worth the churn.
 Produce a falsifiable boundary proposal, not a diagram justified by file size.
+Trace one real caller → handler → effect path before proposing a replacement; for greenfield work, trace the closest existing primitive or integration caller.
+Recommend the smallest sufficient change; when evidence is missing, propose a decision-changing check rather than a larger architecture.
 
 ## Read First
 
@@ -16,13 +18,14 @@ Discover and follow the target repository's guidance for architecture, ownership
 
 - No selected subsystem: use `opportunity-scan`
 - Recurring historical pain may matter: use `pain-axis`
-- Several materially different architectures: use `design-deliberation`
-- Selected design entering implementation: use `boundary-declaration` for unresolved or changed boundaries; reuse an existing declaration otherwise. Use `implementation-plan` when requested.
-- Proposed framework, reusable layer, plugin hook, or configurable dimension: use `second-user`
+- Tracing the existing path leaves a genuine architectural choice: consult [alternatives](references/alternatives.md).
+- That choice requires independent elaboration and critique: use [deliberation](references/deliberation.md), not a default multi-agent process.
+- Selected design needs a requested repository plan: use `implementation-plan`; carry the existing boundary contract forward.
+- A proposed mechanism's necessity or variability is unclear: consult [complexity justification](../references/complexity-justification.md).
 - Current patch: use the repository's current-change review process
 
-This skill may invoke those skills;
-it does not duplicate their procedures.
+Read only the reference or skill needed for the concrete unresolved question.
+Do not load a chain of design procedures by default.
 
 ## Inputs
 
@@ -30,7 +33,8 @@ For a staged new-tool workflow, consume approved requirements and repository int
 
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
-Stop and route elsewhere if the subsystem is unselected or the real task is comparing competing architectures.
+Stop and use opportunity-scan if no subsystem is selected.
+When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
 
 ## Principles
 
@@ -62,7 +66,9 @@ Otherwise prefer safe defaults rather than forcing the runtime user to make ever
 
 Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
 
-For an existing subsystem, inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, open or closed issues, and prepared issue drafts or campaign ledgers. For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
+For an existing subsystem, start with the affected specification, implementation, same-path tests, and callers.
+Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.
+For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 For adapters and proxies, inspect the native interface and any existing analogous adapter before deciding what to forward, restrict, or replace.
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
@@ -85,22 +91,19 @@ Consumer behavior should remain stable during extraction.
 Reject seams supported only by line count, aesthetics, symmetrical names, or hypothetical reuse.
 Prefer deleting obsolete, lossy, or misleading APIs over extracting new owners around them; a facade that drops diagnostics, provenance, lifecycle state, or other operation results is not a harmless convenience.
 Before detailed design, run the cheapest check that could disprove the seam: a dependency trace, classpath-load check, differential fixture, effect inventory, or focused caller/test probe.
-Invoke `second-user` before proposing reusable machinery, plugin hooks, or configurable dimensions.
+For proposed reusable machinery, plugin hooks, or configurable dimensions, establish the current consumer or hard constraint first.
+Consult [complexity justification](../references/complexity-justification.md) only if necessity or required variability remains unclear.
 
 ### 3. Define the target boundary
 
-For each viable seam, state:
+Maintain one evolving boundary contract, reusing existing code and settled design decisions.
+State moving and remaining responsibilities, allowed dependencies and forbidden reverse edges, API treatment, and any facade's justification and removal condition.
+For unresolved or changed ownership, representations, effects, identity, lifecycle, or recovery guarantees, answer only the applicable [boundary-contract questions](references/boundary-contracts.md).
+Do not repeat this analysis as a separate declaration phase at specification, planning, delegation, or implementation handoff.
+For staged new tools, keep the contract in the implementation specification without changing approved scope or behavior.
 
-- Moving and remaining responsibilities
-- Owner module or subsystem
-- Authoritative and derived representations
-- Allowed dependencies and forbidden reverse edges
-- Effect and mutable-state ownership
-- Public, internal, and private API treatment, plus host/guest boundaries when the repository defines them
-- Facade justification and removal condition
-
-Reapply the design-risk scan to risks introduced or changed by the proposed boundary.
-Revisit only affected reference sections and contracts, not settled questions unrelated to the change.
+Reapply the design-risk scan only to risks introduced or changed by the proposed boundary.
+Keep extraction separate from behavior changes, schema redesign, message rewrites, new frameworks, and public API expansion unless those changes are explicitly in scope.
 
 Prefer an existing domain owner for single-consumer policy.
 Create a module or component for a coherent lifecycle or shared contract, not a bag of helpers.
@@ -122,17 +125,12 @@ Do not turn every responsibility into a namespace.
 For an existing subsystem, a partial extraction is complete when it removes the motivating pain.
 For a greenfield tool, stop once the architecture satisfies approved requirements without unsupported machinery.
 
-### 5. Slice the work
+### 5. Challenge and present the design
 
-Order small slices with one owner, focused verification, stable intermediate states, and explicit stopping points. For a staged new-tool workflow, trace each slice to approved requirements and record it in the implementation specification: preserve approved behavior where behavior exists; for a greenfield tool, establish requirements incrementally rather than preserve nonexistent behavior.
-Keep extraction separate from behavior changes, schema redesign, message rewrites, new frameworks, and public API expansion.
-Before implementation, use `boundary-declaration` for unresolved or changed boundaries; reuse an existing declaration otherwise. Use `implementation-plan` when a repository plan is requested.
-
-### 6. Write and challenge the design
-
-Follow the repository's design-document convention. If none exists and a durable design document is requested, use Typst when available.
-Include only what applies: status and scope, evidence, selected and rejected seams, ownership, data/dependency flow, compatibility, slices, tests, risks, acceptance evidence, and open questions.
-Compile the document before reporting completion.
+When a durable document is requested, follow the repository's convention; otherwise use Typst when available.
+Include only applicable scope, evidence, selected and rejected seams, ownership, data/dependency flow, compatibility, tests, risks, acceptance evidence, and open questions.
+Compile the document when its format requires it.
+Architecture assessment alone does not require a new document, implementation tasks, or a commit plan.
 
 Challenge the result:
 

@@ -1,9 +1,4 @@
----
-name: audit-spec-against-impl
-description: Compare implementation and tests with the project specification for missing or partial implementation, undocumented behavior, spec lag, and obsolete spec. Use for specification-conformance audits and filing confirmed implementation gaps. Not for spec-review, current-change review, or implementing fixes.
----
-
-# Audit specification against implementation
+# Conformance review
 
 ## Establish scope and authority
 
@@ -16,7 +11,7 @@ If the specification is missing or ambiguous, or the tracker is unavailable, rep
 
 Start with files, sections, symbols, tests, commands, or revisions named by the request.
 For a named revision, inspect its changes first; treat a spec-changing revision as the requirement delta and audit the current tree against the resulting specification.
-Without a narrower scope, audit the current specification using [Whole-spec audit](references/whole-spec-audit.md).
+Without a narrower scope, audit the current specification using [Whole-spec audit](whole-spec-audit.md).
 Use the current specification and issue history as the gap ledger.
 
 A review-only request authorizes findings, not specification edits or issue writes.

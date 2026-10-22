@@ -19,7 +19,7 @@ A request such as “anything we forgot?” or “do you suggest changes to docs
 
 Reuse an existing completion audit when its requirements, implementation, and validation conditions remain unchanged. If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
 
-For work not covered by an existing audit, use `double-check` for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
+For work not covered by an existing audit, use [completion review](../review/references/completion.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
 
 - each explicit requirement and later correction;
 - the final implementation or document state;

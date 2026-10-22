@@ -41,7 +41,7 @@ comes from the affected behavior, not a fixed ranking of assertion styles.
   through the intended test route. An ignored or skipped test is not a pass.
 
 For regression/valid-change probes, executed input-class evidence, isolation, and
-suite reachability, follow [design-for-change's testing rules](../../design-for-change/SKILL.md#design-for-testing).
+suite reachability, follow [testing rules](../../references/testing.md).
 For a failure whose meaning is unclear, read
 [interpreting-failures.md](interpreting-failures.md).
 

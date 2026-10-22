@@ -67,7 +67,7 @@ For variable-cost integration work, disabling a per-case deadline can avoid
 machine-dependent failures; retain an outer timeout or another execution budget.
 Do not disable a contractual performance bound just to make a slow test pass.
 For required input-class evidence and failing-input replay, follow
-[design-for-change](../../design-for-change/SKILL.md#design-for-testing).
+[testing guidance](../../references/testing.md).
 
 ## Determinism as a property
 

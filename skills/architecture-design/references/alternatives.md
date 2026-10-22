@@ -1,13 +1,10 @@
----
-name: design-space-scout
-description: Map a software-design space into up to three viable, materially distinct briefs based on concrete decision axes. Use before detailed planning when a task has genuine architectural alternatives and weak variants should be rejected rather than fabricated.
----
-
-# design-space-scout
+# Map design alternatives
 
 ## Purpose
 
-Produce three viable, materially distinct design briefs before implementation planning begins. Diversity should come from different underlying decisions, not wording or role-play.
+Use when tracing an existing path leaves a genuine unresolved architectural choice.
+Produce up to three viable, materially distinct briefs; diversity must come from different underlying decisions, not wording or role-play.
+Skip this technique when supplied candidates already cover the material choices.
 
 ## Inputs
 
@@ -24,7 +21,7 @@ Produce three viable, materially distinct design briefs before implementation pl
    - internally inconsistent;
    - duplicates another region closely enough to add no useful diversity;
    - strictly dominated on the stated criteria.
-3. Produce exactly three briefs, A/B/C, that occupy materially different viable regions.
+3. Produce up to three briefs, A/B/C, that occupy materially different viable regions; do not fill unused slots.
 4. Each brief should be small: key decisions, rationale, important assumptions, and what would make the brief invalid.
 5. Record rejected forks and reasons separately.
 

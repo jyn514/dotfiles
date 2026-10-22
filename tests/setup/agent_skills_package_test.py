@@ -57,17 +57,35 @@ class AgentSkillsPackageTest(unittest.TestCase):
         self.assertEqual(package["pi"]["skills"], ["skills"])
 
     def test_design_phase_helpers_are_linked_references_not_skills(self) -> None:
-        skill_directory = ROOT / "skills/design-deliberation"
-        workflow = (skill_directory / "SKILL.md").read_text(encoding="utf-8")
+        skill_directory = ROOT / "skills/architecture-design"
+        workflow = (skill_directory / "references/deliberation.md").read_text(encoding="utf-8")
         for name in ("independent-plan", "cross-critic", "fusion-candidate", "council-review"):
             with self.subTest(phase=name):
                 relative_path = f"references/{name}.md"
                 reference = skill_directory / relative_path
                 self.assertTrue(reference.is_file())
-                self.assertIn(f"]({relative_path})", workflow)
+                self.assertIn(f"]({name}.md)", workflow)
                 self.assertFalse(reference.read_text(encoding="utf-8").startswith("---"))
                 self.assertFalse((ROOT / "skills" / name).exists())
                 self.assertFalse(list(skill_directory.rglob("references/**/SKILL.md")))
+
+    def test_standalone_prompt_preserves_review_discovery_description(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            shutil.copytree(ROOT / "skills", home / ".claude/skills")
+            skill = home / ".claude/skills/review/SKILL.md"
+            description = "Review fixture artifacts. Preserve this second-sentence discovery trigger."
+            skill.write_text("\n".join(
+                f"description: {description}" if line.startswith("description: ") else line
+                for line in skill.read_text().splitlines()
+            ) + "\n")
+            result = subprocess.run(
+                [ROOT / "libexec/gen-claude-system-prompt"], cwd=home,
+                env=os.environ | {"HOME": str(home)},
+                capture_output=True, text=True, check=True,
+            )
+            self.assertIn(f"- review: {description}\n", result.stdout)
+            self.assertNotIn("- double-check:", result.stdout)
 
     def test_publish_command_stages_the_skills_readme(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -24,7 +24,7 @@ Route narrower work when its owning skill is available:
 - `human-review-packets` owns selection and framing of human decision questions and approval handoffs; this skill still owns document authoring, placement, and reader usability.
 - `requirements-definition` alone owns requirements authoring from an approved product brief.
 - `tighten-docs` owns prose-only requests to make existing documentation shorter or clearer without changing its structure or technical content.
-- `spec-review` owns review-only consistency and completeness analysis of a design or specification.
+- [design review](../review/references/design.md) owns review-only consistency and completeness analysis of a design or specification.
 - `skill-authoring` owns skills.
 - `reorganize-docs` owns restructuring existing pages or navigation: consolidation, splits, renames, archives, and multi-page information architecture. Choosing a destination for new content uses the placement reference, not either skill's full workflow.
 - `typst` owns Typst markup syntax; this skill still owns the document's content and reader structure. Load both when writing a technical design in Typst.

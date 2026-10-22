@@ -9,7 +9,8 @@ Treat a request as an opening into a problem someone cares about. Bring your own
 
 This skill questions the framing and discovers possibilities.
 Use [work-selection](../work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round; it owns next-action comparison and scouting, and may return here for uncertain framing.
-Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow.
+For concrete software-design alternatives, consult [architecture alternatives](../architecture-design/references/alternatives.md).
+Use [independent deliberation](../architecture-design/references/deliberation.md) only when the unresolved choice needs independent elaboration and critique; inquiry does not automatically start it.
 
 Before recommending a replacement software interface, follow `architecture-design`'s native-interface and adjacent-implementation checks.
 Use these checks without starting its full design workflow.

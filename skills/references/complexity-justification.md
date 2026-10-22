@@ -1,14 +1,11 @@
----
-name: second-user
-description: Establish concrete justification before adding a mechanism for hypothetical needs or reusable machinery whose consumers or constraints are unclear. Use for proposed abstractions, plugin hooks, configurable policy, automation, safeguards, workflows, or supporting artifacts that may exceed the current task. Do not load for ordinary local implementation or reuse whose independent consumers and shared invariant are already established.
----
-
-# second-user
+# Justify added complexity
 
 ## Purpose
 
 Own the complexity justification check: a mechanism needs a current requirement, independent consumer, reproduced failure, or pre-existing hard constraint. “Might be useful later” is insufficient.
-This skill establishes necessity; the shared instructions' Decisions and authorization rule owns approval when the mechanism expands scope.
+Consult these detailed checks when a mechanism's necessity, consumers, or required variability is unclear.
+Ordinary local implementation and reuse with established independent consumers and a shared invariant need no extra procedure.
+These checks establish necessity, not approval to expand scope.
 
 ## Inputs
 
@@ -57,7 +54,7 @@ For the early stop above, report the mechanism, its evidence or missing justific
 - Two syntactically similar call sites are not enough if their semantics differ.
 - Do not force duplication when a real shared invariant already exists.
 
-## Routing examples
+## Examples
 
-- Load: a retry service proposed for a command that has no observed transient failure; a plugin hook justified by a possible future backend.
-- Do not load: a local condition required by the current task; extracting two existing callers that must obey the same established invariant.
+- Consult: a retry service proposed for a command that has no observed transient failure; a plugin hook justified by a possible future backend.
+- Skip: a local condition required by the current task; extracting two existing callers that must obey the same established invariant.

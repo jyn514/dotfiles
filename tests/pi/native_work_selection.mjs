@@ -12,7 +12,7 @@ const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "ut
 const { DefaultResourceLoader, formatSkillsForPrompt, SettingsManager } = await import(
   pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
 
-test("shared discovery advertises work selection and reflects installed description changes", async t => {
+test("shared discovery exposes consolidated skills, not optional references, and reflects description changes", async t => {
   const home = await mkdtemp(join(tmpdir(), "work-selection-discovery-"));
   const previousHome = process.env.HOME;
   process.env.HOME = home;
@@ -36,11 +36,16 @@ test("shared discovery advertises work selection and reflects installed descript
   await loader.reload();
   let { skills, diagnostics } = loader.getSkills();
   assert.deepEqual(diagnostics, []);
-  for (const name of ["work-selection", "autonomous-work", "creative-inquiry"]) {
+  for (const name of ["work-selection", "autonomous-work", "creative-inquiry", "architecture-design", "implementation-plan", "review"]) {
     const matches = skills.filter(skill => skill.name === name);
     assert.equal(matches.length, 1, `expected one normally discovered ${name}`);
     assert.equal(matches[0].disableModelInvocation, false);
     assert.ok(formatSkillsForPrompt([matches[0]]).includes(name));
+  }
+
+  for (const retired of ["boundary-declaration", "design-space-scout", "design-deliberation", "second-user",
+    "design-for-change", "double-check", "audit-spec-against-impl", "spec-review"]) {
+    assert.equal(skills.some(skill => skill.name === retired), false, `${retired} must not remain registered`);
   }
 
   // Descriptions come from the installed authority, not a caller's copied policy.

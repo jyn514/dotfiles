@@ -23,14 +23,14 @@ An applicable risk does not by itself justify locks, retries, monitoring, compat
 Prefer removing the risky interaction or using its existing owner before adding a mechanism.
 
 Concurrency, publication, authority, and recovery contracts belong to
-[boundary-declaration](../../boundary-declaration/SKILL.md#procedure).
+[boundary contracts](boundary-contracts.md#procedure).
 Use its questions during design to expose unresolved contracts before choosing boundaries.
-Finalize the declaration at the selected design's handoff; reuse an existing declaration when it already settles the questions.
+Carry the same contract through handoff; revise only unresolved or changed guarantees.
 During review, assess the stated contracts and report gaps rather than treating this reference as permission to redesign.
 
 ## Concurrency safety
 
-Apply boundary-declaration's state ownership, publication, and lifecycle questions to each competing writer or delayed result.
+Apply the boundary contract's state ownership, publication, and lifecycle questions to each competing writer or delayed result.
 Trace a concrete interleaving, including callback reentrancy and observations that can become stale before an effect commits.
 For example, an old operation's delayed result must not overwrite a newer owner's state.
 Check all entry points that can perform the same mutation, not just the preferred API path.
@@ -38,7 +38,7 @@ An operation completing without deadlock does not establish that its result is c
 
 ## Partial failure and recovery
 
-Use boundary-declaration to state effect outcomes, safe retry conditions, cleanup ownership, and recovery authority.
+Use the boundary contract to state effect outcomes, safe retry conditions, cleanup ownership, and recovery authority.
 Trace failure between effects and acknowledgments, including an operation that succeeds remotely but loses its response.
 Check that the proposed boundary leaves the recovery owner enough evidence to distinguish failure from an unknown outcome.
 Do not infer that retry is safe because the caller received an error, or require transactions or compensation without a concrete need.
@@ -71,7 +71,7 @@ Do not add a benchmark campaign, cache, queue, or configurable limit merely beca
 
 ## Trust and authority
 
-Use boundary-declaration to identify which caller authorizes each effect and which component enforces that authority.
+Use the boundary contract to identify which caller authorizes each effect and which component enforces that authority.
 Trace untrusted data to operations on files, credentials, processes, networks, or other protected resources.
 Check that a component's own privileges do not silently authorize every request it receives.
 Include bypass paths and sensitive data in diagnostics or persisted state, not just the main request's validation.

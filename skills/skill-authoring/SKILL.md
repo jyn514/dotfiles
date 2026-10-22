@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use spec-review; for prose-only tightening use tighten-docs.
+description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for prose-only tightening use tighten-docs.
 ---
 
 # Skill authoring
@@ -25,7 +25,7 @@ Require a concrete repeated use, second consumer, or hard constraint. Do not cre
 
 Before placing a rule in the skill body, ask whether it must act before this skill loads or on tasks the description excludes.
 Keep such entry conditions and constraints in the relevant always-loaded instructions, and link to their owner from the skill.
-For example, ownership checks also apply to routine commits excluded by `jj-workflow`, and test isolation applies when running existing tests without `design-for-change`.
+For example, ownership checks also apply to routine commits excluded by `jj-workflow`, and test isolation applies when running existing tests without a test-design procedure.
 
 Use the smallest workflow justified by uncertainty and risk. Give every costly stage an entry condition and stop when simpler evidence settles the task.
 
@@ -43,7 +43,7 @@ Create `<skill-name>/SKILL.md`, with the directory name matching the frontmatter
 - `scripts/` for deterministic operations that prose should not reimplement;
 - `assets/` for templates or static inputs.
 
-Keep the main skill sufficient to choose and begin the workflow. Refer to owning skills by name rather than copying their procedures; links to specific sections are optional. Say when to read or run each reference and distinguish its scope from local work. Preserve referenced triggers and phase boundaries: for example, consult `double-check`'s evidence standards before work without invoking its completion audit.
+Keep the main skill sufficient to choose and begin the workflow. Refer to owning skills by name rather than copying their procedures; links to specific sections are optional. Say when to read or run each reference and distinguish its scope from local work. Preserve referenced triggers and phase boundaries: for example, consult [review evidence standards](../review/references/evidence.md) before work without invoking its completion audit.
 
 ## 4. Write the frontmatter
 

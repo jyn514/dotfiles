@@ -70,15 +70,15 @@ Draft only the implementation specification when explicitly requested and the ap
 Use these normal contributors:
 
 - **`technical-docs`** for document substance and reader usability;
-- **`design-for-change`** for ordinary code, API, schema, and test design;
-- **`spec-review`** to review the completed specification.
+- [Change guidelines](../references/change-with-evidence.md#design-choices) for ordinary code, API, and schema choices, and [testing guidance](../references/testing.md) for test strategy;
+- **[design review](../review/references/design.md)** to review the completed specification.
 
 Use these conditional contributors only when their trigger holds:
 
 - **`architecture-design`** for consequential subsystem decomposition or architecture boundaries needing separate analysis;
-- **`design-deliberation`** for a genuine design fork with materially different viable options;
-- **`boundary-declaration`** for consequential or unclear interfaces and ownership boundaries;
-- **`second-user`** for reusable machinery, plugin hooks, or configurable dimensions;
+- [Design alternatives](../architecture-design/references/alternatives.md) for an unresolved architectural choice, and [independent deliberation](../architecture-design/references/deliberation.md) only when independent comparison is needed;
+- [Boundary-contract questions](../architecture-design/references/boundary-contracts.md) for unresolved or changed contracts, reusing the selected design rather than starting another declaration phase;
+- [Complexity justification](../references/complexity-justification.md) when a mechanism's necessity or required variability remains unclear;
 - **`dependency-review`** for proposed third-party dependencies.
 
 Escalation has an explicit authority boundary:

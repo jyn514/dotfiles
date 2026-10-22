@@ -1,7 +1,7 @@
 # Whole-spec audit
 
 Use this procedure when the request covers the full current specification.
-Use the specification and tracker selected in the main skill.
+Use the specification and tracker selected in [Conformance review](conformance.md#establish-scope-and-authority).
 
 ## Coverage ledger
 

@@ -19,7 +19,7 @@ authorize execution. Neither request grants permission to change maintained code
 tests, publish artifacts, or access live application state. For automatically routed
 test-sensitivity work, use only the execution authority of the enclosing task;
 loading this skill grants none. Confirming a single known regression can stay under
-`design-for-change` without a campaign.
+[testing guidance](../references/testing.md) without a campaign.
 
 Use an explicitly selected target. Otherwise, use the component already under
 discussion; if none exists, inspect the requested project and select the smallest
@@ -109,10 +109,10 @@ mutations, and unresolved cases. Do not infer a defect in the original implement
 from a defect deliberately introduced by a mutation.
 
 Recommend the smallest distinguishing tests. If permanent test changes are authorized,
-use `design-for-change` for contracts, regression/valid-change evidence, and test
+use [testing guidance](../references/testing.md) for contracts, regression/valid-change evidence, and test
 reachability; use `property-based-testing` when a whole input domain needs coverage.
 After adding tests, rerun the unchanged baseline and relevant mutations in a fresh,
-separately identified run. Use `double-check` only for its declared completion-audit
+separately identified run. Use [completion review](../review/references/completion.md) only for its declared completion-audit
 scope, not as a required campaign phase.
 
 Finish with the target and selection method, execution-path evidence, outcome counts

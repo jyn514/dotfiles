@@ -102,55 +102,72 @@ It owns the reassessment trigger and next-action comparison; it grants no autono
 When the problem's framing or approach is uncertain, use
 [creative-inquiry](creative-inquiry/SKILL.md) to question assumptions and discover
 possibilities. For comparing concrete software-design candidates, use
-[design-deliberation](design-deliberation/SKILL.md); inquiry does not automatically
-start its workflow.
+[architecture-design](architecture-design/SKILL.md); its alternatives and independent-deliberation references are conditional, not a default workflow.
 
 `creative-inquiry` is imported from
 [`nia-e/rustc-project-skills`](https://github.com/nia-e/rustc-project-skills/tree/0fe6e4d11a99b8c62776048d13f59a4e5e4ff6ca/creative-inquiry),
-with a locally adapted trigger and a boundary with `design-deliberation`.
+with a locally adapted trigger and routes to software-design references.
 
-`design-deliberation` selects the smallest useful workflow while preserving candidate isolation and
-explicit abstention. Its planning, critique, fusion, and review helpers are plain
-reference files, not registered skills: they add no descriptions to the startup
-catalog. Agents read the linked procedure when entering its phase or pass its
-text or resolved absolute path, plus the phase's inputs, to a subagent. They are
-not separate slash commands or named skills for subagent preloading. Copy the entire
-`design-deliberation/` directory when installing it individually.
+Optional design techniques live under `architecture-design/references/` and add no startup skill descriptions.
+Read [alternatives](architecture-design/references/alternatives.md) only for a demonstrated unresolved choice.
+Use [independent deliberation](architecture-design/references/deliberation.md) only when the choice needs independent elaboration and critique.
+Its phase helpers preserve candidate isolation and explicit abstention; they are not slash commands or names for subagent skill preloading.
+When copying individual skills, preserve their linked shared references and required companion directories.
 
 ### Focused new-tool workflow
 
-For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Product briefs are human-authored; agents may review them and add permitted TODO comments. Use `requirements-definition` for requirements, `technical-docs` for implementation-spec writing, and `spec-review` for maturity, upstream/downstream consistency, and stale invalidation review.
+For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Product briefs are human-authored; agents may review them and add permitted TODO comments. Use `requirements-definition` for requirements, `technical-docs` for implementation-spec writing, and [review's design mode](review/references/design.md) for maturity, upstream/downstream consistency, and stale invalidation review.
 
-## Suggested workflow
+## Design, planning, and review
 
-For an uncertain design question:
+Start architecture work by tracing one real caller through its handler and effects.
+Recommend the existing path or smallest sufficient change before opening alternatives.
+Maintain one boundary contract and carry it into specifications, requested plans, and coupled-worker assignments; do not repeat a declaration phase at each handoff.
+[Boundary-contract questions](architecture-design/references/boundary-contracts.md) address only unresolved or changed guarantees.
+[Delegation's shared-contract check](delegation/references/shared-contracts.md) checks coupled assignments without requiring architecture analysis.
 
-1. `pain-axis` — inspect repository/history evidence about where the current design has hurt.
-2. `design-space-scout` — produce three viable, materially distinct briefs.
-3. [independent-plan](design-deliberation/references/independent-plan.md) — elaborate each brief independently, ideally in isolated subagents.
-4. [cross-critic](design-deliberation/references/cross-critic.md) — compare the fixed candidates and identify assumptions, omissions, and incompatibilities.
-5. [fusion-candidate](design-deliberation/references/fusion-candidate.md) — only if the critic finds cleanly composable parts, construct one explicit synthesis candidate.
-6. [council-review](design-deliberation/references/council-review.md) — evaluate the fixed candidate set; choose, declare equivalence, or abstain.
+Use `implementation-plan` only for a requested plan of a selected change.
+It consumes settled decisions and reopens only concrete unresolved choices or contradictory evidence.
+Architecture assessment alone does not require implementation tasks or commit sequencing.
 
-After choosing a design and before implementation:
+Use [review](review/SKILL.md) with one explicit comparison target:
 
-7. `boundary-declaration` — declare unresolved or changed ownership/effect boundaries and invariants; reuse an existing declaration otherwise.
-8. `second-user` — justify proposed complexity when its current requirement, independent consumers, or hard constraints are unclear.
-9. `ratchet` — resolve enforcement-policy decisions about violation baselines, identity and counts, bounded exceptions, or replacing guarantees; use `design-for-change` for check implementation and test oracles.
+- a design or specification against its purpose, maturity, and governing constraints;
+- implementation and tests against a normative specification, bounded or whole-spec;
+- a completed substantial owned change against task acceptance.
+
+Review-only work does not authorize repair, specification edits, or issue filing.
+[Evidence standards](review/references/evidence.md) can be consulted without starting a completion audit.
+Implementation preferences live in [change guidelines](references/change-with-evidence.md#design-choices).
+Read [testing guidance](references/testing.md) for new or materially changed tests and uncertain test strategies or oracles.
+Use [complexity justification](references/complexity-justification.md) when a proposed mechanism's necessity or required variability remains unclear.
+These are on-demand references, not additional registered workflows.
+
+### Updating an existing installation
+
+Reload Pi or start a new harness session to refresh the skill catalog after installing this reorganization.
+The retired skill names have no forwarding entries:
+
+| Former skill | Current owner |
+| --- | --- |
+| `boundary-declaration` | Architecture's [boundary contracts](architecture-design/references/boundary-contracts.md); delegation's [assignment check](delegation/references/shared-contracts.md) |
+| `design-space-scout`, `design-deliberation` | Architecture's optional [alternatives](architecture-design/references/alternatives.md) and [deliberation](architecture-design/references/deliberation.md) references |
+| `second-user` | Shared [complexity justification](references/complexity-justification.md) |
+| `design-for-change` | Shared [change guidelines](references/change-with-evidence.md#design-choices) and [testing guidance](references/testing.md) |
+| `spec-review`, `audit-spec-against-impl`, `double-check` | [Review](review/SKILL.md), selecting design, conformance, or completion mode |
 
 ## Focused workflows
 
 Use these independently when their target is already selected:
 
-- `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
+- `architecture-design` — assess, design, or choose a bounded architecture, reusing settled contracts and consulting alternatives only when needed.
 - [autonomous-work](autonomous-work/SKILL.md) — pursue explicitly authorized autonomous runs and active user-authorized goals.
   Covers implementation, research, writing, planning, and review while preserving activity, acceptance order, independent progress, and resumable state.
   Implementation testing, integration, audit, and commit procedures apply only when that activity and its effects are authorized.
   Next-action selection delegates to `work-selection`; install that companion too when copying `autonomous-work` individually.
   The former [autonomous-implementation](autonomous-implementation/SKILL.md) entry forwards existing callers to this owner.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
-- `design-for-change` — resolve modeling, invariant, interface, ownership, enforcement-mechanism, regression-test, or oracle decisions; skip routine edits with an established shape.
-- `double-check` — audit substantial completed work across components, specifications, migrations, or consequential boundaries; use a diff review and native check for localized edits.
+- `review` — select design, conformance, or completion review by its comparison target; use a diff review and native check for localized edits.
 - [property-based-testing](property-based-testing/SKILL.md) — design generators and independent properties, review weak oracles, and diagnose counterexamples using the project's existing test framework.
 - [mutation-testing](mutation-testing/SKILL.md) — challenge existing tests with bounded implementation changes, verify the tested consumer uses the mutation, and distinguish test gaps from equivalent or unresolved survivors; use project-compatible engines or an explicit manual pilot.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
@@ -163,10 +180,10 @@ Use these independently when their target is already selected:
 
 You do not need the whole chain every time.
 
-- Small refactor: implement directly when ownership and invariants are clear; use `design-for-change` for unresolved design or test decisions, and `second-user` only when added machinery needs justification.
+- Small refactor: implement directly when ownership and invariants are clear; consult change/testing references for unresolved decisions and complexity justification only when added machinery lacks a concrete need.
 - Simple configuration edit: inspect the diff and validate with the native parser; no work-selection, design, or completion-audit skill is required.
 - Another substantive prerequisite, workaround, or diagnostic round: use [work-selection](work-selection/SKILL.md) before extending the current approach.
-- Architecture decision: use [design-deliberation](design-deliberation/SKILL.md) to run scouting, independent planning, critique, and fixed-set review.
+- Architecture decision: use [architecture-design](architecture-design/SKILL.md) to trace the existing path and resolve the actual choice; alternatives and independent deliberation remain optional.
 - Legacy subsystem: start with `pain-axis` before scouting.
 - Explicit autonomous run or active user-authorized goal: start with [autonomous-work](autonomous-work/SKILL.md).
   Preserve the requested activity and follow its conditional companion-skill routes.

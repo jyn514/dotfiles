@@ -1,6 +1,6 @@
 ---
 name: ratchet
-description: Define enforcement policy for an established invariant or check. Use when deciding how to block new violations while reducing an existing baseline, preserve violation identity or counts, bound exceptions and their expiry, or change an existing rule's enforced scope or guarantees. Do not load merely to choose types versus tests, design a test oracle, add regression coverage, or protect a newly implemented behavior; those decisions belong to design-for-change.
+description: Define enforcement policy for an established invariant or check. Use when deciding how to block new violations while reducing an existing baseline, preserve violation identity or counts, bound exceptions and their expiry, or change an existing rule's enforced scope or guarantees. Do not load merely to choose types versus tests, design a test oracle, add regression coverage, or protect a newly implemented behavior; those decisions use the on-demand change and testing guidelines.
 ---
 
 # ratchet
@@ -9,13 +9,13 @@ description: Define enforcement policy for an established invariant or check. Us
 
 Own the policy for which violations a check rejects, which existing violations
 it temporarily permits, and how that permitted set shrinks. Use
-[design-for-change](../design-for-change/SKILL.md) for implementing checks,
-choosing regression cases, and validating test oracles. Load both only when the
+[testing guidance](../references/testing.md) for implementing checks,
+choosing regression cases, and validating test oracles. Consult both only when the
 task contains separate policy and implementation decisions.
 
 For example, introducing a lint rule with existing violations needs a baseline
 and exception policy. Reproducing a Docker mount failure with a real container
-needs test design, so use `design-for-change` alone.
+needs test design, so use [testing guidance](../references/testing.md) alone.
 
 ## Inputs
 
@@ -27,7 +27,7 @@ needs test design, so use `design-for-change` alone.
 
 1. Inspect the owning check, its scope, and current violations. Name the
    unresolved enforcement-policy decision. If only implementation or oracle
-   design remains, stop this workflow and use `design-for-change`.
+   design remains, stop this workflow and use [testing guidance](../references/testing.md).
 2. Define violation identity and multiplicity before comparing results.
    Distinct occurrences, paths, or owners must not collapse because their
    normalized text or fingerprint is equal. Set membership is insufficient
@@ -46,7 +46,7 @@ needs test design, so use `design-for-change` alone.
    merely to make progress.
 6. Verify the policy on a new violation, a resolved baseline entry, and distinct
    violations with equal normalized text. Include exception expiry when used.
-   Follow `design-for-change` for oracle validation; record any policy outcome
+   Follow [testing guidance](../references/testing.md) for oracle validation; record any policy outcome
    that cannot yet be verified rather than claiming it is enforced.
 
 ## Output

@@ -90,7 +90,7 @@ The GraphQL API is acceptable if you need something not exposed by `gh`, but you
 When copying an existing file for direct modification, use `cp` and verify it with `cmp` (or programmatic equivalents) rather than rewriting it from scratch.
 
 `git diff --check` does not establish correctness.
-When validation strategy is unclear, use `design-for-change`.
+When validation strategy is unclear, consult [Testing with evidence](~/.agents/skills/references/testing.md).
 
 Shell scripts should be avoided unless the code is trivial process spawning.
 Code should be Clojure, Rust, or TypeScript depending on what best fits the domain.

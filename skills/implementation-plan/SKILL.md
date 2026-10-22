@@ -16,9 +16,11 @@ For a staged new-tool workflow only, require a ready implementation specificatio
    Before treating preservation as required, cite its source and trace affected consumers, including whether they change and deploy together.
    Apply [Compatibility](../references/change-with-evidence.md#compatibility).
    Mark unknown preservation requirements as unresolved rather than conservative defaults.
-2. **Confirm the design is selected.** If viable alternatives change public APIs, ownership, persistence, concurrency, or migration, use design deliberation instead.
+2. **Consume the selected design.** Reuse settled decisions and contracts; do not reopen design as a planning ceremony.
+   Return to architecture design only for a concrete unresolved choice or new contradictory evidence that changes implementation.
 3. **Record decisions.** Classify material choices as `decided`, `conservative default`, or `unresolved`; mark unresolved choices as blocking or non-blocking.
-4. **Declare boundaries.** Name mutable-state ownership, permitted side effects, authoritative and derived representations, lifecycle rules, compatibility requirements, and non-goals.
+4. **Carry boundaries forward.** Reference the existing ownership, effects, representations, lifecycle, compatibility, and non-goals.
+   Fill only decision-changing gaps using the applicable [boundary-contract questions](../architecture-design/references/boundary-contracts.md); do not require a separate declaration.
 5. **Trace and validate the lifecycle.** Cover setup, normal operation, errors, cancellation, cleanup, concurrency, and shutdown, including paths outside the apparent core function. Check proposed interfaces against every known caller, producer, transition, and bypass path; state capabilities and invariants instead of inventing unjustified method signatures.
 6. **Choose the smallest coherent change.** Separate required outcomes from chosen mechanisms and reuse sufficient existing facilities.
    For each added interface, option, field, transition, or helper, identify the consumer or concrete failure that needs it.

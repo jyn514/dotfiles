@@ -14,7 +14,7 @@ Use this skill only when both conditions hold:
 
 The approved brief is the primary authority. Additional authoritative sources may clarify or constrain intent within the approved brief, but may not expand or contradict product intent. Do not author a requirement that expands or contradicts the brief: if resolving the conflict is necessary to state the requested requirements, record `NEEDS_PRODUCT_DECISION` and require brief revision and reapproval through `new-tool-development`; otherwise raise the idea only as a non-normative suggestion. Other sources may be used only when identified as authoritative by the requester or governing product documentation. Do not infer approval from a draft, discussion, ticket, request for ideas, or an implementation task.
 
-This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to `spec-review`. Any later request for an implementation specification returns through `new-tool-development`, not `spec-review`.
+This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to [design review](../review/references/design.md). Any later request for an implementation specification returns through `new-tool-development`, not [design review](../review/references/design.md).
 
 If the brief is missing, approval is unclear, or the request is not explicit, stop and report the missing prerequisite instead of drafting.
 
@@ -73,7 +73,7 @@ When a requirement has independently decidable parts, state which parts authorit
 
 For every requirement, state concise acceptance evidence describing what would demonstrate satisfaction. Evidence must be observable and proportionate; it is not an implementation plan and must not prescribe exact tests.
 
-For each source-permitted explanation mode, state minimum sufficient observable acceptance evidence; do not let “explained,” “justified,” “supported” or “valid” defer eligibility to implementers. Preserve rule derivation versus other permitted explanation modes. If sources leave evidence unsettled and plausible readings admit different cases, record `NEEDS_PRODUCT_DECISION`, not an invented burden. Apply `spec-review`'s Non-narrowing check, including its eligibility-ambiguity procedure.
+For each source-permitted explanation mode, state minimum sufficient observable acceptance evidence; do not let “explained,” “justified,” “supported” or “valid” defer eligibility to implementers. Preserve rule derivation versus other permitted explanation modes. If sources leave evidence unsettled and plausible readings admit different cases, record `NEEDS_PRODUCT_DECISION`, not an invented burden. Apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check), including its eligibility-ambiguity procedure.
 
 Use evidence that can disprove the requirement, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one. If evidence cannot be defined without inventing behavior, record the missing decision and affected requirement, if any, in the non-normative review-decisions section; do not settle it in the requirement or acceptance evidence.
 
@@ -102,7 +102,7 @@ Before presenting the draft, verify:
 
 - no requirement lacks authoritative traceability;
 - every brief goal and supported constraint appears in coverage;
-- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply `spec-review`'s Non-narrowing check to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
+- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check) to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
 - non-goals are not accidentally restated as scope;
 - material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;
@@ -114,7 +114,7 @@ Report inspected sources, excluded or unresolved items, and any ambiguity that p
 
 ### 7. Require approval and stop
 
-Present the requirements as a draft requiring explicit human approval. Route the draft and review questions to `spec-review`, then stop pending explicit human approval. Do not proceed to implementation specification or implementation from this skill. If a later implementation-spec request arrives, return it through `new-tool-development`; `spec-review` does not own implementation-spec progression. Approval of the requirements is not approval of an implementation.
+Present the requirements as a draft requiring explicit human approval. Route the draft and review questions to [design review](../review/references/design.md), then stop pending explicit human approval. Do not proceed to implementation specification or implementation from this skill. If a later implementation-spec request arrives, return it through `new-tool-development`; [design review](../review/references/design.md) does not own implementation-spec progression. Approval of the requirements is not approval of an implementation.
 
 ## Output rules
 

@@ -47,5 +47,5 @@ Stop deliberating when evidence supports a bounded authorized action or identifi
 The parent retains selection authority and explains the decisive comparison without narrating a routine checklist.
 Finding no better alternative is a successful result: continue when the existing approach wins.
 
-Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or [design-deliberation](../design-deliberation/SKILL.md) for a genuine software-design fork.
+Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.
 Neither is a default next phase of reassessment.

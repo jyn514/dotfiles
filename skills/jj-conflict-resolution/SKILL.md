@@ -77,7 +77,7 @@ Use the base to verify the diff, then apply its changes to the current destinati
 When lifecycle ordering changed, trace the old and destination transitions before composing the fork behavior.
 For example, destination startup may reserve a run before an extension callback that previously ran before reservation.
 Preserve the destination's control flow and helper placement unless a required fork contract needs a different result.
-Do not reverse that ordering just to preserve an old race fixture; use `design-for-change` to distinguish the required state from its callback mechanism.
+Do not reverse that ordering just to preserve an old race fixture; use [testing guidance](../references/testing.md) to distinguish the required state from its callback mechanism.
 If preserving the fork contract requires changing destination policy, ask before dependent edits rather than treating the old test setup as authority.
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.

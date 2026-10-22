@@ -10,7 +10,7 @@ A graph is useful only if completing its tasks establishes the user's goal witho
 
 This skill owns decomposition and graph review, not implementation or automatic tracker mutation.
 Use `implementation-plan` for a selected change's detailed plan.
-Represent an unsettled architecture as a decision task; use `design-deliberation` when design selection is also authorized.
+Represent an unsettled architecture as a decision task; use [independent design deliberation](../architecture-design/references/deliberation.md) when design selection is also authorized.
 For a staged new-tool project, follow `new-tool-development` rather than inventing a parallel approval process.
 
 ## 1. Recover the governing goal

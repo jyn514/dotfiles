@@ -1,9 +1,4 @@
----
-name: spec-review
-description: Review a design document or specification for consistency, necessity, duplication, completeness, and independent mechanisms with overlapping semantics. Use to critique a single design or a related specification set; not to select among competing proposals or review an implementation change.
----
-
-# Specification Review
+# Design review
 
 Review the requested artifact against its purpose and project constraints.
 Report findings; revise the artifact only when requested, except for the TODO comments that `new-tool-development` permits agents to add to human-authored product briefs.
@@ -65,7 +60,7 @@ each mechanism; do not promote an implementation choice into a constraint when
 evaluating simplifications or alternatives.
 
 Before recommending parser or component reuse, apply the
-[supported-interface rule](../references/change-with-evidence.md#distinguish-guarantees-from-details).
+[supported-interface rule](../../references/change-with-evidence.md#distinguish-guarantees-from-details).
 
 ## Duplication
 
@@ -84,7 +79,7 @@ Look for missing inputs, results, failure behavior, lifecycle ownership, and
 acceptance evidence where they affect the design's claims. Do not demand a full
 API catalog or implementation plan from a high-level sketch.
 
-Use the [design-risk applicability scan](../architecture-design/references/design-risks.md#applicability)
+Use the [design-risk applicability scan](../../architecture-design/references/design-risks.md#applicability)
 to select checks for the proposed behavior, including runtime progress for asynchronous lifecycles.
 Match findings to the artifact's maturity; these checks do not authorize redesign or require new mechanisms.
 

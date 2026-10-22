@@ -1,35 +1,8 @@
----
-name: design-for-change
-description: Apply jyn's design and testing preferences when adding or materially changing tests, or when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, enforcement mechanisms, regression-test strategy, or test oracles. Examples include changing a parser's accepted language, separating a CLI from its library, or replacing a mock that misses consumer failures. Baselines of existing violations, exception expiry, and rules for weakening enforcement belong to ratchet. Do not load for routine non-test edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice.
----
+# Testing with evidence
 
-# Design for Change
+Consult when adding or materially changing tests, or resolving test-strategy or oracle uncertainty.
+Use the surrounding tests for an established pattern; do not start a design or completion audit merely to choose a test.
 
-Load once per coherent change; reload only when scope or governing constraints change.
-
-## Before substituting a mechanism
-
-When a requested or selected mechanism proves unavailable, compare the fallback with the required observable behavior before implementing it.
-State which guarantees it preserves, changes, or leaves unverified, including applicable precedence, persistence, ownership, and failure behavior.
-Apply the [shared scope rule](~/.agents/shared.md#before-changing-behavior-or-scope) to any changed guarantee outside existing authorization.
-Pause dependent implementation until that decision is resolved; continue independent investigation.
-An equivalent implementation within the authorized behavior does not need renewed approval.
-
-For example, loading a configuration profile and passing its values as overrides can both select the expected approval reviewer.
-If overrides also change precedence over project configuration, passing reviewer tests does not establish equivalence or authorize that change.
-During review, check the precedence requirement even when those tests pass.
-
-## Model the domain
-
-- Represent data precisely. Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
-- Parse, don't validate: centralize checks in a structured domain model. Treat stringly typed structured data as suspect; fix the model instead of overloading meanings.
-- Make invalid states unrepresentable when language tools can do so without poor ergonomics, such as needless singleton types.
-- Choose the strongest cheap enforcement mechanism for the named invariant: types, compiler or lint rules, regression tests, static checks, runtime assertions, or benchmarks.
-- Before a structural refactor, declare the supported interface modes—library import, module invocation, direct script invocation, or a deliberate subset—and test exactly the declared modes. Do not let execution context choose an accidental API.
-- Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
-- After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
-
-## Design for testing
 
 Split meaningful business logic and likely bugs where they can be tested. Prefer running most of the system in memory so generated tests can cover many cases cheaply. If database behavior or subtle invariants belong to the trusted computing base, run the real database in memory when practical instead of mocking it. The plan-execute pattern often helps.
 
@@ -69,5 +42,5 @@ When reviewing a system and its tests, check both directions: required behavior 
 
 Use [ratchet](../ratchet/SKILL.md) for unresolved enforcement-policy decisions about existing violations, baseline updates, bounded exceptions, or replacing guarantees. A new regression test or a better oracle alone does not need that workflow.
 
-Use [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status) to determine what the checks prove; run its full audit only after the owned edits are complete.
+Use [review evidence standards](../review/references/evidence.md) to determine what the checks prove; use the [completion audit](../review/references/completion.md) only after substantial owned edits are complete and its scope applies.
 For explicitly authorized autonomous work, [autonomous-work](../autonomous-work/SKILL.md) owns run continuity and acceptance order, not test construction.
