@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -227,13 +227,14 @@ export default function (pi: ExtensionAPI) {
     if (suspension.isPreparing(id)) manager.allowDrainingToolCall(id, event.toolCallId);
   });
 
-  pi.registerMessageRenderer(completionMessageType, (message: any, { expanded }: any, theme: Theme) => {
+  const renderCompletion: MessageRenderer<{ agent_name?: string; status?: string }> = (message, { expanded }, theme) => {
     const status = message.details?.status;
     const color = status === "completed" ? "success" : status === "failed" ? "error" : "warning";
     let text = theme.fg(color, `${status === "completed" ? "✓" : "✗"} ${message.details?.agent_name || "subagent"} ${status || "finished"}`);
     if (expanded && typeof message.content === "string") text += `\n${theme.fg("dim", message.content)}`;
     return new Text(text, 0, 0);
-  });
+  };
+  pi.registerMessageRenderer(completionMessageType, renderCompletion, { renderHistorical: renderCompletion });
 
   interface SpawnFromContextRequest {
     taskName: string;

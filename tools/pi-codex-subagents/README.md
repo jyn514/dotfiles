@@ -169,6 +169,10 @@ See the installed pi-link skill for communication conventions.
 
 ## Commands and TUI
 
+On Pi versions with historical message renderer support, collapsed completion headings show the colored status and agent name without reading the response body.
+Opening the entry shows the full delivered completion message.
+Older Pi versions keep the normal completion renderer.
+
 While agents are starting or running, a compact one-line indicator appears above the editor. It shows the task name for one active agent or a count for multiple agents and points to `/subagents`. The indicator disappears when no agents are active.
 
 `/subagents` opens the agent browser for the current session. Each row shows the task name, status, elapsed time, model, and thinking level, with the task preview underneath. Long names are shortened to fit the terminal. Press Tab to switch to the read-only all-sessions view, then Enter to open an agent.

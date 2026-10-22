@@ -974,6 +974,7 @@ describe("extension completion delivery and TUI", () => {
     const tools = new Map<string, any>();
     const commands = new Map<string, any>();
     const renderers = new Map<string, any>();
+    const historicalRenderers = new Map<string, any>();
     const sentMessages: Array<{ message: any; options: any }> = [];
     let widget: any;
     const pi: any = {
@@ -985,7 +986,10 @@ describe("extension completion delivery and TUI", () => {
       },
       registerTool(tool: any) { tools.set(tool.name, tool); },
       registerCommand(name: string, command: any) { commands.set(name, command); },
-      registerMessageRenderer(name: string, renderer: any) { renderers.set(name, renderer); },
+      registerMessageRenderer(name: string, renderer: any, options?: { renderHistorical?: any }) {
+        renderers.set(name, renderer);
+        historicalRenderers.set(name, options?.renderHistorical);
+      },
       sendMessage(message: any, options: any) { sentMessages.push({ message, options }); },
       getThinkingLevel() { return "high"; },
       getActiveTools() { return ["read", "bash"]; },
@@ -1081,6 +1085,35 @@ describe("extension completion delivery and TUI", () => {
       expect(commands.get("unpause").allowedWhilePaused).toBe(true);
       expect(commands.has("resume")).toBe(false);
       expect(renderers.has("pi-codex-subagent-completion")).toBe(true);
+      const renderHistorical = historicalRenderers.get("pi-codex-subagent-completion");
+      expect(renderHistorical).toBeFunction();
+      for (const [details, expected, color] of [
+        [{ agent_name: "/review/api", status: "completed" }, "✓ /review/api completed", "success"],
+        [{ agent_name: "/review/api", status: "failed" }, "✗ /review/api failed", "error"],
+        [{ agent_name: "/review/api", status: "interrupted" }, "✗ /review/api interrupted", "warning"],
+        [undefined, "✗ subagent finished", "warning"],
+      ] as const) {
+        const fg = mock((_color: string, text: string) => text);
+        const message = {
+          role: "custom", customType: "pi-codex-subagent-completion", display: true, timestamp: 0, details,
+          get content() { throw new Error("Closed completion headings must not read the response body"); },
+        };
+        const heading = renderHistorical(message, { expanded: false, outputPad: 0, outputPadY: 0 }, { fg });
+        expect(heading.render(80).map((line: string) => line.trimEnd())).toEqual([expected]);
+        expect(fg).toHaveBeenCalledWith(color, expected);
+      }
+      const renderCompletion = renderers.get("pi-codex-subagent-completion");
+      const completion = {
+        role: "custom", customType: "pi-codex-subagent-completion", display: true, timestamp: 0,
+        details: { agent_name: "/review/api", status: "completed" }, content: "First response line\nSecond response line",
+      };
+      const renderTheme = { fg: (_color: string, text: string) => text };
+      expect(renderCompletion(completion, { expanded: false, outputPad: 0, outputPadY: 0 }, renderTheme)
+        .render(80).map((line: string) => line.trimEnd())).toEqual(["✓ /review/api completed"]);
+      expect(renderCompletion(completion, { expanded: true, outputPad: 0, outputPadY: 0 }, renderTheme)
+        .render(80).map((line: string) => line.trimEnd())).toEqual([
+          "✓ /review/api completed", "First response line", "Second response line",
+        ]);
 
       fs.mkdirSync(scope, { recursive: true });
       const historyCreatedAt = Date.now();
