@@ -133,6 +133,11 @@ When an experiment fails, do not eagerly restore the working copy. Inspect the f
 
 When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
 
+Before adding guidance, identify its canonical owner and existing entrypoints.
+Update that owner only.
+Add a link elsewhere only if an observed discovery failure requires it; the link must not repeat the guidance.
+“Reminder,” “reinforcement,” and “visibility” are not sufficient reasons to duplicate policy.
+
 Before adding documentation or choosing its destination, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md), including for small additions during implementation.
 
 Choose documentation skills by their catalog scopes. Placement-only decisions
@@ -147,8 +152,6 @@ Try to keep lines under 150 columns wide.
 ### AGENTS.md files
 
 Treat `AGENTS.md` as an early routing and correction layer. Include only rules that always apply within its scope, routes to canonical task documentation, and constraints that must change the agent's plan before further work.
-
-Do not duplicate repository documentation, procedures, command catalogs, or style guides. Keep them with their canonical owner and route to them with enough context to know when and why to read them. If guidance applies only after selecting a task or subsystem, route to it instead of embedding it in `AGENTS.md`.
 
 ## Writing code
 
@@ -293,7 +296,9 @@ operational mechanisms, and human responsibilities from actions you can perform.
 ## Continuous improvement
 
 - **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
-- **Reinforce good behavior:** If I praise behavior not already covered by my instructions, suggest a general `AGENTS.md` change to preserve it for future agents and sessions. Do not suggest guidance already present in an `AGENTS.md` or a skill read that session.
+- **Reinforce good behavior:** If I praise behavior not already covered by existing instructions, suggest a change to the prompt or skill that owns that behavior.
+  Prefer updating an existing owner over adding a new rule or location.
+  Praise authorizes a suggestion, not an edit.
 
 ### Before recording a note
 
