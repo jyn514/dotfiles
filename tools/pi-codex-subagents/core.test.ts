@@ -1034,6 +1034,7 @@ describe("extension completion delivery and TUI", () => {
     const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
     fs.rmSync(scope, { recursive: true, force: true });
     const configFile = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "config.json");
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
     // A thinking suffix on an allowlist entry is tolerated and stripped from the offered pair.
     fs.writeFileSync(configFile, JSON.stringify({
       models: ["test/fake:high", "typo/nope"],
