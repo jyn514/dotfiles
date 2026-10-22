@@ -28,12 +28,10 @@ Exact allowlisted skills may route a subagent through the `luna` template.
 Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
-Use [work-selection](../../skills/work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round to the current approach, including in ordinary interactive tasks.
-It owns when to scout, the parent's next-action comparison, and the bounded fallback when no compatible template is available.
-Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) for fresh-context read-only inspection within that task or goal; follow its advertised caller contract rather than copying its procedure into the caller.
-Supply evidence for the main user activity as well as current work, with a complete path to a current use example when available so ignored files remain reachable.
-The template owns evidence inspection and its short report; another investigation is not the required outcome, and a scout report alone does not justify the parent's selection.
-Neither loading the skill nor consulting the scout activates autonomous execution or changes goal permissions.
+Use [work-selection](../../skills/work-selection/SKILL.md) for when to scout, the parent's next-action comparison, and the fallback when no compatible template is available.
+Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) for fresh-context read-only inspection within an authorized task or goal; follow its advertised caller contract.
+Include a complete path to a current use example when available so ignored files remain reachable.
+Neither reassessment nor scouting activates autonomous execution or changes goal permissions.
 The scout inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
 The scout decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
 Its 200-word report limit is an instruction, not a runtime limit.

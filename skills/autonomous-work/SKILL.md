@@ -77,6 +77,10 @@ For implementation work, use these companion procedures when their conditions ap
 For an implementation acceptance case, identify the actual entrypoint, authoritative inputs, intervening interfaces, final consumer, and cheapest realistic check.
 Require end-to-end evidence unless the governing scope explicitly declares a feasibility or component milestone.
 Do not replace that condition with a helper's local success.
+Before extending prerequisite or capability work without a new consumer-visible result, attempt the nearest intended-consumer check.
+If it cannot run, identify the missing dependency and use work-selection to compare repair with the smallest authorized alternative.
+Connect each handoff to the intended consumer or remove the temporary path before extending it with another fixture-only capability.
+If a repair displaces integration, retain integration as the next action for that acceptance condition.
 If blocked, retain downstream obligations rather than silently deferring them.
 Missing real inputs do not block integration using valid fixture inputs, but fixtures do not satisfy requirements for real-input evidence.
 Where acceptance permits partial results, keep unsupported cases explicitly held while supported cases reach the consumer.
