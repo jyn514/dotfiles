@@ -10,10 +10,29 @@ This changelog is based on the git history from `2026-03-21` (initial commit) th
 
 ### Added
 
-- Successful `link_send` calls return a UUID message ID in their text and details.
+- `link_set_identity` changes this root session's preferred local name and/or group without replacing user-owned fields.
+  Per-field origins survive reload and resume, unknown legacy ownership stays protected, and offline updates do not reconnect.
+  Preferred identities remain distinct from hub-assigned collision suffixes; explicit user empty-`@` spelling is preserved.
+- `link_send` accepts exactly `{ broadcast: true }` for a one-time current-group root selection, excluding the sending root.
+  Copies share one UUID and a broadcast marker, with no offline replay.
+  The bounded routing receipt distinguishes submitted, failed, skipped, unsupported, and unknown outcomes without waiting for model responses.
+- `link_reply` privately routes to the session identity of a message's delivered author, not a mutable name.
+  Root reply permission comes only from admitted messages in the actual session transcript and survives reload and resume.
+  Queued or cleared steering messages grant no permission; unknown references fail, group restrictions remain, and unsupported old peers are explicit.
+- Broadcasts with `includeSubagents: true` reach active workers through the supported `pi-codex-subagents` manager/child bridge, including the sender's workers.
+  Workers use reply-only conversations; private answers go only to the requesting worker, without parent-model forwarding.
+  Missing integration reports unsupported, and paused or finished workers are never resumed or restarted for delivery.
+- The bundled skill covers identity, broadcasts, and delivered-author replies, with no unsolicited acknowledgments or automatic parent forwarding.
+  General clarifications use current-group broadcasts requesting worker inclusion; task-specific answers stay private.
+- Successful direct `link_send` calls return a UUID message ID in their text and details.
 - `link_send` accepts optional `replyTo` for asynchronous replies to any message, without requiring a pending ask.
 - Incoming transcript panels and model-visible text include message IDs and `Reply to` annotations for each message in a batch.
   Legacy peers' messages remain supported without IDs.
+
+### Fixed
+
+- Repeating an unchanged identity preference keeps collision-suffixed clients connected and preserves their assigned names.
+- Broadcasts treat empty `replyTo` correlation as omitted for both hub and client callers instead of silently dropping client requests.
 
 ## 0.5.2 — 2026-09-29
 

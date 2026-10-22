@@ -2,7 +2,9 @@
 
 This is a local fork of `alvivar/pi-link` 0.5.2 at commit `8dcec96c89c3816f6290a68a64c8f40545e0df4a`.
 The upstream MIT license is retained in [LICENSE](LICENSE).
-This fork adds message IDs, optional reply references, and Pi session IDs without blocking asks or offline storage.
+This fork adds protected agent-selected identities, group broadcasts, and private replies by delivered-message reference.
+It retains asynchronous conversations without blocking asks or offline storage.
+Root APIs integrate with the installed `pi-codex-subagents` manager/child bridge for active-worker delivery and private worker replies. Without that bridge, worker outcomes are explicitly unsupported.
 It connects on startup by default.
 The npm package `pi-link` still selects upstream, not this fork.
 The link is localhost-only and has no authentication; do not expose port 9900 externally.
@@ -159,51 +161,159 @@ With two projects open, you may not want their terminals to see each other. Put 
 
 ## LLM Tools
 
-Three tools: `link_send` to talk to another terminal, `link_list` to see who is there, and `link_compact` to trim another terminal's context. pi-link also ships a **pi-link-tools** skill describing how they behave.
+Five root tools cover identity, messaging, discovery, and remote compaction.
+The bundled **pi-link-tools** skill supplies model action conventions; the reference below describes observable behavior.
 
 ### Which tool should I use?
 
-| Tool           | Behavior                                                | Returns                                                 |
-| -------------- | ------------------------------------------------------- | ------------------------------------------------------- |
-| `link_send`    | Send a message to one other terminal                    | Reports whether sending started, not whether it arrived |
-| `link_list`    | List currently connected terminals                      | Terminal list with roles, Pi session IDs, status, cwd, and context |
-| `link_compact` | Ask another terminal to compact and wait for its result | Compacted, declined, or failed                          |
+| Tool | Behavior | Returns |
+| --- | --- | --- |
+| `link_set_identity` | Set this session's preferred name and/or group | Preference, origins, assigned name, connection state, and pending state |
+| `link_send` | Send to one terminal or broadcast to the current group | Direct-send status, or a bounded broadcast routing receipt |
+| `link_reply` | Reply privately to a delivered message's author | A bounded routing receipt for the resolved destination |
+| `link_list` | List connected terminals in your group | Roles, Pi session IDs, status, cwd, and context |
+| `link_compact` | Request remote compaction and wait for its result | Compacted, declined, or failed |
+
+### `link_set_identity`
+
+Set this session's preferred local link name, group, or both:
+
+```typescript
+link_set_identity({ name: "reviewer", group: "prose" });
+link_set_identity({ group: "prose" }); // Keep the local name.
+link_set_identity({ name: "reviewer" }); // Keep the group.
+```
+
+At least one field is required.
+`name` must be nonempty after whitespace normalization and cannot contain `@`.
+`group` is the text after the first `@`; `""` selects the ungrouped group, and further `@` characters are group text.
+Omitted fields retain both their value and ownership.
+This does not rename the Pi session or change its selected session file.
+
+Name and group have independent origins: `generated`, `agent`, or `user`.
+The tool can replace generated or agent-chosen fields, but a request that would replace either user-owned field fails atomically.
+Supplying the same user-owned value is a no-op and leaves it protected.
+User naming commands can replace agent choices and claim their explicitly assigned fields even when the text already matches.
+Legacy saved names and Pi session-name fallbacks with unknown authorship remain protected.
+Ownership survives reload and resume.
+A user spelling such as `reviewer@` retains its explicit empty suffix.
+
+A connected client may reconnect to apply the change.
+Registration and agent hub renames may receive a collision suffix such as `reviewer-2@prose` without changing the saved preference or origins.
+A colliding manual hub rename still fails.
+Repeating an unchanged preference preserves its assigned collision suffix.
+Explicit disconnect cancels a pending rename but retains the saved preference.
+An offline update saves the preference without reconnecting.
+
+Tool details contain `preferred`, `assignedName`, `connectionState`, and `pending`.
+`preferred` contains `name`, `group`, `nameOrigin`, `groupOrigin`, and optional `explicitGroup`.
+`assignedName` is `null` offline; `pending` means the requested client rename has not been assigned yet.
+Do not treat a preference as an already connected name.
+Agree on a group before moving: these tools cannot discover or contact sessions in another group.
 
 ### `link_send`
 
-Send a message to one other terminal. The sender returns immediately.
-
-| Parameter | Type     | Description |
-| --------- | -------- | ----------- |
-| `to`      | `string` | Target terminal name |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `to` | `string` or exactly `{ broadcast: true }` | One terminal name, or the current group's connected roots |
 | `message` | `string` | Message content |
-| `replyTo` | `string` | Optional full ID of the message being answered |
+| `replyTo` | optional `string` | Correlation only; does not select recipients or prove prior delivery |
+| `includeSubagents` | optional `boolean` | Defaults to `false`; `true` is allowed only for broadcast |
 
-When a message reaches the target terminal, it enters the receiver's inbox.
-Messages arriving close together are usually delivered as one batch, in arrival order, each batch one `[Link: N message(s) received]` block.
-Each message includes its sender and full message ID; replies also include a `Reply to <original-message-id>` line.
-These fields appear in both the model-visible text and the transcript panel.
-The batching window, the size caps that can split a batch and what can hold one back are in [Inbox](design.md#inbox).
-
-The receiver's state is read when that batch is delivered, not when it is sent. If the receiver is still running then, the batch is steered into that run at Pi's next safe boundary — current tool calls finish first, before the next LLM call. Otherwise it starts a turn. There is no way to send without entering the receiver's reasoning.
-
-Each send has exactly one recipient; there is no fan-out.
-
-Targets are pre-validated against the terminals in your group, so a definite typo, an offline name and a name outside your group all fail the same way.
-Sending to yourself is rejected.
-For a client, a successful send means the message was handed to its connection to the hub.
-It does not confirm that the hub routed it or that the receiver saw it — see [Message Routing](design.md#message-routing--error-handling).
-Successful sends return a new UUID as `messageId` in their text and structured result.
-A reply is an ordinary later `link_send` with the received message's full ID in `replyTo`:
+#### Direct send
 
 ```typescript
-link_send({ to: "builder", message: "The null check is missing.", replyTo: "<received-message-id>" })
+link_send({ to: "reviewer@prose", message: "Check the condition." });
 ```
 
-`to` still selects the recipient; `replyTo` does not route the message or require a pending ask.
-The reference is caller-supplied and is not checked against message history or the recipient.
-Replies can answer ordinary messages, and replies have their own IDs so another message can answer them.
-No response is produced automatically, and the send never waits for one.
+A string target sends to one other terminal and returns immediately.
+A typo, an offline name, and a name outside your group all fail the same local target check.
+Sending to yourself is rejected.
+For a client, success means the message was handed to the hub connection, not that the hub routed it or the receiver saw it.
+A later hub routing failure appears as a human notification, not a new result to the sending model.
+Successful direct sends return a UUID as `messageId` in their text and details.
+
+The optional `replyTo` field records a correlation without checking history or selecting the recipient.
+Use [`link_reply`](#link_reply) to answer a received message by its delivered author rather than a remembered name.
+
+#### Group broadcast
+
+```typescript
+link_send({
+  to: { broadcast: true },
+  message: "Assess directness, not voice. Stop tests based on the voice interpretation.",
+  includeSubagents: true,
+});
+```
+
+The hub selects connected roots in the sender's current group once, excluding the sending root.
+A root is a connected Pi session, not one of its delegated workers.
+All plain names share the empty group, so an ungrouped broadcast can interrupt unrelated sessions.
+Agree on a named group before moving there or sending project-specific broadcasts.
+There is no special string target: names such as `all` and `*` remain ordinary names.
+
+All selected copies retain one UUID, sender attribution, content, optional `replyTo`, and a visible broadcast marker.
+For broadcasts, an empty `replyTo` is treated as omitted.
+Late joiners receive no replay, and later group changes do not retract accepted copies.
+The call waits at most five seconds for routing outcomes, never for a model response.
+Its details contain `messageId`, `operation` (`broadcast` or `reply`), `outcomes`, and `empty`.
+`error` is present when at least one outcome exists and none is `submitted`.
+Each outcome identifies its kind and destination, with `status` and an optional `reason`.
+Model-visible result text includes the full message ID and each reported recipient's identity, status, and reason.
+Statuses distinguish `submitted`, `failed`, `skipped`, `unsupported`, and `unknown`.
+A partial result does not undo copies already submitted.
+`submitted` means transport acceptance, not model admission, reading, or completion.
+A lost receipt, disconnect, deadline, or cancellation after sending can leave an unknown outcome; do not automatically resend unknown copies.
+Without a broadcast routing receipt, even the recipient selection can be unknown.
+An empty selection is reported explicitly.
+
+**Worker delivery requires the supported `pi-codex-subagents` manager/child bridge in each owning session.**
+Children also need Pi's native fresh-input admission and pause APIs; missing capabilities report `unsupported`.
+`includeSubagents: true` asks each manager for its active own workers, including the sender's workers.
+The manager owns selection and lifecycle: finished or paused workers are not restarted or resumed.
+Root delivery does not wait for the parent model to forward the correction.
+Without a manager, that owner's worker outcome is `unsupported` with `worker_integration_unavailable`; root copies can still succeed.
+Workers have only `link_reply`, not independent link connections, arbitrary targeting, discovery, identity, or broadcast tools.
+Private replies route by stable worker ID and owner session, never by task name.
+Older hubs or peers without messaging v2 (which preserves worker reply attribution) remain explicitly unsupported for broadcast and `link_reply`.
+Upgrade and restart linked terminals together.
+See [active subagents](design.md#active-subagents) for the bridge boundary.
+
+#### Incoming messages
+
+Messages reaching a root enter its inbox.
+Nearby arrivals are usually delivered as one `[Link: N message(s) received]` block, in arrival order.
+Each message includes its sender and full ID; replies include `Reply to <original-message-id>`, and broadcasts are marked.
+These fields appear in both model-visible text and the transcript panel.
+Older direct-message peers may omit IDs or session attribution.
+The batching window, caps, and compaction holds are described in [Inbox](design.md#inbox).
+
+The receiver's state is read when the batch is delivered, not when it is sent.
+A running receiver is steered at Pi's next safe boundary, after current tool calls finish and before the next LLM call.
+An idle receiver starts a turn.
+There is no send mode that bypasses the receiver's reasoning, and no automatic model response.
+
+### `link_reply`
+
+Reply privately to the author of a message actually delivered to this Pi session:
+
+```typescript
+link_reply({ replyTo: "<full-received-message-id>", message: "The condition needs a null check." });
+```
+
+Both `replyTo` and `message` are required; there is no `to`, broadcast, or worker-inclusion option.
+The tool resolves the author from messages admitted to Pi's model input and recorded in this session's actual transcript.
+An ID copied from elsewhere or an unknown reference fails without sending.
+Queued messages do not grant reply permission before model admission, including messages cleared from the steering queue.
+A message from an old peer without sufficient author attribution cannot establish a usable reference.
+
+Root authors are identified by Pi session ID, not their mutable link names.
+Renaming does not redirect a reply to someone who later takes the old name.
+The author must still be connected and in the permitted group.
+A broadcast reply goes only to its author, never its audience.
+Replies have new IDs and can themselves be answered after delivery.
+They use the same bounded routing receipt and structured details as broadcasts, not a model-response wait.
+With the manager/child bridge installed, worker-authored questions retain worker attribution, and answers reach only that stable worker through its owner manager, not the parent model or siblings. Worker reply authority comes from actual child transcript admission, not a root inbox copy. Without the bridge, worker replies remain explicitly unsupported.
 
 ### `link_list`
 
@@ -469,9 +579,15 @@ The bundled skill tells agents not to repeat those messages in their ordinary re
 **Naming concepts**
 
 - **link name** — identity used on the network (visible in `link_list`, `/link`, and messages).
-- **group** — the text after the first `@` in a link name, compared exactly. `archon@pi-link` is in `pi-link`, `a@g@h` is in `g@h`, and a name without `@` (or ending in one, like `a@`) belongs to the single implicit group of plain names. Comparison is **case-sensitive**: `a@Team` and `a@team` are different groups. `link_list`, `link_send`, `link_compact`, `/link` and the footer see only your own group; the hub still routes for every group, and `pi-link --status` shows all of them. Renaming with `/link-name` moves you.
+- **group** — the text after the first `@` in a link name, compared exactly.
+  `archon@pi-link` is in `pi-link`, and `a@g@h` is in `g@h`.
+  A name without `@`, or ending in one such as `a@`, belongs to the single implicit group of plain names.
+  Comparison is **case-sensitive**: `a@Team` and `a@team` are different groups.
+  `link_list`, `link_send`, `link_reply`, `link_compact`, `/link` and the footer see or reach only your own group.
+  The hub still routes for every group, and `pi-link --status` shows all of them.
+  Renaming with `/link-name` or an accepted `link_set_identity` group change moves you.
 - **Pi session name** — identity Pi gives the session itself; lives in the session JSONL's latest `session_info` entry.
-- **saved link name** — the link name persisted to the session, restored on resume. Set by `/link-name`, `pi-link <name>`, or `pi --link-name <name>`.
+- **saved link name** — the link name persisted to the session, restored on resume. Set by `/link-name`, `pi-link <name>`, `pi --link-name <name>`, or `link_set_identity`.
 - **`--link-name` flag vs `/link-name` command** — same concept (the link name) at different times (startup vs mid-session).
 
 | What you want                        | Use                     |
@@ -505,7 +621,8 @@ A `link_compact` request does not interrupt work the target is still doing, so i
 ### I sent a message but got no reply
 
 A successful send is not a confirmation, and a message ID does not establish delivery.
-On a client it means the message was handed to the hub connection, not that the target received it or acted on it.
+For a direct send from a client, success means the message was handed to the hub connection.
+For broadcasts and `link_reply`, inspect the routing receipt: even `submitted` does not mean a model read or acted on the message.
 Replies are ordinary messages the other agent chooses to send, so nothing produces one automatically.
 Run `/link`, or ask your model to call `link_list`, and check the target: confirm the name is still exactly right.
 A target in the `compacting` state holds messages that reach it until that state clears.

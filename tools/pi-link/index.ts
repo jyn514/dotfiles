@@ -6,7 +6,7 @@
  * First terminal to connect becomes the hub; others join as clients.
  * Hub loss triggers automatic promotion of a surviving client.
  *
- * Tools: link_send, link_list, link_compact
+ * Tools: link_send, link_reply, link_set_identity, link_list, link_compact
  * Commands: /link, /link-name, /link-connect, /link-disconnect
  */
 
@@ -24,6 +24,11 @@ import { createServer, type Server as HttpServer } from "node:http";
 import * as os from "node:os";
 
 import { WebSocket, WebSocketServer } from "ws";
+import {
+  applyAgentIdentity, applyUserIdentity, fullName, groupOf, initialIdentity,
+  normalizeName, type LinkIdentity,
+} from "./identity.js";
+import { LinkMessaging, MESSAGING_VERSION, type LinkDelivery, type LinkWorkerIntegration, type LinkWorkerAddress, type LinkResult } from "./messaging.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -56,6 +61,7 @@ interface RegisterMsg {
   sessionId?: string;
   cwd?: string;
   context?: ContextSnapshot;
+  messagingVersion?: number;
 }
 interface WelcomeMsg {
   type: "welcome";
@@ -65,6 +71,8 @@ interface WelcomeMsg {
   cwds?: Record<string, string>;
   sessionIds?: Record<string, string>;
   contexts?: Record<string, ContextSnapshot>;
+  messagingVersion?: number;
+  messagingVersions?: Record<string, number>;
 }
 interface TerminalJoinedMsg {
   type: "terminal_joined";
@@ -73,6 +81,7 @@ interface TerminalJoinedMsg {
   sessionId?: string;
   cwd?: string;
   context?: ContextSnapshot;
+  messagingVersion?: number;
 }
 interface TerminalLeftMsg {
   type: "terminal_left";
@@ -86,6 +95,9 @@ interface ChatMsg {
   content: string;
   id?: string;
   replyTo?: string;
+  fromSessionId?: string;
+  broadcast?: boolean;
+  fromWorker?: LinkDelivery["fromWorker"];
 }
 interface StatusUpdateMsg {
   type: "status_update";
@@ -196,7 +208,10 @@ function messagePreview(
 // ─── Extension ───────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  // First statement, so an unsupported host leaves behind no flag, event, tool,
+  // Managed children have only the manager-provided reply tool, never a root socket.
+  if (process.env.PI_SUBAGENT_OWNER_TOKEN) return;
+
+  // First root statement, so an unsupported host leaves behind no flag, event, tool,
   // command, timer or socket to half-run with. Pi reports a factory that throws as an
   // extension load error naming this message, and keeps running without pi-link.
   if (!piVersionSupported(PI_VERSION)) {
@@ -223,6 +238,9 @@ export default function (pi: ExtensionAPI) {
   let role: "hub" | "client" | "disconnected" = "disconnected";
   let terminalName = `t-${crypto.randomUUID().slice(0, 4)}`;
   let preferredName: string | null = null;
+  let identity: LinkIdentity = {
+    name: terminalName, group: "", nameOrigin: "generated", groupOrigin: "generated",
+  };
   // True between a client `/link-name` close and the next welcome/promotion.
   // Lets `startHub` adopt the requested name if it wins promotion before welcome.
   let pendingClientRename = false;
@@ -257,6 +275,10 @@ export default function (pi: ExtensionAPI) {
   // never closes a server it was handed. Nulled wherever `wss` is.
   let hubHttpServer: HttpServer | null = null;
   const hubClients = new Map<WebSocket, string>(); // ws → terminal name
+  // Registration, not a later status frame, owns socket-to-session attribution.
+  const hubClientSessions = new Map<WebSocket, string>();
+  const terminalMessagingVersions = new Map<string, number>();
+  let hubMessagingVersion: number | undefined;
 
   // Client state
   let ws: WebSocket | null = null;
@@ -288,8 +310,62 @@ export default function (pi: ExtensionAPI) {
   >();
 
   // Inbox: fixed-window batching; every batch is delivered to the receiver's model
-  const inbox: Pick<ChatMsg, "from" | "content" | "id" | "replyTo">[] = [];
+  const inbox: ChatMsg[] = [];
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const messaging = new LinkMessaging({
+    self: () => {
+      const sessionId = ctx?.sessionManager.getSessionId();
+      return sessionId ? { name: terminalName, sessionId } : undefined;
+    },
+    role: () => role,
+    peers: () => terminalList().map((name) => ({
+      name, sessionId: getSessionIdFor(name),
+      messagingVersion: name === terminalName ? MESSAGING_VERSION : terminalMessagingVersions.get(name),
+    })),
+    hubSupported: () => hubMessagingVersion === MESSAGING_VERSION,
+    sendHub: (frame) => {
+      if (!isRuntimeLive() || role !== "client" || ws?.readyState !== WebSocket.OPEN) return false;
+      try { ws.send(JSON.stringify(frame)); return true; } catch { return false; }
+    },
+    sendPeer: (peer, frame) => {
+      if (!isRuntimeLive() || role !== "hub") return false;
+      if (peer.sessionId === ctx?.sessionManager.getSessionId()) {
+        messaging.handleIncoming(frame);
+        return true;
+      }
+      // Recheck the selected session against the socket; a reused name is not it.
+      for (const [socket, name] of hubClients) {
+        if (name !== peer.name || hubClientSessions.get(socket) !== peer.sessionId) continue;
+        if (socket.readyState !== WebSocket.OPEN) return false;
+        try { socket.send(JSON.stringify(frame)); return true; } catch { return false; }
+      }
+      return false;
+    },
+    workers: () => {
+      const ownerSessionId = ctx?.sessionManager.getSessionId();
+      if (!ownerSessionId || !isRuntimeLive()) return undefined;
+      let integration: LinkWorkerIntegration | undefined;
+      // EventBus emits synchronously: discovery is fresh for every operation.
+      pi.events.emit("pi-link:workers:v1", { version: 1, ownerSessionId,
+        provide(value: LinkWorkerIntegration) { integration = value; } });
+      return integration;
+    },
+    deliverRoot: (message) => {
+      if (!isRuntimeLive()) throw new Error("Root session is unavailable");
+      inbox.push({ type: "chat", to: terminalName, ...message });
+      scheduleFlush(FLUSH_DELAY_MS);
+    },
+  });
+
+  pi.events.on("pi-link:worker-reply:v1", (value: unknown) => {
+    const event = value as { version: number; ownerSessionId: string; worker: LinkWorkerAddress;
+      reference: LinkDelivery; message: string; respond(result: Promise<LinkResult>): void };
+    // This event is manager-internal authority, not a wire or model-facing API.
+    if (event?.version !== 1 || event.ownerSessionId !== ctx?.sessionManager.getSessionId()
+      || typeof event.respond !== "function" || !isRuntimeLive()) return;
+    event.respond(messaging.replyFromWorker(event.worker, event.reference, event.message));
+  });
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -391,19 +467,6 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  // Canonicalize a link/session name: trim + collapse internal whitespace.
-  // Returns undefined for nullish/blank so callers can fall through precedence.
-  function normalizeName(name: string | undefined | null): string | undefined {
-    const n = name?.trim().replace(/\s+/g, " ");
-    return n ? n : undefined;
-  }
-
-  // Group by name convention: everything after the first `@`; plain names are group "".
-  function groupOf(name: string): string {
-    const at = name.indexOf("@");
-    return at === -1 ? "" : name.slice(at + 1);
-  }
-
   // Latest custom session entry of a given type (last-write-wins), or undefined.
   function latestCustomData(
     customType: string,
@@ -419,6 +482,83 @@ export default function (pi: ExtensionAPI) {
       if (e.type === "custom" && e.customType === customType) return e.data;
     }
     return undefined;
+  }
+
+  function persistIdentity() {
+    if (JSON.stringify(latestCustomData("link-identity")) !== JSON.stringify(identity)) {
+      pi.appendEntry("link-identity", identity);
+    }
+  }
+
+  function identityDetails() {
+    return {
+      preferred: { ...identity },
+      assignedName: role === "disconnected" ? null : terminalName,
+      connectionState: role,
+      pending: pendingClientRename,
+    };
+  }
+
+  function formatIdentity(state: ReturnType<typeof identityDetails>): string {
+    const preference = state.preferred;
+    return [
+      `Preferred name: ${JSON.stringify(preference.name)} (${preference.nameOrigin}); group: ${JSON.stringify(preference.group)} (${preference.groupOrigin})${preference.explicitGroup ? "; explicit empty @ suffix" : ""}.`,
+      `Assigned name: ${state.assignedName === null ? "none" : JSON.stringify(state.assignedName)}; connection: ${state.connectionState}; rename pending: ${state.pending}.`,
+    ].join("\n");
+  }
+
+  /** Persist preferences before transport effects; never reconnect an opted-out session. */
+  function setIdentityPreference(next: LinkIdentity, suffixHubCollision: boolean): boolean {
+    const requested = fullName(next);
+    const preferenceChanged = requested !== preferredName;
+    const taken = role === "hub" && Array.from(hubClients.values()).includes(requested);
+    if (taken && !suffixHubCollision) return false;
+    // The unchanged preference already has a unique assignment. Searching again
+    // would count this hub's own suffix as occupied and churn it on every no-op.
+    const assigned = !preferenceChanged ? terminalName : taken ? uniqueName(requested) : requested;
+    identity = next;
+    preferredName = requested;
+    persistIdentity();
+    if (role === "hub") {
+      if (terminalName === assigned) return true;
+      const old = terminalName;
+      terminalName = assigned;
+      const list = terminalList();
+      connectedTerminals = list;
+      updateStatus();
+      hubBroadcast({ type: "terminal_left", name: old, terminals: list }, terminalName);
+      hubBroadcast({
+        type: "terminal_joined", name: terminalName, terminals: list,
+        cwd: currentCwd, sessionId: ctx?.sessionManager.getSessionId(),
+        context: captureContext(), messagingVersion: MESSAGING_VERSION,
+      }, terminalName);
+      pushStatus(true);
+    } else if (role === "client") {
+      if (preferenceChanged && terminalName !== requested) {
+        pendingClientRename = true;
+        ws?.close();
+      }
+    } else {
+      terminalName = requested;
+    }
+    return true;
+  }
+
+  function cancelPendingIdentityChange() {
+    // Keep the requested preference for a later explicit connection, including
+    // promotion to hub, but stop reporting an assignment that is no longer pending.
+    if (pendingClientRename && preferredName) terminalName = preferredName;
+    pendingClientRename = false;
+  }
+
+  /** Read only this receiver's metadata, from an admitted message or its saved entry. */
+  function referencesForSession(details: unknown): unknown[] {
+    if (!details || typeof details !== "object" || Array.isArray(details)) return [];
+    const metadata = details as Record<string, unknown>;
+    if (metadata.recipientSessionId !== ctx?.sessionManager.getSessionId() || !Array.isArray(metadata.deliveries)) return [];
+    return metadata.deliveries.flatMap((reference: unknown) =>
+      reference && typeof reference === "object" && !Array.isArray(reference)
+        ? [{ ...reference, content: "" }] : []);
   }
 
   function formatDuration(since: number): string {
@@ -515,7 +655,8 @@ export default function (pi: ExtensionAPI) {
         item.id !== undefined
           ? `From "${item.from}" (Message ID: ${item.id})`
           : `From "${item.from}":`;
-      const text = `${header}\n${item.replyTo !== undefined ? `Reply to ${item.replyTo}\n` : ""}${item.content}`;
+      const author = item.fromWorker ? `Worker "${item.fromWorker.taskName}" (${item.fromWorker.workerId}), owner session ${item.fromWorker.ownerSessionId}\n` : "";
+      const text = `${header}\n${item.broadcast ? "Broadcast to group\n" : ""}${author}${item.replyTo !== undefined ? `Reply to ${item.replyTo}\n` : ""}${item.content}`;
       if (batch.length > 0 && totalChars + text.length > BATCH_MAX_CHARS) break;
       batch.push(text);
       totalChars += text.length;
@@ -526,10 +667,19 @@ export default function (pi: ExtensionAPI) {
         customType: "link",
         content: `[Link: ${batch.length} message(s) received]\n\n${batch.join("\n\n")}`,
         display: true,
-        details: { batched: true, count: batch.length },
+        details: {
+          batched: true, count: batch.length,
+          recipientSessionId: ctx.sessionManager.getSessionId(),
+          deliveries: inbox.slice(0, batch.length).flatMap((item) => item.id && item.fromSessionId ? [{
+            id: item.id, from: item.from, fromSessionId: item.fromSessionId,
+            ...(item.fromWorker ? { fromWorker: item.fromWorker } : {}),
+          }] : []),
+        },
       },
       { triggerTurn: true },
     );
+    // sendMessage returns void and may only queue steering. Native message_end,
+    // not this return, establishes admission and grants reply permission.
     inbox.splice(0, batch.length);
 
     // Items held back by the batch caps go out in the next window
@@ -742,6 +892,9 @@ export default function (pi: ExtensionAPI) {
     msg: ChatMsg | CompactRequestMsg | CompactResponseMsg,
   ): boolean {
     if (role === "hub") {
+      if (msg.type === "chat") {
+        msg = { ...msg, fromSessionId: getSessionIdFor(msg.from), fromWorker: undefined, broadcast: undefined };
+      }
       // Isolation is a property of the link: a target in another group does not
       // exist from the sender's domain, for every type routeMessage carries.
       const crossGroup = groupOf(msg.from) !== groupOf(msg.to);
@@ -788,9 +941,15 @@ export default function (pi: ExtensionAPI) {
   // ── Incoming message handler (runs on every terminal) ────────────────────
 
   function handleIncoming(msg: LinkMessage) {
+    if (messaging.handleIncoming(msg)) return;
     switch (msg.type) {
       // ── Client receives after registering ──
       case "welcome":
+        hubMessagingVersion = msg.messagingVersion;
+        terminalMessagingVersions.clear();
+        if (msg.messagingVersions) {
+          for (const [name, version] of Object.entries(msg.messagingVersions)) terminalMessagingVersions.set(name, version);
+        }
         terminalName = msg.name;
         pendingClientRename = false;
         connectedTerminals = msg.terminals;
@@ -829,6 +988,7 @@ export default function (pi: ExtensionAPI) {
       // ── Membership updates ──
       case "terminal_joined":
         connectedTerminals = msg.terminals;
+        if (msg.messagingVersion !== undefined) terminalMessagingVersions.set(msg.name, msg.messagingVersion);
         if (msg.cwd) terminalCwds.set(msg.name, msg.cwd);
         if (msg.sessionId) terminalSessionIds.set(msg.name, msg.sessionId);
         if (msg.context) terminalContexts.set(msg.name, msg.context);
@@ -839,6 +999,7 @@ export default function (pi: ExtensionAPI) {
 
       case "terminal_left":
         connectedTerminals = msg.terminals;
+        terminalMessagingVersions.delete(msg.name);
         terminalStatuses.delete(msg.name);
         terminalCwds.delete(msg.name);
         terminalSessionIds.delete(msg.name);
@@ -870,12 +1031,7 @@ export default function (pi: ExtensionAPI) {
 
       // ── Chat message ──
       case "chat":
-        inbox.push({
-          from: msg.from,
-          content: msg.content,
-          id: msg.id,
-          replyTo: msg.replyTo,
-        });
+        inbox.push(msg);
         scheduleFlush(FLUSH_DELAY_MS);
         break;
 
@@ -989,6 +1145,8 @@ export default function (pi: ExtensionAPI) {
         // is missing from its own roster. Its metadata is deliberately not stored
         // yet: the maps below must not echo the newcomer's own snapshot back to it.
         hubClients.set(clientWs, clientName);
+        if (msg.sessionId) hubClientSessions.set(clientWs, msg.sessionId);
+        if (msg.messagingVersion !== undefined) terminalMessagingVersions.set(clientName, msg.messagingVersion);
         const list = terminalList();
 
         // Confirm to the new client (with status, cwd and context snapshots).
@@ -1016,6 +1174,8 @@ export default function (pi: ExtensionAPI) {
             cwds,
             sessionIds,
             contexts,
+            messagingVersion: MESSAGING_VERSION,
+            messagingVersions: Object.fromEntries([[terminalName, MESSAGING_VERSION], ...terminalMessagingVersions]),
           } satisfies WelcomeMsg),
         );
 
@@ -1028,6 +1188,7 @@ export default function (pi: ExtensionAPI) {
           cwd: msg.cwd,
           sessionId: msg.sessionId,
           context: msg.context,
+          messagingVersion: msg.messagingVersion,
         };
         hubBroadcast(joined, clientName);
         return;
@@ -1035,6 +1196,8 @@ export default function (pi: ExtensionAPI) {
 
       // Ignore messages from unregistered clients
       if (!clientName) return;
+      const sourceSessionId = hubClientSessions.get(clientWs);
+      if (sourceSessionId && messaging.handleHub(msg, { name: clientName, sessionId: sourceSessionId })) return;
 
       // Status update: rebuilt under the authoritative name, fanned out to the other
       // clients, and stored by the hub through its own self-delivery.
@@ -1043,7 +1206,7 @@ export default function (pi: ExtensionAPI) {
           type: "status_update",
           name: clientName,
           status: msg.status,
-          sessionId: msg.sessionId,
+          sessionId: sourceSessionId,
           context: msg.context, // undefined omitted by JSON; null forwarded to clear
         };
         hubBroadcast(normalized, clientName);
@@ -1067,6 +1230,7 @@ export default function (pi: ExtensionAPI) {
       const name = hubClients.get(clientWs);
       if (!name) return; // already removed (e.g. via disconnect) — ignore stale event
       hubClients.delete(clientWs);
+      hubClientSessions.delete(clientWs);
       const list = terminalList();
       // Self-delivery of this frame drops the departed terminal's metadata and
       // refreshes the hub's own roster.
@@ -1203,6 +1367,7 @@ export default function (pi: ExtensionAPI) {
             sessionId: ctx?.sessionManager.getSessionId(),
             cwd: currentCwd || undefined,
             context: captureContext(),
+            messagingVersion: MESSAGING_VERSION,
           } satisfies RegisterMsg),
         );
         settle(true);
@@ -1223,6 +1388,9 @@ export default function (pi: ExtensionAPI) {
         if (disposed) return;
         role = "disconnected";
         connectedTerminals = [];
+        hubMessagingVersion = undefined;
+        terminalMessagingVersions.clear();
+        messaging.disconnect();
         // Drop this connection's snapshots: a reconnect — or a promotion to hub —
         // must not serve metadata from the network that just went away.
         terminalStatuses.clear();
@@ -1335,6 +1503,10 @@ export default function (pi: ExtensionAPI) {
     // Cancel establishment first, so nothing in flight can commit state behind us.
     // This also clears the reconnect and startup timers.
     cancelConnectionAttempt();
+    messaging.disconnect();
+    hubMessagingVersion = undefined;
+    hubClientSessions.clear();
+    terminalMessagingVersions.clear();
 
     // Clear link-owned remote compaction state; a local /compact survives disconnect.
     compactRunning = false;
@@ -1365,6 +1537,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     role = "disconnected";
+    cancelPendingIdentityChange();
     connectedTerminals = [];
     terminalStatuses.clear();
     terminalContexts.clear();
@@ -1397,6 +1570,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, _ctx) => {
     ctx = _ctx;
     currentCwd = _ctx.cwd;
+    messaging.reset();
+    messaging.restoreDelivered(_ctx.sessionManager.getEntries().flatMap((entry) =>
+      entry.type === "custom_message" && entry.customType === "link" ? referencesForSession(entry.details) : []));
 
     // Resolve terminal name. Precedence:
     //   --link-name flag  >  PI_LINK_NAME env  >  saved link-name  >  session name  >  random
@@ -1421,47 +1597,32 @@ export default function (pi: ExtensionAPI) {
 
     const flagName = cliFlagName ?? envFlagName;
     const fromEnv = !cliFlagName && !!envFlagName;
-
-    if (flagName) {
-      preferredName = flagName;
-      terminalName = flagName;
-
-      // Skip append if the saved name already matches; persistence is needed
-      // only for first-time set or actual change. Reduces session-file growth
-      // on repeated startups (common in automation).
-      const latest = latestCustomData("link-name") as
-        | { name?: unknown }
-        | undefined;
-      const latestSaved =
-        typeof latest?.name === "string" ? latest.name : undefined;
-      if (normalizeName(latestSaved) !== flagName) {
-        pi.appendEntry("link-name", { name: flagName });
-      }
-
-      // Critical: only the env path (wrapper combined mode) seeds session name.
-      // Public --link-name is link-only.
-      if (fromEnv && !pi.getSessionName()) pi.setSessionName(flagName);
-    } else {
-      const saved = latestCustomData("link-name") as
-        | { name?: unknown }
-        | undefined;
-      const savedName = normalizeName(
-        typeof saved?.name === "string" ? saved.name : undefined,
-      );
-      if (savedName) {
-        preferredName = savedName;
-        terminalName = preferredName;
-      } else {
-        const sessionName = normalizeName(pi.getSessionName());
-        if (sessionName) terminalName = sessionName;
-      }
-    }
+    identity = initialIdentity({
+      generatedName: terminalName,
+      entries: _ctx.sessionManager.getEntries(),
+      cliName: cliFlagName,
+      envName: envFlagName,
+      sessionName: pi.getSessionName(),
+    });
+    preferredName = fullName(identity);
+    terminalName = preferredName;
+    // Persist provenance even on same-text manual assignment and first generated
+    // startup. Reload must neither remove user ownership nor invent it.
+    persistIdentity();
+    // Only wrapper combined mode seeds the Pi session name; identity tools never do.
+    if (fromEnv && !pi.getSessionName()) pi.setSessionName(flagName!);
 
     if (flagName || shouldConnect()) scheduleStartupConnect();
   });
 
   pi.on("session_shutdown", async () => {
     cleanup();
+  });
+
+  pi.on("message_end", (event) => {
+    if (event.message.role === "custom" && event.message.customType === "link") {
+      for (const reference of referencesForSession(event.message.details)) messaging.recordDelivered(reference);
+    }
   });
 
   pi.on("agent_start", async () => {
@@ -1612,23 +1773,56 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOP_LEVEL_TOOL,
+    name: "link_set_identity",
+    label: "Link Identity",
+    description: "Set this session's preferred local link name and/or group without replacing user-owned fields. Does not change the Pi session title or reconnect an explicitly disconnected session. Omitted fields retain their value and ownership.",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Local name, without @; nonempty after whitespace normalization" })),
+      group: Type.Optional(Type.String({ description: "Group suffix; empty string selects the ungrouped group" })),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params) {
+      const result = applyAgentIdentity(identity, params);
+      if (!result.ok) {
+        const state = identityDetails();
+        return textResult(`${result.error}\n${formatIdentity(state)}`, {
+          error: result.protectedFields ? "user_owned" : "invalid_identity",
+          ...(result.protectedFields ? { protectedFields: result.protectedFields } : {}),
+          ...state,
+        });
+      }
+      setIdentityPreference(result.identity, true);
+      const state = identityDetails();
+      return textResult(formatIdentity(state), state);
+    },
+    renderResult: (result, _options, theme) => renderIconResult(result, theme),
+  });
+
+  pi.registerTool({
+    ...TOP_LEVEL_TOOL,
     name: "link_send",
     label: "Link Send",
     description: [
-      "Send a message to one other Pi terminal on the link.",
+      "Send a message to one other Pi terminal, or broadcast to connected roots in your group with to: {broadcast: true}.",
+      "includeSubagents is opt-in for broadcast only; unavailable worker integration is reported explicitly.",
       "The message always acts: it steers a busy receiver at its next safe boundary, or starts a turn on an idle one.",
     ].join(" "),
     promptSnippet:
       "Send a message to another Pi terminal on the local link network",
     parameters: Type.Object({
-      to: Type.String({ description: "Target terminal name" }),
+      to: Type.Union([
+        Type.String({ description: "Target terminal name" }),
+        Type.Object({ broadcast: Type.Literal(true) }, { additionalProperties: false }),
+      ]),
       message: Type.String({ description: "Message content" }),
       replyTo: Type.Optional(
-        Type.String({ description: "Message ID this message replies to" }),
+        Type.String({ description: "Correlation only; does not select recipients" }),
       ),
-    }),
+      includeSubagents: Type.Optional(Type.Boolean({ description: "Include active owned workers; broadcast only" })),
+    }, { additionalProperties: false }),
 
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, signal) {
+      if (typeof params.to !== "string") return messaging.broadcast(params, signal);
+      if (params.includeSubagents) return textResult("includeSubagents is valid only for broadcast", { error: "invalid_target" });
       if (role === "disconnected") return notConnectedResult();
 
       if (params.to === terminalName) {
@@ -1648,6 +1842,7 @@ export default function (pi: ExtensionAPI) {
         content: params.message,
         id: messageId,
         replyTo: params.replyTo,
+        fromSessionId: ctx?.sessionManager.getSessionId(),
       });
 
       const target = `"${params.to}"`;
@@ -1676,12 +1871,27 @@ export default function (pi: ExtensionAPI) {
           : dim("...");
       const text =
         theme.fg("toolTitle", theme.bold("link_send ")) +
-        theme.fg("accent", args.to) +
+        theme.fg("accent", typeof args.to === "string" ? args.to : "group broadcast") +
         "\n  " +
         preview;
       return new Text(text, 0, 0);
     },
 
+    renderResult: (result, _options, theme) => renderIconResult(result, theme),
+  });
+
+  pi.registerTool({
+    ...TOP_LEVEL_TOOL,
+    name: "link_reply",
+    label: "Link Reply",
+    description: "Privately reply to the author of a message actually delivered to this session. replyTo selects that single original root or worker by stable session identity; it cannot broadcast or select an arbitrary destination. Does not wait for a model response.",
+    parameters: Type.Object({
+      replyTo: Type.String({ minLength: 1, description: "Full ID of a message delivered to this session" }),
+      message: Type.String({ description: "Reply content" }),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal) {
+      return messaging.reply(params, signal);
+    },
     renderResult: (result, _options, theme) => renderIconResult(result, theme),
   });
 
@@ -1931,71 +2141,14 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      if (newName === terminalName && newName === preferredName) {
-        _ctx.ui.notify(`Already using "${newName}"`, "info");
+      if (!setIdentityPreference(applyUserIdentity(identity, newName), false)) {
+        _ctx.ui.notify(`Name "${newName}" is already taken by another terminal`, "warning");
         return;
       }
-
-      function savePreference() {
-        preferredName = newName;
-        pi.appendEntry("link-name", { name: preferredName });
-      }
-
-      if (newName === terminalName) {
-        savePreference();
-        _ctx.ui.notify(`Saved "${newName}" as preferred link name`, "info");
-        return;
-      }
-
-      // If we're the hub, check uniqueness before persisting
-      if (role === "hub") {
-        const takenByOther = Array.from(hubClients.values()).includes(newName);
-        if (takenByOther) {
-          _ctx.ui.notify(
-            `Name "${newName}" is already taken by another terminal`,
-            "warning",
-          );
-          return;
-        }
-        const old = terminalName;
-        terminalName = newName;
-        const list = terminalList();
-        connectedTerminals = list;
-        updateStatus();
-        // Notify clients only — hub already updated local state
-        hubBroadcast(
-          { type: "terminal_left", name: old, terminals: list },
-          terminalName,
-        );
-        hubBroadcast(
-          {
-            type: "terminal_joined",
-            name: newName,
-            terminals: list,
-            cwd: currentCwd,
-            sessionId: ctx?.sessionManager.getSessionId(),
-            context: captureContext(),
-          },
-          terminalName,
-        );
-        pushStatus(true);
-        savePreference();
-        _ctx.ui.notify(`Renamed to "${newName}"`, "info");
-      } else if (role === "client") {
-        // Don't update terminalName here — welcome will assign authoritatively
-        // after reconnect. Hub may dedupe newName to newName-2 if taken.
-        savePreference();
-        pendingClientRename = true;
-        ws?.close();
-        _ctx.ui.notify(
-          `Reconnecting, requesting "${newName}" (hub may assign a different name if taken)...`,
-          "info",
-        );
-      } else {
-        savePreference();
-        terminalName = newName;
-        _ctx.ui.notify(`Name set to "${newName}" (not connected)`, "info");
-      }
+      _ctx.ui.notify(pendingClientRename
+        ? `Reconnecting, requesting "${newName}" (hub may assign a different name if taken)...`
+        : role === "disconnected" ? `Name set to "${newName}" (not connected)`
+        : `Saved "${newName}" as preferred link name`, "info");
     },
   });
 
@@ -2008,6 +2161,7 @@ export default function (pi: ExtensionAPI) {
         // Nothing is established, but a startup or reconnect attempt may still be
         // dialing or binding; persisted intent has to win over it too.
         cancelConnectionAttempt();
+        cancelPendingIdentityChange();
         _ctx.ui.notify("Link disconnected", "info");
         return;
       }

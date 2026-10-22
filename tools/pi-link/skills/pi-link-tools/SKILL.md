@@ -1,88 +1,111 @@
 ---
 name: pi-link-tools
-description: "How `link_send`, `link_list` and `link_compact` behave between Pi terminals: delivery, status snapshots, callbacks, groups and remote compaction."
+description: "Coordinate Pi sessions with link_set_identity, link_send, link_reply, link_list, and link_compact. Use for link identity or group changes, direct messages, group clarifications, delivered-author replies, callbacks, status, and remote compaction. Covers reply-only worker conventions when manager integration is available; not general subagent creation or task management."
 ---
 
 # Pi-Link Tools
 
-- Each terminal knows only its own conversation; sending a message does not share the rest of yours.
-- A message asks another terminal to act with its own tools and access, which may differ from yours.
-- Messages that reach another terminal enter its reasoning and can redirect its work.
-- The user can see sent and received messages in the transcript.
-  Do not repeat or paraphrase them in your ordinary reply merely to report the exchange.
-  Reply to peers with `link_send`; tell the user only new conclusions, decisions, or questions that need their attention.
+## Before acting
 
----
+- Each terminal knows only its own conversation and acts with its own tools and access.
+  Sending a message does not share the rest of your context.
+- The user sees tool results and incoming panels in the transcript.
+  Do not repeat exchanges in your ordinary reply merely to report them.
+  Tell the user only new conclusions, decisions, or questions needing their attention.
+- Send no acknowledgment unless requested.
+  Ask a question only when its answer can change your next action.
+- Cwd is a hint, not proof of shared workspace, branch, or access.
+  A message's paths do not change the receiver's cwd; relative commands resolve there.
 
-## Tools
+## Choose an identity and group
 
-### `link_list`
+- Roots may call `link_set_identity({ name?, group? })` with at least one field.
+  `name` is a nonempty local name without `@`; `group: ""` selects the ungrouped group.
+  Omitted fields retain value and ownership.
+- Name and group have separate origins: `generated`, `agent`, or `user`.
+  Replacing either user-owned field rejects the whole update; same-value assignments leave user ownership intact.
+  Legacy identities with unknown ownership are protected too.
+  Do not seek an agent-side override.
+- Inspect `preferred`, `assignedName`, `connectionState`, and `pending` in the result.
+  The hub can suffix collisions without changing the saved preference; repeating that preference preserves its assigned suffix.
+  A pending client rename is not an assigned name; explicit disconnect cancels it but keeps the saved preference.
+  Offline changes save without reconnecting.
+- Agree on a named group before moving.
+  The case-sensitive text after the first `@` defines membership; later `@` characters belong to the group.
+  Plain names and names ending in `@` share one empty group, including unrelated projects.
+  Group changes can remove your ability to contact collaborators; the tools do not discover other groups.
+  Groups limit attention, not authenticated access.
 
-- Returns connected terminals with names, Pi session IDs, status (`idle`, `thinking`, `compacting`, `tool:<name>`), cwd, and available context usage.
-  Full IDs appear in the text and in `details.sessionIds`, keyed by terminal name.
-  Older peers may not report an ID; missing means unknown.
-  Match a known parent session ID to this list to find its terminal; do not infer parentage from names or cwd.
-- Your own entry is marked `(you)` and cannot be a target of `link_send` or `link_compact`; its status and context are computed when listed, while peer values are their latest published snapshots.
-- A missing status means no status has been reported yet, not `idle`.
-- A `?` context value means usage is unknown; it can appear after successful compaction until a new measurement is available.
-- An `idle` snapshot does not reserve the terminal: it may become busy before your next call.
-- `tool:<name>` names one of the running tool calls.
-- `thinking` covers every kind of unsettled work, not just an LLM call, including automatic retries and compactions that run after the visible turn ends.
-- `compacting` means a compaction holds that terminal's delivery gate: messages to it are held, and the sender is not told. An automatic (threshold or overflow) compaction never shows it: it is not gated, and reads `thinking` like the rest of the run it belongs to.
-- Join/leave notices for terminals in your group appear only in the UI; they do not enter the agent's context.
-  Use `link_list` when you need current membership, not continuous polling.
-- Only connected terminals are visible; messages missed while a terminal was disconnected are not replayed.
+## Send, reply, or clarify
 
-### `link_send`
+- Use `link_send({ to: "<terminal-name>", message: "..." })` for a direct message.
+  A typo, offline name, or target outside your group fails the same local check; self-targeting fails too.
+  Direct-send success on a client means handed to the hub, not confirmed receiver delivery.
+  Its UUID is `messageId` in the result.
+- Use `link_reply({ replyTo: "<full-received-message-id>", message: "..." })` to answer a delivered message's author privately.
+  It resolves the author by session identity, not a remembered mutable name.
+  Unknown references fail; an author offline or outside the permitted group is not replaced by a fallback recipient.
+  Root delivery references survive reload and resume from admitted transcript messages, but old peers may lack sufficient attribution.
+  Queued or cleared steering messages grant no reply permission.
+  `link_send.replyTo` remains unchecked correlation only; it does not select the recipient.
+- Roots broadcast general clarifications to the current group:
 
-- Messages that reach the receiver close together are batched before entering its model.
-  A batch arrives as one `[Link: N message(s) received]` block, in arrival order, containing one sender block per message.
-  New messages include their full message ID; a reply also includes `Reply to <original-message-id>`.
-  Both the model and the transcript panel receive these references.
-  Older peers' messages may have no ID.
-- A delivered message always enters the receiver's reasoning: if the receiver is idle it starts a turn; if it is running, the batch is steered into that run at Pi's next safe boundary — current tool calls finish first, before the next LLM call. The receiver's state is read when the batch is delivered, not when you send and not when you last ran `link_list`.
-- Each call has one recipient; there is no broadcast.
-- Successful sends return a new UUID as `messageId` in the tool result text and details.
-  To answer any received message, call `link_send({ to: "<sender-name>", message: "...", replyTo: "<full-received-message-id>" })`.
-  `to` selects the recipient; `replyTo` only records which message is being answered.
-  No pending ask is required, and replies get their own IDs.
-- The call returns send status, not the receiver's eventual work result. A target absent from your local, group-filtered list — a typo, an offline terminal or a name in another group — fails immediately; the error lists the names currently visible to you. A successful send means the message was accepted for delivery, not that it arrived. For a client, if the target has vanished, the routing failure is shown to the human as a notification and never reaches the sending model. A terminal's queued messages are invisible to you, and silence alone does not tell you whether your message was received or acted on.
+  ```typescript
+  link_send({ to: { broadcast: true }, message: "<general clarification>", includeSubagents: true });
+  ```
 
-### `link_compact`
+  The hub selects connected roots once, excluding your root context, and preserves one UUID plus a broadcast marker.
+  An ungrouped broadcast can interrupt unrelated sessions; agree on a named group first.
+  Late joiners receive no replay.
+  **Worker delivery requires the supported manager/child bridge:** it selects active own workers; without it, worker inclusion reports unsupported.
+  Do not claim workers received a root broadcast or invent an automatic parent-forwarding rule.
+- Keep task-specific answers private through `link_reply` to the received message.
+  A reply to a broadcast reaches its author only, not its audience.
+  Do not automatically forward or rebroadcast received messages.
+- Broadcast and `link_reply` wait at most five seconds for routing, not a model response.
+  Inspect `details.outcomes`: `submitted`, `failed`, `skipped`, `unsupported`, and `unknown` can coexist.
+  `details.messageId` is the new message UUID; `empty` identifies an empty selection.
+  Submission is transport acceptance, not model reading or completion.
+  Do not automatically resend unknown copies; partial failure does not undo submitted copies.
+  Old hubs and peers can be unsupported for these operations.
+- Incoming messages are batched in arrival order with full IDs, reply references, and broadcast markers when available.
+  Delivery steers a running receiver after current tool calls finish, or starts a turn if idle.
+  Manual compaction can hold the inbox; a routing receipt does not prove model admission.
+- If a result or confirmation is needed, request it explicitly.
+  An ordinary reply is not sent to a peer: use a link tool.
+  Continue independent work or end your turn while awaiting a callback; do not sleep or poll merely to keep a run alive.
+  A callback does not prove its sender is idle or has completed other work.
 
-- Asks another terminal to compact its context and waits for a result.
-- Has a five-minute ceiling that bounds your wait only:
-  - Nothing aborts the target.
-  - A timed-out call may mean the compaction is still running.
-- A target accepts only when Pi reports its session idle and no compaction holds its gate.
-- Busy targets decline the request rather than being interrupted; the request is not queued to run later.
-- Optional `instructions` guide the summary; they are not a new task and do not guarantee what survives.
-- Compaction discards detail. Its summary may omit information, so anything the target learned but has not written down or reported can be lost.
+## Worker conventions with manager integration
 
----
+These rules apply only when a supported manager/child bridge exposes `link_reply` and delivers attributed messages to workers.
+The installed `pi-codex-subagents` manager/child bridge supplies this capability; without it, worker delivery is unsupported.
 
-## Callbacks
+- Workers have `link_reply` only, addressed to the author of a message actually delivered to that worker.
+  Never use arbitrary targeting, broadcast, group discovery, identity changes, or independent link connections.
+- Ask the delivered author only for clarification that can change the next action, or send an answer they requested.
+  Send normal task completions through the parent channel.
+- Several workers may independently ask the same question.
+  Do not add semantic deduplication, a suppression registry, or a wait period.
+- Private answers go only to the requesting worker, not siblings or the parent's model context.
+  Unavailable, finished, or paused workers must not be restarted or resumed to receive them.
 
-- A callback is an ordinary `link_send` from the other terminal back to you.
-  Include `replyTo` to correlate it with the message being answered.
-  There is no automatic response, delivery receipt, or protocol timeout; an ID does not prove delivery or completion.
-- Your ordinary reply stays in your own conversation; use `link_send` to send a result to the requester or the designated recipient.
-  If you need a reply, say who should receive it and ask the peer to include your message ID as `replyTo`.
-  With an older peer that has no IDs, use an ordinary unthreaded message instead.
-- When confirmation matters, request a read acknowledgment: “Reply when you read this, using this message’s ID as `replyTo`.”
-  The reply confirms the peer processed the message, not that it completed the requested action.
-  If your next step depends on an action, ask for confirmation of that action instead.
-- Continue independent work or end your turn while awaiting a callback.
-  Waiting for one requires no live run.
-  Keeping a run alive only to wait — by sleeping or polling `link_list` — can postpone delivery to the model until active tool calls end.
-- A callback can be sent before its sender's run settles; receiving it does not prove the sender is idle, so a `link_compact` aimed at it can still decline as busy.
-- An accepted send does not wait for a reply, so several requests can be sent before any callback arrives, and callbacks may arrive separately or batched into one of your turns. The protocol does not decide when an exchange is complete; it supplies no exit condition for an A → B → C → A chain.
+## Inspect or compact a root
 
----
-
-## Constraints
-
-- **Localhost only.** All terminals run on the same machine.
-- **Cwd is a hint, not proof.** Same cwd does not prove the same workspace, branch, or access. Paths named in a message are only text: they do not change the receiver's cwd, and relative commands resolve from the receiver's own cwd.
-- **Names are identities.** The hub suffixes collisions, so the name you remember may not be the name that is connected; `link_list` shows the current one.
-- **`@group` in a name limits your world.** The text after the first `@` is the group (case-sensitive): `link_list`, `link_send` and `link_compact` only see and reach terminals of your own group, and names without `@` form one group of their own. These tools cannot change your name or group; `/link-name` is the local command for changing them. Groups scope visibility and targeting, not authentication.
+- `link_list` returns connected terminals in your group, with roles, full Pi session IDs, status, cwd, and available context usage.
+  `details.sessionIds` maps names to reported IDs; a missing ID is unknown.
+  Match a known parent session ID, not names or cwd, when identifying a parent terminal.
+- Your own entry is marked `(you)` and cannot be a direct-send or compaction target.
+  Your status is read at listing time; peer values are their latest snapshots, not reservations.
+  Missing status is unknown, not idle; `?` context is unknown, including briefly after compaction.
+- `tool:<name>` identifies one active tool call.
+  `thinking` includes unsettled retries, automatic compaction, and queued continuations.
+  `compacting` means manual compaction holds inbox delivery; automatic compaction instead remains `thinking`.
+  Join/leave UI notices do not enter model context; use `link_list` only when current membership changes a decision.
+- `link_compact({ to: "<terminal-name>", instructions?: "..." })` waits up to five minutes for a compaction result.
+  Only a Pi-idle target with no compaction hold accepts; busy targets decline without interruption or queued work.
+  Optional instructions guide the summary but do not guarantee what survives.
+  Compaction can lose unreported detail.
+  Timeout or caller cancellation stops your wait, not a compaction already dispatched to the target.
+- The link is localhost-only, with no offline backlog or replay and no authentication.
+  See [the operator reference](../../README.md#llm-tools) for tool fields and failure semantics.

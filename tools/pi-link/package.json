@@ -12,6 +12,8 @@
     "bin",
     "skills",
     "index.ts",
+    "identity.ts",
+    "messaging.ts",
     "README.md",
     "design.md",
     "CHANGELOG.md",
