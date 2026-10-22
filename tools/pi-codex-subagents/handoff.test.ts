@@ -233,6 +233,7 @@ test("child helper startup requests hold synchronously before later callbacks", 
     childHelper({
       on(event: string, fn: (...args: any[]) => unknown) { listeners.set(event, [...listeners.get(event) ?? [], fn]); },
       requestPause() { events.push("pause"); }, registerCommand() {}, registerTool() {},
+      events: { on() { return () => {}; }, emit() {} },
       getActiveTools() { return []; }, setActiveTools() {},
     } as unknown as ExtensionAPI);
     listeners.get("session_start")!.push(() => { events.push("later-extension"); });

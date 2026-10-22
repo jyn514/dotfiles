@@ -18,7 +18,21 @@ To include the independently deployed pi-link source in the cross-package native
 PI_TEST_LINK_SOURCE=/src/dotfiles/tools/pi-link/index.ts bun run test:subagents
 ```
 
-Without `PI_TEST_LINK_SOURCE`, that integration case reports a skip; the manager/helper suite still runs.
+To exercise the independently deployed commit-boundary controller and actual native/guest tools with local JJ:
+
+```sh
+PI_TEST_COMMIT_BOUNDARY_SOURCE=/path/to/dotfiles /path/to/dotfiles/dev/test-environment bun run test:subagents
+```
+
+`PI_TEST_COMMIT_BOUNDARY_SOURCE` is the absolute dotfiles checkout root, not an extension file.
+Its `dev/test-environment` supplies native JJ/Babashka with disposable configuration, without sandbox proxy authority.
+The phase loads the real `commit-boundary.ts` and, in guest mode, `guest-tools.ts` through template extensions.
+The guest tool worker uses the selected Pi source public entry and the driver's source aliases, not installed SDK artifacts.
+Only owned disposable repositories and Unix sockets are created.
+For a focused run, pass `packages/pi-codex-subagents/test/boundary-integration.test.ts` to the driver.
+
+Without the corresponding `PI_TEST_LINK_SOURCE` or `PI_TEST_COMMIT_BOUNDARY_SOURCE`, those integration cases report skips.
+The manager/helper suites still run.
 The supplied pi-link directory must have its installed `ws` dependency.
 The fixture copies its TypeScript files into disposable storage, verifies the copies, and substitutes only the loopback port.
 It never changes the pi-link checkout or binds its usual port.
@@ -78,6 +92,19 @@ Completed tool results prevent either batch from being resent on fresh continuat
 production options or fixture-only APIs.
 
 ## Coverage and limits
+
+`manager-checkpoint.test.ts` exercises the volatile handoff with a narrow native checkpoint peer.
+It checks real settled child exits and new-PID restoration before the next tool, stable worker/session identity, no-write preservation,
+replacement, explicit retirement, missing/malformed exports, startup failure, failed restoration, crashes, interruption,
+missing/malformed restore results and helper errors with successful RPC command completion,
+late closing-process notifications/settled frames, worker/parent isolation, manager recreation and absence of payloads in production files.
+A production-index pause case starts with a live restored checkpoint and verifies the actual saved group record and both transcripts exclude it.
+The narrow `checkpoint-rpc-filter.ts` fixture drops or corrupts only helper-result frames from a real native child to test missing receipts.
+It does not replace session execution, helper code or provider behavior.
+`boundary-integration.test.ts` additionally exercises the production boundary controller, actual native/guest writes and real local JJ.
+It writes and hibernates, preserves the checkpoint through a no-write turn, restarts and blocks the separating edit once,
+then hibernates and restarts again with the checkpoint retired so retry succeeds.
+The peer fixture establishes transport/lifetime behavior; it is not a substitute for that actual boundary-policy regression.
 
 `manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
 It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.

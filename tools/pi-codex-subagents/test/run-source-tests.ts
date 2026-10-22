@@ -13,6 +13,7 @@ const defaults = [
   "source-core.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts",
   "manager-single-suspension.test.ts", "manager-suspension.test.ts", "capture-retry.test.ts", "discard-live-child.test.ts",
   "restore-startup-failure.test.ts", "manager-link.test.ts", "link-integration.test.ts",
+  "manager-checkpoint.test.ts", "boundary-integration.test.ts",
   "parent-child-roundtrip.test.ts", "pause-exit-rpc.test.ts",
   "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../peek.test.ts",
 ].map(file => join(here, file));
@@ -55,6 +56,8 @@ try {
       PI_TEST_BUN: process.execPath,
       PI_SUBAGENT_PI_BIN: join(here, "source-rpc-child.sh"),
       ...(process.env.PI_TEST_LINK_SOURCE ? { PI_TEST_LINK_SOURCE: resolve(process.env.PI_TEST_LINK_SOURCE) } : {}),
+      ...(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE ? { PI_TEST_COMMIT_BOUNDARY_SOURCE: resolve(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE) } : {}),
+      ...(process.env.DOTFILES_TEST_BB_REAL ? { DOTFILES_TEST_BB_REAL: process.env.DOTFILES_TEST_BB_REAL } : {}),
     };
     console.error(`\n[source tests ${index + 1}/${files.length}] ${file}`);
     const child = Bun.spawn([process.execPath, "--no-install", `--tsconfig-override=${config}`, "test", "--no-orphans", file, ...flags], {

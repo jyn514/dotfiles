@@ -181,6 +181,35 @@ The overlay uses the child working directory for tool rendering and synchronizes
 
 Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `send_message` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
 
+### Optional commit-boundary checkpoints
+
+A configured boundary controller can carry one checkpoint across normal settled child-process exits and `send_message` restarts of the same worker.
+The manager retains it only in parent-process memory, scoped by parent session and worker ID.
+Interrupts, crashes, failed startup and shutdown discard it; reopening the same transcripts does not restore it.
+Nothing is added to session entries, info files or pause records.
+Native workers must explicitly load their boundary extension through template/default `extensions`; this package never discovers or loads one automatically.
+Workers without a boundary controller need no configuration and remain quiet.
+
+For independently deployed controllers, `checkpoint.ts` defines the version-1 integration API:
+
+- Register synchronous `pi.events` listeners during extension loading, regardless of helper/controller load order.
+- At the end of the controller's awaited `agent_settled` handler, emit `subagent:checkpoint:export` with `{ version: 1, checkpoint }`.
+  `checkpoint` is `{ repository: string, commit: string, parent: string }` or explicit `null` after retirement/abort.
+  Export on no-write turns too; missing or malformed exports discard the previous value.
+  Do not export shutdown reset.
+- Listen to `subagent:checkpoint:restore` for a mutable `{ version: 1, checkpoint, applied: false }` request.
+  Synchronize session/cwd and the controller lifetime, apply the value synchronously, then set `applied = true` before returning.
+  The event bus does not await asynchronous listeners.
+
+The helper's internal `/subagent-checkpoint-restore` command runs after startup synchronization and before any prompt or held-child release.
+After synchronous application, the helper sends `{ version: 1, restored: boolean }` on the same private notification transport.
+The manager requires that result and command completion before proceeding; RPC completion alone does not acknowledge restoration.
+A missing or malformed result fails startup rather than permitting an unresolved restore to race the first prompt.
+No disk receipt is written.
+A non-null checkpoint that cannot be restored is dropped and reported once, without retry.
+Explicit null with no controller is a silent no-op.
+The reserved `__pi_subagent_checkpoint__:` notification prefix carries exports privately to the manager, not to ordinary worker output or logs.
+
 ## Durable pause
 
 Use `/pause --exit` to save the parent and its children, then exit only after saving succeeds.

@@ -1,14 +1,40 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   CONTROL_COMMAND, CONTROL_ENTRY, CONTROL_VERSION, SessionReplay, assertSessionAuthority,
   type ControlRecord, type ControlRequest, type SavedSession,
 } from "./handoff.js";
 
 import { registerChildLink } from "./child-link.js";
+import {
+  CHECKPOINT_EXPORT_EVENT, CHECKPOINT_RESTORE_EVENT, CHECKPOINT_RESTORE_COMMAND, CHECKPOINT_NOTIFY,
+  checkpointEnvelope, type CheckpointRestore, type CheckpointRestoreResult,
+} from "./checkpoint.js";
 
 /** Explicitly loaded before template extensions; this helper owns no AgentInfo. */
 export default function childHelper(pi: ExtensionAPI): void {
   registerChildLink(pi);
+  // Register during loading: controller/helper load order must not matter.
+  let checkpointContext: ExtensionContext | undefined;
+  pi.on("session_start", (_event, ctx) => { checkpointContext = ctx; });
+  pi.on("session_shutdown", () => { checkpointContext = undefined; });
+  pi.events.on(CHECKPOINT_EXPORT_EVENT, value => {
+    // An invalid latest export must invalidate a previous valid export too.
+    const envelope = checkpointEnvelope(value) ?? {};
+    checkpointContext?.ui.notify(CHECKPOINT_NOTIFY + JSON.stringify(envelope), "info");
+  });
+  pi.registerCommand(CHECKPOINT_RESTORE_COMMAND, {
+    description: "Internal volatile commit-boundary checkpoint restoration",
+    allowedWhilePaused: true,
+    handler: async (args, ctx) => {
+      const envelope = checkpointEnvelope(JSON.parse(args));
+      if (!envelope) throw new Error("Malformed commit-boundary checkpoint restore.");
+      const request: CheckpointRestore = { ...envelope, applied: false };
+      pi.events.emit(CHECKPOINT_RESTORE_EVENT, request);
+      const result: CheckpointRestoreResult = { version: envelope.version,
+        restored: request.applied === true || request.checkpoint === null };
+      ctx.ui.notify(CHECKPOINT_NOTIFY + JSON.stringify(result), "info");
+    },
+  });
   const replay = new SessionReplay(pi);
   let generation: string | undefined;
   let snapshot: SavedSession | undefined;

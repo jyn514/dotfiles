@@ -2,6 +2,7 @@
 
 import * as fs from "node:fs";
 import * as readline from "node:readline";
+import { CHECKPOINT_NOTIFY, CHECKPOINT_RESTORE_COMMAND, CHECKPOINT_VERSION } from "../checkpoint.ts";
 
 const sessionIndex = process.argv.indexOf("--session");
 const sessionFile = sessionIndex >= 0 ? process.argv[sessionIndex + 1] : undefined;
@@ -20,6 +21,12 @@ input.on("line", (line) => {
   const command = JSON.parse(line);
   if (command.type === "get_state") {
     send({ type: "response", id: command.id, success: true, data: {} });
+    return;
+  }
+  if (command.type === "prompt" && String(command.message).startsWith(`/${CHECKPOINT_RESTORE_COMMAND} `)) {
+    // Match native extension-command dispatch: handled without model work or transcript input.
+    send({ type: "extension_ui_request", method: "notify", message: CHECKPOINT_NOTIFY + JSON.stringify({ version: CHECKPOINT_VERSION, restored: true }) });
+    send({ type: "response", id: command.id, success: true, data: { disposition: "handled" } });
     return;
   }
   if (command.type === "prompt") {
