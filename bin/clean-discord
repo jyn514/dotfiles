@@ -1,7 +1,8 @@
 #!/usr/bin/env bb
-(require '[clojure.string :as str])
+(require '[babashka.fs :as fs]
+         '[clojure.string :as str])
 
-(def usage "Usage: clean-discord [FILE|-]\nConvert Discord copy-pasted text to [HH:MM] <name> message lines.\nReads stdin by default and writes stdout; never changes the input file.\nSupports split timestamp/name/colon headers, including a clipped first '['.\nRemoves trailing [badge], decorations and their detached copies between messages.\nFormats leading indented reply quotes with > and removes blank lines.")
+(def usage "Usage: clean-discord [-i] [FILE|-]\nConvert Discord copy-pasted text to [HH:MM] <name> message lines.\nReads stdin by default and writes stdout.\nWith -i, requires FILE and atomically replaces it after successful cleaning.\nSupports split timestamp/name/colon headers, including a clipped first '['.\nRemoves trailing [badge], decorations and their detached copies between messages.\nFormats leading indented reply quotes with > and removes blank lines.")
 
 ;; Require the whole header, not just a time: message text can contain timestamps.
 (def header-pattern
@@ -49,15 +50,30 @@
                        prefix (str "[" (:time message) "] <" (:name message) "> ")]]
              (apply str (map #(str prefix % "\n") (format-body body)))))))
 
-(let [args *command-line-args*]
+(defn rewrite! [file text]
+  (let [target (fs/real-path file)
+        temporary (fs/create-temp-file {:dir (fs/parent target) :prefix ".clean-discord-"})]
+    (try
+      ;; Retain file permissions; resolve symlinks so the link itself survives.
+      (fs/copy target temporary {:replace-existing true :copy-attributes true})
+      (spit (str temporary) text)
+      (fs/move temporary target {:replace-existing true :atomic-move true})
+      (finally (fs/delete-if-exists temporary)))))
+
+(let [in-place? (some #{"-i"} *command-line-args*)
+      args (vec (remove #{"-i"} *command-line-args*))]
   (cond
     (or (= args ["--help"]) (= args ["-h"])) (println usage)
     (or (> (count args) 1)
+        (and in-place? (or (empty? args) (= args ["-"])))
         (and (first args) (str/starts-with? (first args) "-") (not= (first args) "-")))
     (do (binding [*out* *err*] (println usage)) (System/exit 2))
     :else
     (try
-      (print (clean (slurp (if (or (empty? args) (= args ["-"])) *in* (first args)))))
+      (let [text (clean (slurp (if (or (empty? args) (= args ["-"])) *in* (first args))))]
+        (if in-place?
+          (rewrite! (first args) text)
+          (print text)))
       (catch Exception error
         (binding [*out* *err*] (println "clean-discord:" (.getMessage error)))
         (System/exit 1)))))

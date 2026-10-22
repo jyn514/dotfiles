@@ -69,6 +69,54 @@ class CleanDiscordTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "".join(
                     f"[10:00] <Ada> {line}\n" for line in expected.splitlines()))
 
+    def test_in_place_replaces_file_without_stdout_and_preserves_permissions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "copied chat.txt"
+            path.write_text("[\n10:00\n]\nAda\n:\n    quote\n\nreply\n\nparagraph\n")
+            path.chmod(0o640)
+            result = self.run_command("", "-i", path)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+            self.assertEqual(path.read_text(), (
+                "[10:00] <Ada> > quote\n[10:00] <Ada> reply\n[10:00] <Ada> paragraph\n"))
+            self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_in_place_follows_symlink_without_replacing_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "chat.txt"
+            path.write_text("[10:00]\nAda\n:\nhello\n")
+            link = Path(directory) / "link.txt"
+            link.symlink_to(path.name)
+            result = self.run_command("", link, "-i")
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(path.read_text(), "[10:00] <Ada> hello\n")
+
+    def test_in_place_parse_failure_leaves_original_bytes_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "chat.txt"
+            for original in [b"not a Discord paste\r\n", b"[10:00] <Ada> already cleaned\n"]:
+                with self.subTest(original=original):
+                    path.write_bytes(original)
+                    result = self.run_command("", "-i", path)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("clean-discord: expected", result.stderr)
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(list(Path(directory).iterdir()), [path])
+            missing = Path(directory) / "missing.txt"
+            result = self.run_command("", "-i", missing)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(missing.exists())
+
+    def test_in_place_requires_a_file_argument(self):
+        for args in [("-i",), ("-i", "-"), ("-i", "one", "two")]:
+            with self.subTest(args=args):
+                result = self.run_command("[10:00]\nAda\n:\nhello\n", *args)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("Usage:", result.stderr)
+
     def test_empty_input(self):
         result = self.run_command()
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))

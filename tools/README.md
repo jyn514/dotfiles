@@ -69,6 +69,9 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
 - [`clean-discord`](../bin/clean-discord) converts Discord copy-pasted text to `[HH:MM] <name> message` lines; requires Babashka (`bb`).
   Run `clean-discord chat.txt` or `paste | clean-discord`; output goes to stdout without changing the source.
+  Use `clean-discord -i chat.txt` to rewrite the file instead, with no stdout output.
+  In-place mode requires a file, preserves permissions, follows symlinks, and atomically replaces the file only after cleaning succeeds.
+  Failed cleaning leaves the original unchanged; already-cleaned IRC text is not accepted as Discord input.
   It recognizes timestamp/name/colon headers split across lines, including a missing opening bracket on the first timestamp.
   It removes trailing `[badge],` name decorations, detached copies at message boundaries, and blank lines.
   An opening four-space-indented block separated from the reply by blank lines becomes a `>` quote; other indentation stays unchanged.
