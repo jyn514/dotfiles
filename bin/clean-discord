@@ -1,0 +1,63 @@
+#!/usr/bin/env bb
+(require '[clojure.string :as str])
+
+(def usage "Usage: clean-discord [FILE|-]\nConvert Discord copy-pasted text to [HH:MM] <name> message lines.\nReads stdin by default and writes stdout; never changes the input file.\nSupports split timestamp/name/colon headers, including a clipped first '['.\nRemoves trailing [badge], decorations and their detached copies between messages.\nFormats leading indented reply quotes with > and removes blank lines.")
+
+;; Require the whole header, not just a time: message text can contain timestamps.
+(def header-pattern
+  #"(?m)^(?:\[\h*\r?\n|\A)([0-2][0-9]:[0-5][0-9])\h*\r?\n\]\h*\r?\n([^\r\n]+)\r?\n:\h*(?:\r?\n|$)|^\[([0-2][0-9]:[0-5][0-9])\]\h*\r?\n([^\r\n]+)\r?\n:\h*(?:\r?\n|$)")
+
+(defn headers [text]
+  (let [matcher (re-matcher header-pattern text)]
+    (loop [found []]
+      (if (.find matcher)
+        (let [raw-name (str/trim (or (.group matcher 2) (.group matcher 4)))
+              [_ name badge] (re-matches #"(.+?)\h+(\[[^\]]+\],)" raw-name)]
+          (recur (conj found {:start (.start matcher) :end (.end matcher)
+                             :time (or (.group matcher 1) (.group matcher 3))
+                             :name (or name raw-name) :badge badge})))
+        found))))
+
+(defn format-body [lines]
+  ;; This paste represents a reply as an indented opening block, a gap, then text.
+  ;; Keep indentation in other positions (and in standalone code blocks).
+  (let [[quoted rest] (split-with #(str/starts-with? % "    ") lines)
+        reply? (and (seq quoted) (seq rest) (str/blank? (first rest))
+                    (some (complement str/blank?) rest))]
+    (remove str/blank?
+            (if reply?
+              (concat (map #(str "> " (subs % 4)) quoted) rest)
+              lines))))
+
+(defn clean [text]
+  (let [messages (headers text)
+        badges (set (keep :badge messages))]
+    (when (and (not (str/blank? text))
+               (or (empty? messages)
+                   (not (str/blank? (subs text 0 (:start (first messages)))))))
+      (throw (ex-info "expected a Discord timestamp/name/colon header at the start" {})))
+    (apply str
+           (for [[message following] (partition 2 1 (conj messages {:start (count text)}))
+                 :let [lines (str/split-lines (subs text (:end message) (:start following)))
+                       ;; Detached role/pronoun decorations occur at the end of a message.
+                       ;; Do not remove similar-looking lines inside quotes or code.
+                       body (->> lines
+                                 (drop-while str/blank?)
+                                 reverse
+                                 (drop-while #(or (str/blank? %) (badges (str/trim %))))
+                                 reverse)
+                       prefix (str "[" (:time message) "] <" (:name message) "> ")]]
+             (apply str (map #(str prefix % "\n") (format-body body)))))))
+
+(let [args *command-line-args*]
+  (cond
+    (or (= args ["--help"]) (= args ["-h"])) (println usage)
+    (or (> (count args) 1)
+        (and (first args) (str/starts-with? (first args) "-") (not= (first args) "-")))
+    (do (binding [*out* *err*] (println usage)) (System/exit 2))
+    :else
+    (try
+      (print (clean (slurp (if (or (empty? args) (= args ["-"])) *in* (first args)))))
+      (catch Exception error
+        (binding [*out* *err*] (println "clean-discord:" (.getMessage error)))
+        (System/exit 1)))))

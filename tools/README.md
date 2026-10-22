@@ -67,6 +67,12 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 ## Content and device tools
 
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
+- [`clean-discord`](../bin/clean-discord) converts Discord copy-pasted text to `[HH:MM] <name> message` lines; requires Babashka (`bb`).
+  Run `clean-discord chat.txt` or `paste | clean-discord`; output goes to stdout without changing the source.
+  It recognizes timestamp/name/colon headers split across lines, including a missing opening bracket on the first timestamp.
+  It removes trailing `[badge],` name decorations, detached copies at message boundaries, and blank lines.
+  An opening four-space-indented block separated from the reply by blank lines becomes a `>` quote; other indentation stays unchanged.
+  Other UI layouts are not supported; unrecognized text before the first header fails without output.
 - [`extract-chat`](extract-chat/) extracts user and assistant turns from local Pi, Codex, or Claude JSON/JSONL sessions. It supports session lookup, `--final-only`, and per-session Markdown.
   `--session ID` selects the newest matching Codex rollout by filename timestamp and rollout UUID, including replacement rollouts created by revert.
   Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
