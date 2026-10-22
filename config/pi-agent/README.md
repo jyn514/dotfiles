@@ -28,16 +28,12 @@ Exact allowlisted skills may route a subagent through the `luna` template.
 Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
-Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) to look for a better next action before extending repeated work toward an active goal.
-Pass the literal goal, current acceptance condition, latest relevant user correction verbatim (if any), governing references, and product/output/current-work evidence entrypoints.
-Include main-pipeline entrypoints, not only files for the candidate currently under discussion.
-Include a complete file path to a current product-use example when available, even if repository searches ignore the file.
-Do not prepare a per-outcome assessment, repeat the scout procedure, or supply a preferred next task.
-The template owns evidence inspection and the benefit/cost report; another investigation is not the required outcome.
-Discovery can look beyond the current subsystem for missing core capabilities; the selected next action remains bounded.
-Compare against the strongest credible competing action as well as continuing current work, using a discriminating check if uncertainty determines the choice.
-The parent owns when to scout and which task to choose, and must explain why accepting a recommendation beats the competing actions.
-A correct finding alone does not justify selection; no better alternative is a successful scout result.
+Use [work-selection](../../skills/work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round to the current approach, including in ordinary interactive tasks.
+It owns when to scout, the parent's next-action comparison, and the bounded fallback when no compatible template is available.
+Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) for fresh-context read-only inspection within that task or goal; follow its advertised caller contract rather than copying its procedure into the caller.
+Supply evidence for the main user activity as well as current work, with a complete path to a current use example when available so ignored files remain reachable.
+The template owns evidence inspection and its short report; another investigation is not the required outcome, and a scout report alone does not justify the parent's selection.
+Neither loading the skill nor consulting the scout activates autonomous execution or changes goal permissions.
 The scout inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
 The scout decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
 Its 200-word report limit is an instruction, not a runtime limit.
@@ -100,11 +96,14 @@ Tests that invoke a handler directly do not verify this failure behavior; use th
 ## Testing
 
 The native prompt-section regression needs an installed Pi build with `systemPromptOptions.sections` because the locked test SDK predates that API.
-Run it with Node so Bun's module mocks cannot replace the installed SDK:
+The shared-skill discovery regression also uses the installed Pi loader and an isolated copy of the skill tree.
+Run them with Node so Bun's module mocks cannot replace the installed SDK:
 
 ```sh
-dev/test-environment node --test tests/pi/native_prompt_sections.mjs
+dev/test-environment node --test tests/pi/native_prompt_sections.mjs tests/pi/native_work_selection.mjs
 ```
+
+The discovery check verifies catalog eligibility and description delivery, not model compliance or better next-action selection.
 
 ### Subagent templates
 

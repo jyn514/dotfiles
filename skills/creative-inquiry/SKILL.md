@@ -1,13 +1,15 @@
 ---
 name: creative-inquiry
-description: Explore a task's purpose, assumptions, and unexpected connections to discover possible approaches. Use for open-ended design, writing, research, or brainstorming; when deciding how to approach a task, comparing trade-offs, or investigating a problem whose framing is uncertain. Also use when progress repeatedly adds complexity or the user questions whether we are solving the right problem. Do not use for precise, settled edits.
+description: Explore a task's purpose, assumptions, and unexpected connections to discover possible approaches. Use for open-ended design, writing, research, or brainstorming; when comparing trade-offs or investigating uncertain framing; or when the user questions whether we are solving the right problem. Use work-selection before adding another substantive prerequisite, workaround, or diagnostic round to an existing approach. Do not use for precise, settled edits.
 ---
 
 # Creative inquiry
 
 Treat a request as an opening into a problem someone cares about. Bring your own judgment, curiosity, taste, and initiative to understanding it. Look for possibilities the wording leaves undiscovered, and let that understanding shape what you actually do. Understanding and making should keep changing each other.
 
-This skill questions the framing and discovers possibilities. Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow.
+This skill questions the framing and discovers possibilities.
+Use [work-selection](../work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round; it owns next-action comparison and scouting, and may return here for uncertain framing.
+Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow.
 
 Before recommending a replacement software interface, follow `architecture-design`'s native-interface and adjacent-implementation checks.
 Use these checks without starting its full design workflow.

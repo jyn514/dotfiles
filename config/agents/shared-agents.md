@@ -54,6 +54,8 @@ Messages interrupt reasoning and consume context even when marked "no action nee
 ### Before changing behavior or scope
 
 Act within the user's established objective and authorization; do not ask again for an action already authorized.
+Distinguish governing requirements from agent-authored assumptions, restrictions, and milestones; do not attribute the latter to the user.
+Preserve governing requirements and user-required or explicitly approved design choices, not every agent-selected means of meeting them.
 Before a decision that changes behavior, scope, ownership, or preservation requirements, identify missing context that could materially change the action.
 If that context remains unresolved, ask up to three focused questions and pause only the dependent work; continue independent investigation.
 When repository evidence contradicts my request or its premise, stop dependent edits, state the contradiction, and ask which behavior or environment I mean.
@@ -238,12 +240,11 @@ When existing evidence cannot distinguish competing diagnoses, use an experiment
 Identify the root cause and fix the general case at the appropriate architectural boundary.
 Keep unrelated cases separate and do not expand scope for hypothetical failures.
 
-### When progress slows, prerequisites accumulate, or local improvements miss the outcome
+### Before adding another supporting step
 
-When progress slows, work keeps adding prerequisites or machinery, or local improvements do not advance the required outcome, use `creative-inquiry` to compare continuing the current approach with the smallest structural alternative.
-This applies even if individual local tasks succeed.
-Distinguish user requirements from restrictions introduced by reviewers, your experimental setup, or delegation.
-Revisit those self-imposed restrictions before treating them as blockers.
+Before adding another substantive prerequisite, workaround, or diagnostic round to continue the current approach, read `work-selection`.
+This applies even when earlier steps succeeded; do not first require a judgment that the approach is bad or the work is unnecessary.
+Obvious mechanical repairs and straightforward execution of a settled change do not require this reassessment.
 
 ### Records and provenance
 

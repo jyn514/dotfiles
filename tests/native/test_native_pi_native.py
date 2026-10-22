@@ -8,5 +8,6 @@ def test_pi_native(run_native_suite):
         "tests/pi/native_web_search.mjs",
         "tests/pi/native_subscription_usage.mjs",
         "tests/pi/native_validate_skill.mjs",
+        "tests/pi/native_work_selection.mjs",
         "tests/pi/native_transport_diagnostics.mjs",
     ])

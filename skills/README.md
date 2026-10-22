@@ -96,6 +96,10 @@ no publication arguments; `--dry-run` still means npm's publication dry-run.
 Use [delegation](delegation/SKILL.md) when assigning work to agents, deciding whether to wait, or integrating their results.
 It applies to implementation, research, review, and writing.
 
+Use [work-selection](work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round to the current approach, even when earlier steps succeeded.
+It owns next-action comparison and scouting within the selected task; no active goal is required and no autonomous permission is granted.
+Obvious mechanical repairs and straightforward execution of a settled change remain direct.
+
 When the problem's framing or approach is uncertain, use
 [creative-inquiry](creative-inquiry/SKILL.md) to question assumptions and discover
 possibilities. For comparing concrete software-design candidates, use
@@ -140,9 +144,12 @@ After choosing a design and before implementation:
 Use these independently when their target is already selected:
 
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
+- [work-selection](work-selection/SKILL.md) — reassess supporting work and select the next bounded authorized action within an interactive or autonomous task.
+  Use `opportunity-scan` instead for project-wide discovery before selecting a task.
 - [autonomous-work](autonomous-work/SKILL.md) — pursue explicitly authorized autonomous runs and active user-authorized goals.
   Covers implementation, research, writing, planning, and review while preserving activity, acceptance order, independent progress, and resumable state.
   Implementation testing, integration, audit, and commit procedures apply only when that activity and its effects are authorized.
+  Next-action selection delegates to `work-selection`; install that companion too when copying `autonomous-work` individually.
   The former [autonomous-implementation](autonomous-implementation/SKILL.md) entry forwards existing callers to this owner.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `design-for-change` — resolve modeling, invariant, interface, ownership, enforcement-mechanism, regression-test, or oracle decisions; skip routine edits with an established shape.
@@ -160,7 +167,8 @@ Use these independently when their target is already selected:
 You do not need the whole chain every time.
 
 - Small refactor: implement directly when ownership and invariants are clear; use `design-for-change` for unresolved design or test decisions, and `second-user` only when added machinery needs justification.
-- Simple configuration edit: inspect the diff and validate with the native parser; no design or completion-audit skill is required.
+- Simple configuration edit: inspect the diff and validate with the native parser; no work-selection, design, or completion-audit skill is required.
+- Another substantive prerequisite, workaround, or diagnostic round: use [work-selection](work-selection/SKILL.md) before extending the current approach.
 - Architecture decision: use [design-deliberation](design-deliberation/SKILL.md) to run scouting, independent planning, critique, and fixed-set review.
 - Legacy subsystem: start with `pain-axis` before scouting.
 - Explicit autonomous run or active user-authorized goal: start with [autonomous-work](autonomous-work/SKILL.md).

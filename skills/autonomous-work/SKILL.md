@@ -11,7 +11,8 @@ Reassess activation when the task changes; having this skill in context does not
 Respect paused, blocked, and budget-limited states and the harness's resume requirements.
 An inactive goal is saved state, not permission to continue.
 
-This skill owns run-level work selection, dependency readiness, iteration, resumable state, and stopping.
+This skill owns run authority, persistence, required acceptance order, resumable state, and stopping.
+[Work-selection](../work-selection/SKILL.md) owns next-action selection, dependency justification, reassessment, and scouting within the authorized task.
 Activity-specific skills own their procedures; goal tools own status changes and budgets.
 Autonomy authorizes persistence within the task, not a different activity or additional effects.
 
@@ -30,7 +31,6 @@ Identify the permitted activity, protected work, acceptance criteria, and effect
 
 Do not invent human approval or substitute a different activity for an unmet result.
 A review-ready artifact can complete a draft request, but not a goal that explicitly requires the user's approval.
-Ask before changing scope, acceptance criteria, preservation requirements, permissions, or the selected design.
 Do not ask again for investigation, edits, or repairs the task already authorizes; a failed attempt does not impose a one-attempt limit.
 
 Derive remaining outcomes from the full governing request, not worker assignments, progress summaries, or optional cleanup.
@@ -44,52 +44,12 @@ Record acceptance cases before substantive work and refine them only within the 
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
-## Choose work that advances the objective
+## Select work within the authorized run
 
-Before each task, name the acceptance case it advances and the missing evidence, reproduced failure, or demonstrated prerequisite it addresses.
-Work may advance the current condition, a demonstrated prerequisite, or another independent authorized part of the objective.
-Preserve required milestone order and current integration obligations; another unmet item alone does not justify abandoning them.
-Keep unmet conditions and their scoped blockers visible while independent work proceeds.
+Use [work-selection](../work-selection/SKILL.md) to choose the next action, justify dependencies, and compare continuing with other authorized approaches.
+Also use it before extending repeated similar batches during an active run, even when they succeed.
+Keep unmet acceptance conditions and scoped blockers visible while advancing independent authorized work.
 Advance acceptance and integration only when governing prerequisites and required evidence permit.
-
-Before adding prerequisite work, name the unmet dependency, the acceptance check it prevents, and the supporting evidence.
-Distinguish governing requirements from restrictions introduced by the chosen approach or experiment.
-Before adding instrumentation, changing a diagnostic question, or delegating prerequisite work, compare the smallest existing-tool alternative that preserves the outcome, constraints, and selected design.
-Make this comparison even when the last probe produced useful partial evidence.
-Reconsider approach-imposed restrictions before treating them as prerequisites.
-Repair obvious mechanical failures directly when they need no new mechanism or change of question.
-An unrelated bug is not a prerequisite; do not repeatedly review an unchanged boundary or add defenses for hypothetical failures.
-
-Use [creative-inquiry](../creative-inquiry/SKILL.md) when the approach remains uncertain or local successes repeatedly fail to advance the requested outcome.
-Before a diagnostic follow-up changes its question or adds instrumentation, ask which possible finding would change the next action.
-Do not produce another assessment without a decision it can change.
-Record permitted defaults as assumptions; leave missing judgments unresolved.
-Route a genuine software-design fork to [design-deliberation](../design-deliberation/SKILL.md), not to an improvised experiment restriction.
-
-## Compare opportunities before extending repeated work
-
-While the run is active, reassess before extending repeated similar batches, even when they succeed.
-Also reassess a chain of supporting tasks that succeeds locally without advancing the acceptance condition, even when the tasks differ and none has stalled.
-Look for a more valuable next action, not necessarily another investigation.
-
-Use a configured fresh-context scout template when available and follow its advertised caller contract without restating the procedure or supplying a preferred task.
-Include evidence entrypoints for the main user activity as well as current work, so the current candidate does not define the search space.
-Preserve the latest relevant user correction and its provenance; quote it only when the exact text is available.
-Without a template, make a read-only search yourself: inspect an existing example of the main user activity and outcome evidence; do not claim independence.
-
-Look beyond the current subsystem or line of inquiry for missing core capabilities, including incomplete use of existing machinery.
-Choose a bounded next action without turning discovery into an exhaustive project audit.
-Compare the recommendation with the strongest credible competing action as well as continuing current work.
-Explain the user benefit and its evidenced or estimated scale, including the work through actual delivery, verification, and coordination.
-A correct finding, novelty, coverage total, or completed batch does not establish user-facing quality or justify priority alone.
-If uncertain benefit or cost determines the choice, identify the smallest check that distinguishes the competing actions rather than defaulting to the recommendation.
-Do not assume an investigation will justify follow-up work or turn missing evidence into a claimed failure.
-Decide when the evidence supports a recommendation or identifies a concrete blocker; do not impose a fixed lookup or time limit.
-
-No better alternative found is a successful result; name missing context rather than inventing work.
-The parent retains task-selection authority and explains why accepting a recommendation beats the competing actions under the governing constraints.
-A scout report alone is not progress.
-Do not scout after every tool call or repeat an unchanged search without new evidence.
 
 ## Continue independent work before waiting
 
@@ -117,17 +77,11 @@ For implementation work, use these companion procedures when their conditions ap
 For an implementation acceptance case, identify the actual entrypoint, authoritative inputs, intervening interfaces, final consumer, and cheapest realistic check.
 Require end-to-end evidence unless the governing scope explicitly declares a feasibility or component milestone.
 Do not replace that condition with a helper's local success.
-For end-to-end implementation, two consecutive completed subtasks without a new consumer-visible result trigger approach reassessment before more prerequisite or capability work.
-Attempt the nearest intended-consumer check; if it cannot run, identify the exact missing dependency and compare repair with the smallest authorized alternative.
-Explicit feasibility or component milestones retain their own acceptance conditions.
-
-Connect each handoff to the intended consumer or remove the temporary path before extending that path with another fixture-only capability.
 If blocked, retain downstream obligations rather than silently deferring them.
 Missing real inputs do not block integration using valid fixture inputs, but fixtures do not satisfy requirements for real-input evidence.
 Where acceptance permits partial results, keep unsupported cases explicitly held while supported cases reach the consumer.
 This does not narrow the milestone or certify held cases.
 Reuse producer outputs that remain valid for the required consumer and repair the failing boundary; regenerate only invalidated or missing work.
-If a repair displaces integration, retain integration as the next action for its acceptance condition.
 Record implementation results as integrated, local-only, or blocked with the exact check and evidence.
 
 Commit only when the task or repository policy authorizes repository changes and commits; use [commit-quality](../commit-quality/SKILL.md).
@@ -136,7 +90,8 @@ Do not turn read-only research or review into repository mutations to satisfy an
 
 ## Record decisions and preserve resumable state
 
-Record corrections, constraints, failed approaches, and decision-changing untried alternatives in existing authoritative task state.
+Record corrections, constraints and their sources, failed approaches, and decision-changing untried alternatives in existing authoritative task state.
+Keep governing requirements distinct from revisable agent choices in saved state; summaries must not promote the latter into user instructions.
 Record user decisions before dependent delegation and reconcile superseded holds, questions, and worker instructions without dropping constraints that still apply.
 Do not rely on compaction to retain everything needed to resume.
 
