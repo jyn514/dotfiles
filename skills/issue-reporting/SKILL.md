@@ -1,16 +1,16 @@
 ---
 name: issue-reporting
-description: Draft or revise a bug report to another maintainer from observed behavior, reproductions, and user corrections. Use when asked to write an upstream bug description, fill a bug template, or prepare a bug for reporting. Not for feature proposals. Does not authorize submission, fixes, or software upgrades.
+description: Draft or revise upstream bug reports, support questions, and design discussions for maintainers. Use when asked to write an upstream issue or discussion, fill an issue template, or prepare a maintainer follow-up about a concrete workflow, limitation, or workaround. Not for internal design documents or implementing fixes. Does not authorize submission or software upgrades.
 ---
 
 # Issue reporting
 
 Draft only when a report or follow-up is warranted and the target project's AI policy permits it.
-Use the project and bug from the conversation; ask for the target repository only when it cannot be identified.
-Assume jyn is reporting to another maintainer. Transfer the evidence they need to
-investigate without relying on shared context. For a feature request, use the
-project's feature template and describe the user workflow, limitation, and existing
-workaround rather than forcing it into a bug report.
+Use the project and problem from the conversation; ask for the target repository only when it cannot be identified.
+Assume jyn is writing to another maintainer.
+Transfer the evidence they need without relying on shared context.
+Use the project's applicable channel and template for a bug report, support question, feature request, or design discussion.
+Describe the user workflow, limitation, and existing workaround rather than forcing every request into a bug report.
 
 ## Gather the authoritative inputs
 
@@ -64,7 +64,7 @@ The writing, tightening, and delivery requirements apply only when a report or f
    check the project's documented contribution instructions. Distinguish reporting
    requirements from PR-only requirements; drafting a report does not authorize
    fixes or running unrelated PR checks. For remote source, shallow-clone the
-   repository into a temporary directory. Use the applicable bug template,
+   repository into a temporary directory. Use the applicable issue or discussion template,
    retaining its headings, order, and required fields; omit template comments and
    metadata. If no template is available, tell the user.
    Follow the project's disclosure placement; otherwise put this skill's default disclosure before the first template heading.
