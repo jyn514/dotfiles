@@ -21,54 +21,84 @@ guest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guest)
 GENERATION = "a" * 32
 BOOT = "12345678-1234-1234-1234-123456789abc"
+REQUEST = "b" * 32
+FILES = {"boot-credential.py": credentials.hashlib.sha256(
+    credentials.GUEST_HELPER_SOURCE.read_bytes()).hexdigest()}
 
 
 class BootCredentialTest(unittest.TestCase):
     def test_guest_path_rejects_wrong_generation_and_noncanonical_names(self):
-        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
-        self.assertEqual(credentials.credential_path(path, GENERATION), path)
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token-{REQUEST}'
+        self.assertEqual(credentials.credential_path(path, GENERATION, REQUEST), path)
         for invalid in (None, path + '\n', path.replace(GENERATION, 'b' * 32),
                         path.replace('/1000/', '/-1/'), path.replace(BOOT, '../elsewhere'),
                         path.replace(BOOT, 'f' * 36)):
             with self.subTest(path=invalid), self.assertRaises(ValueError):
-                credentials.credential_path(invalid, GENERATION)
+                credentials.credential_path(invalid, GENERATION, REQUEST)
 
-    def test_one_guest_exchange_handles_reuse_transfer_and_failures(self):
-        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
+    def test_one_guest_exchange_handles_transfer_and_failures(self):
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token-{REQUEST}'
         fixture = Path(__file__).with_name('credential_reply_fixture.py')
         for statuses, changed, fails, retrievals in (
-                (['ready'], False, False, 0),
-                (['missing', 'ready'], False, False, 1),
-                (['missing', 'ready'], True, True, 1),
+                (['receive', 'ready'], False, False, 1),
+                (['receive', 'ready'], True, True, 1),
+                (['ready'], False, True, 0),
                 ([], False, True, 0)):
             with self.subTest(statuses=statuses, changed=changed):
                 replies = [{'status': status, 'path': path} for status in statuses]
                 if changed:
                     replies[-1]['path'] = path.replace(BOOT, 'f' * 36)
-                runtime = Mock(record={'files': ['boot-credential.py'], 'generation': GENERATION})
+                runtime = Mock(record={'files': FILES, 'generation': GENERATION})
                 runtime.guest.side_effect = AssertionError('separate guest query')
                 runtime.host.guest_argv.return_value = [sys.executable, str(fixture), json.dumps(replies)]
                 retrieve = Mock(return_value=b'dummy')
-                if fails:
-                    with self.assertRaises(ValueError):
-                        credentials.boot_credential(runtime, retrieve=retrieve)
-                else:
-                    self.assertEqual(credentials.boot_credential(runtime, retrieve=retrieve), Path(path))
+                with patch.object(credentials.secrets, 'token_hex', return_value=REQUEST):
+                    if fails:
+                        with self.assertRaises(ValueError):
+                            credentials.boot_credential(runtime, retrieve=retrieve)
+                    else:
+                        self.assertEqual(credentials.boot_credential(runtime, retrieve=retrieve), Path(path))
                 self.assertEqual(retrieve.call_count, retrievals)
                 runtime.host.guest_argv.assert_called_once()
+                self.assertEqual(runtime.host.guest_argv.call_args.args[-4:],
+                                 (credentials.GUEST_HELPER, 'stage', GENERATION, REQUEST))
 
-    def test_unavailable_host_keychain_skips_optional_credential(self):
-        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
+    def test_unavailable_macos_keychain_skips_optional_credential(self):
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token-{REQUEST}'
         fixture = Path(__file__).with_name('credential_reply_fixture.py')
-        runtime = Mock(record={'files': ['boot-credential.py'], 'generation': GENERATION})
+        runtime = Mock(record={'files': FILES, 'generation': GENERATION})
         runtime.host.guest_argv.return_value = [sys.executable, str(fixture), json.dumps([
-            {'status': 'missing', 'path': path},
+            {'status': 'receive', 'path': path},
         ])]
-        for error in ('GitHub Keychain provisioning requires macOS',
-                      'Keychain operation failed (OSStatus -25300); access denied or item unavailable'):
-            with self.subTest(error=error), patch.object(
-                    credentials, 'Keychain', side_effect=credentials.KeychainError(error)):
-                self.assertIsNone(credentials.boot_credential(runtime))
+        error = 'Keychain operation failed (OSStatus -25300); access denied or item unavailable'
+        with patch.object(credentials.sys, 'platform', 'darwin'), patch.object(
+                credentials.secrets, 'token_hex', return_value=REQUEST), patch.object(
+                credentials, 'Keychain', side_effect=credentials.KeychainError(error)):
+            self.assertIsNone(credentials.boot_credential(runtime))
+
+    def test_linux_retrieval_uses_dedicated_1password_item(self):
+        with patch.object(credentials.sys, 'platform', 'linux'), patch.object(
+                credentials.subprocess, 'run') as run:
+            run.return_value = Mock(returncode=0, stdout=b'read-only-token\n')
+            self.assertEqual(credentials.retrieve_host_token(), b'read-only-token')
+        run.assert_called_once_with(
+            ['op', 'read', 'op://Private/agent sandbox token/token'],
+            capture_output=True, timeout=30)
+
+    def test_linux_retrieval_failure_does_not_echo_1password_output(self):
+        with patch.object(credentials.sys, 'platform', 'linux'), patch.object(
+                credentials.subprocess, 'run') as run:
+            run.return_value = Mock(returncode=1, stdout=b'dummy-secret', stderr=b'dummy-secret')
+            with self.assertRaises(ValueError) as result:
+                credentials.retrieve_host_token()
+        self.assertNotIn('dummy-secret', str(result.exception))
+
+    def test_host_rejects_an_installed_helper_with_another_protocol(self):
+        runtime = Mock(record={'files': {'boot-credential.py': '0' * 64},
+                               'generation': GENERATION})
+        with self.assertRaisesRegex(ValueError, 'does not match this launcher'):
+            credentials.boot_credential(runtime, retrieve=Mock())
+        runtime.host.guest_argv.assert_not_called()
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -78,7 +108,7 @@ class BootCredentialTest(unittest.TestCase):
         self.cache.directory = self.root
         self.cache.token = self.root / "github-token"
 
-    def test_complete_transfer_is_private_and_reused_after_lock_exit(self):
+    def test_complete_transfer_is_private_and_readable_after_lock_exit(self):
         with self.cache.locked():
             self.assertFalse(self.cache.ready())
             self.cache.receive(io.BytesIO(struct.pack("!I", 11) + b"dummy-token"))
@@ -126,7 +156,7 @@ class BootCredentialTest(unittest.TestCase):
                 patch.object(guest.Path, "read_text", return_value=BOOT):
             for generation, boot in (("b" * 32, BOOT), (GENERATION, "f" * 36)):
                 with self.assertRaisesRegex(ValueError, "stale"):
-                    guest.Cache(generation, boot, self.root)
+                    guest.Cache(generation, boot, root=self.root)
 
     def test_disk_backed_cache_is_refused(self):
         with patch.dict(os.environ, {"SANDBOX_GENERATION": GENERATION}), \
@@ -134,7 +164,7 @@ class BootCredentialTest(unittest.TestCase):
                 patch.object(guest.subprocess, "run") as run:
             run.return_value.stdout = "ext4\n"
             with self.assertRaisesRegex(ValueError, "tmpfs"):
-                guest.Cache(GENERATION, BOOT, self.root)
+                guest.Cache(GENERATION, BOOT, root=self.root)
         self.assertFalse((self.root / "codex-sandbox-credentials").exists())
 
     def test_tmpfs_with_active_swap_is_not_treated_as_memory_only(self):

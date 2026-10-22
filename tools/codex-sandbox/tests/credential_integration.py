@@ -32,7 +32,7 @@ def exercise(state, base):
         return b"owned-dummy-github-token"
     with ThreadPoolExecutor(max_workers=4) as executor:
         paths = list(executor.map(lambda _: boot_credential(runtime, retrieve=retrieve), range(4)))
-    assert count == 1 and len(set(paths)) == 1, "concurrent launches repeated credential retrieval"
+    assert count == 4 and len(set(paths)) == 4, "concurrent launches must receive unique staged files"
     path = paths[0]
     name = "owned-credential-" + uuid.uuid4().hex
     probe = runtime.host.state / "scratch/credential-probe.py"
@@ -49,13 +49,15 @@ def exercise(state, base):
             assert b"owned-dummy-github-token" not in output
             metadata = runtime.run(["inspect", "--mode=native", name], capture_output=True).stdout
             assert "owned-dummy-github-token" not in metadata, "token persisted in containerd metadata"
-        assert boot_credential(runtime, retrieve=retrieve) == path
-        assert count == 1, "session cleanup discarded the boot credential"
+        later = boot_credential(runtime, retrieve=retrieve)
+        assert later != path
+        assert count == 5, "a later launch reused the staged credential"
         boot_credential(runtime, invalidate=True)
         # A real transfer whose producer exits before its advertised length
         # must release the guest lock without publishing a partial credential.
         try:
-            runtime.guest(["python3", GUEST_HELPER, "ensure", runtime.record["generation"], path.parent.name],
+            runtime.guest(["python3", GUEST_HELPER, "stage", runtime.record["generation"], path.parent.name,
+                           "f" * 32],
                           input=struct.pack("!I", 20) + b"partial", capture_output=True)
         except subprocess.CalledProcessError:
             pass
@@ -71,10 +73,9 @@ def exercise(state, base):
         else:
             raise AssertionError("denied approval succeeded")
         assert guest_fails(runtime, ["test", "-e", str(path)])
-        assert boot_credential(runtime, retrieve=retrieve) == path
-        assert count == 2, "denied transfer left a usable cache"
-        # Leave a populated cache for the caller's reboot test.
-        print("Concurrent retrieval, read-only injection, metadata exclusion, session reuse, denial, and retry passed.", flush=True)
+        path = boot_credential(runtime, retrieve=retrieve)
+        assert count == 6, "retry did not retrieve the credential"
+        print("Per-launch retrieval, read-only injection, metadata exclusion, denial, and retry passed.", flush=True)
         return str(path)
     finally:
         probe.unlink(missing_ok=True)
@@ -84,7 +85,8 @@ def reject_previous_boot(state, path):
     runtime = Lima(state)
     assert guest_fails(runtime, ["test", "-e", path]), "cache survived VM reboot"
     old_boot = Path(path).parent.name
-    assert guest_fails(runtime, ["python3", GUEST_HELPER, "ensure", runtime.record["generation"], old_boot]), "stale boot identity was accepted"
+    assert guest_fails(runtime, ["python3", GUEST_HELPER, "stage", runtime.record["generation"], old_boot,
+                                 "f" * 32]), "stale boot identity was accepted"
 
 
 if __name__ == "__main__":

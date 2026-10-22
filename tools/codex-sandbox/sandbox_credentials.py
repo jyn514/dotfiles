@@ -1,8 +1,10 @@
-"""Keychain persistence and a guest-owned cache lasting one Lima VM boot."""
+"""Retrieve a host credential and stage it in guest tmpfs for one launch."""
 
+import hashlib
 import json
 from pathlib import Path
 import re
+import secrets
 import selectors
 import struct
 import subprocess
@@ -13,27 +15,40 @@ from keychain import Keychain, KeychainError, validate_token
 
 GUEST_HELPER = "/usr/local/share/codex-sandbox/boot-credential.py"
 GUEST_ENTRYPOINT = Path(__file__).with_name('lima') / 'current-boot-credential.py'
+GUEST_HELPER_SOURCE = Path(__file__).with_name('lima') / 'boot-credential.py'
+ONEPASSWORD_GITHUB_TOKEN = "op://Private/agent sandbox token/token"
 
 
-def credential_path(value, generation):
+def credential_path(value, generation, request=None):
     # The same guest owns UID, boot identity, and the installed cache helper.
     # Accept only its fixed cache namespace in the requested VM generation.
     if not isinstance(value, str) or not re.fullmatch(
             rf'/run/user/[0-9]+/codex-sandbox-credentials/{re.escape(generation)}/'
-            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/github-token', value):
-        raise ValueError('guest credential cache has an invalid identity')
+            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/'
+            + ('github-token' if request is None else rf'github-token-{re.escape(request)}'), value):
+        raise ValueError('guest credential staging has an invalid identity')
     return value
 
 
-def retrieve_optional_keychain_token():
-    try:
-        return Keychain().retrieve()
-    except KeychainError as error:
-        message = str(error)
-        if (message == "GitHub Keychain provisioning requires macOS" or
-                "OSStatus -25300" in message):
-            return None
-        raise
+def retrieve_host_token():
+    if sys.platform == "darwin":
+        try:
+            return Keychain().retrieve()
+        except KeychainError as error:
+            if "OSStatus -25300" in str(error):
+                return None
+            raise
+    if sys.platform == "linux":
+        # Capture and discard all diagnostics: an unexpected CLI failure must
+        # never turn secret output into a launcher error or terminal log.
+        result = subprocess.run(["op", "read", ONEPASSWORD_GITHUB_TOKEN],
+                                capture_output=True, timeout=30)
+        if result.returncode:
+            raise ValueError("could not retrieve the sandbox GitHub token from 1Password")
+        token = result.stdout.removesuffix(b"\n")
+        validate_token(token)
+        return token
+    return None
 
 
 def import_podman_token(keychain=None):
@@ -51,12 +66,15 @@ def import_podman_token(keychain=None):
 
 def boot_credential(runtime, *, retrieve=None, invalidate=False):
     runtime.verify()
-    if "boot-credential.py" not in runtime.record["files"]:
-        raise ValueError("Lima host predates boot credentials; provision a new host before migration")
+    files = runtime.record["files"]
+    expected = hashlib.sha256(GUEST_HELPER_SOURCE.read_bytes()).hexdigest()
+    if not isinstance(files, dict) or files.get("boot-credential.py") != expected:
+        raise ValueError("installed Lima credential helper does not match this launcher; upgrade the host")
     generation = runtime.record["generation"]
-    operation = "invalidate" if invalidate else "ensure"
+    operation = "invalidate" if invalidate else "stage"
+    request = None if invalidate else secrets.token_hex(16)
     argv = runtime.host.guest_argv(runtime.record, 'python3', '-c', GUEST_ENTRYPOINT.read_text(),
-                                  GUEST_HELPER, operation, generation)
+                                  GUEST_HELPER, operation, generation, *([] if request is None else [request]))
     process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         # The guest holds the cache lock while approval is pending. Other
@@ -64,19 +82,19 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             if not selector.select(timeout=600):
-                raise ValueError("timed out waiting for the guest credential cache")
+                raise ValueError("timed out waiting for guest credential staging")
         response = json.loads(process.stdout.readline(4096))
-        expected = credential_path(response.get('path'), generation)
+        expected_path = credential_path(response.get('path'), generation, request)
         status = response.get("status")
-        if status == "missing" and not invalidate:
-            token = (retrieve or retrieve_optional_keychain_token)()
+        if status == "receive" and not invalidate:
+            token = (retrieve or retrieve_host_token)()
             if token is None:
                 return None
             validate_token(token)
             output, _ = process.communicate(struct.pack("!I", len(token)) + token, timeout=30)
-            if json.loads(output) != {"status": "ready", "path": expected}:
+            if json.loads(output) != {"status": "ready", "path": expected_path}:
                 raise ValueError("guest credential transfer was not published")
-        elif status == ("invalidated" if invalidate else "ready"):
+        elif invalidate and status == "invalidated":
             output, _ = process.communicate(timeout=30)
             if output:
                 raise ValueError("unexpected guest credential response")
@@ -84,7 +102,7 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
             raise ValueError("invalid guest credential response")
         if process.returncode:
             raise ValueError("guest credential operation failed")
-        return None if invalidate else Path(expected)
+        return None if invalidate else Path(expected_path)
     finally:
         # EOF aborts an incomplete transfer and releases the guest lock. Await
         # the producer before another launch can attempt cache publication.

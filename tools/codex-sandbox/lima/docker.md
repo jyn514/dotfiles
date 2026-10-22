@@ -68,6 +68,10 @@ VMs retain their pinned daemon configuration until explicitly migrated.
 To refresh the installed sandbox scripts in an existing VM without recreating
 the VM or changing its generation, run:
 
+**Get explicit operator approval immediately before this command.**
+It restarts the shared nested Docker executor, stops every running sandbox container,
+and crashes attached Pi sessions even though the Lima VM itself stays running.
+
 ```sh
 python3 tools/codex-sandbox/lima/docker_host.py upgrade
 ```
@@ -119,9 +123,9 @@ setup adds its private scratch share automatically.
 Docker environment files are private host temporary files, read by the host
 client and deleted after use. They require no guest share or guest bind check.
 
-The existing [Keychain credential](credentials.md) is reused and cached once per
-boot of this VM. If it has not been imported, run the documented `import-podman`
-command first. To prepare or invalidate this VM's cache explicitly:
+The [GitHub credential](credentials.md) is retrieved and staged for every launch.
+On macOS, run the documented `import-podman` command first if the Keychain item
+has not been imported. To test retrieval or remove the staged value explicitly:
 
 ```sh
 python3 tools/codex-sandbox/sandbox_credentials.py --provider lima-docker prepare

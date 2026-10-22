@@ -8,7 +8,7 @@ if not replies:
     sys.exit(1)
 print(json.dumps(replies[0]), flush=True)
 payload = sys.stdin.buffer.read()
-if replies[0]['status'] == 'missing':
+if replies[0]['status'] == 'receive':
     assert payload == struct.pack('!I', 5) + b'dummy'
 else:
     assert not payload

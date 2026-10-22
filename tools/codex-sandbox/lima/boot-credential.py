@@ -20,21 +20,21 @@ def private(path, directory=False):
     if (not kind(info.st_mode) or info.st_uid != os.getuid() or
             stat.S_IMODE(info.st_mode) != (0o700 if directory else 0o600) or
             not directory and info.st_nlink != 1):
-        raise ValueError("credential cache has unsafe ownership or permissions")
+        raise ValueError("credential staging has unsafe ownership or permissions")
 
 
 def memory_filesystem(path):
     result = subprocess.run(["findmnt", "--noheadings", "--output", "FSTYPE", "--target", str(path)],
                             check=True, capture_output=True, text=True, timeout=10)
     if result.stdout.strip() != "tmpfs":
-        raise ValueError("credential cache requires guest tmpfs")
+        raise ValueError("credential staging requires guest tmpfs")
     # tmpfs can page out to swap. Do not call a disk-backed swap cache memory-only.
     if len(Path("/proc/swaps").read_text().splitlines()) != 1:
-        raise ValueError("credential cache requires a guest without swap")
+        raise ValueError("credential staging requires a guest without swap")
 
 
 class Cache:
-    def __init__(self, generation, boot, root=None):
+    def __init__(self, generation, boot, request=None, root=None):
         if (not re.fullmatch(r"[0-9a-f]{32}", generation) or
                 not re.fullmatch(r"[0-9a-f-]{36}", boot) or
                 os.environ.get("SANDBOX_GENERATION") != generation or
@@ -48,7 +48,9 @@ class Cache:
             part.mkdir(mode=0o700, exist_ok=True)
             private(part, directory=True)
         self.directory = self.directory / generation / boot
-        self.token = self.directory / "github-token"
+        if request is not None and not re.fullmatch(r"[0-9a-f]{32}", request):
+            raise ValueError("credential request has an invalid identity")
+        self.token = self.directory / ("github-token-" + request if request else "github-token")
 
     @contextmanager
     def locked(self):
@@ -64,7 +66,7 @@ class Cache:
             return False
         private(self.token)
         if not 1 <= self.token.stat().st_size <= 16384:
-            raise ValueError("invalid cached credential length")
+            raise ValueError("invalid staged credential length")
         return True
 
     def receive(self, source):
@@ -91,10 +93,14 @@ def reply(status, cache):
 
 
 def main():
-    operation, generation, boot = sys.argv[1:]
-    if operation not in {"ensure", "invalidate"}:
+    if len(sys.argv) not in {4, 5}:
+        raise ValueError("invalid credential operation arguments")
+    operation, generation, boot, *arguments = sys.argv[1:]
+    if operation not in {"stage", "invalidate"}:
         raise ValueError("unsupported credential operation")
-    cache = Cache(generation, boot)
+    if (operation == "stage") != bool(arguments):
+        raise ValueError("credential stage requires one request identity")
+    cache = Cache(generation, boot, arguments[0] if arguments else None)
     with cache.locked():
         # Interrupted writers can leave only unpublished tmpfs files. The lock
         # is stable and never removed, including during explicit invalidation.
@@ -102,13 +108,12 @@ def main():
             private(temporary)
             temporary.unlink()
         if operation == "invalidate":
-            if cache.ready():
-                cache.token.unlink()
+            for token in cache.directory.glob("github-token*"):
+                private(token)
+                token.unlink()
             reply("invalidated", cache)
-        elif cache.ready():
-            reply("ready", cache)
         else:
-            reply("missing", cache)
+            reply("receive", cache)
             cache.receive(sys.stdin.buffer)
             reply("ready", cache)
 
