@@ -48,6 +48,73 @@ The guest doctor also checks the loaded network policy, no host shares, no
 administrative groups, and no passwordless sudo. The probe uses temporary
 canaries and removes them; run it only in the owned build guest.
 
+## TicGit confinement probe
+
+Use this procedure to test the [selected TicGit confinement design](spec/tic-proxy.typ), not a production endpoint.
+The spec owns the findings and remaining acceptance requirements; this section describes how to repeat the experiment.
+No retained `target/` files are required.
+
+Use disposable repositories, canaries, and containers in the separate [build VM](../agent-docker/README.md).
+Do not mount real repositories, HOME, credentials, or the infrastructure Docker socket into the probe container.
+The outer container needs relaxed security settings so the inner bubblewrap sandbox can create user/network namespaces and mount procfs.
+These settings belong only to the disposable probe container, not the production sandbox:
+
+```sh
+dev/test-environment docker create --name tic-confinement-probe \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  --security-opt systempaths=unconfined node:24-bookworm-slim sleep infinity
+dev/test-environment docker start tic-confinement-probe
+dev/test-environment docker exec tic-confinement-probe apt-get update
+dev/test-environment docker exec tic-confinement-probe apt-get install --yes --no-install-recommends \
+  bubblewrap socat ripgrep git gcc libc6-dev libseccomp-dev
+dev/test-environment docker exec --user node tic-confinement-probe \
+  bwrap --unshare-user --unshare-net --ro-bind / / --proc /proc /bin/true
+```
+
+Require the last command to succeed as the non-root `node` user before interpreting confinement results.
+Without `systempaths=unconfined`, Docker's masked/read-only proc paths prevented the inner proc mount even after seccomp and AppArmor were disabled.
+If namespaces remain unavailable, report a missing prerequisite rather than skipping into a successful verdict or retrying without confinement.
+
+Prepare a fresh upstream SRT checkout at `v0.0.81`, commit `c40cf14a65d025e3cd27f071f13a73c12b3b1f92`.
+The tracked [source patch](experiments/tic-confinement/sandbox-runtime-0.0.81.patch) includes its own five Linux regression cases and application instructions.
+Apply it to that disposable checkout, not an installed package.
+Copy the checkout into the container with `docker cp`; the build VM cannot bind-mount files from the agent's checkout.
+Create `/probe`, give `node` ownership of it and the copied checkout, and install Bun inside the container.
+The final focused run used Bun `1.3.14`.
+Run each command below inside that checkout as `node`, prefixing it with
+`dev/test-environment docker exec --user node --workdir CHECKOUT tic-confinement-probe`.
+Replace `CHECKOUT` with the container-side path:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run typecheck
+bun test test/sandbox/linux-read-write-restores.test.ts
+npm run build
+npm run build:seccomp
+npm pack --ignore-scripts --pack-destination /probe
+```
+
+Require five executed passing cases, not prerequisite skips.
+For the regression comparison, keep the added test file but use the original upstream `linux-sandbox-utils.ts` in a separate disposable copy.
+The original source failed four cases; the patched source passed all five, including explicit write-deny precedence.
+Report other upstream suites and their prerequisite/platform skips separately; this is not a full-suite acceptance claim.
+
+Install the resulting tarball into a fresh probe project and import SRT through its public package entrypoint.
+Do not test only generated arguments or import a private helper as a substitute for this native-consumer check.
+Use the supported unmodified TicGit build recorded in the spec, with matching runtime libraries.
+The earlier musl environment required an extracted glibc loader and libraries to run the Linux release; loader failures are not confinement denials.
+
+Reconstruct the fixture and checks from the spec's feasibility-probe section.
+Use `SandboxRuntimeConfigSchema.parse`, `SandboxManager.checkDependencies`, `SandboxManager.initialize`,
+and `SandboxManager.wrapWithSandboxArgv` to validate, initialize, and launch each command under the same policy.
+Shell-quote native argv before passing it to `wrapWithSandboxArgv`, then spawn its returned argv with the fixture cwd and private environment.
+First run confined `/usr/bin/true`, then native database creation and linked-worktree visibility, then the allowed/denied boundary checks.
+Run each forbidden-effect control unconfined on owned fixtures first; a missing file, dead listener, or broken helper cannot prove confinement.
+Check resulting files and returned contents, not just child exit status; native automatic setup may ignore a descendant's failure.
+Close owned listeners and call `SandboxManager.reset` after the probe.
+Record native/runtime provenance, policy, executed cases, and limitations when reporting results; raw logs need not be retained.
+Remove the owned container with `dev/test-environment docker rm --force tic-confinement-probe` when finished.
+
 ## Startup terminal ownership
 
 Redirecting the detached owner's stdio at fork made BuildKit lose its TUI:

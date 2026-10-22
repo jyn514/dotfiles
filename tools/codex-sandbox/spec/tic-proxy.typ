@@ -142,13 +142,44 @@ Review of runtime `0.0.81` found Linux policy generation skips nonexistent indiv
 An existing dedicated directory avoids depending on grants for future database or sidecar names.
 Generated-policy checks and the native symlink probe do not establish confinement acceptance.
 Runtime `0.0.81` restores writable children before read-only parents under a read-denied directory, hiding the writable store mount.
+With a read-denied root, a read-only workspace grant hid the nested store's read-write mount; direct writes and native creation failed with `EROFS`.
+Removing read denial made creation work but also exposed an outside canary through a workspace symlink; that is not an acceptable workaround.
 The experimental source patch at `tools/codex-sandbox/experiments/tic-confinement/sandbox-runtime-0.0.81.patch` reverses that restore order.
 Path checks and later explicit write denials remain unchanged; do not fix the ordering by removing read restrictions.
 The patch includes live Linux regression tests for nested database/sidecar writes, read-grant ordering, and write-deny precedence.
-A non-root Linux build-VM container probe with the patched runtime verified native database creation and linked-worktree visibility,
-workspace reads, request-private writes, denied working-tree/metadata writes, denied direct/symlink canary reads,
-denied automatic-setup descendant writes, and denied raw TCP access.
 This is a source-level fix, not a launcher-installed fork; packaging must include the correction or an upstream version that passes the same tests.
+
+=== Feasibility probe
+
+A non-root Linux build-VM container probe used the unmodified native release identified above and a rebuilt SRT package with this patch.
+Against the original runtime source, four of five live mount-regression cases failed; all five passed with the patch.
+The #link("../development.md#ticgit-confinement-probe")[development guide] records the disposable-container prerequisites and rebuild procedure.
+Reconstruct the native probe as follows; no saved checkout, script, or report under `target/` is required:
+
+- Create a disposable ordinary repository and linked worktree, the dedicated common-directory store, and both database aliases.
+  Start with no database so native creation exercises dangling aliases, not only an existing SQLite file.
+  Create separate request-private and tooling directories, an outside canary, and a workspace symlink to that canary.
+  Use a private HOME/XDG environment, disabled editor/prompt interaction, and accepted identity/namespace overrides with conflicting local values.
+- Use SRT's public API with a read-denied root and read grants for both workspaces, Git metadata, request/tooling directories,
+  native/runtime packages, and required system executables/libraries.
+  The Linux feasibility profile granted `/usr`, `/bin`, `/lib`, and `/lib64`; this is not an accepted production read inventory.
+  Grant writes only to the store and request-private directories.
+  Deny `getDefaultWritePaths()` entries outside `/dev`; required device exceptions remain subject to platform acceptance.
+  Configure an empty network allowlist, strict network denial, no allowed Unix sockets, and no local binding.
+- First prove the fixture works unconfined, then run it through the rebuilt package's public API under the same policy.
+  Native `new` must create the database through its alias; native `list --all --json` in the linked worktree must return the created ticket.
+  Workspace reads and store/request-private writes must succeed.
+  Direct and symlinked canary reads, working-tree/Git-metadata/outside writes, and raw TCP to an owned live loopback listener must fail.
+  Require the corresponding unconfined operations to succeed; a broken fixture or blocked permitted operation is not a confinement pass.
+- Add `.git-meta` after startup and place an owned `git-meta` test helper on the fixed tooling PATH.
+  The helper attempts a write outside the store when admitted native `list` invokes automatic setup.
+  Prove the helper writes unconfined and leaves no outside file when confined, even if the native parent returns success.
+
+All these bounded Linux checks passed with the patched runtime.
+The configuration probe observed accepted native ticket-author email and Git email/namespace despite conflicting local configuration;
+it did not directly observe native gix `user.name` or namespace overrides.
+The probe did not exercise confined sidecar recreation, concurrent host writers, alias immutability, or production request cancellation/lifecycle.
+Its canaries do not establish comprehensive host-read or credential isolation, and the container is not direct CachyOS or macOS acceptance.
 Verify the composed layout, default-path restrictions, and SQLite creation/recreation on real Linux and macOS hosts before shipping.
 The host-native adapter, runtime integration, and supported-platform enforcement remain unimplemented.
 
