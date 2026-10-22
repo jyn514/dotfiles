@@ -64,6 +64,9 @@ session. Loading a skill does not establish that it helped; distinguish observed
 benefit or cost from uncertain attribution. Briefly report material benefits and
 costs, even when no change is warranted, rather than listing every file read.
 Record knowledge that another agent would otherwise have to reconstruct.
+Maintained documents must stand on their own without referring readers to session-local `target/`, `/tmp`, or other disposable artifacts.
+Put important findings, rationale, prerequisites, and enough reproduction detail in the owning documentation or specification.
+Raw probe evidence need not be retained.
 
 For a material finding about a shared component, check known consumers outside
 the current repository. Report applicable unresolved follow-ups with the owning
