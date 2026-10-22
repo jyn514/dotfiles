@@ -82,6 +82,16 @@ Unselected edits made before or after the split are preserved and reported on st
 Repeat `-m` to join message paragraphs with a blank line, in argument order.
 Each `-m` consumes the next argument as literal text, even when it looks like an option.
 
+A sandbox can set `BB_SOURCE_ROOT` to a frozen startup copy, even when invoking the checkout's wrapper.
+To use this checkout's implementation, select its source explicitly:
+
+```sh
+BB_SOURCE_ROOT="$PWD" libexec/agent-wrappers/bb agent-split \
+  target/jj-split/my-change.patch -m 'Extract focused change'
+```
+
+This selects tool source only; it does not change the repository's Jujutsu backend or protected transport.
+
 After success, inspect the IDs reported by the wrapper:
 
 ```sh
