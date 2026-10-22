@@ -180,8 +180,8 @@ export default function guestTools(pi: ExtensionAPI) {
     const sandboxInstructions = instructions.length
       ? rewritePiResourcePaths(instructions.join("\n\n"), resourcePaths)
       : null;
-    // Goal-triggered runs skip before_agent_start. Project the guest view at
-    // request time, including structured system patches and resumed history.
+    // Project the guest view for every request, including structured system patches
+    // and resumed history that startup hooks cannot rewrite.
     const rewriteSystem = (text: string) => rewritePiResourcePaths(text, resourcePaths)
       .replace(/^Current working directory: .*$/m, () => `Current working directory: ${cwd}`)
       .replace(/<cwd>\n[^\n]*\n<\/cwd>/g, () => `<cwd>\n${cwd}\n</cwd>`);

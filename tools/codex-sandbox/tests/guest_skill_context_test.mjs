@@ -60,8 +60,7 @@ test("guest context rewrites expanded skills in history without changing stored 
     assert.deepEqual(messages, original);
     assert.deepEqual(await runner.emitContext(rewritten), rewritten);
 
-    // Goal-triggered runs skip before_agent_start; section patches and resumed
-    // system messages still need the same guest view as ordinary prompts.
+    // Section patches and resumed system messages need the same guest view as ordinary prompts.
     const systems = [
       { role: "system", content: "Current working directory: /host/project", timestamp: 0,
         sections: { skills: skill, cwd: "<cwd>\n/host/project\n</cwd>" },
@@ -219,8 +218,8 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     requests.push(JSON.parse(JSON.stringify(context.messages)));
     return fauxAssistantMessage("offline answer");
   };
-  // Pi's custom-message route initially sends only tool declarations. Its first
-  // tool result prepares the catalog, as in the reported ls -> read failure.
+  // Exercise the initial custom-message request and its tool continuation,
+  // followed by ordinary and resumed custom-message requests.
   let firstGoalSystem;
   faux.setResponses([
     (context) => {
@@ -238,7 +237,6 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     modelsStorePath: join(agentDir, "models-store.json"),
     allowModelNetwork: false, refreshOnCreate: false,
   });
-  let beforeStarts = 0;
   const loader = new DefaultResourceLoader({
     cwd, agentDir, settingsManager,
     noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
@@ -251,7 +249,6 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
         parameters: { type: "object", properties: {} },
         execute: async () => ({ content: [{ type: "text", text: "probe complete" }], details: {} }),
       });
-      pi.on("before_agent_start", () => { beforeStarts++; });
     }],
   });
   await loader.reload();
@@ -265,11 +262,9 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   await session.bindExtensions({});
   const goal = { customType: "pi-codex-goal", content: "/skill:ready-workqueue", display: false };
   await session.sendCustomMessage(goal, { triggerTurn: true });
-  assert.equal(beforeStarts, 0, "goal-first request skips before_agent_start");
   writeFileSync(join(homeSource, "nested.md"), "Updated nested home sandbox rule.");
   writeFileSync(repositoryInstructions, "Updated repository sandbox rule.");
   await session.prompt("ordinary prompt");
-  assert.equal(beforeStarts, 1);
   rmSync(homeInstructions);
   rmSync(repositoryInstructions);
   session.dispose();
@@ -277,7 +272,6 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   t.after(() => resumed.dispose());
   await resumed.bindExtensions({});
   await resumed.sendCustomMessage(goal, { triggerTurn: true });
-  assert.equal(beforeStarts, 1, "resumed goal also skips before_agent_start");
   assert.equal(requests.length, 3);
   const template = readFileSync(join(root, "config/agents/sandbox-context.md"), "utf8");
   const expectedSandbox = template.split("{{repository}}").join(guestRepository).trim();
@@ -297,9 +291,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   assert.ok(systemText(requests[1]).includes("Updated nested home sandbox rule."));
   assert.ok(!systemText(requests[1]).includes("Nested repository sandbox rule."));
   assert.ok(!systemText(requests[2]).includes("sandbox rule."), "removed roots clear historical instruction sections");
-  for (const messages of requests) {
-    const system = messages.filter((message) => message.role === "system")
-      .map(getSystemMessageText).join("\n");
+  for (const system of [firstGoalSystem, ...requests.map(systemText)]) {
     assert.ok(system.includes(`${guestRepository}/.agents/skills/ready-workqueue/SKILL.md`), system);
     assert.ok(system.includes(`<cwd>\n${guestCwd}\n</cwd>`), system);
     assert.ok(system.includes(expectedSandbox), "provider receives the rendered template with the launch repository");
@@ -310,6 +302,8 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     assert.ok(!system.includes(cwd), "host repository paths never reach the provider");
     assert.ok(!system.includes(home), "host home paths never reach the provider");
     assert.ok(!system.includes("Working directory switched from"), "handoff preserves the historical system prompt");
+  }
+  for (const messages of requests) {
     const userText = messages.filter((message) => message.role === "user")
       .map((message) => typeof message.content === "string" ? message.content
         : message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"))
