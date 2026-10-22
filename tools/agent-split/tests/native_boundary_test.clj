@@ -476,6 +476,8 @@
   ;; authored case in-process with real Git-produced canonical diffs.
   (doseq [[label base original attempt valid?]
           (representative-cases :text [:non-prefix-addition :cross-paired :earlier-insertion
+                                       :whole-replacement-tail :partial-unequal-cross-paired
+                                       :whole-replacement-invented-addition
                                        :section-deletion-blank-alignment
                                        :blank-boundary-addition-cross-pair
                                        :blank-boundary-unrelated-occurrence])]

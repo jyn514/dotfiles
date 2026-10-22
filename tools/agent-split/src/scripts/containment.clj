@@ -86,7 +86,7 @@
             (if (= side :removed)
               (:removed region)
               ;; Pure insertions share one base gap: any ordered subset is valid.
-              ;; Replacements retain ordinal correspondence, allowing adjacent
+              ;; Partial removals retain ordinal correspondence, allowing adjacent
               ;; one-for-one edits without borrowing another removal's addition.
               (map-indexed #(assoc %2 :position
                                    (if (empty? (:removed region)) start (+ start %1)))
@@ -179,13 +179,20 @@
               (let [region (nth (:edits original) ordinal)
                     original-region {:edits [region]}
                     selected-regions {:edits regions}
+                    removed (lines selected-regions :removed)
+                    all-removals? (= removed (:removed region))
                     location (str "selected " (str/join ", " (map region-location regions))
                                   "; original edit at " (region-location region) ": ")]
                 (cond
-                  (not (subsequence? (lines selected-regions :removed)
-                                     (lines original-region :removed)))
+                  (not (subsequence? removed (:removed region)))
                   (str location "removed lines differ in occurrence, count, order, or newline state")
-                  (not (subsequence? (lines selected-regions :added)
-                                     (lines original-region :added)))
+                  ;; With every original line removed, no surviving old line can
+                  ;; receive another line's replacement. Select additions within
+                  ;; this region by order, multiplicity and newline state alone.
+                  ;; Keep ordinal pairing when any original removal is omitted.
+                  (not (if all-removals?
+                         (subsequence? (mapcat :added regions) (:added region))
+                         (subsequence? (lines selected-regions :added)
+                                       (lines original-region :added))))
                   (str location "added lines differ in content, count, order, replacement position, or newline state"))))
             (sort-by key groups)))))

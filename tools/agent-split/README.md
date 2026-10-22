@@ -29,7 +29,12 @@ jj diff --git -r @
 Hunk line counts are recalculated automatically, so removing lines from a hunk does not require updating its counts. Context must still apply, and selected changes must belong to the revision.
 
 Containment identifies removed lines by base occurrence and associates additions with their edit region, preserving repeats and terminal-newline state.
-Pure insertions accept any ordered subsequence at the same base anchor, including non-prefix selections; replacements retain ordinal correspondence.
+Pure insertions accept any ordered subsequence at the same base anchor, including non-prefix selections.
+A selection removing every old line in one replacement may select any ordered subset of that region's additions.
+This permits selecting a changed entry without adjacent inserted entries that Git groups into the same replacement.
+Selections removing only some old lines retain ordinal correspondence.
+Neither case permits borrowing additions from another region, reordering them, exceeding duplicate counts, or changing newline bytes.
+These checks establish structural containment, not authorship; the operator must still select only authorized changes.
 It does not compare sets of line strings.
 
 Separated edits remain selectable when earlier unselected edits change line counts.

@@ -131,6 +131,56 @@
    "start\nALPHA\nseparator\nBETA\nend\n"
    "start\nBETA\nseparator\nbeta\nend\n"
    false]
+  [:whole-replacement-tail
+   "head\nold architecture entry\nend\n"
+   "head\nnote one\nnote two\nnote three\nnew architecture entry\nend\n"
+   "head\nnew architecture entry\nend\n"
+   true]
+  [:whole-replacement-non-adjacent-additions
+   "head\nold\nend\n"
+   "head\nfirst\nmiddle\nlast\nend\n"
+   "head\nfirst\nlast\nend\n"
+   true]
+  [:whole-multiline-replacement
+   "head\nold one\nold two\nend\n"
+   "head\nfirst\nsecond\nthird\nend\n"
+   "head\nthird\nend\n"
+   true]
+  [:partial-unequal-cross-paired
+   "head\nalpha\nbeta\nend\n"
+   "head\nprefix\nALPHA\nBETA\nend\n"
+   "head\nBETA\nbeta\nend\n"
+   false]
+  [:whole-replacement-invented-addition
+   "head\nold\nend\n"
+   "head\nnote\nnew\nend\n"
+   "head\ninvented\nend\n"
+   false]
+  [:whole-replacement-excess-occurrences
+   "head\nold\nend\n"
+   "head\nnote\nnew\nend\n"
+   "head\nnew\nnew\nend\n"
+   false]
+  [:whole-replacement-reordered-additions
+   "head\nold\nend\n"
+   "head\nnote\nnew\nend\n"
+   "head\nnew\nnote\nend\n"
+   false]
+  [:whole-replacement-no-final-newline
+   "head\nold"
+   "head\nnote\nnew"
+   "head\nnew"
+   true]
+  [:whole-replacement-invented-final-newline
+   "head\nold"
+   "head\nnote\nnew"
+   "head\nnew\n"
+   false]
+  [:whole-replacement-invented-cr
+   "head\r\nold\r\nend\r\n"
+   "head\r\nnote\r\nnew\r\nend\r\n"
+   "head\r\nnew\nend\r\n"
+   false]
   [:adjacent-cross-paired
    "alpha\nbeta\nend\n"
    "ALPHA\nBETA\nend\n"

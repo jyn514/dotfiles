@@ -161,8 +161,11 @@ it must not rely on `git apply` or shell path normalization as the only traversa
 
 #requirement[The production tool must compare `diff(left, patched-left)` with the original `diff(left, right)`
 and reject any selected change that was not present in the revision being split.
-Containment preserves path, line occurrence, multiplicity, replacement pairing, and final-newline state.
-Matching line text alone does not authorize another occurrence or reversed replacement pair.
+Containment preserves path, removed-line occurrence, multiplicity, addition order, and final-newline state.
+When every old line in one replacement is selected for removal, any ordered subset of that region's additions is permitted.
+Otherwise, additions retain ordinal correspondence with the removed lines.
+Matching line text alone does not authorize another occurrence, additions from another region, or reversed partial replacement pairs.
+Structural containment does not establish authorship or authorize selecting unrelated work.
 Modes and symlink targets retain their native representation; binary changes require canonical equality.
 Lossy decoding cannot establish containment.
 Unsupported canonical forms fail before mutation.]
