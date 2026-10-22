@@ -6,9 +6,8 @@ description: Make docs, specs, prompts, instructions, and skills clearer and sho
 # Tighten Docs
 
 Make the document satisfying to follow, not merely easy to extract information from.
-Good prose gives readers precise distinctions, developed relationships, well-judged emphasis, and a voice suited to its purpose.
-A reference can offer clear alternatives and useful independent sections; an explanation can develop a thought across paragraphs.
-Neither earns a good reading experience merely by containing useful material.
+Sometimes the reader needs a direct distinction; sometimes a thought needs more room.
+Judge the experience of reading it, not how many words the revision removes.
 
 ## What an improvement looks like
 
@@ -20,9 +19,8 @@ Compare:
 
 > SQLite runs in-process instead of as a daemon.
 
-The second sentence puts the actual contrast in front of the reader.
-The first makes the reader pass through “architecture,” “represents,” and “different paradigm” to reach it, with an inflated manner for engineering readers.
-The improvement is that direct relationship, not a rule against long sentences or technical terms.
+The first sentence makes a plain engineering contrast sound grand.
+The second names the difference directly.
 
 ### Develop the thought when a conclusion is not enough
 
@@ -33,9 +31,7 @@ Compare:
 > Each independent on/off flag doubles the possible configurations.
 > Keeping a flag means continuing to support both paths and their interactions with other flags.
 
-The longer version gives the reader a mechanism to think with, rather than just a verdict.
-Keep development that repays the reader's attention; cut detail that does not.
-This does not require a worked example of every application, or authorize inventing facts about the system being documented.
+The longer version earns its length: it explains how complexity grows instead of merely declaring that it does.
 
 ### Let a relationship organize the paragraph
 
@@ -49,10 +45,12 @@ Compare:
 > Refresh builds a new index while readers keep using the current one.
 > The new index replaces it only after the build succeeds; if the build fails, readers stay on the current index.
 
-The first paragraph makes the reader assemble four detached facts.
-The revision follows the refresh in time, keeping the readers' experience alongside the build and its possible outcomes.
-Its improvement comes from relating the facts, not changing their terminology or putting them under another heading.
-Apply the reasoning in these examples, not their surface style: formality, fragments, repetition, and a restrained voice can all serve the reader.
+The original gives the reader four facts to assemble.
+The revision follows the build from start to outcome, explaining what readers use at each stage.
+
+Use these contrasts to guide judgment, not to impose their style on every document.
+Formality, fragments, repetition, and a restrained voice can all serve the reader.
+Develop what repays attention without inventing facts; development need not include a worked example of every application.
 
 ## Delegate the prose pass
 
@@ -62,16 +60,18 @@ Supply the reader's task, the reading problem if known, and the requirements to 
 For document-level work, supply the complete artifact.
 The subagent runs the workflow directly, without further delegation; the parent reads its complete revision before its edit report.
 If small-model delegation is unavailable, the main agent runs the workflow and reports that limitation.
+
 One completed pass meets the post-rewrite requirement for the reviewed files, including this skill.
 Check corrections within that pass; they do not require another pass.
 
 ## Revise and judge the result
 
 1. **Read the whole artifact and choose the work.**
-   Identify the reader's task and where following the prose becomes satisfying, awkward, tedious, or unrewarding.
+   Identify the reader's task and how they will read the artifact.
+   Notice what works and where reading becomes awkward, tedious, or unrewarding.
    If no reading problem warrants a revision, use the unchanged outcome below.
-   Choose a structural revision when arrangement causes the problem, or a local revision when the surrounding structure works.
-   Preserve needed lookup paths without assuming the current headings or section boundaries are necessary.
+   Revise the structure when arrangement causes the problem; otherwise retain what works and revise locally.
+   Preserve needed lookup paths, not necessarily the current headings or section boundaries.
 
 2. **Write the revision.**
    Develop connected passages together, introducing concrete distinctions before abstractions when that helps.
@@ -81,14 +81,16 @@ Check corrections within that pass; they do not require another pass.
    Keep required warnings beside the actions they govern.
 
 3. **Read the complete result before defending edits.**
-   Does it resolve the reading problem through its wording, rhythm, selection, or development?
-   Judge the whole, including dull stretches; useful sections and cosmetic changes do not establish improvement.
+   Judge its wording, rhythm, selection, and development: does it read better, and does the original reading problem remain?
+   Include dull stretches in that judgment; useful sections and cosmetic changes do not establish that the whole reads well.
    Compare with the original as prose and restore anything that reads better there.
    An unchanged result is preferable to edits made merely to demonstrate effort.
 
 4. **Check meaning and use.**
    Preserve governing requirements, priority, authority, observable behavior, public API details, and compatibility promises.
    Account for conditions, exceptions, commands, paths, defaults, validation, and example-only behavior.
+   A conditional heading changes the scope of every instruction beneath it: keep unconditional rules outside that condition.
+
    Keep rationale, rejected alternatives, and examples that change a future choice or prevent a likely mistake; cut explanations that merely announce that a rule is good.
    Implementation detail owned by code need not remain in user docs unless it affects a reader's action or understanding.
    Check revised sections independently and follow changed routes and references.
@@ -100,20 +102,6 @@ Check corrections within that pass; they do not require another pass.
    Before reporting missing guidance, read the complete relevant section in both versions and follow any replacement route; cite exact locations.
    A prose review does not establish operational correctness.
 
-## When consolidating instructions
-
-Compare required behavior and conditions before calling two policies duplicates.
-“Prioritize clarity → precision → concision” ranks goals; “Use concise, clear language” directs writing style.
-Neither replaces the other, though they can be presented together.
-Likewise, a conditional heading changes the scope of every instruction beneath it: keep unconditional rules outside that condition.
-
-Keep one authoritative owner for duplicate policy, with direct, task-specific references from affected entry points.
-Distinct lookup routes to that owner are usually worth keeping; test each entry point before removing one.
-A link must say why the reader needs it, not merely “See testing.md.”
-Preserve useful two-level routing such as task → owner → focused topic; flatten it or add a short local guard if the operative rule takes more than three hops to reach.
-Keep a repeated safety constraint at the point of action when its absence permits a concrete misunderstanding or unsafe action.
-Otherwise, test deletion or a direct reference rather than preserving text solely because it existed.
-
 ## When no revision earns its cost
 
 Explain why the complete artifact reads well, including the strongest concrete revision considered and why the original works better.
@@ -121,6 +109,20 @@ Explain why the complete artifact reads well, including the strongest concrete r
 Say “No further eligible cuts identified,” not “already tight enough” or that no improvement is possible.
 If the judgment lacks concrete support, the parent arranges a bounded independent whole-document reading through [delegation](../delegation/SKILL.md), or reports that independent review is unavailable.
 If that reading finds a missed improvement, withdraw the verdict and reconsider the affected scope.
+
+## When consolidating instructions
+
+Compare required behavior and conditions before calling two policies duplicates.
+“Prioritize clarity → precision → concision” ranks goals; “Use concise, clear language” directs writing style.
+Keep both, though they can appear together.
+
+When policies do duplicate each other, keep one authoritative owner with direct, task-specific references from affected entry points.
+Usually keep distinct lookup routes to that owner; test each entry point before removing one.
+A link must say why the reader needs it, not merely “See testing.md.”
+Preserve useful two-level routing such as task → owner → focused topic; flatten it or add a short local guard if the operative rule takes more than three hops to reach.
+
+Keep a repeated safety constraint at the point of action when its absence permits a concrete misunderstanding or unsafe action.
+Otherwise, test deletion or a direct reference rather than preserving text solely because it existed.
 
 ## Skill-specific rules
 
