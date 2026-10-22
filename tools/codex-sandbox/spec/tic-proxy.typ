@@ -86,7 +86,7 @@ Reject a simultaneous project command named `tic`; host availability alone canno
 Use the #link("trusted-service-lifecycle.typ")[existing shared-session lifecycle] with a host-native command-proxy adapter.
 Session identity remains canonical workspace root plus Git common directory.
 Worktrees may share the database without sharing accepted policy or endpoint ownership.
-The adapter fixes repository/store identity, execution cwd, native build, command and file-path policy, configuration, and confinement.
+The adapter fixes repository/store identity, execution cwd, native build, command and file-path policy, authorship, metadata namespace, and confinement.
 The accepted-session representation must version host process ownership, authenticated endpoint identity, and implementation provenance;
 container identities do not represent host process authority.
 
@@ -113,9 +113,12 @@ Give each request an initially absent `TICGIT_STATE_FILE` and discard it after d
 This keeps native current-ticket and filter state separate from other requests and the human.
 Use a trusted failing `GIT_EDITOR` for native noninteractive editor failures; caller text never becomes shell code.
 
-Provide a private configuration overlay with only accepted authorship, repository format, and `meta.namespace`.
-Exclude includes, remotes, hooks, signing commands, filters, credential helpers, human HOME, and credential agents.
+Retain native repository-local configuration loading, including includes; do not build a filtered configuration overlay.
+Override `user.name`, `user.email`, and `meta.namespace` with accepted session values for both native gix reads and Git subprocesses.
 Authorship is the accepted workspace identity; `meta.namespace` selects serialized refs, not a separate SQLite store.
+Other repository configuration is not snapshotted and may change during the session.
+Configuration cannot expand filesystem, network, credential, or repository/store authority; confinement also applies to configured subprocesses.
+Keep human HOME, credential agents, and inherited credential variables unavailable.
 Leave repository-format support and diagnostics to native TicGit.
 
 Use Anthropic Sandbox Runtime (`@anthropic-ai/sandbox-runtime`) through its supported public API for host confinement.
@@ -138,6 +141,14 @@ Missing or ineffective confinement rejects capability startup; there is no unsan
 Review of runtime `0.0.81` found Linux policy generation skips nonexistent individually allowed write paths.
 An existing dedicated directory avoids depending on grants for future database or sidecar names.
 Generated-policy checks and the native symlink probe do not establish confinement acceptance.
+Runtime `0.0.81` restores writable children before read-only parents under a read-denied directory, hiding the writable store mount.
+The experimental source patch at `tools/codex-sandbox/experiments/tic-confinement/sandbox-runtime-0.0.81.patch` reverses that restore order.
+Path checks and later explicit write denials remain unchanged; do not fix the ordering by removing read restrictions.
+The patch includes live Linux regression tests for nested database/sidecar writes, read-grant ordering, and write-deny precedence.
+A non-root Linux build-VM container probe with the patched runtime verified native database creation and linked-worktree visibility,
+workspace reads, request-private writes, denied working-tree/metadata writes, denied direct/symlink canary reads,
+denied automatic-setup descendant writes, and denied raw TCP access.
+This is a source-level fix, not a launcher-installed fork; packaging must include the correction or an upstream version that passes the same tests.
 Verify the composed layout, default-path restrictions, and SQLite creation/recreation on real Linux and macOS hosts before shipping.
 The host-native adapter, runtime integration, and supported-platform enforcement remain unimplemented.
 
@@ -227,10 +238,17 @@ Keep the existing command-proxy categories of bounds, with these TicGit values:
 - Frames: request 8 MiB, response 32 MiB; stdout 4 MiB; stderr 256 KiB.
   No file payload is transported; file size and contents remain native concerns.
 - Arguments: 128 tokens, 64 KiB each, 256 KiB aggregate decoded UTF-8.
-- Authentication/framing/admission: 10 seconds; native execution including SQLite waits: 30 seconds.
-- Response delivery: one absolute 3-second deadline; client exchange including waiting/cleanup: 45 seconds.
+- Authentication/framing/admission: one absolute 10-second deadline from server connection acceptance, including any server-side queue wait.
+- Native execution including SQLite waits: one absolute 30-second deadline from the first native child start.
+- Response delivery: one absolute 3-second deadline from the start of response writing.
+- Client exchange: one absolute 45-second deadline from the connection attempt, including waiting and cleanup.
 - Child termination grace: 2 seconds before forced termination and reaping.
 
+Waiting for server connection acceptance also consumes the client exchange deadline.
+The transport propagates client cancellation, deadline expiry, and disconnect to the executor, including while a request waits to execute.
+Before spawning, reject an expired admission deadline or a cancelled/disconnected request and discard its queued work without native execution.
+A sequential endpoint must observe cancellation while waiting; finishing an earlier request does not make abandoned work eligible to run.
+After spawning, cancellation uses the descendant cleanup below; no request is resumed after cancellation.
 Enforce input bounds while reading and before spawning; server checks remain authoritative.
 An unread or partially read response cannot extend its delivery deadline.
 Preserve native exit status and UTF-8 stdout/stderr; invalid UTF-8 or oversized output is an output failure.
@@ -279,7 +297,10 @@ Verify the wrapper and security boundary with disposable host-local repositories
   Valid inputs at each limit are accepted; inputs above it are rejected before spawning.
   Native file parsing, errors, and output remain native after path translation.
 - Prove host filesystem, configuration, subprocess, and offline confinement on each supported platform.
+  Retain ordinary repository-local configuration and in-boundary includes without a filtered overlay.
+  Conflicting common-directory and worktree configuration cannot override accepted authorship or namespace in gix or Git subprocesses.
   Include malicious includes/editors, `.git-meta` creation/replacement after startup, aliases, and attempted reads/writes outside permitted paths.
+  Configuration and configured subprocesses cannot expose human credentials or expand permitted effects.
   Verify runtime defaults do not add writable host locations outside the accepted directories and required devices.
   Missing or ineffective confinement rejects startup; guest transports receive no writable metadata, human credentials, or daemon access.
 - Run host calls and endpoints from different worktrees concurrently against one host-local database without external command locks.
@@ -290,4 +311,7 @@ Verify the wrapper and security boundary with disposable host-local repositories
 - Verify the existing lifecycle's host-native publication, join, cancellation, and final-holder cleanup with surviving native descendants.
   Stop only the owning session's processes; retain ticket data and other workspaces/host writers.
   Disconnect before execution, between writes, and during output; a non-reading peer cannot extend response deadlines.
+  With sequential execution, hold one request active while later requests wait, then expire or cancel the waiting requests.
+  Cover client timeout before server acceptance, admission timeout after acceptance, and disconnect/cancellation before spawn.
+  Releasing the active request must not execute abandoned work; a later live request can still proceed.
   Failures never replay requests or promise whole-command rollback.
