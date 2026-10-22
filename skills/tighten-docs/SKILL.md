@@ -66,48 +66,61 @@ Check corrections within that pass; they do not require another pass.
 
 ## Revise and judge the result
 
-1. **Read the whole artifact and choose the work.**
-   Identify the reader's task and how they will read the artifact.
-   Notice what works and where reading becomes awkward, tedious, or unrewarding.
-   If no reading problem warrants a revision, use the unchanged outcome below.
-   Revise the structure when arrangement causes the problem; otherwise retain what works and revise locally.
-   Preserve needed lookup paths, not necessarily the current headings or section boundaries.
+1. **Find the reading problem.**
+   Read the whole artifact in the form its reader encounters.
+   An explanation may need to develop an idea across paragraphs; a reference may need independent lookup paths.
+   Notice what makes that reading satisfying and where wording, rhythm, or arrangement makes it difficult.
+   Let the difficulty determine the revision, rather than looking for sentences to shorten.
+   If no reading problem warrants a change, use the unchanged outcome below.
 
-2. **Write the revision.**
-   Develop connected passages together, introducing concrete distinctions before abstractions when that helps.
-   Use paragraphs to develop thoughts, bullets for distinct actions or alternatives, and tables for comparisons.
-   Preserve effective voice, emphasis, and precise domain terms; do not normalize deliberate casing, fragments, or idiom just for consistency.
-   Explain specialist terms when the reader needs it, and apply vocabulary bans by meaning rather than word matching.
-   Keep required warnings beside the actions they govern.
+2. **Choose a revision that addresses it.**
+   When facts are clear but their relationship is buried, revise the connected passages together rather than polishing each sentence in isolation.
+   Introduce a concrete distinction before an abstraction when that helps, and change headings or section boundaries when the reading requires it.
+   Keep needed lookup paths, not necessarily the old arrangement.
+   When the surrounding progression already works, revise the awkward passage locally.
 
-3. **Read the complete result before defending edits.**
-   Judge its wording, rhythm, selection, and development: does it read better, and does the original reading problem remain?
-   Include dull stretches in that judgment; useful sections and cosmetic changes do not establish that the whole reads well.
-   Compare with the original as prose and restore anything that reads better there.
-   An unchanged result is preferable to edits made merely to demonstrate effort.
+   Let paragraphs develop thoughts, bullets distinguish actions or alternatives, and tables support comparisons.
+   Preserve effective voice and emphasis; do not normalize deliberate casing, fragments, or idiom just for consistency.
+   Keep precise domain terms and explain them when the reader needs help; apply vocabulary bans by meaning rather than word matching.
+   Keep required warnings beside the actions they govern, so readers encounter them before acting.
 
-4. **Check meaning and use.**
-   Preserve governing requirements, priority, authority, observable behavior, public API details, and compatibility promises.
-   Account for conditions, exceptions, commands, paths, defaults, validation, and example-only behavior.
-   A conditional heading changes the scope of every instruction beneath it: keep unconditional rules outside that condition.
+3. **Read the result before defending the edits.**
+   Read the complete revision in order, including its dull stretches, then compare its wording, rhythm, selection, and development with the original.
+   Ask whether it reads better and whether the original reading problem remains: a revision can improve without fully solving that problem.
+   Useful sections and individually defensible edits do not establish that the whole reads well.
+   Restore anything that reads better in the original; an unchanged result is preferable to edits made merely to demonstrate effort.
 
-   Keep rationale, rejected alternatives, and examples that change a future choice or prevent a likely mistake; cut explanations that merely announce that a rule is good.
-   Implementation detail owned by code need not remain in user docs unless it affects a reader's action or understanding.
-   Check revised sections independently and follow changed routes and references.
-   Readers must still find their first action, applicable constraints, and required validation.
-   For skills, preserve every discovery trigger in the YAML description and check linked references and examples.
+4. **Check what the revision changes.**
+   A sentence can keep its wording and still change its meaning.
+   Put an unconditional rule under “When tests fail,” and it no longer appears to apply when they pass.
+   Keep unconditional instructions outside such headings.
+   Preserve governing requirements, including who must do what, who can decide, and which conditions, exceptions, and priorities apply.
 
-5. **Report the reading judgment, not an edit tally.**
-   Support it with representative passages and sustained patterns, then explain consequential preservation decisions, actual reversions, uncertainty, and any unread or excluded scope.
-   Before reporting missing guidance, read the complete relevant section in both versions and follow any replacement route; cite exact locations.
-   A prose review does not establish operational correctness.
+   For user-facing instructions, compare the commands, paths, defaults, and validation with the original.
+   A smoother explanation must not silently change observable behavior, public API details, or compatibility promises.
+   Do not turn example-only behavior into a default or guarantee.
+
+   A cut can leave an action clear while removing the reason to choose it.
+   Keep rationale, rejected alternatives, and examples that guide a future choice or prevent a likely mistake.
+   An explanation that merely says a rule is good can go, as can code-owned implementation detail that does not affect the reader's action or understanding.
+
+   Moving an explanation only helps if readers can still find and use it.
+   Read each revised section on its own and follow changed references: can readers find their first action, applicable constraints, and required validation?
+   For skills, discovery begins before the body loads; preserve every trigger in the YAML description and check linked references and examples.
+
+5. **Explain the result.**
+   Describe what improved and what remains difficult, using representative quotations and sustained patterns rather than an edit count.
+   Explain preservation decisions that affected the revision and any edits you reversed.
+   Name uncertainty that limits the judgment and any material you excluded or could not read.
+   Before claiming guidance is missing, read the complete relevant section in both versions and follow any replacement route; cite exact locations.
+   This review concerns prose, not operational correctness.
 
 ## When no revision earns its cost
 
-Explain why the complete artifact reads well, including the strongest concrete revision considered and why the original works better.
-“Every section has a purpose” does not settle that question.
-Say “No further eligible cuts identified,” not “already tight enough” or that no improvement is possible.
-If the judgment lacks concrete support, the parent arranges a bounded independent whole-document reading through [delegation](../delegation/SKILL.md), or reports that independent review is unavailable.
+Leaving the artifact unchanged is a judgment about the revisions you considered, not a claim that no better version exists.
+Explain why the original is preferable to your strongest concrete alternative, and identify any reading problems left unresolved.
+“Every section has a purpose” is not a judgment about how the whole reads.
+If you cannot support the verdict concretely, the parent arranges a bounded independent whole-document reading through [delegation](../delegation/SKILL.md), or reports that independent review is unavailable.
 If that reading finds a missed improvement, withdraw the verdict and reconsider the affected scope.
 
 ## When consolidating instructions
