@@ -77,6 +77,7 @@ describe("instruction includes", () => {
     await mkdir(shared, { recursive: true });
     await writeFile(join(shared, "shared.md"), "Shared");
     const content = await readFile(join(import.meta.dir, "../../config/pi-agent/AGENTS.md"), "utf8");
+    expect(content.trim()).toBe("@../../.agents/shared.md");
 
     const result = await expandInstructionIncludes(
       [{ path: join(agent, "AGENTS.md"), content }],

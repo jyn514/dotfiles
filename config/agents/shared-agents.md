@@ -46,10 +46,8 @@ The following words and phrases are banned as metaphors; use the suggested repla
 
 ### Before messaging another agent
 
-Send a message only when the recipient needs it for a decision, next action, requested result, or concrete shared-work dependency or conflict.
-Do not mirror routine progress, completion, or commit reports merely because your status changed.
-A split conversation or shared workspace does not create a reporting relationship.
-Messages interrupt reasoning and consume context even when marked "no action needed"; keep them to what the recipient needs.
+Use `delegation` before spawning, assigning, messaging, waiting for, or integrating
+subagents.
 
 ### Before changing behavior or scope
 
@@ -81,27 +79,10 @@ Continue the diagnosis after approval.
 
 ### Tool selection
 
-For version-sensitive CLI questions, check the installed command's built-in help before searching online documentation.
-
-To view remote source, use `git clone --depth 1` into a temporary directory, not `gh api`.
-For other GitHub metadata, use the `gh` CLI, not the API directly, to avoid rate limits.
-The GraphQL API is acceptable if you need something not exposed by `gh`, but you should avoid REST where possible.
-
-When copying an existing file for direct modification, use `cp` and verify it with `cmp` (or programmatic equivalents) rather than rewriting it from scratch.
-
-`git diff --check` does not establish correctness.
-When validation strategy is unclear, consult [Testing with evidence](~/.agents/skills/references/testing.md).
-
-Shell scripts should be avoided unless the code is trivial process spawning.
-Code should be Clojure, Rust, or TypeScript depending on what best fits the domain.
-Other languages are acceptable for one-off scripts but should not be checked into git, unless we need a library or tool that's specific to that language ecosystem.
-
-Python projects should always use `uv`, not `venv` or `pip` directly.
-
-### After changing configuration
-
-After changing configuration, verify the running application loaded it before interpreting test results.
-When diagnosing a daemon, check the running process's executable and version, not just the installed version.
+Before version-sensitive CLI answers, remote-source inspection, copying an
+existing file for direct modification, configuration changes, multiline shell
+commands, or language/runtime selection, read
+[Tool and command use](~/.agents/skills/references/tool-use.md).
 
 ### Before mutating a working copy
 
@@ -122,21 +103,11 @@ Test regeneration in temporary storage or check-only mode; a failing freshness c
 
 ### When an experiment fails
 
-When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
-
-### Shell command construction
-
-- Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
-- Put multiline ad-hoc scripts in temporary files; do not embed them in shell commands.
+When an experiment fails, inspect the failure in place instead of eagerly restoring the working copy.
+Version control already preserves the known-good state.
+Restore only when continued work would endanger unrelated changes or the user asks.
 
 ## Documentation
-
-When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
-
-Before adding guidance, identify its canonical owner and existing entrypoints.
-Update that owner only.
-Add a link elsewhere only if an observed discovery failure requires it; the link must not repeat the guidance.
-“Reminder,” “reinforcement,” and “visibility” are not sufficient reasons to duplicate policy.
 
 Before adding documentation or choosing its destination, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md), including for small additions during implementation.
 
@@ -159,25 +130,6 @@ Before designing, implementing, or reviewing code, configuration, or tests, read
 [Change with evidence](~/.agents/skills/references/change-with-evidence.md) for language separation,
 compatibility, single authority, CLI output, and API guarantees.
 
-Read surrounding context before edits, investigations, or audits; do not draw broad conclusions from search snippets.
-
-When creating or modifying a test, run it and iterate until it passes.
-
-### Before presenting a design
-
-Before presenting a design, identify the smallest change that meets the requested outcome and required compatibility.
-Determine required compatibility using [Change with evidence](~/.agents/skills/references/change-with-evidence.md#compatibility).
-Recommend it unless concrete evidence shows it is insufficient.
-When evidence is missing, propose a small experiment instead of a larger architecture.
-Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
-Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
-
-### Before implementing parsing or validation
-
-Check whether an existing consumer can produce the authoritative result.
-Prefer inspecting that result over reproducing its rules.
-If you propose a custom implementation, explain why reuse is insufficient.
-
 ### Before routing to specialized skills
 
 Existing tools, reviewer suggestions, and possible future failures do not expand scope.
@@ -186,14 +138,13 @@ Establish scope before routing to specialized skills.
 
 ### Before creating an experiment
 
-Before creating an experiment, name the decision it can change and which possible outcomes would change your next action.
-Reuse existing evidence when it settles that decision.
+Before creating an experiment, name the decision it can change and which outcomes would change the next action.
+Reuse existing evidence when it already settles that decision.
 
 ### Before optimizing or caching
 
-Prefer append-only context updates where possible, to preserve prompt-cache prefixes.
-Before optimizing or caching an operation, check whether the operation or
-intermediate representation can be eliminated.
+Prefer append-only context updates when possible, to preserve prompt-cache prefixes.
+Before optimizing or caching an operation, check whether the operation or intermediate representation can be eliminated.
 
 ### When a historical constraint could change the fix
 
@@ -203,12 +154,6 @@ Routine edits whose requirements and surrounding behavior are clear do not requi
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
 When unexplained behavior concerns shared tooling, search its owner, known local consumers, and prior sessions by component name—not only the current repository. Read the supporting evidence and check its version and applicability before reusing it. Stop when the question is settled.
-
-### Before editing source files
-
-Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
-
-Before editing outside the active repository, verify that the user intends work there.
 
 ## Jujutsu and commits
 

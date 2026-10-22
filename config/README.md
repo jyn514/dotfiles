@@ -35,15 +35,25 @@ Another profile PATH adjustment cannot fix a post-startup injection.
 The injection's upstream/package owner remains unresolved; inspect that source rather than editing the installed script.
 
 The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
-to [Change with evidence](../skills/references/change-with-evidence.md) and note writing
-to [Note records](../skills/references/note-records.md).
-Both are plain references under the existing `~/.agents/skills` directory link.
+to [Change with evidence](../skills/references/change-with-evidence.md), command
+selection to [Tool and command use](../skills/references/tool-use.md), and note
+writing to [Note records](../skills/references/note-records.md).
+These are plain references under the existing `~/.agents/skills` directory link.
 The sandbox's live skills mount exposes them to existing workers without a new mount or restart.
 Reload the harness's instructions after changing a route.
 These references are not `@` includes or registered skills, so their rules stay out of the startup prompt.
 Work ownership, test isolation, and the stop condition for rejected designs stay in the shared instructions.
 History inspection procedures belong to [jj-workflow](../skills/jj-workflow/SKILL.md).
 See [subagent routing](pi-agent/README.md#subagent-routing) for choosing a Pi agent template.
+
+Codex loads the shared instructions from
+[`codex-developer-instructions.md`](agents/codex/codex-developer-instructions.md)
+and keeps Codex-only editing, sandbox, and citation rules in
+[`AGENTS.md`](agents/codex/AGENTS.md).
+Pi discovers [`pi-agent/AGENTS.md`](pi-agent/AGENTS.md) as a context file and its
+instruction-includes extension expands the shared `@` route before each turn.
+Pi extensions may change Pi's generated prompt, but do not own portable policy or
+Codex prompt behavior.
 
 ## Pi
 

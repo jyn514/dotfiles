@@ -4,6 +4,9 @@ These rules apply when designing, implementing, or reviewing code, configuration
 or tests. Read them before that work; they supplement the always-loaded shared
 instructions.
 
+Read surrounding context before edits, investigations, or audits.
+Do not draw broad conclusions from search snippets.
+
 ## Language separation
 
 Apply LANGSEC (language-theoretic security): keep different languages in separate files rather than nesting them. For example, a Python script must launch a separate Bash file, not embed a multiline Bash string.
@@ -47,6 +50,11 @@ Do not turn a proposed mechanism into its own requirement.
 
 ## Design choices
 
+- Identify the smallest change that meets the requested outcome and required compatibility before presenting a design.
+- Recommend that change unless concrete evidence shows it is insufficient.
+- When evidence is missing, propose a small experiment instead of a larger architecture.
+- Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
+- Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
 - Represent data precisely. Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
 - Parse, don't validate: centralize checks in a structured domain model. Treat stringly typed structured data as suspect; fix the model instead of overloading meanings.
 - Make invalid states unrepresentable when language tools can do so without poor ergonomics, such as needless singleton types.
@@ -54,6 +62,15 @@ Do not turn a proposed mechanism into its own requirement.
 - Before a structural refactor, declare the supported interface modes—library import, module invocation, direct script invocation, or a deliberate subset—and test exactly the declared modes. Do not let execution context choose an accidental API.
 - Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
 - After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
+
+Before implementing parsing or validation, check whether an existing consumer can produce the authoritative result.
+Prefer inspecting that result over reproducing its rules.
+Explain why reuse is insufficient before implementing a custom parser or validator.
+
+Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly.
+Change the authoritative source and regenerate through its owning mechanism.
+If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
+Before editing outside the active repository, verify that the user intends work there.
 
 ## Substitute only equivalent behavior
 
@@ -71,3 +88,4 @@ During review, check the precedence requirement even when those tests pass.
 
 When adding or materially changing tests, or resolving an uncertain test strategy or oracle, consult [Testing with evidence](testing.md).
 Routine edits with an established shape need no separate design workflow.
+When creating or modifying a test, run it and iterate until it passes.

@@ -5,6 +5,14 @@ belongs, including small additions during implementation. Placement alone does
 not require the `technical-docs` authoring workflow. Restructuring existing pages
 or navigation belongs to `reorganize-docs`.
 
+When making a user-facing change, update its canonical documentation in the same
+change.
+Check entrypoints, examples, command references, and installation or migration
+instructions for stale behavior before declaring the work complete.
+Do not duplicate guidance for reminder, reinforcement, or visibility.
+Add a link from another entrypoint only when an observed discovery failure needs
+one, and do not repeat the guidance there.
+
 1. Name the reader and the decision, action, or understanding the content serves.
    Omit content with no such purpose; do not document a detail merely because it
    changed during implementation.

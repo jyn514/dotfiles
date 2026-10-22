@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED = "$HOME/.agents/shared.md"
 SKILLS = "$HOME/.agents/skills"
 REFERENCE = "$HOME/.agents/skills/references/change-with-evidence.md"
+TOOL_REFERENCE = "$HOME/.agents/skills/references/tool-use.md"
 
 
 class AgentInstructionTests(unittest.TestCase):
@@ -39,8 +40,9 @@ class AgentInstructionTests(unittest.TestCase):
                     links[destination] = copy.deepcopy(source)
         self.assertEqual({SHARED, SKILLS}, set(links))
         self.assertFalse(any("$HOME/.agents/change-with-evidence.md" in entry.get("link", {})
-                             or REFERENCE in entry.get("link", {}) for entry in manifest),
-                         "the reference must reuse the whole skills link")
+                             or REFERENCE in entry.get("link", {})
+                             or TOOL_REFERENCE in entry.get("link", {}) for entry in manifest),
+                         "references must reuse the whole skills link")
         self.configuration = [*defaults, {"link": links}]
         self.config = self.repository / "install.conf.json"
         self.config.write_text(json.dumps(self.configuration))
@@ -76,6 +78,25 @@ class AgentInstructionTests(unittest.TestCase):
         self.assertTrue(route.startswith("~/"), "route must address the installed HOME")
         return self.home / route[2:]
 
+    def routed_tool_reference(self) -> Path:
+        shared = self.installed(SHARED).read_text()
+        routes = {urldefrag(route)[0] for route in
+                  re.findall(r"\[Tool and command use\]\(([^)]+)\)", shared)}
+        self.assertEqual(1, len(routes), "tool reference must have one route")
+        route = next(iter(routes))
+        self.assertTrue(route.startswith("~/"), "route must address the installed HOME")
+        return self.home / route[2:]
+
+    def test_codex_and_pi_keep_distinct_prompt_entrypoints(self) -> None:
+        codex_developer = (ROOT / "config/agents/codex/codex-developer-instructions.md").read_text()
+        codex_agents = (ROOT / "config/agents/codex/AGENTS.md").read_text()
+        pi_agents = (ROOT / "config/pi-agent/AGENTS.md").read_text()
+
+        self.assertIn("@~/.agents/shared.md", codex_developer)
+        self.assertIn("@~/.agents/irc.md", codex_developer)
+        self.assertNotIn("@~/.agents/shared.md", codex_agents)
+        self.assertEqual("@../../.agents/shared.md\n", pi_agents)
+
     def test_manifest_installs_shared_and_whole_skills_and_reference_route_resolves(self) -> None:
         self.install()
         for destination, source in self.sources.items():
@@ -90,6 +111,10 @@ class AgentInstructionTests(unittest.TestCase):
         self.assertEqual(reference.read_bytes(), self.routed_reference().read_bytes())
         self.assertFalse(self.routed_reference().is_symlink(), "no individual reference link")
         self.assertFalse(reference.read_text().startswith("---"), "plain Markdown, not a skill")
+        tool_reference = self.sources[SKILLS] / "references/tool-use.md"
+        self.assertEqual(self.installed(TOOL_REFERENCE), self.routed_tool_reference())
+        self.assertEqual(tool_reference.read_bytes(), self.routed_tool_reference().read_bytes())
+        self.assertFalse(tool_reference.read_text().startswith("---"), "plain Markdown, not a skill")
 
     def test_reference_content_and_source_changes_need_no_shared_routing_edits(self) -> None:
         self.install()
