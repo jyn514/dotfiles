@@ -32,6 +32,24 @@ Reproducing a known unsupported configuration on newer versions does not, by its
 Link related reports and explain the connection when they describe a different failure.
 If search is unavailable or finds no match, state that limit outside the report; do not claim the bug has never been reported.
 
+Before attributing the problem upstream or proposing a change, trace the following chain:
+
+1. State the observed problem and required behavior separately from any preferred mechanism.
+   Identify which constraints are governing requirements and which follow from a downstream design choice, including who chose it.
+   Keep that distinction explicit in the report; a directory layout chosen for a draft design is not an intrinsic upstream requirement.
+2. Check plausible existing solutions in the supported configuration and public APIs, and state what each workaround actually solves.
+   Distinguish unchanged-tool capabilities from approaches requiring consumer patches, downstream forks, or upstream adoption.
+   An existing library API does not by itself establish that an unmodified CLI exposes the same capability.
+   State those adoption and maintenance costs in the main explanation, not only in collapsed test details.
+3. Tie any remaining insufficiency to a concrete requirement and evidence, not an assumed side effect.
+   If it follows from a revisable downstream design choice, consider changing that choice rather than treating it as a constraint on upstream.
+   If that evidence is missing, use a small authorized check or ask a bounded question; do not turn uncertainty into a defect claim.
+4. If a change is still needed, identify the minimum upstream change that addresses the remaining problem, not the original problem already solved.
+   A working but costly workaround supports a simplification request, not a claim that upstream changes are required for correctness.
+   Compare its downstream cost with the proposed upstream work and maintenance.
+
+Do not require a fix proposal to report an unresolved failure; preserve uncertainty about its cause.
+
 If the reproduction depends on an explicitly unsupported configuration, identify who selects that configuration.
 Recommend correcting it at its owner rather than reporting the known incompatibility again.
 This does not authorize implementing the correction.
@@ -51,17 +69,16 @@ The writing, tightening, and delivery requirements apply only when a report or f
    metadata. If no template is available, tell the user.
    Follow the project's disclosure placement; otherwise put this skill's default disclosure before the first template heading.
    Preserve the template's heading order and required fields. Lead with the installation or invocation and visible failure; include
-   reproduction, expected behavior, and output, then put version details at the end.
-2. Incorporate the user's latest corrections and reported experiments. Track
-   whether each result came from the user, an agent-run check, or source inspection.
-   Write verified checks performed by either jyn or the agent in first person as
-   jyn, without adding agent attribution. Do not present proposed or unverified
-   steps as completed checks. A matching source defect does not prove a runtime
-   reproduction. Do not invent commands, full logs, environment details, or a
-   successful test. Capture relevant local patches, forks, nonstandard
-   configuration, and previous attempts with their results. Include a working
-   control when it narrows the failure: for example, one picker order fails while
-   the reverse order works.
+   reproduction, expected behavior, and output.
+2. Incorporate the user's latest corrections and reported experiments.
+   Track whether each result came from the user, an agent-run check, or source inspection.
+   Distinguish jyn's goals and reported experience from verification evidence.
+   Describe agent-run checks through their commands, reproducers, and captured results; do not turn them into claims that jyn personally ran them.
+   Do not present proposed or unverified steps as completed checks.
+   A matching source defect does not prove a runtime reproduction.
+   Do not invent commands, full logs, environment details, or a successful test.
+   Capture relevant local patches, forks, nonstandard configuration, and previous attempts with their results.
+   Include a working control when it narrows the failure: for example, one picker order fails while the reverse order works.
 3. Record the installed version, installation source, and relevant runtime dependencies.
    Name the source precisely, such as a project's GitHub release asset, a distribution package, or a local source build.
    Do not use "official" as a substitute for provenance; state when the source is unknown.
@@ -78,27 +95,42 @@ The writing, tightening, and delivery requirements apply only when a report or f
 
 ## Write the report
 
-- Use complete sentences and ordinary issue prose, even when conversation uses
-  IRC style. Write in first person as jyn, using active voice and direct sentences.
+Organize the report around the maintainer's decision, not the investigation's chronology.
+Before opening any collapsed details, the maintainer should understand the failure, why it matters, the requested outcome,
+and why obvious workarounds fall short.
+Use supporting details to verify those points, not to introduce them.
+When a supported approach may already exist, ask a bounded question early rather than presenting an upstream change as the only answer.
+Invite the maintainer to identify that approach or consider support; follow required template fields rather than adding duplicate requests.
+
+- Use complete sentences and ordinary issue prose, even when conversation uses IRC style.
+  State jyn's goals and known experience accurately, without imitating her conversational voice or inventing familiarity, use, or personal verification.
+  Distinguish intended use from current use: "I want to use ..." does not establish "I use ...".
   Choose a title that names the general failure rather than one tool that exposes
   it: "user-local Python" rather than "mise Python"; name mise in the body.
   Include facts that help the maintainer reproduce, diagnose, or fix the failure;
   omit investigation narration and redundant checks when a working control
   already establishes the relevant difference.
-- Use familiar words: "I got this output", not "I obtained this output".
+- Explain the practical need with a concrete user workflow, not just a desired mechanism.
+  When the motivation or upstream responsibility is not obvious, add a motivation section or use the corresponding template field.
+  Introduce downstream tools and their roles before relying on them for context.
+  Explain the property that makes a technical term relevant to the argument, not just the term itself.
+  For example, say that all linked worktrees share Git's common directory, rather than only naming `common_dir()`.
+  When execution boundaries matter, identify where processes and data live; "guest" alone does not distinguish a VM from a container.
+  Develop a connected explanation: what the user wants to do, what the failure prevents, and what a fix must preserve.
+  Use examples to explain those relationships, not as detached facts followed by API details and workarounds.
+  When adding an example or constraint, retain the workflow it explains rather than replacing that motivation.
+  Then explain where the limitation arises and why existing workarounds fall short, distinguishing each workaround's effects.
+  Separate evidence that implicates the target project from assumptions that it must change.
+  Do not claim downstream fixes are impossible when they are merely awkward or incomplete.
+- Use familiar words: "The command returned ...", not "The execution yielded ...".
   State relevant facts directly; omit defensive commentary about claims the
   report does not make. For related reports, describe the connection and link
   the evidence; do not add "I am linking that history rather than claiming that
   nobody has reported this behavior before".
   For GitHub issues and PRs in the target repository, use `#123` without repeating the full URL.
-- Use active voice throughout authored prose, including delivery commentary.
-  Name the actor for actions and checks; avoid impersonal subjects such as
-  "a diagnostic check confirms" even though they are grammatically active.
-  Prefer "I checked the import" or "the launcher calls Python" to "the import
-  was checked" or "Python is called". "I" means jyn, including checks the agent
-  actually ran on her behalf. Write the report as she would write it by hand;
-  do not add agent attribution to individual checks. Preserve required template
-  text, the disclosure, and quoted output verbatim.
+- Use active voice and concrete subjects: "the reproducer writes the key" or "the launcher calls Python".
+  Let inspectable evidence support the request rather than adding personal assurances or attributing agent-run work to jyn.
+  Preserve required template text, the disclosure, and quoted output verbatim.
 - Unless the project's policy requires different disclosure, start the issue body with this disclosure, before the template's first heading:
   `🤖 this issue description was generated by an LLM 🤖`.
   Keep the template's headings, order, and required fields after the disclosure.
@@ -107,8 +139,10 @@ The writing, tightening, and delivery requirements apply only when a report or f
   if established. A report need not diagnose the bug; label hypotheses explicitly
   and keep the observed behavior useful even if the diagnosis is wrong. Put each
   bare GitHub permalink on its own line immediately after the claim it supports.
-- Include exact version strings, full development commit hashes, and the tested
-  invocation. Say "using commit ..." rather than narrating source comparisons.
+- Consolidate exact versions, installation provenance, and runtime dependencies in one section at the end, unless the template specifies otherwise.
+  Repeat a version elsewhere only when needed to distinguish results from different versions.
+  Include full development commit hashes and the tested invocation; do not repeat hashes in prose when source permalinks already identify them.
+  Say "using commit ..." rather than narrating source comparisons.
   For standalone builds, include the build and resource paths and any
   environment variables needed to load them; without these, a reproduction may
   silently use the installed catalogs.
@@ -119,16 +153,24 @@ The writing, tightening, and delivery requirements apply only when a report or f
   runnable reproducers from illustrative code with omitted setup or placeholders.
   If the reproduction requires inaccessible infrastructure, state that limit and
   provide the available evidence instead of implying anyone can run it.
-- Include a failing input or artifact when it helps investigation, even if not yet
-  minimized. State the minimization limit. Use screenshots for visual failures and
-  collapsible sections for long supporting logs; keep decisive evidence visible.
+- Include a failing input or artifact when it helps investigation, even if not yet minimized.
+  State the minimization limit and use screenshots for visual failures.
+  Keep decisive evidence visible; put most reproduction setup, source, and supporting output inside `<details>` unless needed to understand the issue.
+  Keep required template headings and fields visible.
+  Avoid repeating the visible excerpt inside the collapsed output.
+  Quote attached reproducer code inline only when the reader needs it to understand the failure.
 - Describe expected behavior separately. Include a small fix suggestion only
   when the evidence supports it; do not turn the report into an implementation plan.
 - Preserve observed output verbatim in a fenced block. State when it is only an
   excerpt or came from an older version. Never relabel old output as a new test.
 
-After writing your report, use `tighten-docs` until you have no further cuts to make.
-Think about what information would be useful to a maintainer; say it as concisely as possible and omit the rest.
+After writing or revising the report, use `technical-docs` for a whole-artifact standalone-reader and technical-correctness review.
+Check that a reader without this conversation can distinguish requirements from design choices, and existing capabilities from proposed patches.
+Keep verification limits explicit.
+Then use `tighten-docs` for the prose pass, preserving the technical review's necessary distinctions.
+Check how the motivation develops and whether the maintainer can tell what response would help, not just whether sentences are short.
+Cut repeated explanations and evidence, but retain the workflow, constraints, and context that connect the request.
+Do not merge useful separate sentences merely to shorten the report.
 
 ## Check and deliver
 
