@@ -3,10 +3,16 @@
 Read this reference before preparing paired behavioral or summarization trial inputs.
 These protocols apply when conducting trials; skill edits and textual reviews do not require a trial by default.
 
-Before an expensive full-history or whole-workflow replay, check whether an existing real handoff can test the changed behavior.
-If so, run the receiver with that packet or artifact and the evidence it would actually have, rather than a researcher-written task.
-Inspect the receiver's actual actions or outputs; investigate a failed check before expanding the replay.
-A passing handoff check does not establish better parent decisions or downstream task outcomes.
+For trials based on a past session, directly resume or fork the original session at the decision point by default.
+Preserve its actual messages, tool calls, and tool results; do not replace them with a summary or a new user message quoting the history.
+Use isolated session forks and disposable task state so replayed actions cannot modify the original session or real user state.
+Restore relevant task state, or report differences that could change the decision.
+Run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
+Inspect actual actions and outputs; investigate a failed check before expanding the replay.
+
+Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
+A handoff trial does not establish how the original agent would continue or whether its decisions improve.
+If the original session is unavailable or cannot be resumed, report that limitation and label reconstructed inputs as an approximation.
 
 Preserve normal coordinator tools and native completion delivery when assessing delegation, coordination, or latency.
 Removing tools can force extra delegation; manual result bridging can introduce pauses absent from the real workflow.
