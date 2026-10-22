@@ -55,9 +55,11 @@ implemented; they must inherit the parent's guest backend and authority.
 System prompts and expanded `/skill:name` messages use guest resource paths when
 sent to the model, including goal-triggered turns and resumed sessions. Request-time
 projection also advertises the guest working directory; stored messages retain
-their host paths. Reload existing host Pi sessions with `/reload` to apply this
-extension change. `/system-prompt` shows the prepared host prompt before this
-request-time projection.
+their host paths.
+`link_list` cwd lines use the same guest mappings in model requests, without changing terminal identities or host UI metadata.
+Unmapped directories remain unchanged rather than implying a guest mount.
+Reload existing host Pi sessions with `/reload` to apply this extension change.
+`/system-prompt` shows the prepared host prompt before this request-time projection.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, optional Zulip, and optional Agent Docker.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 Host `~/.pi/agent/sessions` and the default subagent store `~/.pi/agent/pi-codex-subagents/runs` are mounted read-only

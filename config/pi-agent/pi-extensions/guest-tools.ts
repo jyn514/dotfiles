@@ -212,6 +212,16 @@ export default function guestTools(pi: ExtensionAPI) {
             ...(sections ? { sections } : {}),
           };
         }
+        // Link identities can contain paths; project only cwd lines, not names or host UI metadata.
+        if (message.role === "toolResult" && message.toolName === "link_list") {
+          return {
+            ...message,
+            content: message.content.map((block) => block.type === "text"
+              ? { ...block, text: block.text.replace(/^([ \t]+cwd: )(.+)$/gm,
+                (_line: string, label: string, path: string) => label + rewritePiResourcePaths(path, resourcePaths)) }
+              : block),
+          };
+        }
         if (message.role !== "user") return message;
         return {
           ...message,

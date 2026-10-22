@@ -89,6 +89,71 @@ test("guest context rewrites expanded skills in history without changing stored 
   }
 });
 
+test("sandbox context projects link-list cwd metadata without changing identities or stored host paths", {
+  skip: !sdkEntry && "requires the host Pi installation",
+}, async (t) => {
+  const { discoverAndLoadExtensions, ExtensionRunner, SessionManager } = await import(sdkEntry);
+  const directory = mkdtempSync(join(tmpdir(), "guest-link-context-"));
+  const savedEnvironment = { ...process.env };
+  t.after(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnvironment)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnvironment);
+    rmSync(directory, { recursive: true, force: true });
+  });
+  Object.assign(process.env, {
+    CODEX_SANDBOX_GUEST_CWD: "/src/llms/pi/nested",
+    CODEX_SANDBOX_GUEST_REPO: "/src/llms/pi",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
+      "/host/src": "/src",
+      "/host/src/dotfiles": "/src/launcher-dotfiles",
+    }),
+  });
+  const cwds = [
+    ["/host/src/llms/pi/nested", "/src/llms/pi/nested"],
+    ["/host/src/llms/prose-eval", "/src/llms/prose-eval"],
+    ["/host/src/dotfiles", "/src/launcher-dotfiles"],
+    ["/outside/project", "/outside/project"],
+    ["/host/src-old/project", "/host/src-old/project"],
+  ];
+  // A terminal name may itself contain a path. Only cwd metadata is a guest path.
+  const heading = "Connected terminals:\n  • /host/src/llms/pi (you)\n    Pi session ID: fixture-session";
+  const text = `${heading}\n${cwds.map(([host]) => `    cwd: ${host}`).join("\n")}`;
+  const image = { type: "image", data: "fixture", mimeType: "image/png" };
+  const messages = [
+    { role: "toolResult", toolCallId: "list", toolName: "link_list", timestamp: 1, isError: false,
+      content: [{ type: "text", text }, image], details: { cwds: { self: cwds[0][0] } } },
+    { role: "toolResult", toolCallId: "read", toolName: "read", timestamp: 2, isError: false,
+      content: [{ type: "text", text }] },
+    { role: "user", content: text, timestamp: 3 },
+    { role: "assistant", content: [{ type: "text", text }], timestamp: 4 },
+  ];
+  const original = structuredClone(messages);
+  for (const sandbox of [false, true]) {
+    if (sandbox) process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture";
+    else delete process.env.CODEX_SANDBOX_TOOL_CONTAINER;
+    const loaded = await discoverAndLoadExtensions([
+      join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
+    ], directory, directory);
+    assert.deepEqual(loaded.errors, []);
+    const runner = new ExtensionRunner(
+      loaded.extensions, loaded.runtime, directory, SessionManager.inMemory(directory), {},
+    );
+    const errors = [];
+    runner.onError((error) => errors.push(error));
+    const projected = await runner.emitContext(messages);
+    assert.deepEqual(errors, []);
+    const expected = `${heading}\n${cwds.map(([host, guest]) => `    cwd: ${sandbox ? guest : host}`).join("\n")}`;
+    assert.equal(projected[0].content[0].text, expected);
+    assert.deepEqual(projected[0].content[1], image);
+    assert.deepEqual(projected[0].details, original[0].details, "host UI metadata is unchanged");
+    assert.deepEqual(projected.slice(1), original.slice(1), "other tool results and conversation text are unchanged");
+    assert.deepEqual(messages, original, "saved messages keep host paths");
+    assert.deepEqual(await runner.emitContext(projected), projected, "projection is idempotent after resume");
+  }
+});
+
 test("native goal-first, ordinary, and resumed requests advertise guest resources", {
   skip: !sdkEntry && "requires the host Pi installation",
 }, async (t) => {
