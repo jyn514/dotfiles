@@ -999,6 +999,73 @@ class OpenScriptTest(unittest.TestCase):
 
         activate.assert_not_called()
 
+    def test_pi_editor_opens_new_tmux_pane_and_waits_for_it(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+        target = self.root / "prompt.md"
+        status = self.root / "prompt.md.status"
+        calls = 0
+
+        def run(argv, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                status.write_text("0", encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0)
+
+        with (
+            mock.patch.dict(module.os.environ, {"TMUX": "/tmp/tmux"}),
+            mock.patch.object(module.secrets, "token_hex", return_value="token"),
+            mock.patch.object(module.os, "getpid", return_value=42),
+            mock.patch.object(module.subprocess, "run", side_effect=run) as subprocess_run,
+        ):
+            self.assertEqual(module.edit_pi_prompt_in_tmux(str(target)), 0)
+
+        channel = "pi-editor-42-token"
+        lock = mock.call(["tmux", "wait-for", "-L", channel], check=False)
+        self.assertEqual(subprocess_run.mock_calls.count(lock), 2)
+        subprocess_run.assert_any_call(
+            [
+                "tmux", "split-window", "-h", "-P", "-F", "#{pane_id}",
+                str(IMPLEMENTATION), "--pi-editor-pane", channel, str(status), str(target),
+            ],
+            check=False,
+        )
+
+    def test_pi_editor_requires_tmux(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+        target = self.root / "prompt.md"
+
+        with (
+            mock.patch.dict(module.os.environ, {}, clear=True),
+            mock.patch.object(module.subprocess, "run") as run,
+        ):
+            self.assertEqual(module.edit_pi_prompt_in_tmux(str(target)), 2)
+
+        run.assert_not_called()
+
+    def test_pi_editor_pane_records_editor_status_before_unlocking(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+        target = self.root / "prompt.md"
+        status = self.root / "prompt.md.status"
+
+        with mock.patch.object(module.subprocess, "run") as run:
+            run.side_effect = [
+                subprocess.CompletedProcess(["hx", str(target)], 9),
+                subprocess.CompletedProcess(["tmux"], 0),
+            ]
+            self.assertEqual(
+                module.run_pi_editor_pane("channel", str(status), str(target)),
+                9,
+            )
+
+        self.assertEqual(status.read_text(encoding="utf-8"), "9")
+        run.assert_has_calls(
+            [
+                mock.call(["hx", str(target)], check=False),
+                mock.call(["tmux", "wait-for", "-U", "channel"], check=False),
+            ]
+        )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run bin/open unit tests.")

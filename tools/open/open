@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -245,6 +246,58 @@ def open_in_tmux_editor(args: list[str]) -> int:
     return 0
 
 
+def edit_pi_prompt_in_tmux(file: str) -> int:
+    if "TMUX" not in os.environ:
+        return 2
+
+    channel = f"pi-editor-{os.getpid()}-{secrets.token_hex(8)}"
+    status_file = f"{file}.status"
+    lock = ["tmux", "wait-for", "-L", channel]
+    unlock = ["tmux", "wait-for", "-U", channel]
+    if subprocess.run(lock, check=False).returncode != 0:
+        return 1
+
+    try:
+        split = subprocess.run(
+            [
+                "tmux",
+                "split-window",
+                "-h",
+                "-P",
+                "-F",
+                "#{pane_id}",
+                str(Path(__file__).resolve()),
+                "--pi-editor-pane",
+                channel,
+                status_file,
+                file,
+            ],
+            check=False,
+        )
+        if split.returncode != 0:
+            return split.returncode
+        if subprocess.run(lock, check=False).returncode != 0:
+            return 1
+        try:
+            return int(Path(status_file).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return 1
+    finally:
+        subprocess.run(unlock, check=False)
+
+
+def run_pi_editor_pane(channel: str, status_file: str, file: str) -> int:
+    try:
+        returncode = subprocess.run([EDITOR, file], check=False).returncode
+    except OSError:
+        returncode = 127
+    try:
+        Path(status_file).write_text(str(returncode), encoding="utf-8")
+    finally:
+        subprocess.run(["tmux", "wait-for", "-U", channel], check=False)
+    return returncode
+
+
 def activate_window_if_needed(pane: str | None) -> None:
     if "DISPLAY" in os.environ and cmdexists("xdotool"):
         window_id = os.environ.get("WINDOWID")
@@ -353,6 +406,15 @@ def xdgopen(argv: list[str]) -> int:
 def main(argv: list[str]) -> int:
     name = Path(sys.argv[0]).name
     refresh_path_from_profile()
+
+    if argv and argv[0] == "--pi-editor-pane":
+        if len(argv) != 4:
+            return 2
+        return run_pi_editor_pane(argv[1], argv[2], argv[3])
+    if argv and argv[0] == "--pi-editor":
+        if len(argv) != 2:
+            return 2
+        return edit_pi_prompt_in_tmux(argv[1])
 
     if name == "editor-hax":
         if not argv:
