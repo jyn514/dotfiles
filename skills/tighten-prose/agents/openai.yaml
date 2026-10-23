@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tighten Prose"
+  short_description: "Polish sentences and short passages in context"
+  default_prompt: "Use $tighten-prose to polish this passage without changing its meaning or explanatory structure."

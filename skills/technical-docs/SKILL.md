@@ -1,192 +1,97 @@
 ---
 name: technical-docs
-description: Author new standalone technical documentation, substantively change reader structure or explanation, or explicitly review documentation usability and technical correctness. Use for READMEs, tutorials, how-to guides, reference pages, explanations, and design documents. Do not load for placement-only decisions, routine additions to established sections, new headings alone, wording or link fixes, or prose-only tightening. Placement uses references/placement.md; tightening, skill authoring, documentation restructuring, and design/spec consistency review have separate owners. Do not author product briefs; route new-tool lifecycles to new-tool-development.
+description: Author or substantially revise documentation using documentation-specific decisions about reader tasks, tutorial/how-to/reference/explanation forms, prerequisites, authoritative owners, starting points, routes, and warnings at action. Use also for documentation usability or correctness reviews. Placement-only decisions and routine additions use references/placement.md without this workflow. Introductory README writing belongs to readme-writing; whole-artifact prose authoring and editorial review belong to holistic-writing; tree restructuring belongs to reorganize-docs. Do not select designs or author human-owned product briefs.
 ---
 
 # Technical documentation
 
-Write for readers without the originating conversation, investigation, or design session.
+Help readers learn, act, look up facts, or understand a system without reconstructing the originating session.
+This skill owns documentation-specific authoring decisions, not a mandatory prose or style template.
 
-## Scope and routing
+## Scope and routes
 
-This skill owns substantial document authoring and usability/correctness review:
-reader structure, explanation, examples, evidence, and validation. Placement-only
-decisions use [Documentation placement](references/placement.md) without loading
-this workflow.
+For placement alone or a routine addition to an established section, use [Documentation placement](references/placement.md) and validate changed text and links.
+Do not load this workflow merely because a new heading is needed.
+Use `readme-writing` for an introductory README; it is independently usable, not a required first stage of this workflow.
+Use `reorganize-docs` for restructuring existing pages or navigation, including consolidation, splits, renames, archives, and multi-page information architecture.
+Use `holistic-writing` for general whole-artifact authoring, substantial revision, or editorial review of prose, including after substantial documentation drafting.
+A routed editorial pass uses established decisions; do not restart documentation authoring or require all three writing skills for every README.
+Use `tighten-prose` for bounded local polishing.
 
-When changing the boundary between human documentation, agent instructions, and
-skills, consult [Process engineering](https://ai-maintainers.jyn.dev/general/process-engineering.html)
-for the rationale. Keep the procedure here; do not reproduce that guide locally.
+Specialized owners retain authority over substance:
 
-Route narrower work when its owning skill is available:
-
-- `new-tool-development` owns the lifecycle workflow for a new independently invoked tool, CLI, service, or reusable executable subsystem. Product briefs are human-authored: agents may review them and add only the TODO comments permitted by that skill, not write or rewrite brief prose. This skill still owns routed implementation-spec writing; do not reproduce the lifecycle procedure here.
-- `human-review-packets` owns selection and framing of human decision questions and approval handoffs; this skill still owns document authoring, placement, and reader usability.
+- `new-tool-development` owns the lifecycle of a new independently invoked tool, CLI, service, or reusable executable subsystem.
+  Product briefs are human-authored; agents may review and add only the TODO comments it permits, not write or rewrite brief prose.
 - `requirements-definition` alone owns requirements authoring from an approved product brief.
-- `tighten-docs` owns prose-only requests to make existing documentation shorter or clearer without changing its structure or technical content.
-- [design review](../review/references/design.md) owns review-only consistency and completeness analysis of a design or specification.
-- `skill-authoring` owns skills.
-- `reorganize-docs` owns restructuring existing pages or navigation: consolidation, splits, renames, archives, and multi-page information architecture. Choosing a destination for new content uses the placement reference, not either skill's full workflow.
-- `typst` owns Typst markup syntax; this skill still owns the document's content and reader structure. Load both when writing a technical design in Typst.
+- `human-review-packets` owns human decision questions and approval handoffs.
+- `skill-authoring` owns skill behavior, discovery, and procedure.
+- [Design review](../review/references/design.md) owns review-only consistency and completeness analysis of designs or specifications.
 
-If a named skill is unavailable, preserve these ownership boundaries. State the limitation, use repository conventions and available validators, and do not claim that the missing specialized review occurred.
+If a named owner is unavailable, preserve its boundaries, state the limitation, and do not claim its specialized review occurred.
+A review request does not authorize prose edits; report findings and the smallest useful correction unless changes are requested.
+The permitted TODO comments in human-authored product briefs remain governed by `new-tool-development`.
 
-A request to review does not authorize prose edits. For a human-authored product brief, `new-tool-development` permits adding TODO comments; otherwise, report findings, evidence, consequence, and the smallest useful correction without editing. Edit other content only when the user requests changes.
+## 1. Establish the reader, owner, and task
 
-## 1. Choose placement before drafting
+Read the current page, nearest documentation entrypoint, authoritative inputs, and representative consumers.
+For new content, use the placement reference to establish the destination and canonical owner before drafting.
+For review, retain the destination unless relocation is requested.
+When the task or intended reader is unclear enough to change the document, ask rather than inventing a scope.
 
-Before adding content, use [Documentation placement](references/placement.md) to
-choose its reader, owner, and destination. If the task is placement-only or a
-routine addition to an established section, stop after that check and validation
-of the changed text and links; do not run the authoring workflow.
+Identify the reader's background and whether she needs to learn, perform a task, look up facts, understand a design, or review a decision.
+Identify which artifact owns each fact or rule and distinguish observed behavior, selected decisions, proposals, and unresolved questions.
+Preserve provenance and limitations rather than treating conversation context, generated output, or analysis as unexplained authority.
 
-## 2. Identify the reader and document form
+When changing boundaries between human documentation, agent instructions, and skills, consult [Process engineering](https://ai-maintainers.jyn.dev/general/process-engineering.html) for rationale.
+Keep operative procedures in their canonical owners rather than reproducing that guide locally.
 
-Identify:
+## 2. Choose the documentation form
 
-- who will read the document;
-- what background it may assume;
-- whether she needs to learn, perform a task, look up facts, understand a design, or review a decision;
-- which artifact owns each fact or rule.
-
-Keep Diátaxis forms distinct:
+Keep these needs distinct without forcing a fixed page template:
 
 - **Tutorial:** guide a learner through a safe, successful experience.
+  State what she will build or understand, prerequisites, and the safe starting state.
 - **How-to:** help a competent reader accomplish a specific task.
+  State the task, prerequisites, expected result, and important hazards.
 - **Reference:** present accurate, neutral facts structured like the subject.
+  State the covered system, version, scope, notation, and lookup organization.
+  Do not force motivation or design goals into neutral reference material.
 - **Explanation:** develop understanding through context, reasons, examples, and consequences.
+  Explain the problem, goals, and important non-goals before the proposal.
+  Define a named proposal on first use and show the problem and proposed behavior before detailed machinery.
 
-A design document is primarily explanation plus an implementation and verification contract. Within one page, separate mixed needs with clear sections or links. Route a multi-page split or navigation redesign to `reorganize-docs`.
+A design document combines explanation with an implementation and verification contract.
+When writing a selected design or implementation spec, use [Design documents](references/design-documents.md) for conditional structure and reviewability guidance.
+That reference does not choose the design or impose its progression on other documentation.
+Within one page, separate mixed reader needs with clear sections or links.
+Route a multi-page split or navigation redesign to `reorganize-docs` rather than performing it as incidental prose editing.
 
-## 3. Inspect before writing or reviewing
+## 3. Make starting points and routes usable
 
-Read the current artifact, its entry points, linked documentation, source of truth, and representative consumers. Establish what is observed, selected, provisional, and unresolved.
+Assume the reader opens the page directly months later.
+State required background, prerequisites, authoritative inputs, and important limitations where needed to begin safely.
+Explain unfamiliar project-specific terms before consequential use while preserving precise established terms.
+Avoid “the option we chose” unless the page names and explains that option.
+Use a glossary only when many project-specific terms interact; state the audience and assumed background when either is not obvious.
 
-Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority. Preserve provenance for measurements and reconstructed decisions.
+Keep each concept's canonical owner clear and link to it from relevant starting points rather than copying its procedure.
+Keep action-specific warnings beside the actions they govern; do not hide cost, destructive effects, or safety conditions behind links.
+Check command references, examples, installation or migration instructions, and entrypoints for stale behavior.
+Preserve exact contracts, conditions, exceptions, and required lookup paths when revising.
+When consolidating instructions, use the [consolidation check](../holistic-writing/references/consolidation.md).
 
-## 4. Make every form standalone
+## 4. Review and validate the documentation
 
-Assume the reader opens the document directly months later.
+Follow the intended reader's route from its starting state through the task or lookup to the expected result.
+Check that prerequisites arrive before dependent actions and warnings before their hazards.
+Check that authoritative owners, supported versions, limitations, and unresolved decisions remain clear.
+For substantial drafting or rewriting, use `holistic-writing` for the complete reading experience; do not substitute this task-route check for prose judgment.
 
-For every form:
+Validate the final consumer-visible representation with applicable renderers or compilers and repository documentation checks.
+Check changed links, commands, and examples; do not edit generated output directly.
+Report what was inspected, failed or unavailable checks, skipped surfaces, and residual uncertainty.
+Distinguish textual usability review from verified operational behavior.
 
-- preserve established domain terms when they are precise; do not invent substitutes to avoid jargon;
-- explain specialist or project-specific terms before consequential use when intended readers may not know them;
-- state required background and prerequisites;
-- identify authoritative inputs and important limitations;
-- avoid references such as “the option we chose” unless the document names and explains that option;
-- distinguish facts, decisions, proposals, examples, and unresolved questions.
-
-Adapt the opening to the form:
-
-- **Tutorial:** state what the learner will build or understand, prerequisites, and the safe starting state.
-- **How-to:** state the concrete task, prerequisites, expected result, and important hazards.
-- **Reference:** state the covered system, version, scope, notation, and lookup organization. Do not force motivation or design goals into neutral reference material.
-- **Explanation or design:** explain the problem, goals, and important non-goals plainly before the proposal. Define a named proposal on first use (a label alone is not a definition) and show a concrete trace of the problem and proposed behavior before detailed machinery. Use a glossary only when many project-specific terms interact; state the audience and assumed background when either is not obvious.
-
-## 5. Order explanation before machinery
-
-For nontrivial designs, use this progression unless the artifact has a stronger natural structure:
-
-1. **Motivation:** what is difficult today and why it matters.
-2. **Goals:** observable outcomes and protected behavior.
-3. **Proposal in plain language:** what the named design means and does not mean.
-4. **Terms and examples:** vocabulary and representative cases.
-5. **Evidence:** what was measured, using which inputs and limitations.
-6. **Scope and boundaries:** ownership, authority, effects, compatibility, and non-goals.
-7. **Detailed design:** data model, algorithms, lifecycle, failure behavior, schemas, and interfaces.
-8. **Delivery:** implementation sequence, migrations, documentation changes, and commits.
-9. **Proof:** tests, acceptance checks, unresolved decisions, and completion condition.
-
-This is guidance, not a mandatory heading template; preserve the dependency: readers should understand the problem, proposal, and examples before encountering solver models, schemas, hashes, or APIs.
-
-Explain a nontrivial mechanism as:
-
-1. the problem;
-2. a concrete example or trace;
-3. the solution and its invariant.
-
-## 6. Define evidence rather than displaying numbers
-
-For each important measurement, explain:
-
-- the population or denominator;
-- what was counted;
-- the input revision, source, or time range;
-- the method or policy used;
-- what the number demonstrates;
-- what it cannot demonstrate;
-- whether it is provisional or an acceptance constant.
-
-Prefer a labeled table or definition list over an uninterrupted wall of figures. Comparative claims must include the alternatives and their comparable results, not merely the winning conclusion.
-
-## 7. Keep precision without front-loading density
-
-Include technical precision, but introduce it incrementally.
-
-For implementation specs, outline independently implementable contracts before drafting details. Order sections by dependency. Before filling them in, check whether sections bundle separate decisions or make readers reconstruct a contract across distant passages; reorganize as needed. Within each contract, make inputs, required behavior, failure cases, and examples or acceptance evidence easy to locate, and distinguish rationale from normative behavior. This is structural guidance, not a fixed template.
-
-- Introduce one conceptual layer at a time.
-- Put plain-language meaning before formal notation.
-- Put a worked example before a general algorithm when practical.
-- Explain why a schema or invariant exists before listing its fields.
-- Keep requirements, examples, evidence, and unresolved decisions visibly distinct.
-- Split sentences that combine independent rules, exceptions, or validation steps. Group related conditions under a descriptive bullet or subsection; keep dependent conditions together, and separate rationale or examples from the normative rule.
-- Give each concept one canonical owner. For cuts to duplicated policy, apply the duplicate-policy test in `tighten-docs`.
-- Preserve exact API, serialization, failure, and lifecycle contracts after the reader has the model needed to understand them.
-
-Do not remove necessary detail merely to shorten a document. Move detail later, label it, or derive it from a clearer authority.
-
-Avoid wide Markdown tables. Use bullets or short subsections when cells contain prose, commands, or more than three columns; reserve tables for compact comparisons and lookup data.
-
-## 8. Write designs for review
-
-A selected design should make these reviewable without reconstructing hidden decisions:
-
-- motivation and success criteria;
-- exact meaning of the named design;
-- rejected alternatives that explain the boundary;
-- authoritative and derived representations;
-- ownership and approval;
-- normal behavior, errors, ambiguity, and recovery;
-- compatibility and migration effects;
-- representative single and composed cases;
-- implementation order;
-- verification tied to requirements;
-- blocking decisions and completion condition.
-
-Write design documents in Typst by default when the `typst` skill and compiler are available. Use Markdown when repository convention, tooling, or the requested destination requires it.
-
-## 9. Review from a fresh-reader position
-
-For create or edit work, perform a standalone-reader pass before completion. For review-only work, use the same questions as review criteria:
-
-- Does each addition belong on this page, serve its reader, and avoid repeating another owner?
-- Can the title and opening be understood without session context?
-- Is every named policy, architecture, or migration defined?
-- Are unfamiliar specialist terms explained before consequential use, while precise established terms remain intact?
-- Does each number have meaning and provenance?
-- Do examples appear before the abstractions they explain?
-- Are single-item and composed or multistage cases treated consistently?
-- Can the reader distinguish facts, decisions, proposals, and unresolved questions?
-- Could another engineer implement or review the design without inventing policy?
-
-## 10. Validate and report
-
-For create or edit work:
-
-- validate the final consumer-visible representation, not only source syntax;
-- compile or render when an applicable tool exists;
-- check links, examples, and repository documentation checks when available;
-- do not edit generated output directly;
-- report checks run, failures, unavailable checks, skipped surfaces, and residual uncertainty.
-
-After creating or substantially rewriting documentation, invoke `tighten-docs` when available; reject cuts that remove context, definitions, examples, rationale, constraints, or reviewability. If it is unavailable, perform a focused concision pass using the same safeguards and report that limitation.
-
-For review-only work, completion is a prioritized findings report with evidence, consequences, smallest corrections, and explicit review limits. Do not require or imply a rendered artifact unless rendering is relevant to the review.
-
-## Completion condition
-
-Create or edit work is complete when the intended reader can understand and use the document without the originating conversation; consequential claims have an authority or stated uncertainty; applicable validation passes or its limitation is reported; and required repository checks pass.
-
-Review-only work is complete when the requested scope has been inspected, material findings and uncertainty are reported, and no mutation occurred without authorization.
+For creation or edits, finish when the reader can start, find the authoritative information, and complete the intended task without session context.
+Applicable validation must pass or have a reported limitation; required repository checks must pass.
+For review-only work, finish with prioritized findings, evidence, consequences, smallest corrections, and explicit review limits, without unauthorized edits.

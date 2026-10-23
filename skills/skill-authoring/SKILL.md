@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for prose-only tightening use tighten-docs.
+description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for whole-artifact editorial review use holistic-writing; for bounded local polishing use tighten-prose.
 ---
 
 # Skill authoring
@@ -33,7 +33,10 @@ Use the smallest workflow justified by uncertainty and risk. Give every costly s
 
 State what the skill does, when it applies, and adjacent work it does not own. Define how to derive a deterministic working scope when the request omits one; stop for clarification when no safe default exists. For multi-phase work, say which phase the skill owns and forbid contaminating adjacent phases, such as selecting during critique or mutating during review. Before adding a procedure, check nearby skills for an owner; refer to it under §3 rather than copying its workflow.
 
-Keep one authoritative owner for each procedure. When removing duplicated policy, apply the duplicate-policy test in `tighten-docs`. Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation. For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
+Keep one authoritative owner for each procedure.
+When removing duplicated policy, apply the [consolidation check](../holistic-writing/references/consolidation.md).
+Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation.
+For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
 
 ## 3. Design progressive disclosure
 
@@ -44,6 +47,10 @@ Create `<skill-name>/SKILL.md`, with the directory name matching the frontmatter
 - `assets/` for templates or static inputs.
 
 Keep the main skill sufficient to choose and begin the workflow. Refer to owning skills by name rather than copying their procedures; links to specific sections are optional. Say when to read or run each reference and distinguish its scope from local work. Preserve referenced triggers and phase boundaries: for example, consult [review evidence standards](../review/references/evidence.md) before work without invoking its completion audit.
+
+Keep `SKILL.md` procedural and short.
+Move bulky examples or variant detail to directly linked references, read only when needed.
+Delete generated template text; do not add a README, changelog, quick reference, or process notes to a skill.
 
 ## 4. Write the frontmatter
 
@@ -122,7 +129,7 @@ For every change, confirm affected linked paths exist and affected commands matc
 Run repository checks for bundled scripts or code that changed.
 Apply §6's positive, negative, and interaction checks to changed behavior and routes.
 Reload an active session before using its behavior as evidence for edited instructions.
-Invoke `tighten-docs` after creating or substantially rewriting the skill.
+Use `holistic-writing` for a whole-artifact editorial pass after creating or substantially rewriting the skill, preserving the behavior and discovery decisions established here.
 Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
 
 Report changed files, checks performed, reused evidence, and any environment-specific limitation.

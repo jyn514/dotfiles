@@ -1,6 +1,6 @@
 ---
 name: reorganize-docs
-description: "Restructure existing project documentation or navigation: information architecture, consolidation, splits, renames, and archives. Use when repairing a document tree or moving existing material between owners. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site correctness review; new-content placement uses the technical-docs placement reference, not the authoring skill."
+description: "Restructure existing project documentation or navigation, or review its organization and routes without editing. Use for information architecture, consolidation, splits, renames, archives, and linked-document navigation assessment. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site build/rendering correctness; new-content placement uses the technical-docs placement reference, not the authoring skill."
 ---
 
 # Reorganize Documentation
@@ -8,14 +8,17 @@ description: "Restructure existing project documentation or navigation: informat
 Improve how readers find and use documentation without losing policy, rationale, examples, or historical evidence needed by its readers.
 
 Use the [documentation placement reference](../technical-docs/references/placement.md)
-to choose where new content belongs, without loading the authoring skill. Do not
-invoke this workflow merely to add a paragraph or section to an existing owner.
+to choose where new content belongs, without loading the authoring skill.
+Do not invoke this workflow merely to add a paragraph or section to an existing owner.
+For review-only work, follow Read first, Observe, Diagnose, Verify, and Report within the selected documentation scope.
+Skip Plan, Edit, and verification of changes not made; a review request does not authorize file changes.
 
 ## Read first
 
 Discover and follow the target repository's development lifecycle, documentation entrypoint, prose and ownership rules, source-of-truth policy, and guidance for repository-local skills. Read the nearest index for every documentation subtree in scope.
 
-Use the format-specific owner for specifications, generated documentation, public docs, or Typst files. Apply `tighten-docs` to the final prose pass.
+Use the format-specific owner for specifications, generated documentation, public docs, or Typst files.
+Use `holistic-writing` for whole-artifact editorial review of substantially revised prose.
 
 ## Observe
 
@@ -39,7 +42,7 @@ Classify each page by its primary reader need:
 - Policy: follow repository-owned constraints
 - Archive: retain historical evidence without presenting it as current guidance
 
-When consolidating copied guidance, apply the duplicate-policy test in `tighten-docs`; record canonical owners and preserve task-specific routes.
+When consolidating copied guidance, apply the [consolidation check](../holistic-writing/references/consolidation.md); record canonical owners and preserve task-specific routes.
 Organization is suspect when:
 
 - One index mixes ordinary work, specialized authoring, maintenance, and release operations
@@ -110,4 +113,6 @@ Do not turn a historical decision into current policy without verifying that it 
 
 ## Report
 
-State the information-architecture and ownership changes, archived pages and provenance, validation results, protected or unverified surfaces, and any material now one click farther away.
+For review-only work, report prioritized navigation and supporting-page findings, evidence, proposed corrections, and inspected or unverified scope.
+Distinguish proposed changes from edits actually made and textual review from checks performed.
+For restructuring work, state the information-architecture and ownership changes, archived pages and provenance, validation results, protected or unverified surfaces, and any material now one click farther away.

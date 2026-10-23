@@ -10,7 +10,7 @@ export type SubagentRouteDecision =
 
 export const LUNA_SAFE_SKILLS = new Set([
   "session-title-curation",
-  "tighten-docs",
+  "tighten-prose",
 ]);
 
 export function classifySubagentRoute(input: SpawnAgentInput): SubagentRouteDecision {

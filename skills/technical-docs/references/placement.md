@@ -38,6 +38,10 @@ or operate the system.
 
 For a small addition to an established section, apply this check and validate the
 changed text and links. A new heading alone does not require the authoring skill.
-Use [technical-docs](../SKILL.md) for a new standalone document, substantive
-changes to reader structure or explanation, or an explicit documentation
-usability/correctness review.
+Use [technical-docs](../SKILL.md) for documentation-specific authoring decisions
+or an explicit documentation usability/correctness review.
+Use `readme-writing` for an introductory README without requiring the full
+technical-docs workflow.
+Use [holistic-writing](../../holistic-writing/SKILL.md) for general whole-artifact
+prose authoring, substantial revision, or editorial review of explanation and the
+reading experience, including prose outside documentation.

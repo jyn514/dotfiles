@@ -1,0 +1,4 @@
+interface:
+  display_name: "README Writing"
+  short_description: "Introduce a project through a useful, complete account"
+  default_prompt: "Use $readme-writing to write or substantially revise this introductory README for its intended reader."

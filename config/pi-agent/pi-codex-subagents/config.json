@@ -1,6 +1,6 @@
 {
   "directSkillRoutes": {
-    "tighten-docs": {
+    "tighten-prose": {
       "agentType": "luna"
     },
     "session-title-curation": {

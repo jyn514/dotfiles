@@ -23,7 +23,7 @@ Requirements documents should be written in typst; use `skill:typst`.
 ## How to write a good requirements document
 
 Focus primarily on making the document easy to review.
-Use `technical-docs`.
+Use `holistic-writing` for whole-artifact reader experience without changing the requirements decisions owned here.
 
 - Group requirements by review task.
 - Put each requirement's source IDs after its acceptance evidence; keep full source-label definitions and reverse coverage in an appendix.

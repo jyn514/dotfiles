@@ -7,7 +7,9 @@ description: Frame decisions and explain concrete consequences for a human revie
 
 Help a person judge a recommendation or understand its consequences without reconstructing the investigation.
 This skill owns selection and framing of human review questions and explanations, not the underlying investigation or design selection.
-Use the owning investigation or design skill for that work, and `technical-docs` for document placement and authoring.
+Use the owning investigation or design skill for that work.
+Use [documentation placement](../technical-docs/references/placement.md) to choose a documentation owner and destination.
+Use `holistic-writing` for whole-artifact authoring and reader experience.
 It does not grant implementation or approval authority.
 
 ## 1. Find the decision or consequence to explain
@@ -89,4 +91,6 @@ When a reader asks what a term means, explain its meaning and provenance.
 If they also ask why the behavior is harmful or the mechanism is needed, check the consequence rather than only defining the term.
 A request for clarification is not rejection of the design, but finding no support for its claimed benefit requires revising that claim or recommendation.
 
-If the front fails these checks, rewrite it rather than adding more instructions for the reader. Check source fidelity and links, then use `tighten-docs` for substantial drafts. Stop when the packet is readable and faithful; no decision, response, or approval is required to finish preparing it.
+If the front fails these checks, rewrite it rather than adding more instructions for the reader.
+Check source fidelity and links, then use `holistic-writing` for whole-artifact editorial review of substantial drafts.
+Stop when the packet is readable and faithful; no decision, response, or approval is required to finish preparing it.

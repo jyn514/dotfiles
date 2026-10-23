@@ -69,7 +69,8 @@ Draft only the implementation specification when explicitly requested and the ap
 
 Use these normal contributors:
 
-- **`technical-docs`** for document substance and reader usability;
+- **`technical-docs`** for implementation-spec document form, reader tasks, ownership, and prerequisites;
+- **`holistic-writing`** for whole-artifact explanation and reader experience after substantial drafting;
 - [Change guidelines](../references/change-with-evidence.md#design-choices) for ordinary code, API, and schema choices, and [testing guidance](../references/testing.md) for test strategy;
 - **[design review](../review/references/design.md)** to review the completed specification.
 

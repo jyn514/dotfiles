@@ -164,13 +164,8 @@ Invite the maintainer to identify that approach or consider support; follow requ
 - Preserve observed output verbatim in a fenced block. State when it is only an
   excerpt or came from an older version. Never relabel old output as a new test.
 
-After writing or revising the report, use `technical-docs` for a whole-artifact standalone-reader and technical-correctness review.
-Check that a reader without this conversation can distinguish requirements from design choices, and existing capabilities from proposed patches.
-Keep verification limits explicit.
-Then use `tighten-docs` for the prose pass, preserving the technical review's necessary distinctions.
-Check how the motivation develops and whether the maintainer can tell what response would help, not just whether sentences are short.
-Cut repeated explanations and evidence, but retain the workflow, constraints, and context that connect the request.
-Do not merge useful separate sentences merely to shorten the report.
+After writing or revising the report, use `holistic-writing` for the whole-artifact editorial review.
+Make clear which response from the maintainer would help, and distinguish existing capabilities from proposed changes.
 
 ## Check and deliver
 

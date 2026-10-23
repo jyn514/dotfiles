@@ -116,7 +116,10 @@ When copying individual skills, preserve their linked shared references and requ
 
 ### Focused new-tool workflow
 
-For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Product briefs are human-authored; agents may review them and add permitted TODO comments. Use `requirements-definition` for requirements, `technical-docs` for implementation-spec writing, and [review's design mode](review/references/design.md) for maturity, upstream/downstream consistency, and stale invalidation review.
+For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`.
+Product briefs are human-authored; agents may review them and add permitted TODO comments.
+Use `requirements-definition` for requirements and `technical-docs` for implementation-spec document form, reader tasks, ownership, and prerequisites.
+Use `holistic-writing` for whole-artifact explanation and reader experience, and [review's design mode](review/references/design.md) for maturity, upstream/downstream consistency, and stale invalidation review.
 
 ## Design, planning, and review
 
@@ -155,6 +158,7 @@ The retired skill names have no forwarding entries:
 | `second-user` | Shared [complexity justification](references/complexity-justification.md) |
 | `design-for-change` | Shared [change guidelines](references/change-with-evidence.md#design-choices) and [testing guidance](references/testing.md) |
 | `spec-review`, `audit-spec-against-impl`, `double-check` | [Review](review/SKILL.md), selecting design, conformance, or completion mode |
+| `tighten-docs` | [Holistic writing](holistic-writing/SKILL.md) for whole-artifact editing; [tighten-prose](tighten-prose/SKILL.md) for bounded local polishing |
 
 ## Focused workflows
 
@@ -174,7 +178,18 @@ Use these independently when their target is already selected:
 - [human-review-packets](human-review-packets/SKILL.md) — prepare human decisions with concrete examples, recommendations, and simple questions; keep technical evidence optional and deferred approvals out of the active queue.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
-`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. Use [Documentation placement](technical-docs/references/placement.md) for new-content destinations and routine additions to established sections, without loading an authoring skill. `technical-docs` owns new standalone documentation, substantive changes to reader structure or explanation, and explicit usability/correctness reviews; `reorganize-docs` owns restructuring existing documentation and navigation.
+`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill.
+Use [Documentation placement](technical-docs/references/placement.md) for new-content destinations and routine additions, without loading an authoring skill.
+Choose the writing workflow by the task, not a mandatory chain:
+
+- [Holistic writing](holistic-writing/SKILL.md) owns whole-artifact authoring, substantial revision, and reader experience across reports, essays, prompts, instructions, skills, and documentation.
+- [Technical docs](technical-docs/SKILL.md) owns documentation-specific forms, reader tasks, canonical owners, prerequisites, and routes.
+  It does not own general editorial review merely because an artifact contains technical prose.
+- [README writing](readme-writing/SKILL.md) is an independently usable workflow for introductory repository, package, or tool-entrypoint READMEs.
+  It is sufficient to begin that task; do not load all writing workflows by default.
+- [Tighten prose](tighten-prose/SKILL.md) owns local wording and cadence within an established explanation, not whole-artifact judgment.
+- [Reorganize docs](reorganize-docs/SKILL.md) owns actual multi-page movement, consolidation, splits, archives, and navigation changes.
+  Choosing where new content belongs uses the placement reference instead.
 
 ## Minimal use
 
