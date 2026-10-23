@@ -22,6 +22,9 @@ compaction, side conversations, and asynchronous questions. Follow the
 [development guide](../../dev/README.md#testing-and-probes) before running tests
 or probes.
 
+Ctrl+G requires tmux and opens the prompt in a new pane while Pi keeps the transcript visible.
+Pi applies the edited prompt after that pane exits.
+
 ## Subagent routing
 
 Exact allowlisted skills may route a subagent through the `luna` template.

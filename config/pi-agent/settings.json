@@ -5,6 +5,8 @@
     "maxRetries": 20
   },
   "tuiMode": "fullscreen",
+  "externalEditor": "open --pi-editor",
+  "externalEditorUsesTerminal": false,
   "shellCommandPrefix": "export JJ_AGENT=pi",
   "defaultProjectTrust": "ask",
   "enableInstallTelemetry": false,
