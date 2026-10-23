@@ -49,3 +49,17 @@ Finding no better alternative is a successful result: continue when the existing
 
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.
 Neither is a default next phase of reassessment.
+
+## Example: an agent-selected single-file constraint
+
+A user permits an introductory README with linked supporting documents.
+The writer nevertheless chooses a single-file output and keeps migration records and every configuration option after a stronger introduction.
+Further prose passes improve individual passages without making the whole satisfying to follow.
+Before adding another writing rule, compare that approach with an introduction linked to a migration record and an option reference.
+The single-file contract was an agent choice, not a user preservation requirement.
+
+Use [reorganize-docs](../reorganize-docs/SKILL.md) for authorized extraction and navigation changes rather than inventing a new document workflow.
+Keep prerequisites, hazards, and limitations needed for the introductory action beside that action.
+Create or verify the supporting pages; an invented link does not preserve access to the detail.
+Read the introduction alone, then follow its routes to check that later tasks remain understandable.
+The improvement sought is a better reader experience, not merely fewer words in the README or more files in the tree.
