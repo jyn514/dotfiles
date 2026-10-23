@@ -1,11 +1,14 @@
 ---
 name: performance-investigation
-description: Diagnose unexpected delay, hangs, observed contention, and quota-constrained operations, or perform explicitly requested profiling and benchmarking. Use for commands, tests, builds, CI, startup, configuration reload, APIs, cloud queries, or remote acquisition when one of those conditions requires investigation. Do not load merely because a command is silent, runs concurrently, or edits performance-sensitive code; expected execution and ordinary correctness debugging do not trigger this skill.
+description: Diagnose unexpected execution delay, hangs, observed contention, and quota-constrained operations, or perform explicitly requested profiling and benchmarking. Use for commands, tests, builds, CI, startup, configuration reload, APIs, cloud queries, or remote acquisition when one of those conditions requires investigation. Do not load for missing, late, or out-of-order UI updates alone; first use ordinary correctness debugging to check event delivery, parsing, and rendering. Slow execution or blocked rendering on that path does trigger it. Expected execution, silence alone, concurrent execution, and performance-sensitive code do not trigger it.
 ---
 
 # Performance Investigation
 
-Establish the unexpected delay, observed contention, quota constraint, or requested measurement before starting. An unexpectedly stalled build triggers this skill; a quiet build progressing within its expected duration does not.
+Establish the unexpected execution delay, observed contention, quota constraint, or requested measurement before starting.
+Missing, late, or out-of-order UI updates alone belong to ordinary correctness debugging: check event delivery, parsing, and rendering first.
+Use this workflow when that investigation shows slow execution or blocked rendering, or when profiling or benchmarking is explicitly requested.
+An unexpectedly stalled build triggers this skill; a quiet build progressing within its expected duration does not.
 
 Before editing, record the baseline command, environment, metric, narrowest representative workload, elapsed time, and whether the run is cold or warm. Reproduce the user's actual command resolution; the agent's inherited shell may differ. Prior baselines are useful when environment differences are named, but precise comparisons require same-machine before/after measurements.
 
