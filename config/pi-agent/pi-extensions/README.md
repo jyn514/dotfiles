@@ -165,8 +165,11 @@ block; missing, invalid, or ambiguous annotations leave the text unchanged.
 Other sources are appended in a `Sources:` list without repeating URLs already
 in the answer. Streaming text can still show raw markers until the message ends.
 
-On OpenAI/Azure/Codex Responses, hidden `web-activity` custom messages record provider-reported search, page-open, and find-in-page operations.
-They preserve queries, URLs, find patterns, and the last observed operation status in model context without appearing in the TUI.
+On OpenAI/Azure/Codex Responses, a live widget above the editor shows provider-reported web activity.
+Operations appear muted while running, green when completed, and red when failed or incomplete.
+Status-only events show “Web operation: details not reported” until the provider supplies the action, query, or URL.
+The widget clears when the assistant message finishes or the run ends.
+Visible `web-activity` custom messages preserve the final queries, URLs, find patterns, and observed operation statuses in the transcript and model context.
 They do not start another model turn; Pi inserts them after the current turn's tool results.
 Repeated notifications for one call produce one record; separate calls to the same URL remain separate.
 These records survive session reload and are included in later model requests without retaining page contents.

@@ -18,7 +18,8 @@ export interface WebActivity {
   action:
     | { type: "search"; queries: string[] }
     | { type: "open_page"; url?: string }
-    | { type: "find_in_page"; url: string; pattern: string };
+    | { type: "find_in_page"; url: string; pattern: string }
+    | { type: "unreported" };
   status: "in_progress" | "searching" | "completed" | "failed" | "incomplete";
 }
 
@@ -119,10 +120,20 @@ function annotatedResponseText(item: unknown): AnnotatedText | undefined {
 
 /** Preserve only provider-reported activity, never infer an operation from a citation. */
 function webActivity(value: Record<string, unknown>): WebActivity | undefined {
-  if (value.type !== "web_search_call" || typeof value.id !== "string" || !value.id || !isRecord(value.action)) return;
+  // Responses sends status-only events before reporting the operation's action.
+  // A call ID proves activity, but does not tell us whether it is a search or page read.
+  const streamStatus = typeof value.type === "string"
+    ? /^response\.web_search_call\.(in_progress|searching|completed)$/.exec(value.type)?.[1] : undefined;
+  if (streamStatus && typeof value.item_id === "string" && value.item_id) {
+    return { id: value.item_id, action: { type: "unreported" },
+      status: streamStatus as "in_progress" | "searching" | "completed" };
+  }
+  if (value.type !== "web_search_call" || typeof value.id !== "string" || !value.id) return;
   const { status, action } = value;
   if (status !== "in_progress" && status !== "searching" && status !== "completed" &&
       status !== "failed" && status !== "incomplete") return;
+  if (action === undefined || action === null) return { id: value.id, action: { type: "unreported" }, status };
+  if (!isRecord(action)) return;
   if (action.type === "search") {
     const queries = Array.isArray(action.queries)
       ? action.queries.filter((query): query is string => typeof query === "string")
@@ -202,7 +213,11 @@ export function createMetadataCollector(): {
     if (activity) {
       const previous = activities.get(activity.id);
       const terminal = (status: WebActivity["status"]) => status !== "in_progress" && status !== "searching";
-      if (!previous || !terminal(previous.status) || terminal(activity.status)) activities.set(activity.id, activity);
+      activities.set(activity.id, {
+        ...activity,
+        action: activity.action.type === "unreported" && previous ? previous.action : activity.action,
+        status: previous && terminal(previous.status) && !terminal(activity.status) ? previous.status : activity.status,
+      });
     }
     if (value.type === "web_search_call" && isRecord(value.action)) {
       const query = optionalString(value.action.query);
@@ -244,8 +259,10 @@ export function formatWebSearchActivity(activities: WebActivity[]): string | und
       label = `Search: ${action.queries.length ? action.queries.map((query) => activityText(query, true)).join(", ") : "query not reported"}`;
     } else if (action.type === "open_page") {
       label = `Open page: ${action.url ? activityText(action.url) : "URL not reported"}`;
-    } else {
+    } else if (action.type === "find_in_page") {
       label = `Find in page: ${activityText(action.url)}; pattern ${activityText(action.pattern, true)}`;
+    } else {
+      label = "Web operation: details not reported";
     }
     return `- ${label} — ${status}`;
   });

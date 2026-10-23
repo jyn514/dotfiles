@@ -52,8 +52,14 @@ function responseEvents(answer, withSource, activity) {
     ...(activity ? [
       { type: "response.output_item.added", output_index: 0, item: reasoning },
       { type: "response.output_item.done", output_index: 0, item: reasoning },
-      { type: "response.output_item.added", output_index: 1, item: { ...activity, status: "in_progress" } },
+      { type: "response.output_item.added", output_index: 1,
+        item: { type: "web_search_call", id: activity.id, status: "in_progress" } },
+      { type: "response.web_search_call.in_progress", item_id: activity.id, output_index: 1, sequence_number: 4 },
+      { type: "response.web_search_call.searching", item_id: activity.id, output_index: 1, sequence_number: 5 },
       { type: "response.output_item.done", output_index: 1, item: activity },
+      ...(activity.status === "completed" ? [
+        { type: "response.web_search_call.completed", item_id: activity.id, output_index: 1, sequence_number: 7 },
+      ] : []),
     ] : []),
     { type: "response.output_item.added", output_index: messageIndex, item: { ...item, content: [] } },
     { type: "response.content_part.added", output_index: messageIndex, content_index: 0,
@@ -158,7 +164,27 @@ test("native search citations and activity survive storage, reload, and request 
   t.after(() => session.dispose());
   assert.deepEqual(extensionsResult.errors, []);
   assert.equal(extensionsResult.extensions[0].path, extensionPath, "load the actual owned TypeScript source");
+  const widgets = [];
+  const extensionErrors = [];
+  await session.bindExtensions({ mode: "tui", uiContext: {
+    theme: { fg: (color, text) => `<${color}>${text}</${color}>` },
+    setWidget(key, lines) {
+      if (key !== "web-activity") return;
+      widgets.push({ lines, textStarted: streamEvents.some((event) => event.type === "response.output_text.delta"),
+        assistantEnded: endedMessages.length > 0 });
+    },
+  }, onError: (error) => extensionErrors.push(error) });
   await session.prompt("Find an offline source.");
+  assert.deepEqual(extensionErrors, []);
+  for (const status of ["in_progress", "searching"]) {
+    assert.ok(widgets.some(({ lines, textStarted, assistantEnded }) => !textStarted && !assistantEnded &&
+      lines?.includes(`<muted>- Web operation: details not reported — ${status}</muted>`)),
+    `${status} appears in the live widget before any answer text, without a reported action`);
+  }
+  assert.ok(widgets.some(({ lines, textStarted }) => !textStarted &&
+    lines?.includes(`<success>- Open page: ${source.url} — completed</success>`)),
+  "the same call acquires its URL and completed color without losing details to a status-only event");
+  assert.equal(widgets.at(-1).lines, undefined, "the final transcript record replaces the live widget");
   const completedFooter = `Web activity:\n- Open page: ${source.url} — completed`;
   const sessionFile = session.sessionFile;
   assert.ok(sessionFile, "session must be persisted in owned temporary storage");
@@ -169,7 +195,7 @@ test("native search citations and activity survive storage, reload, and request 
   const savedActivity = stored.find((entry) => entry.type === "custom_message" && entry.customType === "web-activity");
   assert.ok(savedActivity, "provider-reported activity must be stored even when reasoning text is empty");
   assert.equal(savedActivity.content, completedFooter);
-  assert.equal(savedActivity.display, false, "activity must use Pi's model-visible, TUI-hidden message contract");
+  assert.equal(savedActivity.display, true, "activity must be visible in both the model context and TUI");
   assert.ok(!savedAssistant.content.some((block) => block.type === "text" && block.text.includes("Web activity:")),
     "activity must not appear in the visible assistant answer");
   session.dispose();
@@ -179,7 +205,7 @@ test("native search citations and activity survive storage, reload, and request 
   assert.deepEqual(session.messages.find((message) => message.role === "assistant"), savedAssistant,
     "reload restores the authoritative saved assistant message");
   assert.ok(session.messages.some((message) => message.role === "custom" && message.customType === "web-activity" &&
-    message.display === false && message.content === completedFooter), "reload restores hidden activity in model context");
+    message.display === true && message.content === completedFooter), "reload restores visible activity in model context");
   await session.prompt("Answer without sources this time.");
   await session.setModel(modelRuntime.getModel("offline-search-unsupported", "fixture"));
   await session.prompt("Search is unsupported here.");
@@ -218,11 +244,11 @@ test("native search citations and activity survive storage, reload, and request 
   assert.ok(rendered.includes(source.url), "the real Markdown renderer recognizes the citation URL");
   assert.ok(!rendered.includes(marker), "provider citation markup must not reach the rendered answer");
   assert.equal(text(assistants[1]), `Offline answer 2. ${marker}`,
-    "missing annotations do not reuse an earlier inline citation or expose hidden activity");
+    "missing annotations do not reuse an earlier inline citation or insert activity into the assistant answer");
   const activities = session.messages.filter((message) => message.role === "custom" && message.customType === "web-activity");
   assert.deepEqual(activities.map((message) => ({ content: message.content, display: message.display })), [
-    { content: completedFooter, display: false },
-    { content: `Web activity:\n- Open page: ${source.url} — failed`, display: false },
+    { content: completedFooter, display: true },
+    { content: `Web activity:\n- Open page: ${source.url} — failed`, display: true },
   ], "record each operation once, including failures without citations, with no stale activity from unsupported turns");
   assert.deepEqual(endedMessages, assistants, "message_end replacement survives in the real session transcript");
   assert.equal(text(assistants[1]).includes("— completed"), false, "collector resets between turns");

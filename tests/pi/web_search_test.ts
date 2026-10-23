@@ -53,23 +53,120 @@ describe("provider web search extension", () => {
         expect(event.systemPrompt).toBe("Base instructions.");
         expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
       }
-      handlers.get("turn_start")?.({});
-      handlers.get(notificationName)?.(notification);
+      const ctx = { mode: "print" };
+      handlers.get("turn_start")?.({}, ctx);
+      handlers.get(notificationName)?.(notification, ctx);
       const result = handlers.get("message_end")?.({
         message: {
           role: "assistant",
           content: [{ type: "text", text: "The answer." }],
         },
-      }) as { message: { content: unknown[] } };
+      }, ctx) as { message: { content: unknown[] } };
 
       expect(result.message.content).toEqual([
         { type: "text", text: "The answer." },
         { type: "text", text: "Sources:\n- A: https://example.com/a" },
       ]);
-      handlers.get("turn_start")?.({});
+      handlers.get("turn_start")?.({}, ctx);
       expect(handlers.get("message_end")?.({
         message: { role: "assistant", content: [{ type: "text", text: "Next answer." }] },
-      })).toBeUndefined();
+      }, ctx)).toBeUndefined();
+    });
+  }
+});
+
+describe("live web activity widget", () => {
+  function setup(mode = "tui") {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const widgets: { key: string; lines: string[] | undefined; options: unknown }[] = [];
+    const sent: unknown[] = [];
+    const ctx = {
+      mode,
+      ui: {
+        theme: { fg: (color: string, text: string) => `<${color}>${text}</${color}>` },
+        setWidget: (key: string, lines: string[] | undefined, options: unknown) => widgets.push({ key, lines, options }),
+      },
+    };
+    webSearch({
+      on: (event: string, handler: (...args: unknown[]) => unknown) => handlers.set(event, handler),
+      sendMessage: (message: unknown) => sent.push(message),
+    } as unknown as ExtensionAPI);
+    const emit = (name: string, event: unknown = {}) => handlers.get(name)?.(event, ctx);
+    return { widgets, sent, emit };
+  }
+
+  for (const name of ["provider_event", "provider_stream_event"]) {
+    test(`${name} rewrites the widget before the answer finishes and then persists one final record`, () => {
+      const { widgets, sent, emit } = setup();
+      const notify = (item: unknown) => emit(name, name === "provider_event"
+        ? { event: { payload: item } } : { data: item });
+      emit("turn_start");
+      notify({ type: "url_citation", url: "https://example.com/" });
+      expect(widgets.at(-1)?.lines).toBeUndefined();
+      for (const [status, color] of [
+        ["in_progress", "muted"], ["searching", "muted"], ["completed", "success"],
+      ]) {
+        notify({ type: `response.web_search_call.${status}`, item_id: "search-1", output_index: 0, sequence_number: 1 });
+        expect(widgets.at(-1)?.lines).toEqual([
+          "<muted>Web activity:</muted>", `<${color}>- Web operation: details not reported — ${status}</${color}>`,
+        ]);
+        expect(sent).toEqual([]);
+      }
+      for (const [status, color] of [
+        ["in_progress", "success"], ["completed", "success"],
+      ]) {
+        notify({ type: "web_search_call", id: "search-1", status,
+          action: { type: "search", queries: ["example domain"] } });
+        expect(widgets.at(-1)).toEqual({ key: "web-activity", options: { placement: "aboveEditor" }, lines: [
+          "<muted>Web activity:</muted>", `<${color}>- Search: "example domain" — completed</${color}>`,
+        ] });
+        expect(sent).toEqual([]);
+      }
+      for (const status of ["failed", "incomplete"]) {
+        notify({ type: "web_search_call", id: "open-1", status,
+          action: { type: "open_page", url: "https://example.com/" } });
+        expect(widgets.at(-1)?.lines).toEqual([
+          "<muted>Web activity:</muted>", '<success>- Search: "example domain" — completed</success>',
+          `<error>- Open page: https://example.com/ — ${status}</error>`,
+        ]);
+      }
+      emit("message_end", { message: { role: "user" } });
+      expect(widgets.at(-1)?.lines).toHaveLength(3);
+      emit("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Answer." }] } });
+      expect(widgets.at(-1)?.lines).toBeUndefined();
+      expect(sent).toEqual([{
+        customType: "web-activity", display: true,
+        content: 'Web activity:\n- Search: "example domain" — completed\n- Open page: https://example.com/ — incomplete',
+      }]);
+      emit("turn_start");
+      notify({ type: "url_citation", url: "https://example.com/new" });
+      expect(widgets.at(-1)?.lines).toBeUndefined();
+    });
+  }
+
+  for (const lifecycle of ["turn_start", "agent_end", "session_start", "session_shutdown"]) {
+    test(`${lifecycle} clears live activity even when no assistant message finishes`, () => {
+      const { widgets, emit } = setup();
+      emit("provider_stream_event", { data: { type: "web_search_call", id: "open-1", status: "in_progress",
+        action: { type: "open_page", url: "https://example.com/" } } });
+      expect(widgets.at(-1)?.lines).toHaveLength(2);
+      emit(lifecycle);
+      expect(widgets.at(-1)).toEqual({ key: "web-activity", lines: undefined, options: undefined });
+    });
+  }
+
+  for (const mode of ["print", "json", "rpc"]) {
+    test(`${mode} retains the final record without using terminal widgets`, () => {
+      const { widgets, sent, emit } = setup(mode);
+      emit("turn_start");
+      emit("provider_stream_event", { data: { type: "web_search_call", id: "open-1", status: "completed",
+        action: { type: "open_page", url: "https://example.com/" } } });
+      emit("message_end", { message: { role: "assistant", content: [] } });
+      emit("agent_end");
+      expect(widgets).toEqual([]);
+      expect(sent).toEqual([{
+        customType: "web-activity", display: true, content: "Web activity:\n- Open page: https://example.com/ — completed",
+      }]);
     });
   }
 });
@@ -258,6 +355,33 @@ describe("provider-reported web activity", () => {
     expect(content).toContain('first\\\\n# heading \\[label\\](url) \\`code\\` \\*bold\\*');
   });
 
+  test("an added call without action gets details later without duplicating or regressing its status", () => {
+    const collector = createMetadataCollector();
+    collector.observe({ type: "response.output_item.added", item: { type: "web_search_call", id: "pending", status: "in_progress" } });
+    expect(collector.metadata.activities).toEqual([
+      { id: "pending", action: { type: "unreported" }, status: "in_progress" },
+    ]);
+    collector.observe({ type: "response.web_search_call.completed", item_id: "pending" });
+    collector.observe({ type: "response.output_item.done", item: { ...open, id: "pending", status: "completed" } });
+    collector.observe({ type: "response.web_search_call.searching", item_id: "pending" });
+    expect(collector.metadata.activities).toEqual([
+      { id: "pending", action: { type: "open_page", url: page }, status: "completed" },
+    ]);
+    expect(formatWebSearchActivity(collector.metadata.activities)).toBe(`Web activity:\n- Open page: ${page} — completed`);
+  });
+
+  test("status notifications need a valid call ID and a recognized event type", () => {
+    const collector = createMetadataCollector();
+    collector.observe([
+      { type: "response.web_search_call.in_progress" },
+      { type: "response.web_search_call.in_progress", item_id: "" },
+      { type: "response.web_search_call.in_progress", item_id: 42 },
+      { type: "response.web_search_call.unknown", item_id: "call" },
+      { type: "unrelated.response.web_search_call.in_progress", item_id: "call" },
+    ]);
+    expect(collector.metadata.activities).toEqual([]);
+  });
+
   test("citations and malformed activity cannot become invented retrievals", () => {
     const collector = createMetadataCollector();
     collector.observe([
@@ -279,18 +403,19 @@ describe("provider-reported web activity", () => {
         on: (event: string, handler: (...args: unknown[]) => unknown) => handlers.set(event, handler),
         sendMessage: (message: unknown, options: unknown) => sent.push({ message, options }),
       } as unknown as ExtensionAPI);
-      handlers.get("turn_start")?.({});
+      const ctx = { mode: "print" };
+      handlers.get("turn_start")?.({}, ctx);
       const item = { ...open, status: "failed" };
-      handlers.get(name)?.(name === "provider_event" ? { event: { payload: item } } : { data: item });
+      handlers.get(name)?.(name === "provider_event" ? { event: { payload: item } } : { data: item }, ctx);
       const message = { role: "assistant", content: [{ type: "thinking", thinking: "" }] };
-      expect(handlers.get("message_end")?.({ message })).toBeUndefined();
+      expect(handlers.get("message_end")?.({ message }, ctx)).toBeUndefined();
       expect(sent).toEqual([{
-        message: { customType: "web-activity", content: `Web activity:\n- Open page: ${page} — failed`, display: false },
+        message: { customType: "web-activity", content: `Web activity:\n- Open page: ${page} — failed`, display: true },
         options: { triggerTurn: false },
       }]);
       expect(message.content).toEqual([{ type: "thinking", thinking: "" }]);
-      handlers.get("turn_start")?.({});
-      expect(handlers.get("message_end")?.({ message })).toBeUndefined();
+      handlers.get("turn_start")?.({}, ctx);
+      expect(handlers.get("message_end")?.({ message }, ctx)).toBeUndefined();
       expect(sent).toHaveLength(1);
     });
   }
