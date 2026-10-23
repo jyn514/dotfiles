@@ -33,6 +33,19 @@ For a staged new-tool workflow, consume approved requirements and repository int
 
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
+Before selecting a persistence mechanism, identify the current storage boundary.
+Record which principal owns the data, where and in what form it persists, its lifetime, who can read it, and who can rotate or recover it.
+Moving data between principals or media changes behavior and requires authority.
+So does changing its persistence, protection, or lifetime; neither is a routine implementation choice.
+If the request does not settle a consequential storage-boundary change, ask before designing the dependent mechanism.
+Continue independent analysis while that decision is unresolved.
+
+Examples:
+
+- Moving a credential from a password manager into a host file changes its storage boundary, even when consumers receive the same bytes.
+- Replacing a database library does not change the boundary when owner, format, access policy, and lifetime remain fixed.
+- Turning an in-memory cache into a disk cache changes the boundary because persistence and recovery behavior change.
+
 Stop and use opportunity-scan if no subsystem is selected.
 When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
 
