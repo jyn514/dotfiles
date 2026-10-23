@@ -28,6 +28,28 @@ Include a nearby control that should retain its existing path.
 For example, pair a decision about replacing custom profiling instrumentation with an obvious mechanical repair that needs no redesign.
 Test whether the new guidance changes the failure decision without adding unnecessary steps to the control.
 
+## Example: revising an artifact-writing skill
+
+Suppose an introductory README task requires a whole-document reading-quality score of at least 3.
+Choose a difficult README and a nearby case that the previous skill handled well before generating a large batch.
+The new draft may explain one mechanism through a satisfying example while the remaining configuration inventory still makes the complete reading experience a 2.
+That is a useful passage-level improvement, not acceptance of the complete artifact.
+Generate and judge the control again under the revised skill; its saved earlier 3 does not establish what the revised skill produces.
+If the new control is a 2, withhold a broad success claim and inspect the actual prose before expanding the batch.
+One generation does not establish that the skill caused the difference rather than sampling variation.
+
+Keep three comparisons distinct:
+
+- The original document establishes whether the revision improves on what the user already had.
+- An earlier skill's generated output preserves a usable partial result and evidence about that earlier condition.
+- A freshly generated control tests the revised skill on a previously successful task.
+
+Without the original-document comparison, report acceptable candidate quality rather than demonstrated improvement over the original.
+A skill change does not erase an earlier useful artifact, but its score cannot stand in for newly required evidence about the changed skill.
+Use the governing task to determine which acceptance checks need rerunning; this example does not require every skill edit to regenerate every historical output.
+
+## Report scope and cost
+
 For each variant, report task outcomes alongside token use and elapsed time where available.
 Include tool and review overhead when they are part of the compared workflow; separate shared experiment setup from execution cost.
 Assess the added skill against the existing workflow.
