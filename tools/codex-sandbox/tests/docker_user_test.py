@@ -44,6 +44,20 @@ class DockerUserSetupTest(unittest.TestCase):
                         docker_host.main()
                 self.assertEqual(output.getvalue(), '')
 
+    def test_upgrade_requires_an_explicit_running_container_override(self):
+        host = Mock()
+        host.locked.return_value = nullcontext()
+        host.upgrade.return_value = {'instance': 'fixture', 'files': {}}
+        for arguments, expected in ((['upgrade'], False),
+                                    (['upgrade', '--allow-running-containers'], True)):
+            with self.subTest(arguments=arguments), \
+                    patch.object(docker_host, 'DockerHost', return_value=host), \
+                    patch.object(sys, 'argv', ['docker_host.py', *arguments]), \
+                    redirect_stdout(io.StringIO()):
+                docker_host.main()
+            host.upgrade.assert_called_once_with(expected)
+            host.upgrade.reset_mock()
+
     def run_setup(self, failure='', state=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

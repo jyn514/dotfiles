@@ -32,7 +32,13 @@ class DockerGCTest(unittest.TestCase):
         host.guest = Mock()
         installed = {'files': {'sandbox-image-gc.timer': 'digest'}}
         events = []
-        host.guest.side_effect = lambda *args, **kwargs: events.append('enable')
+        def guest(_record, *arguments, **_kwargs):
+            if arguments == ('docker', 'ps', '--quiet'):
+                events.append('checked running containers')
+                return Mock(stdout='')
+            events.append('enable')
+            return Mock()
+        host.guest.side_effect = guest
 
         def upgraded():
             events.append('verified and published')
@@ -40,24 +46,50 @@ class DockerGCTest(unittest.TestCase):
 
         with patch.object(Host, 'upgrade', side_effect=upgraded):
             self.assertIs(host.upgrade(), installed)
-        self.assertEqual(events, ['verified and published', 'enable'])
-        host.guest.assert_called_once_with(installed, 'systemctl', '--user', 'enable', '--now',
-                                          'sandbox-image-gc.timer', timeout=30)
+        self.assertEqual(events, ['checked running containers', 'verified and published', 'enable'])
+        host.guest.assert_called_with(installed, 'systemctl', '--user', 'enable', '--now',
+                                      'sandbox-image-gc.timer', timeout=30)
 
         host.guest.reset_mock()
+        host.guest.side_effect = None
+        host.guest.return_value = Mock(stdout='')
         host.record.return_value = installed
         with patch.object(Host, 'upgrade', return_value=installed):
             host.upgrade()
-        host.guest.assert_not_called()
+        host.guest.assert_called_once_with(installed, 'docker', 'ps', '--quiet', capture_output=True,
+                                           text=True, timeout=30)
 
     def test_failed_upgrade_does_not_start_image_cleanup(self):
         host = object.__new__(DockerHost)
         host.record = Mock(return_value={'files': {}})
         host.guest = Mock()
+        host.guest.return_value.stdout = ''
         with patch.object(Host, 'upgrade', side_effect=ValueError('verification failed')):
             with self.assertRaisesRegex(ValueError, 'verification failed'):
                 host.upgrade()
-        host.guest.assert_not_called()
+        host.guest.assert_called_once()
+
+    def test_upgrade_refuses_running_containers_before_mutation_without_override(self):
+        host = object.__new__(DockerHost)
+        record = {'files': {}}
+        host.record = Mock(return_value=record)
+        host.guest = Mock(return_value=Mock(stdout='abc123def456\n0123456789ab\n'))
+        with patch.object(Host, 'upgrade', side_effect=AssertionError('upgrade mutated the guest')) as upgrade:
+            with self.assertRaisesRegex(ValueError, '2 running container'):
+                host.upgrade()
+        upgrade.assert_not_called()
+        with patch.object(Host, 'upgrade', return_value=record) as upgrade:
+            host.upgrade(allow_running_containers=True)
+        upgrade.assert_called_once_with()
+
+    def test_upgrade_rejects_invalid_container_output_before_mutation(self):
+        host = object.__new__(DockerHost)
+        host.record = Mock(return_value={'files': {}})
+        host.guest = Mock(return_value=Mock(stdout='not a container id\n'))
+        with patch.object(Host, 'upgrade') as upgrade:
+            with self.assertRaisesRegex(ValueError, 'invalid running-container list'):
+                host.upgrade()
+        upgrade.assert_not_called()
 
     def test_guest_installer_copies_audited_units_without_enabling_them(self):
         with tempfile.TemporaryDirectory() as temporary:

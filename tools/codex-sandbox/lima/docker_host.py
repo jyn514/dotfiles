@@ -143,8 +143,18 @@ class DockerHost(Host):
         self.guest(record, 'sudo', 'python3', GUEST + '/mount-shares.py', input=json.dumps(record).encode())
         self.guest(record, 'python3', GUEST + '/docker-user.py')
 
-    def upgrade(self):
+    def upgrade(self, allow_running_containers=False):
         previous = self.record()
+        if not allow_running_containers:
+            output = self.guest(previous, 'docker', 'ps', '--quiet', capture_output=True,
+                                text=True, timeout=30).stdout
+            containers = [line for line in output.splitlines() if line]
+            if any(not re.fullmatch(r'[0-9a-f]{12,64}', item) for item in containers):
+                raise ValueError('Docker returned an invalid running-container list')
+            if containers:
+                raise ValueError(
+                    f'upgrade refused: {len(containers)} running container(s) would be stopped; '
+                    'stop them or pass --allow-running-containers after explicit approval')
         record = super().upgrade()
         # Enable only on first installation, after verification and publication.
         # Later upgrades preserve an operator's disabled timer.
@@ -403,8 +413,10 @@ def main():
     setup.add_argument('--share-write', action='append')
     setup.add_argument('--client', type=Path)
     setup.add_argument('--default-context', help='create or update this Docker context and select it as the default')
-    for name in ('start', 'stop', 'status', 'doctor', 'upgrade', 'pin-buildx'):
+    for name in ('start', 'stop', 'status', 'doctor', 'pin-buildx'):
         sub.add_parser(name)
+    upgrade = sub.add_parser('upgrade')
+    upgrade.add_argument('--allow-running-containers', action='store_true')
     pin = sub.add_parser('pin-client')
     pin.add_argument('--source', type=Path)
     reclaim = sub.add_parser('reclaim', help='run, enable, or disable guest cache reclamation')
@@ -440,7 +452,7 @@ def main():
                       f'Use {upgrade} to apply it; upgrade restarts shared Docker '
                       'and stops running containers.', file=sys.stderr)
         elif args.operation == 'upgrade':
-            record = host.upgrade()
+            record = host.upgrade(args.allow_running_containers)
         elif args.operation == 'reclaim':
             record = host.reclaim(args.action)
         elif args.operation == 'pin-buildx':

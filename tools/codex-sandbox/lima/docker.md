@@ -66,19 +66,21 @@ before twenty sandboxes can each allocate their two gateway networks. Existing
 VMs retain their pinned daemon configuration until explicitly migrated.
 
 To refresh the installed sandbox scripts in an existing VM without recreating
-the VM or changing its generation, run:
-
-**Get explicit operator approval immediately before this command.**
-It restarts the shared nested Docker executor, stops every running sandbox container,
-and crashes attached Pi sessions even though the Lima VM itself stays running.
+the VM or changing its generation, first stop every sandbox container, then run:
 
 ```sh
 python3 tools/codex-sandbox/lima/docker_host.py upgrade
 ```
 
+The command refuses to proceed while containers are running.
+If an operator explicitly approves stopping those containers and crashing their attached Pi sessions, run:
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py upgrade --allow-running-containers
+```
+
 The operation restarts Docker, stopping running containers, then verifies the
 updated guest policy before publishing its new provisioning snapshot.
-Stop active sessions and other VM workloads before upgrading.
 Setup reports the current Docker state after unit reload and restart, including its start time and whether units need reloading.
 Successful rootless-service installation output is hidden because it can contain status and journal entries from the previous daemon.
 Failed steps retain their command diagnostics and stop provisioning; a failed restart also reports the current unit state.
@@ -163,7 +165,8 @@ limactl shell sandbox-host-docker systemctl --user enable --now sandbox-image-gc
 `doctor` verifies the installed GC units against the provisioning snapshot.
 If first-time enablement fails after upgrade publishes the snapshot, use the `enable --now` command above.
 Read cleanup results with `sudo journalctl _SYSTEMD_USER_UNIT=sandbox-image-gc.service` inside the VM.
-Use `docker_host.py upgrade` to deploy this policy to an existing VM; it restarts shared Docker and stops running containers.
+Use `docker_host.py upgrade` to deploy this policy to an existing VM.
+It restarts shared Docker and refuses to proceed while containers are running unless the operator passes the explicit override described above.
 
 ## Container cache reclamation
 
