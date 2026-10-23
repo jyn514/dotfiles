@@ -13,6 +13,30 @@ WRAPPER = ROOT / "bin/codex"
 
 
 class CodexWrapperTests(unittest.TestCase):
+    def test_removes_ssh_agent_socket_before_native_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            codex = fake_bin / "codex"
+            codex.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "${SSH_AUTH_SOCK-unset}"\n'
+            )
+            codex.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "SSH_AUTH_SOCK": "/tmp/private-agent.sock",
+            }
+
+            result = subprocess.run(
+                [str(WRAPPER), "app-server"], env=environment,
+                text=True, capture_output=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("unset\n", result.stdout)
+
     def test_maintenance_help_and_noninteractive_commands_do_not_import(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

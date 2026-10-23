@@ -6,6 +6,8 @@ set -eu
 DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 shim_resolve "$0" codex
+# Keep the agent process and every command it launches away from the user's SSH agent.
+unset SSH_AUTH_SOCK
 # Native transport and offline policy parsing must not load interactive config
 # or receive runtime-only options such as --profile.
 case ${1:-} in
