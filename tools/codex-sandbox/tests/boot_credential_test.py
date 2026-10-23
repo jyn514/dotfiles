@@ -78,12 +78,35 @@ class BootCredentialTest(unittest.TestCase):
 
     def test_linux_retrieval_uses_dedicated_1password_item(self):
         with patch.object(credentials.sys, 'platform', 'linux'), patch.object(
+                credentials, 'LINUX_GITHUB_TOKEN') as token_file, patch.object(
                 credentials.subprocess, 'run') as run:
+            token_file.exists.return_value = False
             run.return_value = Mock(returncode=0, stdout=b'read-only-token\n')
             self.assertEqual(credentials.retrieve_host_token(), b'read-only-token')
         run.assert_called_once_with(
             ['op', 'read', 'op://Private/agent sandbox token/token'],
             capture_output=True, timeout=30)
+
+    def test_linux_retrieval_prefers_private_host_file(self):
+        token_file = self.root / 'github-token'
+        token_file.write_bytes(b'read-only-token\n')
+        token_file.chmod(0o600)
+        with patch.object(credentials.sys, 'platform', 'linux'), patch.object(
+                credentials, 'LINUX_GITHUB_TOKEN', token_file), patch.object(
+                credentials.subprocess, 'run') as run:
+            self.assertEqual(credentials.retrieve_host_token(), b'read-only-token')
+        run.assert_not_called()
+
+    def test_linux_retrieval_rejects_unsafe_host_file(self):
+        token_file = self.root / 'github-token'
+        token_file.write_bytes(b'read-only-token')
+        with patch.object(credentials.sys, 'platform', 'linux'), patch.object(
+                credentials, 'LINUX_GITHUB_TOKEN', token_file):
+            for mode in (0o640, 0o644):
+                token_file.chmod(mode)
+                with self.subTest(mode=oct(mode)), self.assertRaisesRegex(
+                        ValueError, 'unsafe ownership or permissions'):
+                    credentials.retrieve_host_token()
 
     def test_linux_retrieval_failure_does_not_echo_1password_output(self):
         with patch.object(credentials.sys, 'platform', 'linux'), patch.object(

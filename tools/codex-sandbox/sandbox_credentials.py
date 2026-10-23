@@ -2,10 +2,12 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import secrets
 import selectors
+import stat
 import struct
 import subprocess
 import sys
@@ -17,6 +19,7 @@ GUEST_HELPER = "/usr/local/share/codex-sandbox/boot-credential.py"
 GUEST_ENTRYPOINT = Path(__file__).with_name('lima') / 'current-boot-credential.py'
 GUEST_HELPER_SOURCE = Path(__file__).with_name('lima') / 'boot-credential.py'
 ONEPASSWORD_GITHUB_TOKEN = "op://Private/agent sandbox token/token"
+LINUX_GITHUB_TOKEN = Path.home() / ".config/codex-sandbox/github-token"
 
 
 def credential_path(value, generation, request=None):
@@ -39,6 +42,21 @@ def retrieve_host_token():
                 return None
             raise
     if sys.platform == "linux":
+        if LINUX_GITHUB_TOKEN.exists():
+            flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(LINUX_GITHUB_TOKEN, flags)
+            try:
+                metadata = os.fstat(descriptor)
+                if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or
+                        metadata.st_nlink != 1 or stat.S_IMODE(metadata.st_mode) != 0o600):
+                    raise ValueError("sandbox GitHub token file has unsafe ownership or permissions")
+                token = os.read(descriptor, 16385).removesuffix(b"\n")
+                if os.read(descriptor, 1):
+                    raise ValueError("sandbox GitHub token file is too large")
+            finally:
+                os.close(descriptor)
+            validate_token(token)
+            return token
         # Capture and discard all diagnostics: an unexpected CLI failure must
         # never turn secret output into a launcher error or terminal log.
         result = subprocess.run(["op", "read", ONEPASSWORD_GITHUB_TOKEN],

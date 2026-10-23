@@ -1,6 +1,10 @@
 # Provision the GitHub boot credential
 
-On Linux, the Lima credential helper reads the dedicated read-only token from
+On Linux, the Lima credential helper first reads the dedicated read-only token
+from `~/.config/codex-sandbox/github-token` when that file exists.
+The file must be a regular, single-link file owned by the current user with mode
+`0600`.
+When the file does not exist, the helper reads
 `op://Private/agent sandbox token/token` with the 1Password CLI.
 On macOS, it reads `codex-sandbox/github-token` from the login Keychain.
 Every sandbox launch retrieves the current credential and atomically stages it
@@ -27,8 +31,19 @@ python3 tools/codex-sandbox/sandbox_credentials.py prepare
 ```
 
 On macOS, a missing GitHub Keychain item skips the optional credential.
-On Linux, the `op` CLI, its desktop integration, and the named token item are required;
-retrieval failure is fatal and never falls back to host `gh`, `GH_TOKEN`, or `GITHUB_TOKEN` credentials.
+On Linux, provision the host file without placing the token in command arguments
+or shell history:
+
+```sh
+install -d -m 700 ~/.config/codex-sandbox
+umask 077
+op read 'op://Private/agent sandbox token/token' >~/.config/codex-sandbox/github-token
+```
+
+Without that file, the `op` CLI, its desktop integration, and the named token
+item are required.
+Retrieval failure is fatal and never falls back to host `gh`, `GH_TOKEN`, or
+`GITHUB_TOKEN` credentials.
 
 Choose **Allow**, not **Always Allow**, in the Keychain prompt. The item has no
 trusted applications; the helper rejects retrieval if an unprompted decrypt
