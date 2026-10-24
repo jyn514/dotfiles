@@ -177,8 +177,8 @@ class GlideTests(unittest.TestCase):
         self.assertEqual(2, calls.count(["xdg-mime", "default", "nvim-generated.desktop", "text/html"]))
 
 
-class GlideInstallerTests(unittest.TestCase):
-    def run_installer(self, commands, **overrides):
+class NativePackageInstallerTests(unittest.TestCase):
+    def run_installer(self, commands, entrypoint="glide-native-entrypoint.sh", **overrides):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             binaries = directory / "bin"
@@ -194,9 +194,9 @@ class GlideInstallerTests(unittest.TestCase):
             for name in ("lib", "libexec", "config"):
                 (directory / name).symlink_to(ROOT / name, target_is_directory=True)
             source = (ROOT / "setup").read_text()
-            entrypoint = (ROOT / "tests/setup/fixtures/glide-native-entrypoint.sh").read_text()
+            test_entrypoint = (ROOT / "tests/setup/fixtures" / entrypoint).read_text()
             script = directory / "setup"
-            script.write_text(source.replace('if ! [ $# = 0 ]; then\n', entrypoint + '\nif ! [ $# = 0 ]; then\n', 1))
+            script.write_text(source.replace('if ! [ $# = 0 ]; then\n', test_entrypoint + '\nif ! [ $# = 0 ]; then\n', 1))
             environment = os.environ.copy()
             environment.update(HOME=str(directory), PATH=f"{binaries}:/usr/bin:/bin",
                                GLIDE_TEST_BIN=str(binaries), GLIDE_TEST_LOG=str(log),
@@ -239,6 +239,40 @@ class GlideInstallerTests(unittest.TestCase):
         result, commands = self.run_installer(["brew"], GLIDE_TEST_PLATFORM="macos")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("brew <install> <--cask> <glide-browser>", commands)
+
+    def test_dragon_installs_from_aur_on_arch(self):
+        for helper in ("paru", "yay"):
+            with self.subTest(helper=helper):
+                result, commands = self.run_installer(
+                    ["pacman", helper], entrypoint="dragon-native-entrypoint.sh")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"{helper} <-S> <--needed> <dragon-drop>", commands[-1])
+
+    def test_dragon_prefers_yay_when_both_helpers_are_installed(self):
+        result, commands = self.run_installer(
+            ["pacman", "paru", "yay"], entrypoint="dragon-native-entrypoint.sh")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("yay <-S> <--needed> <dragon-drop>", commands[-1])
+
+    def test_installed_dragon_does_not_install_another_copy(self):
+        result, commands = self.run_installer(
+            ["pacman", "paru"], entrypoint="dragon-native-entrypoint.sh",
+            GLIDE_TEST_INSTALLED="0")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["pacman <-Q> <dragon-drop>"], commands)
+
+    def test_missing_aur_helper_reports_dragon_package(self):
+        result, commands = self.run_installer(
+            ["pacman"], entrypoint="dragon-native-entrypoint.sh")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("dragon-drop from the AUR", result.stderr)
+        self.assertEqual(["pacman <-Q> <dragon-drop>"], commands)
+
+    def test_non_arch_hosts_skip_dragon(self):
+        result, commands = self.run_installer(
+            [], entrypoint="dragon-native-entrypoint.sh")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([], commands)
 
 
 if __name__ == "__main__":

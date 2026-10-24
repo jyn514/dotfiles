@@ -210,6 +210,8 @@ class LocalInstallationTests(unittest.TestCase):
             "python3",
         ):
             (self.bin / command).symlink_to(recorder)
+        if InstallationTests.platform()["ID"] == "arch":
+            (self.bin / "pacman").symlink_to(recorder)
         if InstallationTests.platform()["ID"] == "macos":
             (self.bin / "brew").symlink_to(recorder)
 

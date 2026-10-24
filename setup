@@ -46,6 +46,23 @@ install_glide_native() {
 	fi
 }
 
+install_dragon_native() {
+	if ! exists pacman; then
+		return 0
+	fi
+	if pacman -Q dragon-drop >/dev/null 2>&1; then
+		return 0
+	fi
+	if exists yay; then
+		yay -S --needed dragon-drop
+	elif exists paru; then
+		paru -S --needed dragon-drop
+	else
+		echo "Install dragon-drop from the AUR with yay or paru, then rerun setup" >&2
+		return 1
+	fi
+}
+
 bootstrap_python() {
 	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise run bootstrap-python -- "$@" < /dev/null
 }
@@ -397,6 +414,7 @@ setup_install_local () {
 	fi
 	mkdir -p ~/.local/bin || return
 	install_glide_native || return
+	install_dragon_native || return
 	# The explicit setup config bypasses global conf.d, so carry its exclusion
 	# into bootstrap_python as well as ordinary shell invocations.
 	glide_disabled=$(python3 libexec/setup/glide.py) || return
