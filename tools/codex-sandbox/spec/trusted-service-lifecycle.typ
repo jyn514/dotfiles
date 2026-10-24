@@ -8,9 +8,9 @@ The remaining acceptance gap is Flower's bounded R2 connection-establishment
 retry, blocked because `/src/flower` is read-only in this checkout. Until that
 external client change lands, an early R2 request may fail rather than wait for
 the best-effort relay; no possibly accepted request is replayed.
-The proposed #link("tic-proxy.typ")[TicGit host executor] uses the existing `shared-session` scope with a new host-native command-proxy adapter.
-Its host storage wrapper, Anthropic Sandbox Runtime integration, capability selection, and host-endpoint representation are not implemented.
-It requires no native TicGit transaction or store-discovery changes.
+The proposed #link("tic-proxy.typ")[TicGit broker] uses required `agent-launch` scope with a host-native command-proxy adapter.
+Its installed TicGit fork, command broker, capability selection, and host-endpoint representation are not implemented.
+The TicGit contract owns native storage, permitted effects, repository support restrictions, and request semantics.
 
 == Objective
 
@@ -109,10 +109,11 @@ The lifecycle-state schema is a separate explicit integer changed only when pers
 
 Shared-session metadata records the complete accepted shared-service set and enough identity to validate each service and endpoint on join.
 The complete record is atomically published as one owner-validated host runtime file with mode `0600`.
-It may contain authenticated-egress and proposed TicGit endpoint session tokens, passed only to their service and validated joining agents.
+It may contain authenticated-egress session tokens, passed only to their service and validated joining agents.
 It contains no reusable upstream credentials, application request fields, or mutable refresh state.
 All agents attached to the accepted shared session receive the same route authority, so per-attachment token issuance and revocation add no useful isolation.
 Final-holder cleanup removes the record after stopping the shared services; each token is useless upstream and expires when its service stops.
+TicGit's accepted opt-in remains workspace authority, but its per-launch endpoint, token, and process handles are not shared-session records.
 Per-launch services are not shared state and cannot be inherited by another
 launcher. Under the #link("launcher-interface.typ")[`/split` plan], peer Pi panes
 share one existing agent-launch resource owner, not a new launcher or relay
@@ -122,7 +123,6 @@ authorization.
 
 `shared-session` services are created once for one repository session and reused by all attached agents.
 Command proxies and Caddy authenticated-egress instances normally use this scope.
-The proposed TicGit host executor also uses it; a shared database does not merge workspace policy or service ownership.
 The first launcher owns publication; the final attached launcher owns cleanup.
 
 `agent-launch` services belong to one launcher-owned guest workload, initially
@@ -132,6 +132,7 @@ Directory changes release only the invoking attachment, and a new workload gets
 its own per-launch authorization.
 Agent Podman gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
+The proposed required TicGit broker also uses this scope, with a fresh endpoint and token for the owning launch's ordinary children and `/split` peers until final attachment release.
 
 Every selected shared service is required: the agent must not start or join without it ready.
 Failure aborts startup and cleans every unpublished resource created for that attempt.
@@ -232,8 +233,9 @@ Per-launch failure follows the service's installed availability rule and never m
 The supervisor publishes endpoints by role, not by caller-selected addresses.
 An endpoint record identifies its transport kind, runtime-owned socket volume or private network attachment, expected service identity, implementation identity, and state schema.
 Reusable upstream secrets remain only with credential profiles.
-Authenticated-egress and proposed TicGit endpoint session tokens live in the owner-validated accepted-session record.
+Authenticated-egress session tokens live in the owner-validated accepted-session record.
 They are passed only to accepted services and agents.
+TicGit's per-launch endpoint and token are projected only after that launch's broker passes readiness; joining never inherits another broker.
 
 Agent mounts and environment variables are derived only after accepted-record validation.
 A required per-launch service is projected after readiness; a best-effort service is projected once its endpoint identity and authorization boundary exist, even while listener startup continues.
@@ -245,9 +247,8 @@ It validates repository, runtime, service, image, and endpoint identity before o
 The caller supplies only the stable service role and protocol request.
 Transport failure never triggers execution of a more privileged local command while the shared-session lock is held.
 Outside an active session, a host shim may use its separately reviewed local implementation under the existing host coordination contract.
-TicGit proposes an independent host storage wrapper around the unmodified native CLI, not a host-router fallback.
-Its host wrapper and restricted agent executor select one host-local store and accept native concurrency behavior
-under the #link("tic-proxy.typ")[TicGit contract].
+TicGit uses an installed fork for ordinary host commands and a restricted agent broker, not a host-router fallback.
+Both select one host-local store and accept native concurrency behavior under the #link("tic-proxy.typ")[TicGit contract].
 
 == Cancellation and shutdown
 
@@ -285,13 +286,17 @@ An unavailable runtime or host service is an error, not proof that its resources
 
 === Command proxies
 
-Command proxies retain their fixed executable, argument grammar, repository identity, protected mounts, serialization, and Landlock or equivalent policy.
+Container command proxies retain their fixed executable, argument grammar, repository identity, protected mounts, serialization, and Landlock or equivalent policy.
 The lifecycle may create their containers and sockets but cannot generalize their protocols into arbitrary command execution.
 Jujutsu's writable metadata filesystem identity remains an adapter-specific requirement.
-The proposed TicGit adapter executes on the host, with a host-platform confinement boundary and host-native child ownership.
+The proposed TicGit adapter executes on the host under the #link("tic-proxy.typ")[TicGit command and outcome contract].
 Its transport may use a guest relay, but that relay has no database or native execution authority.
-The supervisor owns endpoint lifetime, not store-wide writer serialization.
-TicGit retains native SQLite locking without added command-level atomicity or external command locks.
+The launcher owns the broker as a child and retains the lifetime-pipe write end without passing it to unrelated children.
+On lifetime EOF, the broker closes its listener, cancels and reaps its active native child, then exits.
+Generic lifecycle cleanup handles any provider-owned relays; no durable PID record permits later process killing or adoption.
+If the broker itself dies, a native request may finish with unknown outcome; clients never replay it.
+This design adds no watchdog or recoverable daemon framework.
+The supervisor owns endpoint lifetime, not store-wide writer serialization; separate brokers retain native SQLite concurrency.
 
 === Caddy authenticated egress
 
@@ -321,8 +326,8 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
 + Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
 + Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
 + Completed: command proxies use supervised shared publication and host routing.
-+ Proposed: add a host-native `shared-session` command-proxy adapter and versioned host endpoint/process records for TicGit.
-  Reuse session publication and cleanup; add no persistent-store lifetime or cross-workspace attachment registry.
++ Proposed: add a required host-native `agent-launch` command-proxy adapter for TicGit.
+  Reuse per-launch readiness and resource cleanup with a launcher-owned child and lifetime pipe, not shared-session endpoint/token or durable PID records.
 + Completed: each Codex and Zulip trust domain uses a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container, minimal helper container, and private socket volume; credentials mount only into the helper, and the custom authenticated HTTP brokers are removed.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
 + External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
@@ -345,12 +350,12 @@ Do not retain a service-specific cleanup path beside generic cleanup as a fallba
 - Required per-launch failure prevents agent startup; best-effort failure leaves its projected endpoint unavailable, reports failure after bounded retries, and completes owned cleanup without terminating the agent.
 - Agent root cannot use lifecycle metadata to select another endpoint, credential domain, repository, executable, mount, or runtime operation.
 - Host routing validates published service and endpoint identity and never falls back to privileged local execution while a session is active.
-- TicGit host executors retain workspace-specific policy and ordinary shared-session lifetime.
-  Final-holder cleanup stops only that session's endpoint, relays, and children; native host commands need no endpoint or runtime.
-  The host wrapper and adapter startup prepare a protected database symlink for linked worktrees without changing native cwd.
-  Host cwd/argv remain unchanged; session cleanup retains the alias, database, and sidecars.
-  Native concurrency semantics apply without external command locks.
-  Neither guest nor relay opens SQLite files across a VM boundary.
+- TicGit retains accepted workspace capability authority but creates a fresh required per-launch broker, endpoint, and token.
+  Ordinary children and `/split` peers retain their launch's broker until final attachment release; one pane's exit does not stop peers.
+  Readiness precedes endpoint projection; lifetime EOF stops the broker's listener and active child without durable process recovery records.
+  Broker death may leave an unknown native outcome and never permits replay.
+  Native host commands need no endpoint or runtime; separate brokers may use the same database under the TicGit contract.
+  Launch cleanup retains the database and sidecars; neither guest nor relay opens SQLite files across a VM boundary.
 - Codex and Zulip share the Docker Official Image Caddy 2.11.4-alpine dependency and lifecycle pattern but not Caddy/helper containers, socket volumes, credentials, tokens, networks, mutable state, or failure domains.
 - Join and startup verify the OCI index, platform-manifest, image-configuration, and runtime container image chain plus platform tuple; implementation identity separately binds the mounted Caddy configuration digest.
 - Caddy, helper, and private socket-volume identities are lifecycle-owned; credentials mount only into the helper, and the removed custom HTTP parser, DNS parser, header/framing engine, and response-byte limiter are not retained as fallback resources.

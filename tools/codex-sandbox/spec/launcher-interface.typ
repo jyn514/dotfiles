@@ -340,7 +340,7 @@ normalization; it selects no service. Prompt editing uses host Pi's native edito
 Capability values are booleans. `zulip` defaults on;
 explicit `false` disables it. `nested-containers` and `flower-r2` default off.
 The proposed #link("tic-proxy.typ")[`tic` capability] is also a default-off version 2 boolean.
-It selects an installed, workspace-session-owned host executor, not a project command or native-TicGit image.
+It selects an installed, launcher-owned host broker with required `agent-launch` scope, not a project command or native-TicGit image.
 Reject a simultaneous project `commands.tic` declaration.
 This extension is not implemented; older loaders continue to reject the unknown capability.
 These capability keys select separate services, subject to their existing
@@ -671,14 +671,16 @@ Active legacy records reject the join without reading current configuration or d
 Legacy records remain parseable only for owner-validated stale recovery. Final-holder
 cleanup permits the next launch to migrate from current configuration.
 
-The proposed #link("tic-proxy.typ")[TicGit host executor] retains this workspace shared-session lifetime.
-Its accepted policy fixes the canonical host store, workspace-root cwd, installed native build, executor, confinement, and authenticated guest transport.
-The TicGit adapter prepares the dedicated store directory and protected database aliases under the TicGit contract.
-It uses Anthropic Sandbox Runtime for host confinement; requests never select cwd or store.
+The proposed #link("tic-proxy.typ")[TicGit broker] uses accepted workspace capability authority but has required `agent-launch` lifetime.
+Each launch owns a fresh broker endpoint and token; joins reuse the accepted `tic` opt-in, not another launch's broker.
+Ordinary children and `/split` peers use their owning launch's broker until final attachment release, not one broker per turn or request.
+The launcher retains a private lifetime-pipe write end that unrelated children do not inherit.
+On EOF, the broker closes its listener, cancels and reaps its active native child, then exits.
+No durable PID record authorizes later process adoption or killing.
+The #link("trusted-service-lifecycle.typ")[lifecycle contract] owns readiness and cleanup of any provider-owned relay resources.
 The capability requests no native-TicGit image; guest transport helpers, if needed, use installed helper ownership.
-A versioned accepted-session extension must represent host process ownership, endpoint credentials, and implementation identity.
-Do not reinterpret schema 4 container service records as host process authority.
-Native host calls remain independent of sandbox sessions; separate worktrees share a database, not accepted policy or endpoint ownership.
+The TicGit contract owns fixed cwd/store selection, request normalization, repository support restrictions, and native outcome semantics.
+Native host calls need no sandbox endpoint; separate brokers may use the same SQLite database without sharing endpoint ownership.
 
 == Acceptance evidence
 

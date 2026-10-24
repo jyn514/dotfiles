@@ -357,12 +357,15 @@ The owner-validated mode-`0600` metadata contains authenticated-egress session t
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
-The proposed #link("tic-proxy.typ")[TicGit capability] instead provides a restricted host-native endpoint owned by the workspace session.
-Its guest transport never opens the database; ordinary host `ti` uses a storage wrapper around the native CLI without this router or a runtime dependency.
-Both execution paths prepare the dedicated store directory and protected database aliases under the TicGit contract without changing native cwd.
-Agent execution uses Anthropic Sandbox Runtime; ordinary host calls do not depend on it.
-Host cwd/argv and native concurrency semantics remain unchanged.
-This adds no cross-VM writer lock or persistent service scope and does not change routing for other capabilities.
+The proposed #link("tic-proxy.typ")[TicGit capability] instead provides a restricted host-native broker with required `agent-launch` scope.
+Accepted workspace policy selects the capability; each launch owns a fresh endpoint and token, retained across its ordinary children and `/split` peers until final attachment release.
+The guest client reads guest file inputs and normalizes them to native stdin arguments; the host validates and forwards those arguments without opening guest paths.
+The TicGit contract owns that normalization, fixed command policy, repository support restrictions, and native outcome semantics.
+Its guest transport never opens the database; ordinary host `ti` uses the installed TicGit fork without this router or a running broker.
+Native host cwd and concurrency semantics remain unchanged; the approved ordinary `-F -` feature reads stdin.
+Separate brokers may use the same SQLite database without a cross-VM writer lock or persistent service scope.
+R2 is an analogy for per-launch listener and relay ownership, not a reusable guest-to-host execution route.
+This proposal does not change routing for other capabilities.
 For host-routable capabilities, the router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
