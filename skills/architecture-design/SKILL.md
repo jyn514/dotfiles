@@ -32,6 +32,17 @@ Do not load a chain of design procedures by default.
 For a staged new-tool workflow, consume approved requirements and repository integration constraints as the scope evidence. Do not invent product scope or observable behavior; record only design decisions needed to satisfy that evidence. The resulting design contributes to the implementation specification and does not replace it. For a greenfield tool, do not require a current implementation or extraction history.
 
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
+Before selecting state, tracking, acknowledgment, or coordination mechanisms, state the minimum observable outcome.
+For each added mechanism, name the user requirement or pre-existing constraint that the direct solution cannot meet without it.
+Treat stronger guarantees introduced by the agent as alternatives to justify, not prerequisites to satisfy.
+Compare the smallest existing-primitive solution first; show the decisive requirement and trade-off in the recommendation, not a separate checklist.
+
+Check whether the design fulfills the practical purpose of the user's request, not just its literal wording or the terms of an earlier proposal.
+What should the user or caller be able to know, decide, or do because of it?
+Compare a simpler approach against that purpose before preserving obligations inferred by the proposal.
+Ground your interpretation of intent in the request; distinguish it from explicit requirements, and do not silently override those requirements.
+For worked comparisons of added guarantees and operation scope, see the [contrasting examples](references/simplicity-examples.md).
+
 Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
 Before selecting a persistence mechanism, identify the current storage boundary.
 Record which principal owns the data, where and in what form it persists, its lifetime, who can read it, and who can rotate or recover it.
@@ -96,7 +107,18 @@ trust crossings, independent deployments or persisted formats, and diagnosis or 
 Read the corresponding [design-risk checks](references/design-risks.md#applicability) for each applicable case.
 Establish a concrete constraint or failure case before adding a mechanism; reuse settled contracts rather than reopening them.
 
-### 2. Find credible seams
+### 2. Challenge the hardest part
+
+Name the hardest part of the proposed design and the guarantee, distinction, or coordination that makes it hard.
+Recover the required outcome independently of the proposal; a request to elaborate is not approval of every mechanism.
+Ask whether the hard part can be made unnecessary before working out how to implement it.
+Construct the smallest complete caller-to-result path without it, keeping the required behavior, timing, and coverage fixed.
+Compare that alternative against the governing requirements: which required behavior fails, and where?
+If none fails, remove the hard part instead of elaborating its machinery.
+Otherwise retain it or find another approach; do not weaken the requirement without approval.
+Make the decisive comparison visible in the recommendation, not just a claim that the chosen design is simpler.
+
+### 3. Find credible seams
 
 A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests. For existing subsystems, seek a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit. For a staged greenfield new tool, justify responsibility, data, and effect seams by approved requirements and lifecycle ownership instead of extraction payoff.
 Consumer behavior should remain stable during extraction.
@@ -107,7 +129,7 @@ Before detailed design, run the cheapest check that could disprove the seam: a d
 For proposed reusable machinery, plugin hooks, or configurable dimensions, establish the current consumer or hard constraint first.
 Consult [complexity justification](../references/complexity-justification.md) only if necessity or required variability remains unclear.
 
-### 3. Define the target boundary
+### 4. Define the target boundary
 
 Maintain one evolving boundary contract, reusing existing code and settled design decisions.
 State moving and remaining responsibilities, allowed dependencies and forbidden reverse edges, API treatment, and any facade's justification and removal condition.
@@ -122,7 +144,7 @@ Prefer an existing domain owner for single-consumer policy.
 Create a module or component for a coherent lifecycle or shared contract, not a bag of helpers.
 A proposed cycle is a failed boundary unless an existing public adapter owns the composition.
 
-### 4. Compare maintenance gain with churn
+### 5. Compare maintenance gain with churn
 
 Count affected callers, tests, dynamically scoped state, generated artifacts, inventories, and compatibility surfaces. For a staged greenfield new tool, use implementation and integration cost in place of migration churn.
 Then name what becomes cheaper or safer: fewer co-edits, removed dependencies, lower-boundary tests, mechanically rejected invalid states, or a stable phase result.
@@ -138,7 +160,7 @@ Do not turn every responsibility into a namespace.
 For an existing subsystem, a partial extraction is complete when it removes the motivating pain.
 For a greenfield tool, stop once the architecture satisfies approved requirements without unsupported machinery.
 
-### 5. Challenge and present the design
+### 6. Challenge and present the design
 
 When a durable document is requested, follow the repository's convention; otherwise use Typst when available.
 Include only applicable scope, evidence, selected and rejected seams, ownership, data/dependency flow, compatibility, tests, risks, acceptance evidence, and open questions.
