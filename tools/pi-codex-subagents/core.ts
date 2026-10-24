@@ -13,7 +13,7 @@ import {
   assertSessionAuthority, type ControlRequest, type SavedSession,
 } from "./handoff.js";
 import {
-  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION, ROOT_LINK_TOOLS,
+  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION,
   admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
   type LinkResult, type LinkStatus, type LinkWorkerAddress,
 } from "./link.js";
@@ -1480,12 +1480,11 @@ export class AgentManager {
       // including persisted workers whose task-tool list predates the bridge.
       const configuredTools = info.tools.split(",").map(name => name.trim()).filter(Boolean);
       const modifiers = configuredTools.some(name => name.startsWith("+") || name.startsWith("-"));
-      const taskTools = modifiers ? configuredTools : configuredTools.filter(name => !ROOT_LINK_TOOLS.has(name));
-      if (!taskTools.length) args.push("--no-builtin-tools");
-      const bridgeTools = modifiers ? [...ROOT_LINK_TOOLS].map(name => `-${name}`).concat("+link_reply") : ["link_reply"];
+      if (!configuredTools.length) args.push("--no-builtin-tools");
+      const bridgeTools = modifiers ? ["+link_reply"] : ["link_reply"];
       // Keep modifiers as modifiers; native CLI validation still rejects mixed
       // or otherwise malformed tool lists rather than silently repairing them.
-      args.push("--tools", [...taskTools, ...bridgeTools].join(","));
+      args.push("--tools", [...configuredTools, ...bridgeTools].join(","));
     }
     args.push("--extension", fileURLToPath(new URL("./child-helper.ts", import.meta.url)));
     for (const extensionPath of extensionPaths) args.push("--extension", extensionPath);

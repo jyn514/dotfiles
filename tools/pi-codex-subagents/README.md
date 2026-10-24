@@ -188,14 +188,17 @@ This includes the sender's workers.
 The parent model does not forward those messages.
 Completed, interrupted, suspended, and paused workers are not restarted or resumed for delivery.
 
-For link communication, children expose only `link_reply`, which accepts a full received message ID and reply text.
-The manager preserves this helper even when a template explicitly limits task tools or selects no task tools.
-Root link tools are excluded from the child's tool set.
+`link_reply` accepts a full received message ID and reply text.
+When pi-link is enabled, it owns that public tool and delegates admitted manager-delivery references to the helper; direct endpoint references stay with pi-link.
+When pi-link is disabled, the helper registers the fallback tool at session startup.
+The manager preserves reply support even when a template explicitly limits task tools or selects no task tools.
+Other link tools follow ordinary extension configuration and the template's explicit tool list, with no worker-role exclusion.
 A queued message does not grant reply permission until it enters that child's native transcript.
 The manager validates the worker's stable ID and parent session before routing its reply.
 A root's answer returns only to that requesting worker, not its siblings or the owner's model context.
 Ordinary task completions still go to the parent.
-Loading pi-link explicitly in a child template does not give the child a root connection or root link tools.
+When pi-link is enabled, it loads its ordinary tools and an independent connection in the child.
+Use `disabledExtensions` to opt out of that connection; a read-only explicit tool list still restricts the model's tools.
 
 Worker delivery requires Pi's native fresh-input admission and pause APIs in children.
 Missing integration reports `unsupported`; stopped or paused destinations report `skipped`.

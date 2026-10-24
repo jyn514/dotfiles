@@ -86,6 +86,28 @@ const respond: FauxResponseFactory = (context) => {
       fauxToolCall("link_reply", { replyTo: request.replyTo, message: "queued attempt" }),
     ], { stopReason: "toolUse" });
   }
+  const accessTask = context.messages.filter(message => message.role === "user").map(messageText)
+    .map(text => text.match(/^link-tool-access:(.+)$/m)).find(Boolean);
+  if (accessTask) {
+    const request = JSON.parse(accessTask[1]) as { path: string; name: string; group: string };
+    const calls = context.messages.filter(message => message.role === "assistant")
+      .flatMap(message => message.content).filter(part => part.type === "toolCall");
+    if (!calls.some(call => call.name === "link_set_identity")) return fauxAssistantMessage(fauxToolCall("link_set_identity", {
+      name: request.name, group: request.group,
+    }), { stopReason: "toolUse" });
+    if (!calls.some(call => call.name === "faux_hold")) return fauxAssistantMessage(fauxToolCall("faux_hold", {
+      path: request.path,
+    }), { stopReason: "toolUse" });
+    if (!calls.some(call => call.name === "link_list")) return fauxAssistantMessage(fauxToolCall("link_list", {}), { stopReason: "toolUse" });
+    const reference = context.messages.filter(message => message.role === "user").map(messageText)
+      .filter(text => text.includes("native-access-request:"))
+      .flatMap(text => [...text.matchAll(/Message ID: ([a-z0-9-]+)/g)].map(match => ({ id: match[1],
+        mode: text.includes("native-access-request:direct") ? "direct" : "managed" })))
+      .find(reference => !calls.some(call => call.name === "link_reply" && call.arguments.replyTo === reference.id));
+    if (reference) return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference.id,
+      message: `native-access-answer:${reference.mode}` }), { stopReason: "toolUse" });
+    return fauxAssistantMessage("faux:link-access-complete");
+  }
   const invoke = text.match(/^invoke-tool:(.+)$/m);
   if (invoke) {
     const request = JSON.parse(invoke[1]) as { name: string; args: Record<string, unknown> };

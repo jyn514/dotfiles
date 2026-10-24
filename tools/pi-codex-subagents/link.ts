@@ -5,14 +5,14 @@
 export const LINK_VERSION = 1;
 export const LINK_DISCOVER = "pi-link:workers:v1";
 export const LINK_REPLY = "pi-link:worker-reply:v1";
+/** Same-process dispatch from pi-link to an admitted manager-delivery reference. */
+export const LINK_CHILD_REPLY = "pi-link:child-reply:v1";
 export const LINK_COMMAND = "subagent-link";
 export const LINK_CONTROL_ENTRY = "subagent-link-control";
 export const LINK_MESSAGE_TYPE = "subagent-link-message";
 /** RPC's public, fire-and-forget notify event avoids waiting on a tool's own result. */
 export const LINK_REPLY_NOTIFY = "subagent-link-reply:";
 export const LINK_TIMEOUT_MS = 2_000;
-/** Managed children never inherit root link tools; their only link API is link_reply. */
-export const ROOT_LINK_TOOLS: ReadonlySet<string> = new Set(["link_send", "link_set_identity", "link_list", "link_compact"]);
 export type LinkStatus = "submitted" | "failed" | "skipped" | "unsupported" | "unknown";
 export interface LinkWorkerAddress { workerId: string; taskName: string }
 export interface LinkDelivery {
@@ -45,6 +45,13 @@ export interface LinkWorkerReply {
   worker: LinkWorkerAddress;
   reference: LinkDelivery;
   message: string;
+  respond(result: Promise<LinkResult>): void;
+}
+export interface LinkChildReply {
+  version: 1;
+  replyTo: string;
+  message: string;
+  signal?: AbortSignal;
   respond(result: Promise<LinkResult>): void;
 }
 export interface LinkMessageDetails {

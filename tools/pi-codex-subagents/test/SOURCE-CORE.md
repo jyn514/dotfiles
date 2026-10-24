@@ -126,8 +126,10 @@ The removed manager/helper checkpoint handoff is not a supported integration.
 `manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
 It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.
 It also checks refusal to wake paused or completed children and reply-tool availability with empty and modifier-based task-tool selections.
-`link-integration.test.ts` additionally loads the production subagent extension and pi-link in two real RPC roots connected over WebSocket.
-It checks sender-worker inclusion, two remote siblings independently asking the same question, worker author attribution, private replies, and the absence of worker root connections.
+`link-integration.test.ts` additionally loads the production subagent extension and pi-link in real RPC sessions connected over WebSocket.
+Its helper-only case explicitly excludes pi-link from workers and checks sender-worker inclusion, two remote siblings independently asking the same question, worker author attribution, private replies, and the absence of independent worker connections.
+Its configured full-worker case checks independent worker endpoints and replies through both direct endpoint delivery and manager delivery.
+It also checks ordinary link-tool availability, explicit selected-tool lists, and a read-only scout list that retains only helper reply support alongside its task tools.
 Only provider responses are scripted; production routing and lifecycle behavior are unchanged.
 
 The suite covers source resolution (including rejection of stale installed `dist/index.js`),

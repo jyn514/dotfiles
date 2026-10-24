@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
-  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_MESSAGE_TYPE, LINK_REPLY_NOTIFY, LINK_VERSION, ROOT_LINK_TOOLS,
+  LINK_CHILD_REPLY, LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_MESSAGE_TYPE, LINK_REPLY_NOTIFY, LINK_VERSION,
   admittedLink, isLinkDelivery, linkFailure,
-  type LinkCommand, type LinkControlRecord, type LinkMessageDetails, type LinkReplyNotification, type LinkResult,
+  type LinkChildReply, type LinkCommand, type LinkControlRecord, type LinkMessageDetails, type LinkReplyNotification, type LinkResult,
 } from "./link.js";
 
 // Bound the whole worker tool wait, including manager/child transport.
@@ -19,13 +19,34 @@ export function registerChildLink(pi: ExtensionAPI): void {
   const reset = () => {
     for (const request of [...pending.values()]) request.finish(linkFailure("unknown", "worker_session_closed"));
   };
-  pi.on("session_start", () => {
+  let context: ExtensionContext | undefined;
+  pi.on("session_start", (_event, ctx) => {
     reset();
-    // Templates select task tools, not root link authority. The helper always
-    // offers this reply-only tool, even with an explicit inherited allowlist.
-    pi.setActiveTools([...pi.getActiveTools().filter(name => !ROOT_LINK_TOOLS.has(name)), "link_reply"]);
+    context = ctx;
+    // Full pi-link owns the public tool when enabled. Runtime registration is
+    // supported by Pi, so the helper supplies a fallback only after discovery.
+    if (!pi.getAllTools().some(tool => tool.name === "link_reply")) {
+      pi.registerTool({
+        name: "link_reply", label: "Link Reply",
+        description: "Privately reply to the author of a message actually delivered to this worker. replyTo must be a full received message ID. Cannot choose another recipient or broadcast. Returns routing acceptance, not a model response.",
+        parameters: Type.Object({ replyTo: Type.String({ minLength: 1 }), message: Type.String({ minLength: 1 }) },
+          { additionalProperties: false }),
+        execute: (_toolCallId, params, signal, _onUpdate, toolContext) => reply(params, signal, toolContext),
+      });
+    }
+    // Keep parent replies available without changing the template's other tools.
+    pi.setActiveTools([...pi.getActiveTools(), "link_reply"]);
   });
-  pi.on("session_shutdown", reset);
+  pi.events.on(LINK_CHILD_REPLY, (request: LinkChildReply) => {
+    // Claim only actual manager-delivered references. Direct endpoint messages
+    // remain pi-link's responsibility; a claimed failure must never fall through.
+    const ctx = context;
+    if (request?.version !== LINK_VERSION || !ctx || !ownerSessionId || !workerId) return;
+    if (!ctx.sessionManager.getBranch().some(entry =>
+      admittedLink(entry, ownerSessionId, workerId, ctx.sessionManager.getSessionId())?.id === request.replyTo)) return;
+    request.respond(reply(request, request.signal, ctx));
+  });
+  pi.on("session_shutdown", () => { reset(); context = undefined; });
 
   pi.registerCommand(LINK_COMMAND, {
     description: "Internal subagent link delivery and routing receipts",
@@ -82,38 +103,32 @@ export function registerChildLink(pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerTool({
-    name: "link_reply", label: "Link Reply",
-    description: "Privately reply to the author of a message actually delivered to this worker. replyTo must be a full received message ID. Cannot choose another recipient or broadcast. Returns routing acceptance, not a model response.",
-    parameters: Type.Object({ replyTo: Type.String({ minLength: 1 }), message: Type.String({ minLength: 1 }) },
-      { additionalProperties: false }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      if (!ownerSessionId || !workerId) return linkFailure("unsupported", "worker_manager_unavailable");
-      if (!params.message.trim()) return linkFailure("failed", "invalid_message");
-      if (typeof pi.getPauseState !== "function") return linkFailure("unsupported", "native_pause_state_unavailable");
-      if (pi.getPauseState() !== "unpaused") return linkFailure("skipped", "worker_paused");
-      const delivered = ctx.sessionManager.getBranch().some(entry =>
-        admittedLink(entry, ownerSessionId, workerId, ctx.sessionManager.getSessionId())?.id === params.replyTo);
-      if (!delivered) return linkFailure("failed", "unknown_reference");
-      if (signal?.aborted) return linkFailure("skipped", "aborted_before_send");
-      const requestId = randomUUID();
-      return new Promise<LinkResult>(resolve => {
-        const finish = (result: LinkResult) => {
-          if (!pending.delete(requestId)) return;
-          clearTimeout(timer);
-          signal?.removeEventListener("abort", abort);
-          resolve(result);
-        };
-        const timer = setTimeout(() => finish(linkFailure("unknown", "worker_routing_deadline")), REPLY_TIMEOUT_MS);
-        const abort = () => finish(linkFailure("unknown", "aborted_after_send"));
-        pending.set(requestId, { finish });
-        signal?.addEventListener("abort", abort, { once: true });
-        const request: LinkReplyNotification = { version: LINK_VERSION, requestId, replyTo: params.replyTo, message: params.message };
-        // RPC notify is immediate, unlike sendMessage: a transcript message can
-        // wait for this very tool to finish and would deadlock the reply path.
-        try { ctx.ui.notify(LINK_REPLY_NOTIFY + JSON.stringify(request), "info"); }
-        catch { finish(linkFailure("unknown", "worker_transport_failed")); }
-      });
-    },
-  });
+  async function reply(params: { replyTo: string; message: string }, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<LinkResult> {
+    if (!ownerSessionId || !workerId) return linkFailure("unsupported", "worker_manager_unavailable");
+    if (!params.message.trim()) return linkFailure("failed", "invalid_message");
+    if (typeof pi.getPauseState !== "function") return linkFailure("unsupported", "native_pause_state_unavailable");
+    if (pi.getPauseState() !== "unpaused") return linkFailure("skipped", "worker_paused");
+    const delivered = ctx.sessionManager.getBranch().some(entry =>
+      admittedLink(entry, ownerSessionId, workerId, ctx.sessionManager.getSessionId())?.id === params.replyTo);
+    if (!delivered) return linkFailure("failed", "unknown_reference");
+    if (signal?.aborted) return linkFailure("skipped", "aborted_before_send");
+    const requestId = randomUUID();
+    return new Promise<LinkResult>(resolve => {
+      const finish = (result: LinkResult) => {
+        if (!pending.delete(requestId)) return;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        resolve(result);
+      };
+      const timer = setTimeout(() => finish(linkFailure("unknown", "worker_routing_deadline")), REPLY_TIMEOUT_MS);
+      const abort = () => finish(linkFailure("unknown", "aborted_after_send"));
+      pending.set(requestId, { finish });
+      signal?.addEventListener("abort", abort, { once: true });
+      const request: LinkReplyNotification = { version: LINK_VERSION, requestId, replyTo: params.replyTo, message: params.message };
+      // RPC notify is immediate, unlike sendMessage: a transcript message can
+      // wait for this very tool to finish and would deadlock the reply path.
+      try { ctx.ui.notify(LINK_REPLY_NOTIFY + JSON.stringify(request), "info"); }
+      catch { finish(linkFailure("unknown", "worker_transport_failed")); }
+    });
+  }
 }
