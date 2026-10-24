@@ -21,6 +21,12 @@ For edits prompted by a failed session, inspect the recorded decision and reject
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
 
+Do not overfit a revision to the session that exposed the failure.
+Extract the reusable decision error; do not promote that session's vocabulary, preferred solution, or special-case sequence into general rules.
+Keep task-specific solutions in examples unless independent evidence or a hard constraint supports broader application.
+Use §6's scope and interaction checks to challenge the rule beyond that session, including cases where a rejected mechanism is required.
+Matching the corrected answer in the originating task does not establish generalization.
+
 Require a concrete repeated use, second consumer, or hard constraint.
 Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
 
