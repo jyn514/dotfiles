@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import stat
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -63,14 +64,23 @@ def resolved_plan(root: Path, image: str, uid: int, gid: int):
 
 
 def credential_source_identity(directory: Path) -> str:
-    """Identify the admitted credential view without serializing its path or contents."""
-    directory_stat = directory.stat()
-    auth_stat = (directory / "auth.json").stat()
+    """Identify the admitted credential directory while allowing owned token refreshes."""
+    directory_stat = directory.lstat()
+    auth_stat = (directory / "auth.json").lstat()
+    if (not stat.S_ISDIR(directory_stat.st_mode) or
+            stat.S_IMODE(directory_stat.st_mode) != 0o700):
+        raise ValueError("Codex credential directory must be a mode-0700 directory")
+    if (not stat.S_ISREG(auth_stat.st_mode) or auth_stat.st_nlink != 1 or
+            auth_stat.st_uid != directory_stat.st_uid or
+            stat.S_IMODE(auth_stat.st_mode) != 0o600):
+        raise ValueError("Codex credentials must be an owned, unlinked mode-0600 regular file")
     value = {
         "domain": CREDENTIAL_DOMAIN,
         "directory": [directory_stat.st_dev, directory_stat.st_ino, directory_stat.st_uid,
                       directory_stat.st_mode & 0o777],
-        "file": [auth_stat.st_dev, auth_stat.st_ino, auth_stat.st_uid, auth_stat.st_mode & 0o777],
+        # The trusted helper atomically replaces auth.json after OAuth refresh.
+        # Its inode is mutable content state, not the mounted directory's identity.
+        "file-policy": [auth_stat.st_uid, auth_stat.st_mode & 0o777],
     }
     return "sha256:" + hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 

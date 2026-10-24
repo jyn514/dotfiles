@@ -226,7 +226,12 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
             raise ConfigError("version 1 proxy manifest has missing or unknown fields")
         capabilities = data.get("capabilities", {})
         images = data.get("images")
-        if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
+        # Accepted snapshots outlive the source capability catalog. Their command and
+        # service records remain authoritative, so retain retired boolean selections.
+        if (not isinstance(capabilities, dict) or
+                (not accepted and not set(capabilities) <= CAPABILITIES) or
+                (accepted and any(not isinstance(name, str) or not NAME_RE.fullmatch(name)
+                                  for name in capabilities)) or
                 not all(isinstance(value, bool) for value in capabilities.values())):
             raise ConfigError("proxy manifest has invalid capabilities")
         if not accepted and capabilities.get("flower-r2", False):
@@ -946,7 +951,7 @@ def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
     try:
         policy = load_accepted_manifest(data=accepted["policy"])
     except ConfigError as error:
-        raise ConfigError("active session has invalid accepted policy") from error
+        raise ConfigError(f"active session has invalid accepted policy: {error}") from error
     service_roles = list(services)
     if len(service_roles) != len(set(service_roles)):
         raise ConfigError("active session contains duplicate service roles")

@@ -380,6 +380,54 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "must contain a policy"):
             sandbox_proxies.load_accepted_manifest(data=None)
 
+    def test_accepted_policy_retains_retired_capabilities(self):
+        data = {"version": 1, "commands": {},
+                "capabilities": {"agent-room": True, "tic": False}}
+        accepted = sandbox_proxies.load_accepted_manifest(data=data)
+        self.assertEqual(data["capabilities"], accepted["capabilities"])
+
+        path = self.sandbox / "proxy-commands.json"
+        path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "invalid capabilities"):
+            sandbox_proxies.load_manifest(self.repo)
+
+    def test_accepted_policy_still_rejects_malformed_capabilities(self):
+        envelope = self.schema4({})
+        envelope["accepted"]["policy"]["capabilities"] = {"retired capability": False}
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError,
+                                    "invalid accepted policy: proxy manifest has invalid capabilities"):
+            sandbox_proxies._accepted_schema4(
+                envelope, expected_parameters={"uid": 501, "gid": 20})
+
+    def test_credential_identity_allows_refresh_but_not_source_replacement(self):
+        root = Path(self.temporary.name)
+        directory = root / "auth"
+        directory.mkdir(mode=0o700)
+        directory.chmod(0o700)
+        auth = directory / "auth.json"
+        auth.write_text('{"tokens": {}}')
+        auth.chmod(0o600)
+        identity = sandbox_proxies.credential_source_identity(directory)
+
+        replacement = directory / "replacement"
+        replacement.write_text('{"tokens": {"access_token": "refreshed"}}')
+        replacement.chmod(0o600)
+        replacement.replace(auth)
+        self.assertEqual(identity, sandbox_proxies.credential_source_identity(directory))
+
+        auth.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "mode-0600"):
+            sandbox_proxies.credential_source_identity(directory)
+        auth.chmod(0o600)
+
+        directory.rename(root / "old-auth")
+        directory.mkdir(mode=0o700)
+        directory.chmod(0o700)
+        auth = directory / "auth.json"
+        auth.write_text('{"tokens": {}}')
+        auth.chmod(0o600)
+        self.assertNotEqual(identity, sandbox_proxies.credential_source_identity(directory))
+
     def test_accepted_v1_images_still_validate_resolver_shape(self):
         for images in ({"resolver": {"kind": "command", "argv": []}, "base": "base"},
                        {"resolver": {"kind": "command", "argv": ["resolver"]}, "base": "../base"},
