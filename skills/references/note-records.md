@@ -1,6 +1,7 @@
 # Note records
 
-Read this reference before writing or updating an agent note in `notes/`.
+Read this reference before creating, updating, or removing an agent note in `notes/`.
+Ask: “What future decision would this change, and where else is that information preserved?”
 Record a note only if it prevents a concrete mistake or repeated investigation and has no maintained owner already preserving it.
 
 ## Choose what to record

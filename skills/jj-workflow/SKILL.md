@@ -39,9 +39,6 @@ For ordinary path history, pass the path directly:
 jj log -n 20 doc/spec/flower --no-graph
 ```
 
-When investigating a constraint, start with the relevant `jj log`.
-Use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain it, and read their tests.
-
 To combine path history with a revset, use `files()` with a quoted path expression:
 
 ```bash
@@ -49,6 +46,14 @@ jj log -r 'files("doc/spec/flower/**") & ancestors(@)' --no-graph
 ```
 
 `files(doc/spec/flower/**)` is invalid. For complex selection, consult `jj help -k filesets` and `jj help -k revsets`.
+
+## Investigate historical constraints
+
+When an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix, inspect its history before changing it.
+Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
+Start with the relevant `jj log`.
+Use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain it, and read the tests that explain the constraint.
+Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
 ## Commit
 
