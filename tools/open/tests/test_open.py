@@ -170,19 +170,20 @@ class OpenScriptTest(unittest.TestCase):
         editor.assert_not_called()
         os_open.assert_called_once_with([self.real(target)])
 
-    def test_os_open_returns_xdg_open_exit_code(self) -> None:
+    def test_os_open_execs_xdg_open(self) -> None:
         target = self.root / "note.txt"
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        completed = subprocess.CompletedProcess(["xdg-open", str(target)], 23)
         with (
             mock.patch.object(module, "cmdexists", return_value=True),
-            mock.patch.object(module.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(module.os, "execvp") as execvp,
         ):
-            self.assertEqual(module.os_open([str(target)]), 23)
+            module.os_open([str(target)])
 
-        run.assert_called_once_with(["xdg-open", str(target)], check=False)
+        execvp.assert_called_once_with(
+            "xdg-open", ["xdg-open", str(target)]
+        )
 
     def test_broken_profile_path_refresh_does_not_prevent_opening(self) -> None:
         module = self.load_open_module()
@@ -488,17 +489,15 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
         bin_dir = str(PUBLIC_BIN)
-        completed = subprocess.CompletedProcess(["open", str(target)], 0)
-
         with (
             mock.patch.object(module, "cmdexists", return_value=False),
             mock.patch.dict(module.os.environ, {"PATH": f"{bin_dir}{os.pathsep}/usr/bin"}),
-            mock.patch.object(module.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(module.os, "execvp") as execvp,
         ):
-            self.assertEqual(module.os_open([str(target)]), 0)
+            module.os_open([str(target)])
             self.assertEqual(module.os.environ["PATH"], "/usr/bin")
 
-        run.assert_called_once_with(["open", str(target)], check=False)
+        execvp.assert_called_once_with("open", ["open", str(target)])
 
     def test_editor_default_sends_nvim_position_to_tmux(self) -> None:
         target = self.root / "note.txt"

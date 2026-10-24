@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 from urllib.parse import unquote, urlsplit
 
 
@@ -327,12 +328,13 @@ end tell"""
         subprocess.run(["osascript", "-e", script], check=False)
 
 
-def os_open(args: list[str]) -> int:
+def os_open(args: list[str]) -> NoReturn:
     if cmdexists("xdg-open"):
-        return subprocess.run(["xdg-open", *args], check=False).returncode
+        command = "xdg-open"
     else:
         remove_dir_from_path(str(Path(__file__).parent))
-        return subprocess.run(["open", *args], check=False).returncode
+        command = "open"
+    os.execvp(command, [command, *args])
 
 
 def duti_default(file: str) -> str:
