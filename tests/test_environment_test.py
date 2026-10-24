@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import selectors
 import signal
 import shutil
@@ -25,6 +26,7 @@ UNSET_NAMES = (
     "JJ_PROXY_ROOTS", "JJ_PROXY_WORKSPACES", "JJ_PROXY_STARTUP_TIMEOUT_SECS",
     "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "PI_MODEL_FILE", "PI_MODEL_SESSION_ID", "PI_CALL_MODEL",
 )
+TEST_ENVIRONMENT = runpy.run_path(str(WRAPPER))
 
 
 class TestEnvironmentTest(unittest.TestCase):
@@ -132,6 +134,24 @@ class TestEnvironmentTest(unittest.TestCase):
             "CODEX_SIDECAR_KEY", "CODEX_SIDECAR_URL", "SANDBOX_PROXY_DIR",
         ):
             self.assertNotIn(name, environment)
+
+    def test_blocks_host_elevation_commands(self) -> None:
+        for command in ("doas", "pkexec", "sudo"):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [WRAPPER, command, "true"],
+                    env=self.inherited,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=15,
+                )
+
+                self.assertEqual(126, result.returncode, result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertIn(
+                    f"blocked host elevation command: {command}", result.stderr
+                )
 
     def mise_shim(self) -> dict[str, str]:
         shims = self.root / "shims"
@@ -372,7 +392,18 @@ class TestEnvironmentTest(unittest.TestCase):
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
         self.assertIn("directory requires write and search access", result.stderr)
+        self.assertNotIn("execution sandbox", result.stderr)
         self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_cargo_home_error_suggests_external_access_controls(self) -> None:
+        self.cargo_home.mkdir(mode=0o700)
+
+        error = TEST_ENVIRONMENT["cargo_home_error"](
+            self.cargo_home, OSError("directory requires write and search access")
+        )
+
+        self.assertIn("check ACLs or rerun outside the execution sandbox", str(error))
+        self.assertIn("set DOTFILES_TEST_CARGO_HOME", str(error))
 
     @unittest.skipUnless(shutil.which("fish"), "Fish is required")
     def test_interactive_fish_loads_config_without_background_completion_generation(self) -> None:

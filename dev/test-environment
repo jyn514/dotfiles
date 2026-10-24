@@ -7,10 +7,40 @@ import os
 from pathlib import Path
 import signal
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+
+
+BLOCKED_ELEVATION_COMMANDS = ("doas", "pkexec", "sudo")
+
+
+def mode_allows_write_and_search(path: Path) -> bool:
+    status = path.stat()
+    if status.st_uid == os.geteuid():
+        permissions = stat.S_IMODE(status.st_mode) >> 6
+    elif status.st_gid == os.getegid() or status.st_gid in os.getgroups():
+        permissions = stat.S_IMODE(status.st_mode) >> 3
+    else:
+        permissions = stat.S_IMODE(status.st_mode)
+    return permissions & 0o3 == 0o3
+
+
+def cargo_home_error(path: Path, error: OSError) -> OSError:
+    message = f"cannot prepare Cargo test home {path}: {error}"
+    try:
+        mode_allows_access = mode_allows_write_and_search(path)
+    except OSError:
+        mode_allows_access = False
+    if mode_allows_access:
+        message += (
+            "\naccess is blocked beyond file modes; check ACLs or rerun outside "
+            "the execution sandbox"
+            "\nset DOTFILES_TEST_CARGO_HOME to a writable persistent directory"
+        )
+    return OSError(message)
 
 
 def enable_child_subreaper() -> None:
@@ -143,7 +173,7 @@ def main(arguments: list[str]) -> int:
         if not os.access(cargo_home, os.W_OK | os.X_OK):
             raise OSError("directory requires write and search access")
     except OSError as error:
-        raise OSError(f"cannot prepare Cargo test home {cargo_home}: {error}") from error
+        raise cargo_home_error(cargo_home, error) from error
     environment["DOTFILES_TEST_CARGO_HOME"] = str(cargo_home)
     environment["CARGO_HOME"] = str(cargo_home)
 
@@ -157,6 +187,8 @@ def main(arguments: list[str]) -> int:
         for tool, real in real_tools.items():
             if "/" in real:
                 (tool_directory / tool).symlink_to(os.path.abspath(real))
+        for tool in BLOCKED_ELEVATION_COMMANDS:
+            (tool_directory / tool).symlink_to(Path(__file__).resolve())
         environment["PATH"] = str(tool_directory) + os.pathsep + environment.get("PATH", os.defpath)
         # HotSpot reads _JAVA_OPTIONS after other option sources. Retain caller
         # options but make the private home win over inherited home properties.
@@ -204,6 +236,13 @@ def main(arguments: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    invoked_name = Path(sys.argv[0]).name
+    if invoked_name in BLOCKED_ELEVATION_COMMANDS:
+        print(
+            f"test-environment: blocked host elevation command: {invoked_name}",
+            file=sys.stderr,
+        )
+        raise SystemExit(126)
     try:
         status = main(sys.argv[1:])
     except OSError as error:
