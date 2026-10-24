@@ -20,6 +20,7 @@ import re
 import shlex
 import shutil
 import secrets
+import selectors
 import signal
 import socket
 import stat
@@ -45,6 +46,7 @@ from workspace_layout import (
 )
 from keychain_bridge import HostKeychainBridge
 from host_tcp_bridge import FixedTcpBridge
+from tic_broker import POLICY_VERSION as TIC_POLICY_VERSION, InstalledTicBuild, TicBrokerLaunch
 from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, check_agent_pi_revision, resolve_agent
 from trusted_services import (
@@ -153,6 +155,9 @@ class State:
     handoff_origin: Path | None = None
     gateway_handle: GatewayHandle | None = None
     keychain_handle: KeychainHandle | None = None
+    tic_handle: TicBrokerLaunch | None = None
+    tic_resources: RelayResourcePlan | None = None
+    tic_environment: dict[str, str] = field(default_factory=dict)
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
     cleaned: bool = False
@@ -1117,6 +1122,288 @@ def start_keychain(state: State) -> list[str]:
         return []
 
 
+def installed_tic_build(state: State) -> InstalledTicBuild:
+    # Installed host authority only: neither repository policy nor inherited
+    # environment selects executable paths or a different installed manifest.
+    manifest = state.home / '.local/share/tic-proxy/installed.json'
+    if manifest.resolve(strict=True) != manifest or not manifest.is_file():
+        raise LauncherError('TicGit installed manifest must be a canonical regular file')
+    build = InstalledTicBuild.load(manifest)
+    writable = [workspace.host_root for workspace in state.workspaces]
+    skills = getattr(state, 'skills_source', None)
+    if skills is not None:
+        writable.append(skills)
+    for path in (manifest, build.broker_executable, build.native_executable,
+                 Path(str(build.native_executable) + '.tic-proxy.json'),
+                 build.guest_client_executable):
+        if (path.resolve(strict=True) != path or not path.is_file()
+                or path.stat().st_nlink != 1):
+            raise LauncherError('TicGit installed artifacts must be canonical regular files without hard links')
+        if any(path.is_relative_to(root) for root in writable):
+            raise LauncherError('TicGit installed artifacts must not be guest-writable workspace files')
+    return build
+
+
+def inspect_tic_context(build: InstalledTicBuild, workspace: WorkspaceLayout) -> dict[str, str]:
+    # Installed broker supplies configuration-free metadata authority. Ordinary
+    # host Git captures normal effective settings once, before broker isolation.
+    build.verify()
+    for path in (workspace.host_root, workspace.common_dir):
+        if not path.is_absolute() or path.resolve(strict=True) != path or not path.is_dir():
+            raise LauncherError('TicGit context requires accepted canonical repository paths')
+    environment = dict(os.environ)
+    for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+                'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE'):
+        environment.pop(key, None)
+    # Preserve HOME/XDG and ordinary host Git configuration inputs, including
+    # COUNT/PARAMETERS and legacy GIT_CONFIG. Never source them from the guest.
+    deadline = time.monotonic() + 10
+    collected = 0
+
+    def capture(argv):
+        nonlocal collected
+        if time.monotonic() >= deadline:
+            raise LauncherError('TicGit trusted context capture timed out; no fallback')
+        try:
+            process = subprocess.Popen(
+                argv, cwd=workspace.host_root, env=environment, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True)
+        except OSError:
+            raise LauncherError('TicGit trusted context child could not start; no fallback') from None
+        output = bytearray()
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise TimeoutError
+                    chunk = os.read(process.stdout.fileno(), 65537 - collected)
+                    if not chunk:
+                        break
+                    collected += len(chunk)
+                    if collected > 65536:
+                        raise LauncherError('TicGit trusted context exceeds the output limit')
+                    output.extend(chunk)
+            status = process.wait(timeout=max(0, deadline - time.monotonic()))
+            return status, bytes(output)
+        except (TimeoutError, subprocess.TimeoutExpired):
+            raise LauncherError('TicGit trusted context capture timed out; no fallback') from None
+        finally:
+            try:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=2)
+            finally:
+                process.stdout.close()
+
+    status, output = capture([
+        str(build.broker_executable), 'inspect-context', '--workspace', str(workspace.host_root),
+        '--common-dir', str(workspace.common_dir)])
+    if status != 0:
+        raise LauncherError('TicGit trusted context inspection failed; no fallback')
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate context field')
+            result[key] = value
+        return result
+    try:
+        value = json.loads(output.decode('utf-8'), object_pairs_hook=unique)
+    except (ValueError, UnicodeError, RecursionError):
+        raise LauncherError('TicGit trusted context returned invalid JSON') from None
+    fields = {'version', 'policy_version', 'native_revision', 'workspace', 'common_dir',
+              'invocation_git_dir'}
+    if (not isinstance(value, dict) or set(value) != fields
+            or type(value['version']) is not int or value['version'] != 1
+            or type(value['policy_version']) is not int or value['policy_version'] != TIC_POLICY_VERSION
+            or value['native_revision'] != build.native_revision
+            or value['workspace'] != str(workspace.host_root)
+            or value['common_dir'] != str(workspace.common_dir)
+            or not isinstance(value['invocation_git_dir'], str)):
+        raise LauncherError('TicGit trusted context returned invalid authority')
+    try:
+        invocation = Path(value['invocation_git_dir'])
+        str(invocation).encode('utf-8')
+        if (not invocation.is_absolute() or str(invocation) != value['invocation_git_dir']
+                or invocation.resolve(strict=True) != invocation or not invocation.is_dir()):
+            raise ValueError
+    except (OSError, ValueError, UnicodeError):
+        raise LauncherError('TicGit trusted context returned invalid invocation directory') from None
+
+    context = {}
+    for field, key, fallback in (('user_name', 'user.name', 'unknown'),
+                                 ('user_email', 'user.email', 'unknown'),
+                                 ('namespace', 'meta.namespace', 'meta')):
+        status, output = capture(['git', f'--git-dir={invocation}', 'config', '--null', '--get', key])
+        if status == 1 and not output:
+            context[field] = fallback
+        elif status == 0 and output.endswith(b'\0') and b'\0' not in output[:-1]:
+            # Git returns raw config bytes. Match native lossy string conversion;
+            # remove only the record delimiter, preserving empty/whitespace data.
+            context[field] = output[:-1].decode('utf-8', errors='replace')
+        else:
+            raise LauncherError(f'TicGit host Git configuration lookup failed for {key}; no fallback')
+    return context
+
+
+def stage_tic_client(build: InstalledTicBuild) -> Path:
+    platform = OUTER_RUNTIME.build_platform()
+    if build.guest_client_platform != platform:
+        raise LauncherError('TicGit guest client does not match the admitted provider platform')
+    with build.guest_client_executable.open('rb') as stream:
+        header = stream.read(20)
+    # A manifest platform label is not evidence that a macOS host client can
+    # execute in Linux. Require a 64-bit little-endian ELF for the target ISA.
+    machine = {'linux/amd64': 62, 'linux/arm64': 183}.get(platform)
+    if (len(header) < 20 or header[:6] != b'\x7fELF\x02\x01'
+            or int.from_bytes(header[18:20], 'little') != machine):
+        raise LauncherError('TicGit guest client is not a matching Linux ELF executable')
+    directory = Path(tempfile.mkdtemp(prefix='sandbox-tic-client-', dir=scratch_directory()))
+    try:
+        destination = directory / 'ti'
+        shutil.copyfile(build.guest_client_executable, destination)
+        with destination.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest != build.guest_client_sha256:
+            raise LauncherError('TicGit staged guest client hash mismatch')
+        destination.chmod(0o555)
+        relay = directory / 'relay'
+        relay.mkdir()
+        for name in ('tic_relay.py', 'host_tcp_bridge.py'):
+            source = Path(__file__).resolve().with_name(name)
+            with source.open('rb') as stream:
+                expected = hashlib.file_digest(stream, 'sha256').hexdigest()
+            target = relay / name
+            shutil.copyfile(source, target)
+            with target.open('rb') as stream:
+                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if actual != expected:
+                raise LauncherError('TicGit staged relay source hash mismatch')
+            target.chmod(0o444)
+        relay.chmod(0o555)
+        if any(character in str(destination) for character in ',\0\r\n'):
+            raise LauncherError('TicGit staged client path contains a mount delimiter')
+        if isinstance(OUTER_RUNTIME, VMRuntime):
+            OUTER_RUNTIME.host.check_bind(str(destination))
+            OUTER_RUNTIME.host.check_bind(str(relay))
+        return destination
+    except BaseException:
+        remove_tic_stage(directory)
+        raise
+
+
+def remove_tic_stage(directory: Path) -> None:
+    # Only the relay child is read-only. Its private parent remains mode 0700
+    # and never crosses the guest mount boundary.
+    relay = directory / 'relay'
+    if relay.is_dir():
+        relay.chmod(0o700)
+    shutil.rmtree(directory)
+
+
+def start_tic(state: State) -> list[str]:
+    if 'tic' not in getattr(state, 'capabilities', ()):
+        return []
+    try:
+        from tic_relay import PORT as tic_port
+    except ImportError as error:
+        raise LauncherError('TicGit installed relay is unavailable; no fallback') from error
+    if not state.workspaces or not state.sidecar_image:
+        raise LauncherError('TicGit requires accepted workspace authority and installed transport image')
+    workspace = state.workspaces[0]
+    if workspace.host_root != state.repository:
+        raise LauncherError('TicGit active workspace binding mismatch')
+    build = installed_tic_build(state)
+    context = inspect_tic_context(build, workspace)
+    if set(context) != {'user_name', 'user_email', 'namespace'}:
+        raise LauncherError('TicGit trusted context returned invalid authority')
+    # Both independently resolved images must agree with the admitted engine.
+    try:
+        OUTER_RUNTIME.verify_builder_image(state.image)
+        OUTER_RUNTIME.verify_builder_image(state.sidecar_image)
+    except (RuntimeError, ValueError) as error:
+        raise LauncherError('TicGit requires images matching the admitted provider platform') from error
+    handle = TicBrokerLaunch(build, workspace=workspace.host_root,
+                             common_dir=workspace.common_dir, **context)
+    state.tic_handle = handle
+    resources = RelayResourcePlan(f'codex-tic-link-{state.suffix}',
+                                  f'codex-tic-egress-{state.suffix}',
+                                  f'codex-tic-{state.suffix}')
+    state.tic_resources = resources
+    try:
+        client = stage_tic_client(build)
+        handle.registry.register(OwnedResource(
+            'temporary:tic-client', handle.owner,
+            lambda: ResourcePresence.OWNED if client.parent.exists() else ResourcePresence.ABSENT,
+            lambda: remove_tic_stage(client.parent)))
+        handle.start()
+        for name, internal in ((resources.link_network, True), (resources.egress_network, False)):
+            handle.registry.register(OwnedResource(
+                f'network:{name}', handle.owner,
+                lambda name=name: _gateway_network_presence(name, handle.owner),
+                lambda name=name: remove_owned_resource(
+                    OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
+                    authority=ResourceOwnerAuthority.RELAY)))
+            create_relay_network(state, name, internal=internal, owner=handle.owner)
+        bridge = handle.start_bridge(set())
+        container_resource = f'container:{resources.container}'
+        handle.registry.register(OwnedResource(
+            container_resource, handle.owner,
+            lambda: _gateway_container_presence(resources.container, handle.owner),
+            lambda: remove_owned_resource(OUTER_RUNTIME, ResourceKind.CONTAINER,
+                                         resources.container, handle.owner),
+            (*resources.bound_topology()[container_resource], handle.bridge_resource,
+             'temporary:tic-client')))
+        mount = f'type=bind,src={client},dst=/opt/agent-tools/bin/ti,readonly'
+        relay_mount = f'type=bind,src={client.parent / "relay"},dst=/trusted/tic,readonly'
+        run(['docker', 'run', '--detach', '--name', resources.container,
+             '--label', f'dev.codex.service-owner={handle.owner}',
+             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
+             '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
+             '--network', resources.egress_network, '--network', resources.link_network,
+             *proxy_flags(), *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
+                              ['--add-host', 'host.docker.internal:host-gateway']),
+             '--mount', mount, '--mount', relay_mount,
+             '--env', 'PYTHONDONTWRITEBYTECODE=1', '--entrypoint', '/usr/local/bin/python3',
+             state.sidecar_image, '/trusted/tic/tic_relay.py',
+             '--target-host', OUTER_RUNTIME.host_address,
+             '--target-port', str(bridge.port)], discard_stdout=True)
+        addresses = {name: OUTER_RUNTIME.network_address(resources.container, name)
+                     for name in (resources.link_network, resources.egress_network)}
+        if not all(addresses.values()):
+            raise LauncherError('TicGit relay has incomplete network addresses')
+        # Lima's host.lima.internal forwarding reaches host loopback listeners
+        # (the network fixture serves one there); it need not preserve a relay's
+        # container-namespace source IP. Admit that trusted host-forwarder peer
+        # as well as inspected relay IPs. Fresh broker authentication still applies.
+        bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
+        listener = OUTER_RUNTIME.run(
+            ['exec', resources.container, '/usr/local/bin/python3', '/trusted/tic/tic_relay.py', '--probe'],
+            capture_output=True, timeout=7, check=False)
+        if listener.returncode != 0:
+            raise LauncherError('TicGit relay listener readiness failed; no fallback')
+        # The local bounded listener probe is not an application request. Send
+        # exactly one authenticated help through the complete guest path, never
+        # replay it after transport failure. Help never opens SQLite.
+        environment = handle.environment(f'127.0.0.1:{tic_port}')
+        with OUTER_RUNTIME.environment_file(environment) as flags:
+            probe = OUTER_RUNTIME.run(
+                ['exec', *flags, resources.container, '/opt/agent-tools/bin/ti', '--help'],
+                capture_output=True, timeout=15, check=False)
+        if probe.returncode != 0:
+            raise LauncherError('TicGit guest transport readiness failed; no fallback')
+        state.tic_environment = handle.environment(f'{addresses[resources.link_network]}:{tic_port}')
+        handle.attach()
+        return ['--network', resources.link_network, '--mount', mount]
+    except BaseException:
+        state.tic_environment = {}
+        handle.stop(1)
+        raise
+
+
 def _secure_codex_auth_directory(state: State) -> Path | None:
     directory = state.codex_auth_directory
     auth = directory / "auth.json"
@@ -1872,16 +2159,19 @@ def run_agent(state: State, arguments: list[str]) -> int:
     )
     reserved = {
         "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
+        "SANDBOX_TIC_ENDPOINT", "SANDBOX_TIC_TOKEN",
         "DOCKER_HOST", "AGENT_DOCKER_SSHKEY", "AGENT_DOCKER_KNOWN_HOSTS",
     }
     agent_environment = {key: value for key, value in os.environ.items() if key not in reserved}
     bridge_environment: dict[str, str] = {}
     bridge_environment.update(keychain_environment(state))
+    bridge_environment.update(getattr(state, 'tic_environment', {}))
     agent_environment.update(bridge_environment)
     image_index = command.index(state.image)
     host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
     state.cd_request = temporary_file() if HOST_PI_BOOTSTRAP is None else None
-    host_environment = dict(os.environ)
+    host_environment = {key: value for key, value in os.environ.items()
+                        if key not in {'SANDBOX_TIC_ENDPOINT', 'SANDBOX_TIC_TOKEN'}}
     host_environment.update({
         "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
         "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
@@ -2121,8 +2411,9 @@ def execute(state: State) -> int:
         if model_future is not None:
             state.image = model_future.result()
         keychain_arguments = keychain_future.result() if keychain_future is not None else []
+        tic_arguments = phase('TicGit required launch service', lambda: start_tic(state))
         agent_command = ["node", "/opt/agent-tools/bin/tool-worker.mjs"]
-        arguments = [*gateway_arguments, *keychain_arguments, state.image,
+        arguments = [*gateway_arguments, *keychain_arguments, *tic_arguments, state.image,
                      *agent_command]
         arguments = [*sidecar_arguments, *arguments]
         if os.environ.get("CODEX_SANDBOX_TIMING"):
@@ -2205,6 +2496,19 @@ def cleanup(state: State) -> bool:
         container_results = list(executor.map(lambda item: cleanup_resource(*item), containers))
     timing("containers")
 
+    tic_handle = getattr(state, 'tic_handle', None)
+    tic_result = tic_handle.stop(0) if tic_handle is not None else None
+    state.tic_environment = {}
+    if tic_result is not None:
+        for failure in tic_result.failures:
+            print(f'warning: Cleaning up TicGit resource {failure.identity} failed ({failure.code}).',
+                  file=sys.stderr)
+        if tic_result.remaining and state.tic_resources is not None:
+            try:
+                persist_relay_recovery(state, state.tic_resources, tic_handle.owner, tic_result.remaining)
+            except (OSError, LauncherError) as error:
+                print(f'warning: TicGit relay recovery state could not be persisted: {error}',
+                      file=sys.stderr)
     timing("host relays")
     networks = []
     def remove_network(item):
@@ -2277,7 +2581,8 @@ def cleanup(state: State) -> bool:
                     or (isinstance(OUTER_RUNTIME, VMRuntime)
                         and (not all([*container_results, *network_results])
                              or bool(gateway_result and gateway_result.remaining)
-                             or bool(keychain_result and keychain_result.remaining))))
+                             or bool(keychain_result and keychain_result.remaining)
+                             or bool(tic_result and tic_result.remaining))))
     if keep_scratch:
         state.recovery_record = temporary_file()
         recovery = {"runtime": runtime_identity(OUTER_RUNTIME),
@@ -2317,7 +2622,8 @@ def cleanup(state: State) -> bool:
     state.cleanup_succeeded = (all([*container_results, *network_results])
                                and proxy_cleanup_succeeded
                                and not bool(gateway_result and gateway_result.remaining)
-                               and not bool(keychain_result and keychain_result.remaining))
+                               and not bool(keychain_result and keychain_result.remaining)
+                               and not bool(tic_result and tic_result.remaining))
     return state.cleanup_succeeded
 
 

@@ -86,10 +86,11 @@ In particular, `ti review` continues to select its default branch through Git in
 Reviews remain available to the human but are not admitted through the agent proxy.
 
 Opening the common directory intentionally selects the common repository's metadata-session configuration, including its author and namespace defaults.
-Broker invocations override authorship and namespace with accepted workspace values; requests cannot supply those values.
-Disable system configuration with broker-owned `GIT_CONFIG_NOSYSTEM=1` and both user/XDG Git sources with `GIT_CONFIG_GLOBAL=/dev/null`.
-Supply accepted `user.email`, `user.name`, and `meta.namespace` through a broker-created `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` set.
-Clear inherited configuration overrides, not this intentional override set; `GIT_AUTHOR_*` alone does not control session authorship.
+After repository preflight and before invoking native TicGit, the owning launch captures the ordinary effective host Git settings once, including host configuration and applicable invocation-worktree configuration.
+Freeze the accepted `user.name`, `user.email`, and `meta.namespace` values for that launch; later host configuration changes do not alter them.
+This is local operator bootstrap, not a guest API; capture reads configuration without opening or mutating SQLite.
+Native request executions still disable system configuration with broker-owned `GIT_CONFIG_NOSYSTEM=1` and user/XDG Git sources with `GIT_CONFIG_GLOBAL=/dev/null`, and clear inherited configuration overrides.
+Supply the captured accepted values through a broker-created `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` set; requests cannot supply or change them, and `GIT_AUTHOR_*` alone does not control session authorship.
 `meta.namespace` selects serialized refs, not a separate SQLite database.
 Keep native human interaction and explicit administrative commands outside the agent policy.
 Ordinary host use requires neither the VM nor a running broker.

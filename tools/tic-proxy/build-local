@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Capture the reviewed native commit, build locally, and stage a verified bundle.
+
+Usage: build-local [--guest-client ELF --guest-platform linux/amd64] REPO [cargo arguments...]
+Run through dev/test-environment. Never installs or enables the capability.
+"""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+
+
+def sha256(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def guest_platform(path):
+    with path.open('rb') as stream:
+        header = stream.read(64)
+    if len(header) < 64 or header[:4] != b'\x7fELF' or header[4:6] != b'\x02\x01':
+        raise ValueError('guest client must be a 64-bit little-endian Linux ELF, not a host Mach-O binary')
+    # System-V (0) or Linux (3) ABI; static musl artifacts normally use System-V.
+    if header[7] not in (0, 3):
+        raise ValueError('unsupported guest ELF ABI')
+    arch = {62: 'linux/amd64', 183: 'linux/arm64'}.get(int.from_bytes(header[18:20], 'little'))
+    if arch is None:
+        raise ValueError('unsupported Linux guest architecture')
+    # Only static clients are portable into the guest image; an arbitrary ELF
+    # interpreter path does not establish that the provider image can execute it.
+    offset = int.from_bytes(header[32:40], 'little')
+    entry_size = int.from_bytes(header[54:56], 'little')
+    count = int.from_bytes(header[56:58], 'little')
+    if not 56 <= entry_size <= 256 or count > 1024:
+        raise ValueError('invalid guest ELF program headers')
+    with path.open('rb') as stream:
+        stream.seek(offset)
+        for _ in range(count):
+            entry = stream.read(entry_size)
+            if len(entry) != entry_size:
+                raise ValueError('truncated guest ELF program headers')
+            if int.from_bytes(entry[:4], 'little') == 3:
+                raise ValueError('guest client must be statically linked (ELF PT_INTERP is unsupported)')
+    return arch
+
+
+def stage_bundle(base, pin, native, broker, client, arch):
+    artifacts = {'native': ('native/ti', native), 'broker': ('host/tic-broker', broker), 'client': ('guest/ti-proxy', client)}
+    manifest = {'version': 1, 'native_revision': pin, 'policy_version': 1}
+    for key, (relative, source) in artifacts.items():
+        manifest[key] = {'path': relative, 'sha256': sha256(source)}
+    manifest['client']['platform'] = arch
+    encoded = (json.dumps(manifest, sort_keys=True, indent=2) + '\n').encode()
+    identity = hashlib.sha256(encoded).hexdigest()
+    destination = base / ('bundle-' + identity)
+    if destination.exists():
+        if (destination / 'manifest.json').read_bytes() != encoded:
+            raise ValueError('existing content-addressed bundle manifest mismatch')
+        for key, (relative, _) in artifacts.items():
+            if sha256(destination / relative) != manifest[key]['sha256']:
+                raise ValueError('existing content-addressed bundle artifact mismatch')
+        return destination
+    with tempfile.TemporaryDirectory(prefix='bundle-stage-', dir=base) as stage:
+        stage = Path(stage)
+        for relative, source in artifacts.values():
+            target = stage / relative
+            target.parent.mkdir(exist_ok=True)
+            shutil.copyfile(source, target)
+            key = next(key for key, (name, _) in artifacts.items() if name == relative)
+            if sha256(target) != manifest[key]['sha256']:
+                raise ValueError('artifact changed while staging bundle')
+            target.chmod(0o555)
+        binding_path = native.with_name(native.name + '.tic-proxy.json')
+        binding = json.loads(binding_path.read_bytes())
+        if binding != {'native_revision': pin, 'policy_version': 1, 'sha256': manifest['native']['sha256']}:
+            raise ValueError('native artifact/binding changed while staging bundle')
+        (stage / 'native/ti.tic-proxy.json').write_text(json.dumps(binding) + '\n')
+        (stage / 'manifest.json').write_bytes(encoded)
+        # A staged bundle is ordinary owned build output, not an installed trust
+        # root. The installer must protect it and all mount aliases separately.
+        for path in [stage / 'manifest.json', stage / 'native/ti.tic-proxy.json']:
+            path.chmod(0o444)
+        os.rename(stage, destination)
+    return destination
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--guest-client', type=Path)
+    parser.add_argument('--guest-platform', choices=['linux/amd64', 'linux/arm64'])
+    parser.add_argument('repository', type=Path)
+    options, args = parser.parse_known_args()
+    if '--target' in args or any(arg.startswith('--target=') for arg in args):
+        parser.error('host build cannot use --target; provide a separately built static Linux --guest-client')
+    root = Path(__file__).resolve().parent
+    pin = (root / 'native-revision').read_text().strip()
+    repo = options.repository.resolve()
+    actual = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', pin + '^{commit}'], text=True).strip()
+    if actual != pin:
+        raise ValueError('native commit identity mismatch')
+    archive = subprocess.check_output(['git', '-C', str(repo), 'archive', '--format=tar', pin])
+    base = root.parent.parent / 'target' / 'tic-proxy-build'
+    base.mkdir(parents=True, exist_ok=True)
+    # Fresh private captures avoid compiling previous build-context edits.
+    with tempfile.TemporaryDirectory(prefix='source-', dir=base) as source:
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            tar.extractall(source, filter='data')
+        env = os.environ.copy()
+        env['CARGO_TARGET_DIR'] = str(base / 'cargo')
+        cargo = os.environ.get('CARGO', 'cargo')
+        profile_args = ['--release'] if '--release' in args else []
+        subprocess.run([cargo, 'build', '--locked', '--manifest-path', source + '/Cargo.toml', '-p', 'ticgit', '--bin', 'ti', *profile_args], env=env, check=True)
+        output = base / 'cargo' / ('release' if profile_args else 'debug')
+        native = output / 'ti'
+        binding = {'native_revision': pin, 'policy_version': 1, 'sha256': sha256(native)}
+        native.with_name(native.name + '.tic-proxy.json').write_text(json.dumps(binding) + '\n')
+        env['TIC_PROXY_TEST_NATIVE'] = str(native)
+        overrides = ['--config', 'patch.crates-io.ticgit.path=' + json.dumps(source + '/crates/ticgit')]
+        subprocess.run([cargo, *(args or ['build', '--bins']), '--locked', '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
+        # Tests also build binaries, but check/doc-only commands do not. Never
+        # substitute a stale host binary for an explicitly requested artifact.
+        if args and args[0] not in ('build', 'test'):
+            print('native executable:', native)
+            return
+        subprocess.run([cargo, 'build', '--bins', '--locked', *profile_args, '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
+        if options.guest_client:
+            client = options.guest_client.resolve(strict=True)
+        elif platform.system() == 'Linux':
+            client = output / 'ti-proxy'
+        else:
+            raise ValueError('host broker/native built, but staging requires a separately built static Linux --guest-client and --guest-platform')
+        arch = guest_platform(client)
+        if options.guest_platform and arch != options.guest_platform:
+            raise ValueError('guest artifact architecture does not match --guest-platform')
+        if options.guest_client and not options.guest_platform:
+            raise ValueError('--guest-platform is required with --guest-client')
+        bundle = stage_bundle(base, pin, native, output / 'tic-broker', client, arch)
+        print('native executable:', native)
+        print('staged bundle:', bundle)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        sys.exit(f'build-local: {error}')

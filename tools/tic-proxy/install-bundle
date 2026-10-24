@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Install a reviewed local TicGit bundle; never run by build or startup.
+
+Usage: install-bundle BUNDLE --prefix TRUSTED_ROOT [--guest-writable-root PATH ...]
+After separate human review, the launcher-compatible root is
+~/.local/share/tic-proxy. Artifacts live beneath ROOT/bundle-<manifest SHA256>;
+ROOT/installed.json is a regular, read-only absolute-path binding, not a symlink.
+Identical installation verifies idempotently; mismatches are never overwritten.
+Rebuild/review current sources before installation, not an earlier staged bundle.
+The root must be outside ALL guest-writable mount aliases. Optional exclusion
+roots catch known overlaps; this helper cannot infer the provider's mount graph.
+No installation or upgrade is authorized merely by building or testing.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import shutil
+import stat
+import sys
+import tempfile
+
+# This is the build/installation input, not a second handwritten pin. Runtime
+# launchers use the installed binding and the broker's compiled ready identity.
+PIN = Path(__file__).with_name('native-revision').read_text().strip()
+if re.fullmatch(r'[0-9a-f]{40}', PIN) is None:
+    raise ValueError('invalid canonical native-revision input')
+# Reuse the build owner's static Linux ELF validation without maintaining a
+# second ELF parser. run_path does not execute build-local's guarded main().
+_guest_platform = runpy.run_path(str(Path(__file__).with_name('build-local')))['guest_platform']
+ARTIFACTS = {'native': 'native/ti', 'broker': 'host/tic-broker', 'client': 'guest/ti-proxy'}
+DIRECTORIES = ('native', 'host', 'guest')
+FILES = (*ARTIFACTS.values(), 'native/ti.tic-proxy.json', 'manifest.json')
+
+
+def sha256(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def strict_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError('duplicate manifest field')
+        value[key] = item
+    return value
+
+
+def regular(path):
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError('bundle artifact must be a regular file, not a symlink')
+    return metadata
+
+
+def read_json(path):
+    regular(path)
+    with path.open('rb') as stream:
+        encoded = stream.read(65537)
+    if len(encoded) > 65536:
+        raise ValueError('manifest exceeds 64 KiB')
+    value = json.loads(encoded, object_pairs_hook=strict_object)
+    if not isinstance(value, dict):
+        raise ValueError('manifest must be an object')
+    return encoded, value
+
+
+def tree(root, installed=False):
+    # Fixed tree grammar rejects symlinked ancestor directories as well as leaf
+    # symlinks. Build outputs may be writable; installed copies must not be.
+    for relative in ('', *DIRECTORIES):
+        directory = root / relative
+        metadata = directory.lstat()
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError('bundle directories must not be symlinks')
+        if installed and (metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o555):
+            raise ValueError('installed bundle directory ownership/mode mismatch')
+        expected = ({'manifest.json', *DIRECTORIES} if not relative else
+                    {Path(name).name for name in FILES if Path(name).parent == Path(relative)})
+        if {path.name for path in directory.iterdir()} != expected:
+            raise ValueError('unexpected or missing bundle entries')
+    for relative in FILES:
+        metadata = regular(root / relative)
+        if installed:
+            mode = 0o555 if relative in ARTIFACTS.values() else 0o444
+            if (metadata.st_uid != os.getuid() or metadata.st_nlink != 1
+                    or stat.S_IMODE(metadata.st_mode) != mode):
+                raise ValueError('installed artifact ownership/mode/link mismatch')
+
+
+def native_binding(path, native_hash):
+    encoded, value = read_json(path)
+    if (set(value) != {'native_revision', 'policy_version', 'sha256'}
+            or type(value['policy_version']) is not int or value['policy_version'] != 1
+            or value['native_revision'] != PIN or value['sha256'] != native_hash):
+        raise ValueError('native manifest binding mismatch')
+    return encoded
+
+
+def validate_bundle(bundle):
+    tree(bundle)
+    encoded, manifest = read_json(bundle / 'manifest.json')
+    if set(manifest) != {'version', 'native_revision', 'policy_version', 'native', 'broker', 'client'}:
+        raise ValueError('unexpected bundle fields')
+    if (type(manifest['version']) is not int or manifest['version'] != 1
+            or type(manifest['policy_version']) is not int or manifest['policy_version'] != 1
+            or manifest['native_revision'] != PIN):
+        raise ValueError('unsupported native/policy binding')
+    identity = 'bundle-' + hashlib.sha256(encoded).hexdigest()
+    if bundle.name != identity:
+        raise ValueError('content-addressed bundle name/manifest mismatch')
+    for key, relative in ARTIFACTS.items():
+        artifact = manifest[key]
+        fields = {'path', 'sha256', 'platform'} if key == 'client' else {'path', 'sha256'}
+        if not isinstance(artifact, dict) or set(artifact) != fields or artifact['path'] != relative:
+            raise ValueError('unexpected artifact path or fields')
+        if (not isinstance(artifact['sha256'], str) or re.fullmatch(r'[0-9a-f]{64}', artifact['sha256']) is None
+                or artifact['sha256'] != sha256(bundle / relative)):
+            raise ValueError('bundle artifact hash mismatch')
+    if _guest_platform(bundle / ARTIFACTS['client']) != manifest['client']['platform']:
+        raise ValueError('guest artifact/platform mismatch')
+    binding = native_binding(bundle / 'native/ti.tic-proxy.json', manifest['native']['sha256'])
+    return encoded, manifest, binding
+
+
+def installed_record(destination, manifest):
+    value = {'version': 1, 'native_revision': PIN, 'policy_version': 1,
+             'broker_executable': str(destination / ARTIFACTS['broker']), 'broker_sha256': manifest['broker']['sha256'],
+             'native_executable': str(destination / ARTIFACTS['native']), 'native_sha256': manifest['native']['sha256'],
+             'guest_client_executable': str(destination / ARTIFACTS['client']), 'guest_client_sha256': manifest['client']['sha256'],
+             'guest_client_platform': manifest['client']['platform']}
+    return (json.dumps(value, sort_keys=True, indent=2) + '\n').encode()
+
+
+def verify_record(path, expected):
+    metadata = regular(path)
+    if (metadata.st_uid != os.getuid() or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o444
+            or metadata.st_size != len(expected) or path.read_bytes() != expected):
+        raise ValueError('existing installed manifest mismatch; refusing overwrite')
+
+
+def verify_copy(destination, encoded, manifest, binding):
+    tree(destination, installed=True)
+    if (destination / 'manifest.json').read_bytes() != encoded:
+        raise ValueError('existing installed bundle manifest mismatch')
+    for key, relative in ARTIFACTS.items():
+        if sha256(destination / relative) != manifest[key]['sha256']:
+            raise ValueError('installed artifact hash mismatch')
+    if native_binding(destination / 'native/ti.tic-proxy.json', manifest['native']['sha256']) != binding:
+        raise ValueError('installed native binding changed')
+
+
+def remove_stage(stage):
+    # Only a private stage created by this invocation; never repair an existing
+    # installation's modes or take ownership of mismatched content.
+    for relative in ('', *DIRECTORIES):
+        path = stage / relative
+        if path.is_dir():
+            path.chmod(0o700)
+    shutil.rmtree(stage)
+
+
+def install(bundle, prefix, guest_writable_roots=()):
+    bundle = Path(bundle).resolve(strict=True)
+    encoded, manifest, binding = validate_bundle(bundle)
+    prefix = Path(prefix).absolute()
+    if prefix.resolve() != prefix:
+        raise ValueError('installation root must be canonical, not a symlink alias')
+    for root in guest_writable_roots:
+        root = Path(root).resolve(strict=True)
+        if prefix.is_relative_to(root) or root.is_relative_to(prefix):
+            raise ValueError('installation root overlaps a guest-writable mount')
+    parent = prefix.parent.resolve(strict=True)
+    for directory in (parent, prefix) if prefix.exists() else (parent,):
+        metadata = directory.lstat()
+        if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid()
+                or metadata.st_mode & 0o022):
+            raise ValueError('installation root/parent must be installer-owned and not group/world writable')
+    created_root = not prefix.exists()
+    if created_root:
+        prefix.mkdir(mode=0o700)
+    destination = prefix / bundle.name
+    record = prefix / 'installed.json'
+    expected_record = installed_record(destination, manifest)
+    stage = None
+    reserved = False
+    try:
+        if record.exists() or record.is_symlink():
+            verify_record(record, expected_record)
+            verify_copy(destination, encoded, manifest, binding)
+            return record
+        if destination.exists() or destination.is_symlink():
+            verify_copy(destination, encoded, manifest, binding)
+        else:
+            stage = Path(tempfile.mkdtemp(prefix='.tic-install-', dir=prefix))
+            for key, relative in ARTIFACTS.items():
+                target = stage / relative
+                target.parent.mkdir(exist_ok=True)
+                shutil.copyfile(bundle / relative, target)
+                if sha256(target) != manifest[key]['sha256']:
+                    raise ValueError('artifact changed during installation')
+                target.chmod(0o555)
+            shutil.copyfile(bundle / 'native/ti.tic-proxy.json', stage / 'native/ti.tic-proxy.json')
+            if native_binding(stage / 'native/ti.tic-proxy.json', manifest['native']['sha256']) != binding:
+                raise ValueError('native binding changed during installation')
+            (stage / 'native/ti.tic-proxy.json').chmod(0o444)
+            (stage / 'manifest.json').write_bytes(encoded)
+            (stage / 'manifest.json').chmod(0o444)
+            for relative in ('', *DIRECTORIES):
+                (stage / relative).chmod(0o555)
+            verify_copy(stage, encoded, manifest, binding)
+            # Reserve an absent destination exclusively. Never rename over an
+            # existing directory, even an empty mismatched installation.
+            destination.mkdir(mode=0o700)
+            reserved = True
+            os.rename(stage, destination)  # replaces only our empty reservation
+            reserved = False
+            stage = None
+        # Link a private complete regular file into the stable location with
+        # no-replace semantics. Unlink the temporary name before verification,
+        # so the launcher's no-hardlink acceptance remains satisfied.
+        fd, temporary = tempfile.mkstemp(prefix='.tic-record-', dir=prefix)
+        temporary = Path(temporary)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(expected_record)
+                os.fchmod(stream.fileno(), 0o444)
+            try:
+                os.link(temporary, record)
+            except FileExistsError:
+                pass  # A concurrent identical publisher is verified below.
+        finally:
+            temporary.unlink()
+        verify_record(record, expected_record)
+        verify_copy(destination, encoded, manifest, binding)
+        return record
+    finally:
+        if stage is not None:
+            remove_stage(stage)
+        if reserved:
+            destination.rmdir()
+        if created_root:
+            try:
+                prefix.rmdir()  # only remove our root if still empty
+            except OSError:
+                pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('bundle', type=Path)
+    parser.add_argument('--prefix', type=Path, required=True, help='trusted root; launcher uses ~/.local/share/tic-proxy')
+    parser.add_argument('--guest-writable-root', type=Path, action='append', default=[], help='reject overlap with this known guest mount source')
+    args = parser.parse_args()
+    print(install(args.bundle, args.prefix, args.guest_writable_root))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        sys.exit(f'install-bundle: {error}')
