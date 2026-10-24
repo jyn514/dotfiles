@@ -325,6 +325,9 @@ This uses the repository's `bb agent-split` wrapper and Jujutsu, not a second Ty
 The [splitter reference](../../../tools/agent-split/README.md#advisory-commit-boundary-api) documents the read-only JSON check; checkpoint capture uses ordinary wrapped Jujutsu commands, not a splitter `--checkpoint` mode.
 The [design](commit-boundary/design.typ) defines the shared record, exact request/reply contract, lifecycle, and finalization behavior.
 Native tools check the local file; sandbox tools check the file actually being written inside the guest, using common harness record operations rather than checkpoint transport metadata.
+Remote filesystem operations do not redirect the Pi SDK's local edit preview.
+Guest edits therefore render a header-only call and the actual guest result through the SDK's public result renderer; native edit previews remain unchanged.
+The public-renderer regressions in [`tests/pi/commit_boundary_operations_test.ts`](../../../tests/pi/commit_boundary_operations_test.ts) cover guest refusals, successful edits, mismatches, and missing files without host previews.
 
 The integration must be loaded for these checks to apply. The normal sandbox-subagent wrapper explicitly injects guest tools despite `--no-extensions`, so fresh Luna sandbox workers need no special template once the integration is loaded.
 Native nonsandbox subagents intentionally disable extension discovery, and the current native configuration does not list these extensions; native children do not universally load the guard automatically.

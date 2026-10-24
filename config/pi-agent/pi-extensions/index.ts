@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import askUser from "./ask-user.ts";
 import contextBreakdown from "./context-breakdown.ts";
+import commitBoundary from "./commit-boundary.ts";
 import currentDate from "./current-date.ts";
 import footer from "./footer.ts";
 import hostOS from "./host-os.ts";
@@ -26,6 +27,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   transportDiagnostics(pi);
   askUser(pi);
   contextBreakdown(pi);
+  commitBoundary(pi);
   currentDate(pi);
   footer(pi);
   hostOS(pi);
