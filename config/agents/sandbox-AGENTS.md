@@ -8,6 +8,11 @@
   Other `/src` siblings are inspection-only; use `/cd` before editing them.
   Writable access does not authorize unrelated edits or taking ownership of another contributor's changes.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
+- Choose the fix for the affected environment, not for the environment you can modify.
+  If a host problem needs a one-off command and you cannot execute it, give the user that command.
+  Missing host access changes who performs the action;
+  it does not justify replacing that action with configuration, startup automation, or a new tool.
+  Before adding persistent behavior, establish why the operation needs to recur.
 - `/home/codex/.agents/skills` is writable and host-backed, you may edit it.
 - Other shared instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
 - Most `/home/codex/.pi/agent` state is private and disposable. Host sessions are mounted read-only at `/home/codex/.pi/agent/sessions` for searching past conversations. Staged configuration is read-only; edit its tracked source and start a new sandbox session to refresh startup-loaded state.
