@@ -35,9 +35,10 @@
   "quietStartup": true,
   "outputPadY": 0,
   "toolPreviewLines": 3,
+  "editContextLines": 2,
   "doubleEscapeAction": "tree",
   "fullscreenExitOutput": "resume-hint",
-  "defaultProvider": "openai-codex",
+  "defaultProvider": "openai",
   "defaultThinkingLevel": "medium",
   "defaultModel": "gpt-6.1-sol",
   "hideThinkingBlock": false
