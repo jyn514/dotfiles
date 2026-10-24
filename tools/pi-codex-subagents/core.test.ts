@@ -992,7 +992,7 @@ describe("extension completion delivery and TUI", () => {
       },
       sendMessage(message: any, options: any) { sentMessages.push({ message, options }); },
       getThinkingLevel() { return "high"; },
-      getActiveTools() { return ["read", "bash"]; },
+      getActiveTools() { throw new Error("Spawning must not snapshot parent active tools"); },
     };
     const parentSessionId = "index-integration-parent";
     fs.writeFileSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), "");
@@ -1002,8 +1002,10 @@ describe("extension completion delivery and TUI", () => {
       { provider: "openai", id: "gpt-5" },
     ];
     const notifications: string[] = [];
+    let projectTrusted = true;
     const ctx: any = {
       cwd: TEST_AGENT_DIR,
+      isProjectTrusted: () => projectTrusted,
       mode: "tui",
       model: { provider: "test", id: "fake" },
       modelRegistry: { getAvailable: () => availableModels },
@@ -1178,6 +1180,8 @@ describe("extension completion delivery and TUI", () => {
         message: "slow finish",
       }, undefined, undefined, ctx);
 
+      expect(getAgent("x".repeat(200), parentSessionId)).toMatchObject({ cwd: TEST_AGENT_DIR, projectTrusted: true });
+      projectTrusted = false;
       const spawnRendered = tools.get("spawn_agent").renderResult(spawnResult, {}, { fg: (_color: string, text: string) => text }).render(400);
       expect(spawnRendered.join("\n").trim()).toBe(`✓ ${spawnResult.details.task_name} · test/fake · high`);
 
@@ -1198,6 +1202,7 @@ describe("extension completion delivery and TUI", () => {
         message: "large response",
       }, undefined, undefined, ctx);
       await waitUntil(() => sentMessages.length === 2);
+      expect(getAgent("large-output", parentSessionId)).toMatchObject({ cwd: TEST_AGENT_DIR, projectTrusted: false });
       const large = sentMessages[1].message;
       expect(Buffer.byteLength(large.content, "utf8")).toBeLessThanOrEqual(50 * 1024);
       expect(large.content).toContain("Output truncated");

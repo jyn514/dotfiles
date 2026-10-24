@@ -7,7 +7,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { CONFIG_DIR_NAME, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, DefaultPackageManager, getAgentDir, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import {
   CONTROL_COMMAND, CONTROL_VERSION, CONTINUATION_MESSAGE, controlRecord, hasUnresolvedInputs,
   assertSessionAuthority, type ControlRequest, type SavedSession,
@@ -20,6 +20,9 @@ import {
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
 export const PACKAGE_BASENAME = "pi-codex-subagents";
+// Pi's CLI owns the factories, but does not publicly export their names.
+// Keep this approved list aligned with supported Pi CLI releases.
+export const CHILD_BUILTIN_EXTENSION_NAMES = ["llama.cpp", "codemode", "tool-search", "mcp"] as const;
 export const SUBAGENT_DIR = path.join(getAgentDir(), PACKAGE_BASENAME);
 const CONFIG_PATH = path.join(SUBAGENT_DIR, "config.json");
 const SYSTEM_PROMPT_PATH = path.join(SUBAGENT_DIR, "SYSTEM.md");
@@ -71,6 +74,7 @@ export interface AgentDefinition {
   tools?: string;
   skills?: string[];
   extensions?: string[];
+  disabledExtensions?: string[];
   prompt?: string;
 }
 
@@ -99,6 +103,9 @@ export interface AgentInfo {
   skillPaths?: string[];
   extensions?: string[];
   extensionPaths?: string[];
+  disabledExtensions?: string[];
+  /** Parent's resolved decision for this same cwd, retained on worker recreation. */
+  projectTrusted?: boolean;
   cwd: string;
   sessionFile: string;
   infoFile: string;
@@ -147,6 +154,7 @@ export interface SpawnAgentParams {
   inheritedModelId: string;
   inheritedThinking?: ThinkingLevel;
   inheritedTools?: string;
+  projectTrusted?: boolean;
   model?: { provider: string; modelId: string };
   thinking?: ThinkingLevel;
   templatePromptPosition?: "before" | "after";
@@ -544,6 +552,7 @@ export function parseAgentDefinitionText(text: string, fallbackName: string): Ag
     tools: attrs.tools,
     skills: stringList(attrs.skills),
     extensions: stringList(attrs.extensions),
+    disabledExtensions: stringList(attrs.disabledExtensions),
     prompt: (match ? text.slice(match[0].length) : text).trim() || undefined,
   };
 }
@@ -666,6 +675,64 @@ function resolveExtensionPath(extension: string, cwd: string): string {
 
 function resolveExtensionPaths(extensions: string[] | undefined, cwd: string): string[] | undefined {
   return extensions?.map((extension) => resolveExtensionPath(extension, cwd));
+}
+
+function canonicalExtensionPath(entrypoint: string): string {
+  if (entrypoint.startsWith("builtin:")) return entrypoint;
+  return fs.realpathSync(entrypoint);
+}
+
+/** Resolve, but never import extensions here: exclusions must precede factories and hooks. */
+export async function resolveChildExtensionPaths(info: Pick<AgentInfo, "cwd" | "projectTrusted" | "extensionPaths" | "disabledExtensions">): Promise<string[]> {
+  const agentDir = getAgentDir();
+  const settingsManager = SettingsManager.create(info.cwd, agentDir, { projectTrusted: info.projectTrusted ?? false });
+  // Older supported resolvers ignore this newer optional property and have no
+  // built-in extension resources; keep their existing package discovery intact.
+  const packageOptions = { cwd: info.cwd, agentDir, settingsManager, builtinExtensions: [...CHILD_BUILTIN_EXTENSION_NAMES] };
+  const packages = new DefaultPackageManager(packageOptions);
+  const discovered = await packages.resolve();
+  const explicit = await packages.resolveExtensionSources(info.extensionPaths ?? [], { temporary: true });
+  const disabled = info.disabledExtensions ?? [];
+  const disabledPaths = new Set(disabled.filter(looksLikePath).map(value => {
+    const expanded = expandHome(value);
+    const absolute = path.resolve(info.cwd, expanded);
+    return fs.existsSync(absolute) ? canonicalExtensionPath(absolute) : absolute;
+  }));
+  const helper = canonicalExtensionPath(fileURLToPath(new URL("./child-helper.ts", import.meta.url)));
+  const packageEntrypoints = new Map<string, Set<string>>();
+  const selected = new Set<string>();
+  for (const resource of [...explicit.extensions, ...discovered.extensions]) {
+    if (!resource.enabled) continue;
+    const entrypoint = canonicalExtensionPath(resource.path);
+    if (entrypoint === helper || disabledPaths.has(entrypoint) || disabled.includes(entrypoint)) continue;
+    let denied = false;
+    if (!entrypoint.startsWith("builtin:")) {
+      // A package name identifies only its declared entrypoints, not every file
+      // under its directory (in particular, not our independently loaded helper).
+      let directory = path.dirname(entrypoint);
+      while (true) {
+        const manifest = path.join(directory, "package.json");
+        if (fs.existsSync(manifest)) {
+          const { name } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+          if (typeof name === "string" && disabled.some(value => value === name || value === name.split("/").at(-1))) {
+            let entries = packageEntrypoints.get(directory);
+            if (!entries) {
+              const resolved = await packages.resolveExtensionSources([directory], { temporary: true });
+              entries = new Set(resolved.extensions.map(value => canonicalExtensionPath(value.path)));
+              packageEntrypoints.set(directory, entries);
+            }
+            denied = entries.has(entrypoint);
+          }
+          break;
+        }
+        const parent = path.dirname(directory);
+        if (parent === directory) break;
+        directory = parent;
+      }
+    }
+    if (!denied) selected.add(entrypoint);
+  }
+  return [...selected];
 }
 
 export interface PeekMarker { pid: number; startedAt: number; token: string }
@@ -1304,11 +1371,8 @@ export class AgentManager {
     const configuredSkills = definition?.skills ?? config.defaults?.skills;
     const skills = normalizeList([...(configuredSkills ?? []), ...(params.skills ?? [])]);
     const extensions = normalizeList(definition?.extensions ?? config.defaults?.extensions);
-    const tools = definition?.tools !== undefined
-      ? normalizeTools(definition.tools)
-      : extensions?.length
-        ? undefined
-        : normalizeTools(params.inheritedTools);
+    // An omitted allowlist must not hide tools registered by normal discovery.
+    const tools = definition?.tools !== undefined ? normalizeTools(definition.tools) : undefined;
     const thinking = params.thinking ?? definition?.thinking ?? params.inheritedThinking ?? DEFAULT_THINKING;
     const cwd = path.resolve(params.cwd);
     const directory = scopeDir(params.parentSessionId);
@@ -1344,6 +1408,8 @@ export class AgentManager {
         skillPaths: resolveSkillPaths(skills, cwd, params.loadedSkillPaths),
         extensions,
         extensionPaths: resolveExtensionPaths(extensions, cwd),
+        disabledExtensions: normalizeList(definition?.disabledExtensions),
+        projectTrusted: params.projectTrusted ?? false,
         cwd,
         sessionFile: path.join(directory, `${id}.jsonl`),
         infoFile: path.join(directory, `${id}.info.json`),
@@ -1389,6 +1455,7 @@ export class AgentManager {
     if (info.status !== "starting" && info.status !== "running") {
       this.notifyStatusChange({ ...info, status: "starting", lastActivity: Date.now() });
     }
+    const extensionPaths = await resolveChildExtensionPaths(info);
     const logger = new SessionLogger(info.logFile);
     const broadcaster = new EventBroadcaster(info.id);
     broadcaster.start();
@@ -1397,8 +1464,6 @@ export class AgentManager {
       ...launch.prefixArgs,
       "--mode", "rpc",
       "--no-extensions",
-      "--no-skills",
-      "--no-prompt-templates",
       "--no-context-files",
       "--system-prompt", SYSTEM_PROMPT_PATH,
       "--append-system-prompt", "",
@@ -1406,6 +1471,8 @@ export class AgentManager {
       "--model", info.modelId,
       "--session", info.sessionFile,
     ];
+    // Without a captured parent decision, do not grant project trust.
+    args.push(info.projectTrusted ? "--approve" : "--no-approve");
     if (info.thinking) args.push("--thinking", info.thinking);
     if (info.tools !== undefined) {
       // --tools is a registration allowlist: activation cannot resurrect an
@@ -1421,7 +1488,7 @@ export class AgentManager {
       args.push("--tools", [...taskTools, ...bridgeTools].join(","));
     }
     args.push("--extension", fileURLToPath(new URL("./child-helper.ts", import.meta.url)));
-    for (const extensionPath of info.extensionPaths ?? []) args.push("--extension", extensionPath);
+    for (const extensionPath of extensionPaths) args.push("--extension", extensionPath);
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
     const childEnv: NodeJS.ProcessEnv = { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0",

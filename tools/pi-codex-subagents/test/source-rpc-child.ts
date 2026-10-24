@@ -1,9 +1,11 @@
 /** A real public-SDK AgentSession and the shipped RPC loop; only model I/O is faux.
  * Accepts the extension manager's CLI-shaped argv, not a replacement production API.
  */
-import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { getCurrentTools } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { CHILD_BUILTIN_EXTENSION_NAMES } from "../core.ts";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { providerCallsFile } from "./held-tool-extension.ts";
 import { CONTINUATION_MESSAGE } from "../handoff.ts";
@@ -12,6 +14,7 @@ import {
   createAgentSessionRuntime,
   createAgentSessionServices,
   type CreateAgentSessionRuntimeFactory,
+  type InlineExtension,
   ModelRuntime,
   runRpcMode,
   SessionManager,
@@ -29,7 +32,9 @@ const argv = process.argv.slice(2);
 const option = (name: string) => { const i = argv.indexOf(name); return i < 0 ? undefined : argv[i + 1]; };
 const sessionFile = option("--session");
 if (sessionFile && !isOwned(dirname(resolve(sessionFile)))) throw new Error("Session file must be disposable");
-const extensions = argv.flatMap((arg, i) => arg === "--extension" ? [resolve(argv[i + 1])] : []);
+const extensions = argv.flatMap((arg, i) => arg === "--extension"
+  ? [argv[i + 1].startsWith("builtin:") ? argv[i + 1] : resolve(argv[i + 1])] : []);
+const skills = argv.flatMap((arg, i) => arg === "--skill" ? [resolve(argv[i + 1])] : []);
 const agentDir = join(process.env.HOME!, ".pi/agent");
 mkdirSync(agentDir, { recursive: true });
 const faux = fauxProvider();
@@ -43,7 +48,7 @@ const respond: FauxResponseFactory = (context) => {
   faux.appendResponses([respond]);
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
-  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name) })}\n`);
+  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name) })}\n`);
   const savedLinkTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^saved-link-reference:(.+)$/m)).find(Boolean);
   if (savedLinkTask) {
@@ -152,13 +157,34 @@ const modelRuntime = await ModelRuntime.create({
 });
 modelRuntime.registerNativeProvider(faux.provider);
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: argv.includes("--approve") });
+  settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } });
+  const systemPrompt = option("--system-prompt");
   const services = await createAgentSessionServices({
-    cwd, agentDir, modelRuntime,
-    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
+    cwd, agentDir, modelRuntime, settingsManager,
     resourceLoaderOptions: {
-      noExtensions: true, noSkills: true, noPromptTemplates: true,
-      noThemes: true, noContextFiles: true, additionalExtensionPaths: extensions,
-      systemPrompt: "Deterministic source integration fixture.",
+      noExtensions: argv.includes("--no-extensions"),
+      noSkills: argv.includes("--no-skills"), noPromptTemplates: argv.includes("--no-prompt-templates"),
+      noThemes: true, noContextFiles: argv.includes("--no-context-files"), additionalExtensionPaths: extensions,
+      additionalSkillPaths: skills,
+      // Use public built-in factory descriptors, not the CLI's private registry.
+      // These no-I/O tools expose selection/registration without model services.
+      extensionFactories: CHILD_BUILTIN_EXTENSION_NAMES.map(name => ({
+        name, builtin: true,
+        factory(pi) {
+          if (sessionFile) appendFileSync(`${sessionFile}.builtin-factories.jsonl`, JSON.stringify({ name, phase: "factory", pid: process.pid }) + "\n");
+          pi.on("session_start", () => {
+            if (sessionFile) appendFileSync(`${sessionFile}.builtin-factories.jsonl`, JSON.stringify({ name, phase: "hook", pid: process.pid }) + "\n");
+          });
+          pi.registerTool({
+            name: `faux_builtin_${name.replaceAll(/[.-]/g, "_")}`, label: `Built-in ${name}`, description: "No-I/O built-in fixture tool.",
+            parameters: Type.Object({}),
+            async execute() { return { content: [{ type: "text", text: name }], details: {} }; },
+          });
+        },
+      } satisfies InlineExtension)),
+      systemPrompt: systemPrompt ? readFileSync(systemPrompt, "utf8") : "Deterministic source integration fixture.",
+      appendSystemPrompt: option("--append-system-prompt") === undefined ? undefined : [option("--append-system-prompt")!],
     },
   });
   const result = await createAgentSessionFromServices({
@@ -166,7 +192,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, 
     thinkingLevel: "off",
     tools: option("--tools")?.split(",").map(name => name.trim()).filter(Boolean),
     noTools: argv.includes("--no-tools") ? "all"
-      : argv.includes("--no-builtin-tools") || option("--tools") === undefined ? "builtin" : undefined,
+      : argv.includes("--no-builtin-tools") ? "builtin" : undefined,
   });
   if (result.extensionsResult.errors.length) throw new Error(JSON.stringify(result.extensionsResult.errors));
   return { ...result, services, diagnostics: services.diagnostics };

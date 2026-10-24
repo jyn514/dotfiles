@@ -275,7 +275,7 @@ export default function (pi: ExtensionAPI) {
       inheritedProvider: currentModel.provider,
       inheritedModelId: currentModel.id,
       inheritedThinking: pi.getThinkingLevel() as ThinkingLevel,
-      inheritedTools: pi.getActiveTools().join(","),
+      projectTrusted: typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : false,
       model,
       thinking: request.thinking,
       templatePromptPosition: request.templatePromptPosition,
@@ -287,7 +287,7 @@ export default function (pi: ExtensionAPI) {
     name: "spawn_agent",
     label: "Spawn Agent",
     get description() {
-      return `Spawn a fresh-context Pi subagent for a concrete task. Automatic extension, skill, and prompt-template discovery is disabled. Agent templates may explicitly configure a provider/model pair, thinking level, tools, skills, and extensions. Omitted template settings inherit from the parent where applicable.
+      return `Spawn a fresh-context Pi subagent for a concrete task. Children discover built-in, configured, and local extensions, skills, and prompt templates using the parent's resolved project trust. Agent templates may configure a provider/model pair, thinking level, tools, skills, and extensions; template-only \`disabledExtensions\` excludes extension entrypoints (including \`builtin:name\`) before they execute. Omitted model and thinking settings inherit from the parent. Omitted template tools use normal activation, not the parent's active tool names.
 ${spawnModels.size ? `
 A task may run on a model of its own, without a template: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort.
 ` : ""}

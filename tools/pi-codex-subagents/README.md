@@ -56,18 +56,50 @@ thinking: high
 tools: read,bash,grep,find,ls
 skills: web-investigate
 extensions: @scope/pi-extra-tools, ~/.pi/agent/extensions/local-helper.ts
+disabledExtensions: pi-codex-subagents
 hint: Give this reviewer exact file paths and a narrow scope.
 ---
 You are a focused review subagent. Return concise findings with file paths.
 ```
 
-`provider` and `model` are an optional pair. When both are present, Pi launches that exact provider/model combination. If either is absent, the child inherits the parent agent's provider and model. `thinking` is also optional and otherwise inherits the parent. Template `tools` override inherited tool names.
+`provider` and `model` are an optional pair.
+When both are present, Pi launches that exact provider/model combination.
+If either is absent, the child inherits the parent agent's provider and model.
+`thinking` is also optional and otherwise inherits the parent.
+Template `tools` select an explicit task-tool allowlist; omitting them uses Pi's normal activation, not the parent's active tool names.
 
-`skills` may contain skill names or paths. `extensions` may contain local files/directories or npm package names already installed by Pi. Package names are resolved from project-local packages first and then Pi's global npm directory. Missing packages are never installed automatically.
+`skills` may contain skill names or paths.
+`extensions` may contain local files/directories or npm package names already installed by Pi.
+These explicit package additions are resolved from project-local packages first and then Pi's global npm directory.
+Pi's normal discovery handles packages configured in its own settings.
 
-When a template loads extensions but omits `tools`, the child uses Pi's normal tool activation so tools registered by those extensions are available. Set template `tools` when you want an explicit allowlist. Without configured extensions, omitted template tools inherit the parent's active tool names as before.
+Children discover configured and local extensions, skills, and prompt templates through Pi's native resource discovery.
+They run in the parent's `ctx.cwd` and retain its resolved project-trust decision for that directory, including after recreation.
+Declining project trust prevents protected project resources from loading; user resources remain available.
+If an older parent or saved worker supplies no trust decision, the child does not grant project trust.
+Discovered extension tools are available even when they were not active in the parent.
 
-Automatic extension, skill, prompt-template, and context-file discovery is disabled in children. `AGENTS.md` and `CLAUDE.md` files are never loaded. Each child replaces Pi's default coding prompt with the contents of `~/.pi/agent/pi-codex-subagents/SYSTEM.md`, while only explicitly configured skills and extensions load. This file is created with a minimal subagent prompt when the extension first loads and can be edited directly. If the inherited parent model comes from an extension-registered provider, add that provider extension to the selected template; otherwise the isolated child cannot resolve the provider.
+`disabledExtensions` belongs only to agent-template frontmatter, not `config.json`, its `defaults`, or Pi's `settings.json`.
+It accepts comma-separated canonical entrypoint file paths, package names (including an unscoped basename), or `builtin:name` selectors.
+For example, `pi-codex-subagents` excludes this package's manager entrypoint without excluding sibling extensions in a monorepo.
+Use it on templates that should not expose subagent management tools.
+Exclusions apply to both discovered extensions and explicit `extensions` additions, before modules, factories, or hooks execute.
+Package-name exclusions match the package's declared entrypoints, not every file in its directory.
+The packaged child helper always loads independently, preserving pause support and `link_reply` even with an empty task-tool allowlist.
+Exclusions persist with each worker; older worker records without exclusions have none.
+
+The manager uses Pi's public package resolver to select enabled entrypoints before starting the child.
+It transports those paths through `--no-extensions` plus explicit `--extension` arguments so unfiltered extension rediscovery cannot bypass exclusions.
+Skills and prompt templates still use normal native discovery.
+Pi's built-in extensions also load by default, subject to native settings and template exclusions such as `builtin:mcp`.
+The manager keeps their names in one package-owned list; maintain that list when supported Pi CLI versions add or rename built-ins.
+Older Pi versions without built-in extension resources keep their existing package discovery.
+
+Context-file discovery remains disabled: children do not load `AGENTS.md` or `CLAUDE.md` files.
+Each child replaces Pi's coding prompt with `~/.pi/agent/pi-codex-subagents/SYSTEM.md` and supplies an empty append prompt.
+Pi's discovered `SYSTEM.md` and `APPEND_SYSTEM.md` files do not replace or append to it.
+The extension creates the dedicated file with a minimal subagent prompt when first loaded; edit it directly to change child instructions.
+An extension-registered provider must be discoverable or added through template `extensions`, and must not be excluded, for the child to resolve its model.
 
 ## Configuration
 
@@ -106,7 +138,10 @@ Optional configuration lives at:
 
 Configuration is read when agents spawn, while cleanup runs when the extension loads. Restart Pi after changing `storageDir` or `retentionDays` so storage lookup and cleanup use the same configuration throughout the process.
 
-Template skills and extensions override configured defaults. Skills explicitly requested by the parent are added to configured template/default skills. Tool selection belongs to the template or is inherited from the parent. A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model without a template.
+Template skills and extensions override configured defaults; these are additions to native discovery, not its replacement.
+Skills explicitly requested by the parent are added to configured template/default skills.
+Tool selection belongs to the template or uses normal Pi activation when omitted.
+A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model without a template.
 
 ## Direct skill routing
 
@@ -137,7 +172,8 @@ The arguments are offered only when at least one allowed model is available, and
 
 The list is resolved when a session starts: `models` entries are filtered to what is currently available, unavailable entries are reported as a warning notification, and the scoped models are merged in. Editing the configuration or the Pi setting takes effect when the next session starts, matching the `storageDir` and `retentionDays` behavior above. If a provider drops out mid-session, `spawn_agent` refuses that model at spawn time instead of serving a stale route.
 
-An allowed model may belong to an extension-registered provider. Route to one only from a template that loads that provider extension, since children load none of their own.
+An allowed model may belong to an extension-registered provider.
+Its provider extension must load through native discovery or the template's explicit additions.
 
 A thinking level written into an `enabledModels` pattern, such as `anthropic/claude-opus-4-6:high`, is ignored here. `thinking` stays a separate argument, and the child clamps it to what its model supports.
 
@@ -190,7 +226,7 @@ Read-only turns do not replace the record.
 
 The boundary harness owns capture, checking and record retirement; this package's manager and child helper neither retain nor transport boundary state.
 There is no checkpoint restore command or extension-event protocol.
-This package does not discover or load a boundary controller automatically.
+This package has no special boundary-controller discovery; a controller can load through Pi's normal extension setup.
 Normal sandbox launchers already inject guest tools; native tools need the boundary extension loaded through their existing extension setup.
 For source-backed native and guest regression commands, see [changed-core tests](test/SOURCE-CORE.md).
 

@@ -64,13 +64,17 @@ Only model I/O is faux; session execution, RPC framing, pause/handoff, extension
 Manager, production `index.ts`, and coordinator behavior are real.
 Tests need no private production or core-test imports.
 
-The fixture supports the tested CLI subset: `--session`, ordered `--extension` paths, `--tools`, `--no-tools`, and `--no-builtin-tools`.
+The fixture supports the tested CLI subset: `--session`, ordered `--extension` and `--skill` paths,
+`--tools`, `--no-tools`, `--no-builtin-tools`, `--approve`/`--no-approve`, resource-discovery suppression flags,
+`--no-context-files`, `--system-prompt`, and `--append-system-prompt`.
 Explicit tool selection goes through the real SDK's registration and activation rules, including plain lists and native modifiers.
-Without tool-selection flags, the fixture intentionally disables builtins.
-Model selection is faux; builtins and automatic resource discovery are disabled.
-Paths go through public `resourceLoaderOptions.additionalExtensionPaths` and Pi's shipped
+Without tool-selection flags, normal builtin and extension-tool activation applies.
+Model selection remains faux.
+Native settings load from disposable user/project files with the supplied project-trust decision;
+only compaction and retry are overridden for deterministic tests.
+Paths go through public resource-loader options and Pi's shipped
 `DefaultResourceLoader`/jiti loader, including source SDK virtual modules and tsconfig-path handling.
-Manager supplies `child-helper.ts` before explicit template extensions.
+Manager supplies `child-helper.ts` before selected extension entrypoints.
 
 `held-tool-extension.ts` registers `faux_hold` with `Type.Object({ path: Type.String() })`.
 A `hold-tool:<owned-path>` input makes the provider call it.
@@ -92,6 +96,21 @@ Completed tool results prevent either batch from being resent on fresh continuat
 production options or fixture-only APIs.
 
 ## Coverage and limits
+
+`discovery.test.ts` checks native configured-package discovery, user/project skills and prompt templates,
+canonical-path and package-basename exclusions, and explicit additions subject to exclusions.
+A disposable monorepo contains a denied manager entrypoint and an allowed sibling extension.
+Import, factory, and hook markers show that only the trusted project fixture executes;
+the denied manager never executes, even when explicitly added.
+The discovered tool is called despite being absent from the supplied parent tool names.
+Explicit task-tool lists still restrict it, while the helper's `link_reply` remains available.
+Fresh worker processes retain trust and exclusions after template edits, expand skills/templates normally,
+and use the dedicated child prompt without discovered system, append, or context files.
+The SDK fixture supplies dummy built-in factories through public `InlineExtension` descriptors, using the manager's authoritative name list.
+They record factory/hook execution and register no-I/O tools instead of starting actual CLI services.
+Built-in cases cover default discovery, selective `builtin:name` exclusions, native settings exclusions,
+trusted/untrusted project overrides, and explicit task-tool restrictions.
+A separate exact-name assertion checks the four user-approved current CLI identities; service behavior is not tested here.
 
 `boundary-integration.test.ts` exercises the production boundary controller, actual native/guest writes and real local JJ.
 Worker A reorganizes rules, settles and exits; the test requires the harness-owned shared record to exist.
