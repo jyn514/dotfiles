@@ -20,12 +20,15 @@ Before writing, identify:
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
+For a correction-driven revision, identify the question, counterexample, or new fact that prompted reconsideration.
+Consider teaching that reasoning step before prescribing the resulting answer.
 
 Do not overfit a revision to the session that exposed the failure.
-Extract the reusable decision error; do not promote that session's vocabulary, preferred solution, or special-case sequence into general rules.
-Keep task-specific solutions in examples unless independent evidence or a hard constraint supports broader application.
-Use §6's scope and interaction checks to challenge the rule beyond that session, including cases where a rejected mechanism is required.
-Matching the corrected answer in the originating task does not establish generalization.
+Broader vocabulary does not make the corrected answer a reusable decision rule.
+Keep task-specific conclusions in examples unless independent evidence or an established constraint supports the broader prescription.
+Use §6's scope and interaction checks to challenge the rule's main prescription, not just confirm that its exceptions preserve required behavior.
+For judgment guidance, trace how different governing requirements could lead to different choices, including cases where the rejected mechanism is necessary.
+Distinguish observed replay success from generalization; matching the originating answer alone establishes neither portability nor reliable improvement.
 
 Require a concrete repeated use, second consumer, or hard constraint.
 Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
