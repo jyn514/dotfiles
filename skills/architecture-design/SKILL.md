@@ -6,7 +6,7 @@ description: "Design, assess, or choose a bounded software architecture: subsyst
 # Architecture Design
 
 Design or assess one selected subsystem and decide whether changing it is worth the churn.
-Produce a falsifiable boundary proposal, not a diagram justified by file size.
+Produce a falsifiable recommendation, not a diagram justified by file size.
 Trace one real caller → handler → effect path before proposing a replacement; for greenfield work, trace the closest existing primitive or integration caller.
 Recommend the smallest sufficient change; when evidence is missing, propose a decision-changing check rather than a larger architecture.
 
@@ -86,7 +86,7 @@ Otherwise prefer safe defaults rather than forcing the runtime user to make ever
 
 ## Procedure
 
-### 1. Map the current subsystem
+### 1. Trace the existing path
 
 Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
 
@@ -97,19 +97,9 @@ For adapters and proxies, inspect the native interface and any existing analogou
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 
-Classify responsibilities by reason to change: parsing, normalization, validation, domain policy, lifecycle, effects, projection, compatibility, and orchestration.
-Record data shapes, effect owners, dynamic state, and dependency direction before naming destination modules or components.
+### 2. Challenge the hardest part and decide whether design is needed
 
-#### Design risk applicability
-
-Before choosing boundaries, check for shared state or external effects, asynchronous work, resource or performance constraints,
-trust crossings, independent deployments or persisted formats, and diagnosis or recovery needs.
-Read the corresponding [design-risk checks](references/design-risks.md#applicability) for each applicable case.
-Establish a concrete constraint or failure case before adding a mechanism; reuse settled contracts rather than reopening them.
-
-### 2. Challenge the hardest part
-
-Name the hardest part of the proposed design and the guarantee, distinction, or coordination that makes it hard.
+Name the hardest part of the proposed approach and the guarantee, distinction, or coordination that makes it hard.
 A positive response to a proposal does not by itself approve every detail.
 Distinguish the user’s requirements from assumptions and guarantees introduced by the proposal; keep the latter open to reconsideration.
 Ask whether the hard part can be made unnecessary before working out how to implement it.
@@ -119,7 +109,21 @@ If none fails, remove the hard part instead of elaborating its machinery.
 Otherwise retain it or find another approach; do not weaken the requirement without approval.
 Make the decisive comparison visible in the recommendation, not just a claim that the chosen design is simpler.
 
+If an existing primitive or local change meets the governing requirements, report it as a complete recommendation and stop before subsystem mapping or boundary design.
+Show the traced path, decisive requirement comparison, required change, and verification limits.
+The recommendation must respect governing ownership, authorization, compatibility, and storage constraints; reuse must rely on a supported interface available to the intended consumer.
+If sufficiency is uncertain, use the cheapest decision-changing check rather than assuming a boundary design is needed.
+Continue through steps 3–6 only when a genuine architectural choice remains unresolved.
+
 ### 3. Find credible seams
+
+Classify responsibilities by reason to change: parsing, normalization, validation, domain policy, lifecycle, effects, projection, compatibility, and orchestration.
+Record data shapes, effect owners, dynamic state, and dependency direction before naming destination modules or components.
+
+Before choosing boundaries, check for shared state or external effects, asynchronous work, resource or performance constraints,
+trust crossings, independent deployments or persisted formats, and diagnosis or recovery needs.
+Read the corresponding [design-risk checks](references/design-risks.md#applicability) for each applicable case.
+Establish a concrete constraint or failure case before adding a mechanism; reuse settled contracts rather than reopening them.
 
 A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests. For existing subsystems, seek a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit. For a staged greenfield new tool, justify responsibility, data, and effect seams by approved requirements and lifecycle ownership instead of extraction payoff.
 Consumer behavior should remain stable during extraction.
@@ -189,5 +193,7 @@ A ready issue names the current coupling, selected owner, dependency direction, 
 
 ## Output
 
-Report the classification, selected boundary, decisive evidence, maintenance gain, churn and risks, rejected broader decomposition, and next action.
+Report the classification, recommended change, decisive evidence, maintenance gain, churn and risks, rejected broader decomposition, and next action.
+Name the existing primitive, local change, or selected boundary.
+For an early recommendation, omit inapplicable boundary details rather than completing the full design procedure.
 For a document task, report its path and validation instead of repeating it.
