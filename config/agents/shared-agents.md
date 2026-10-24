@@ -262,7 +262,7 @@ jyn uses Fish, not Bash.
 
 ## Continuous improvement
 
-- **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
+- **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, conflicting instructions, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
 - **Reinforce good behavior:** If I praise behavior not already covered by existing instructions, suggest a change to the prompt or skill that owns that behavior.
   Prefer updating an existing owner over adding a new rule or location.
   Praise authorizes a suggestion, not an edit.
