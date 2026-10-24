@@ -93,18 +93,16 @@ production options or fixture-only APIs.
 
 ## Coverage and limits
 
-`manager-checkpoint.test.ts` exercises the volatile handoff with a narrow native checkpoint peer.
-It checks real settled child exits and new-PID restoration before the next tool, stable worker/session identity, no-write preservation,
-replacement, explicit retirement, missing/malformed exports, startup failure, failed restoration, crashes, interruption,
-missing/malformed restore results and helper errors with successful RPC command completion,
-late closing-process notifications/settled frames, worker/parent isolation, manager recreation and absence of payloads in production files.
-A production-index pause case starts with a live restored checkpoint and verifies the actual saved group record and both transcripts exclude it.
-The narrow `checkpoint-rpc-filter.ts` fixture drops or corrupts only helper-result frames from a real native child to test missing receipts.
-It does not replace session execution, helper code or provider behavior.
-`boundary-integration.test.ts` additionally exercises the production boundary controller, actual native/guest writes and real local JJ.
-It writes and hibernates, preserves the checkpoint through a no-write turn, restarts and blocks the separating edit once,
-then hibernates and restarts again with the checkpoint retired so retry succeeds.
-The peer fixture establishes transport/lifetime behavior; it is not a substitute for that actual boundary-policy regression.
+`boundary-integration.test.ts` exercises the production boundary controller, actual native/guest writes and real local JJ.
+Worker A reorganizes rules, settles and exits; the test requires the harness-owned shared record to exist.
+A read-only resumed turn preserves that record, then the manager shuts down.
+A new manager and parent session spawn a different worker B to attempt an extraction.
+B must receive one warning with the file unchanged and the record retired.
+Another read-only turn cannot resurrect it; B's resumed retry runs in a new process and succeeds without changing unrelated edits.
+The fixture ignores `/target/jj-split/` before its baseline commit and never seeds or mutates boundary records.
+Companion dotfiles tests cover shared-record concurrency, independent SDK sessions and isolation between separate JJ repositories.
+They do not exercise an actual manager parent/child hierarchy or linked JJ workspaces.
+The removed manager/helper checkpoint handoff is not a supported integration.
 
 `manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
 It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.

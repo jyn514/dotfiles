@@ -181,34 +181,18 @@ The overlay uses the child working directory for tool rendering and synchronizes
 
 Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `send_message` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
 
-### Optional commit-boundary checkpoints
+### Working-copy commit-boundary protection
 
-A configured boundary controller can carry one checkpoint across normal settled child-process exits and `send_message` restarts of the same worker.
-The manager retains it only in parent-process memory, scoped by parent session and worker ID.
-Interrupts, crashes, failed startup and shutdown discard it; reopening the same transcripts does not restore it.
-Nothing is added to session entries, info files or pause records.
-Native workers must explicitly load their boundary extension through template/default `extensions`; this package never discovers or loads one automatically.
-Workers without a boundary controller need no configuration and remain quiet.
+The independently deployed dotfiles boundary integration can warn before a structured write makes the latest finished editing response's diff no longer separately selectable by `agent-split`.
+Its ignored `target/jj-split/commit-boundary.json` record belongs to the working copy, so protection follows writes across parent sessions, fresh workers and resumed workers, including after child-process exit.
+A warning blocks that write once and retires the protected selection; an intentional retry can proceed.
+Read-only turns do not replace the record.
 
-For independently deployed controllers, `checkpoint.ts` defines the version-1 integration API:
-
-- Register synchronous `pi.events` listeners during extension loading, regardless of helper/controller load order.
-- At the end of the controller's awaited `agent_settled` handler, emit `subagent:checkpoint:export` with `{ version: 1, checkpoint }`.
-  `checkpoint` is `{ repository: string, commit: string, parent: string }` or explicit `null` after retirement/abort.
-  Export on no-write turns too; missing or malformed exports discard the previous value.
-  Do not export shutdown reset.
-- Listen to `subagent:checkpoint:restore` for a mutable `{ version: 1, checkpoint, applied: false }` request.
-  Synchronize session/cwd and the controller lifetime, apply the value synchronously, then set `applied = true` before returning.
-  The event bus does not await asynchronous listeners.
-
-The helper's internal `/subagent-checkpoint-restore` command runs after startup synchronization and before any prompt or held-child release.
-After synchronous application, the helper sends `{ version: 1, restored: boolean }` on the same private notification transport.
-The manager requires that result and command completion before proceeding; RPC completion alone does not acknowledge restoration.
-A missing or malformed result fails startup rather than permitting an unresolved restore to race the first prompt.
-No disk receipt is written.
-A non-null checkpoint that cannot be restored is dropped and reported once, without retry.
-Explicit null with no controller is a silent no-op.
-The reserved `__pi_subagent_checkpoint__:` notification prefix carries exports privately to the manager, not to ordinary worker output or logs.
+The boundary harness owns capture, checking and record retirement; this package's manager and child helper neither retain nor transport boundary state.
+There is no checkpoint restore command or extension-event protocol.
+This package does not discover or load a boundary controller automatically.
+Normal sandbox launchers already inject guest tools; native tools need the boundary extension loaded through their existing extension setup.
+For source-backed native and guest regression commands, see [changed-core tests](test/SOURCE-CORE.md).
 
 ## Durable pause
 

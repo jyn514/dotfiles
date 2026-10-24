@@ -44,7 +44,6 @@
     "core.ts",
     "handoff.ts",
     "child-helper.ts",
-    "checkpoint.ts",
     "child-link.ts",
     "link.ts",
     "suspension.ts",

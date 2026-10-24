@@ -1,71 +1,67 @@
-# Preserve commit-boundary checkpoints across worker hibernation
+# Preserve the latest editing response across workers
 
-## Contract
+## Selected contract
 
-A logical worker should retain its commit-boundary checkpoint when its child process exits after settling and `send_message` starts that same worker again.
-Today, `core.ts` terminates settled children and resumes their transcripts in fresh processes; the boundary controller’s closure disappears with the old process.
-Keep one checkpoint `C = { repository, commit, parent } | null` per parent-session ID and stable worker ID in the parent manager’s memory.
-The manager owns transport and lifetime; the boundary extension owns interpreting, capturing, checking, restoring, and retiring `C`.
+A finished editing response protects its working-copy diff: for example, worker A reorganizes rules and exits, then fresh worker B extracts those rules.
+Before B's structured write makes A's changes no longer separately selectable by `agent-split`, warn once and leave the file unchanged.
+Protection belongs to the working copy, not a worker or parent session.
 
-This is not persistence across parent shutdown or reload.
-Do not put checkpoints in `AgentInfo`, transcripts, custom session entries, suspension records, or other disk state.
-Do not add automatic commits, retained source copies, shell interception, a service, retries, recovery tickets, or longer-lived child processes.
+**Decided:** the dotfiles boundary harness owns the ignored `target/jj-split/commit-boundary.json` record, containing only an immutable revision ID.
+At editing-response settlement it runs ordinary wrapped JJ snapshotting and captures immutable `@`; it does not call `agent-split --checkpoint`.
+Equal revision IDs represent the same protected selection; there are no generation tokens.
+Read-only turns and child/manager exits do not clear this record.
+Only a late result matching the checked revision may retire the record; storage validation and retirement belong to that harness, not this package's manager.
+An empty record means no protected selection.
 
-## 1. Add the narrow manager/helper handoff
+Native and guest structured writes use the same production boundary integration.
+Before writing, it reads the record and invokes read-only `--check-file` from the workspace cwd with `{revision, path, actual, proposed}`.
+`revision` is immutable; `path` is literal workspace-relative; `actual` is retained native bytes as `{content: base64, executable: boolean}` or `null` for absence; `proposed` is base64.
+The CLI derives the parent from the revision.
+The harness skips unsupported file types rather than rereading or converting actual bytes.
 
-Change `core.ts` and `child-helper.ts`, add a checkpoint-specific transport contract module, and include that module in `package.json`’s published files.
-Keep retained state outside persisted `AgentInfo` and process-scoped `LiveAgent`.
-Use the existing transport patterns: an internal extension command through `sendCommand` for restoration, and a reserved `ctx.ui.notify` prefix for child exports, following `child-link.ts` and the notification interception in `core.ts`.
-Do not reuse disk-based `CONTROL_ENTRY` receipts or broaden this into a generic extension-state framework.
+The reply is `{status: 'preserved' | 'would-lose' | 'unusable', reason?: string}`; `would-lose` requires a reason.
+Preserved permits the write and retains protection.
+Would-lose retires the matching shared record before warning and blocking the write.
+Unusable retires the matching record and permits the write.
+Unexpected CLI failures remain ordinary nonzero commands or transport errors, not JSON diagnostic fields.
+The harness's common finalization forgets the matching selection, reports the actual error once and fails open; cancellation and target changes still fail without writing.
 
-Represent an export as either a checkpoint or explicit null, with a separate missing-export sentinel in the receiving process state.
-Validate the envelope and checkpoint shape without interpreting repository history.
-Accept notifications only from the current owned `LiveAgent`, before termination, and intercept them before ordinary broadcasting or logging.
-At each native RPC `agent_settled`, replace the retained value with that process’s export; missing or malformed export drops the previous value rather than reusing it.
-Clear the pending export after consumption and invalidate retained state when another run starts in a still-live child.
+There is no manager checkpoint ownership, cross-worker transport, restore acknowledgment, automatic commit/authorship, shell interception, new service/tool, recovery mechanism, or retained source copy.
+Remove the former private helper protocol rather than maintaining compatibility between jointly changed internal callers.
+Other link, pause, startup, error, and shutdown behavior stays unchanged.
+Normal sandbox launchers already inject guest integration; no special user template or configuration is required.
+Existing internal guest settlement requests remain permitted; they are not new model tools or splitter CLI modes.
 
-When launching a replacement process, consume the retained value immediately so a crash cannot leave an older copy available for another restart.
-After startup synchronization through `get_state`, but before the first prompt or release of a restored-held child, send the restore command, including explicit null when nothing was retained.
-Require synchronous controller application before the command completes, followed by an explicit helper restore result on the same private notification transport.
-RPC command completion alone is not an acknowledgment; a missing or malformed result fails startup before any prompt or release.
-If a non-null checkpoint cannot be restored, drop it and report the unavailable integration without creating a retry obligation.
-A worker with no retained checkpoint and no boundary controller is normal; restoration is a silent no-op.
+## Implementation steps
 
-Preserve transferred state only for normal settled hibernation.
-Before other termination paths—interrupt, timeout, startup failure, unexpected exit, or shutdown—clear retained and pending state; ignore late exports from those processes.
-Clear the manager’s entire map on shutdown.
+These are logical review units, not instructions to commit or deploy.
 
-## 2. Connect the domain-owned boundary controller
-
-Companion work belongs in `config/pi-agent/pi-extensions/commit-boundary.ts` and its tests within a separately writable dotfiles checkout.
-Do not import that external path into this package.
-Keep integration in `createBoundaryController`, which already serves both native tools and `guest-tools.ts`; `commit-boundary/operations.mjs` should retain its existing checking semantics.
-
-Register checkpoint-specific synchronous event-bus listeners during extension loading.
-The helper’s restore command invokes the controller through that bus after startup resets; restoration synchronizes session/cwd and establishes a fresh controller lifetime.
-The controller publishes its current checkpoint at the end of its existing awaited `agent_settled` handler, after capture, including no-write turns and explicit null after retirement or abort.
-Do not export from the helper’s earlier settled handler or publish shutdown reset as a replacement handoff.
-
-Installed Pi’s `agent-session.ts` awaits extension settled hooks before emitting the RPC settled event, while `event-bus.ts` does not await asynchronous listeners.
-Publishing synchronously from the completed controller hook therefore avoids an asynchronous export request after RPC settlement and its admission race.
-Do not rely on helper-first loading: `sandbox-host-pi` prepends dotfiles index and guest-tools before supplied extensions.
-
-The manager already explicitly loads `child-helper.ts` on every launch.
-Sandbox-host workers already receive index plus guest-tools; native workers disable extension discovery and must explicitly configure `commit-boundary.ts` through existing defaults/template extensions.
-Do not silently load dotfiles extensions for other package users.
+1. **Remove worker checkpoint transport.**
+   Surgically remove checkpoint maps, notification interception, restore/startup/shutdown support from `core.ts`, helper commands/listeners from `child-helper.ts`, and `checkpoint.ts` from published files.
+   Delete the checkpoint peer/filter and manager handoff tests, remove their fake-child support and driver phase, preserving unrelated lifecycle fixtures.
+   Run focused source-backed manager/link/pause suites.
+2. **Implement shared harness ownership in the companion dotfiles change.**
+   The dotfiles owner changes `commit-boundary.ts`, shared native/guest integration, storage validation/retirement, CLI `--check-file` and removal of `--checkpoint`, and domain tests.
+   This checkout neither imports external production paths nor owns that implementation.
+   Coordinate the exact request/reply contract above before final integration runs.
+3. **Replace the workflow regression and documentation.**
+   Update `test/boundary-integration.test.ts` to use production boundary integration, real JJ, and source-backed native and guest tools: A edits, settles and exits; a new manager/parent starts different B, which attempts extraction and is blocked without file changes; a read-only turn preserves protection; retry after retirement succeeds.
+   Update `README.md`, `test/SOURCE-CORE.md`, and driver references to remove obsolete per-worker guarantees.
 
 ## Acceptance and verification
 
-Add a manager-checkpoint phase to `test/run-source-tests.ts`, using the real RPC child in `test/source-rpc-child.ts` and a narrow checkpoint peer fixture.
-In dotfiles, extend the controller tests in `tests/pi/commit_boundary_test.ts` and the actual native/guest regressions in `tests/pi/native_commit_boundary.mjs` and `tools/codex-sandbox/tests/commit_boundary_test.ts`.
-Keep those regressions covered by their existing default adapters, `tests/native/test_native_commit_boundary_session.py` and `tests/native/test_native_commit_boundary.py`.
+- In both native and guest phases, ignore `/target/jj-split/` before the baseline commit and require the shared record after A exits.
+  Use ordinary `spawn_agent` for A's rules reorganization, observe completed status and process exit, then spawn B with a distinct worker/session/PID after manager recreation.
+  B's separating write warns once and leaves the file unchanged.
+  A later retry succeeds.
+  Unrelated working-copy changes remain intact.
+- Exercise a read-only turn before the warning and resumed-worker retry.
+  Protection survives process and manager lifetimes; independent working copies remain isolated.
+  Domain storage tests in the companion change cover cross-process latest-record retirement and equal-ID semantics rather than invented worker isolation.
+- Companion native tests cover parent-to-child and child-to-parent writes when their public fixture supports those paths; do not invent a platform or new harness here.
+- Run package nondomain checks while the companion is changing.
+  Then run `PI_TEST_COMMIT_BOUNDARY_SOURCE=/src/dotfiles /src/dotfiles/dev/test-environment bun packages/pi-codex-subagents/test/run-source-tests.ts packages/pi-codex-subagents/test/boundary-integration.test.ts` and the full `bun run test:subagents` through the same source-backed environment.
+  Keep exact commands and raw logs in ignored `.pi/checkpoint-evidence/`.
 
-- Write, settle, and verify process exit; resume the same worker ID and transcript with a different PID, with `C` restored before its first edit.
-- Trigger a warning that blocks the write and retires `C`; settle without a successful write, restart again, and verify the next edit has no checkpoint.
-- Verify no-write turns preserve `C`, later successful writes replace it, and workers/parent sessions remain isolated.
-- Verify missing, malformed, interrupted, or crashed handoffs, restore failure, and late old-process exports never resurrect an earlier checkpoint.
-- Verify parent shutdown/recreation with the same transcripts restores nothing, and no checkpoint appears in session, info, or group files.
-- Exercise startup-reset ordering, stale controller lifetimes, aborted settlement, and explicit null in controller tests.
-
-Run focused cases through the source-backed driver, then `bun run test:subagents`.
-Ordinary unconfigured `bun test` skips native coverage; installed Pi distribution tests are not substitutes for the source runtime described in `test/SOURCE-CORE.md`.
+The source-backed driver and public Pi runtime described in `test/SOURCE-CORE.md` are authoritative for these tests; installed SDK tests or unconfigured skips are not substitutes.
+Run final integration against the companion implementing this contract; passing the old source contract does not establish shared protection.

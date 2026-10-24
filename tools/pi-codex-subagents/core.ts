@@ -17,10 +17,6 @@ import {
   admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
   type LinkResult, type LinkStatus, type LinkWorkerAddress,
 } from "./link.js";
-import {
-  CHECKPOINT_NOTIFY, CHECKPOINT_RESTORE_COMMAND, CHECKPOINT_VERSION, checkpointEnvelope, checkpointRestoreResult,
-  type Checkpoint, type CheckpointEnvelope,
-} from "./checkpoint.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
 export const PACKAGE_BASENAME = "pi-codex-subagents";
@@ -1062,15 +1058,6 @@ export function consumeFirstMatchingMailboxEvent(events: AgentCompletionEvent[],
 
 export class AgentManager {
   private readonly live = new Map<string, LiveAgent>();
-  // Parent-manager memory only. Never attach these payloads to AgentInfo/LiveAgent.
-  private readonly checkpoints = new Map<string, Checkpoint>();
-  private readonly checkpointExports = new Map<LiveAgent, CheckpointEnvelope | undefined>();
-  private readonly checkpointRestores = new Map<LiveAgent, boolean | undefined>();
-  private checkpointKey(info: AgentInfo): string { return JSON.stringify([info.parentSessionId, info.id]); }
-  private clearCheckpoint(live: LiveAgent): void {
-    this.checkpoints.delete(this.checkpointKey(live.info));
-    this.checkpointExports.delete(live);
-  }
   private readonly mailbox: AgentCompletionEvent[] = [];
   private waiters: Waiter[] = [];
   private readonly waitAllClaims = new Set<{
@@ -1398,10 +1385,6 @@ export class AgentManager {
   }
 
   private async startLiveAgent(info: AgentInfo, initialMessage?: string, displayMessage?: string, held = false): Promise<LiveAgent> {
-    // Consume before any launch work: a failed replacement must not resurrect it.
-    const checkpointKey = this.checkpointKey(info);
-    const checkpoint = this.checkpoints.get(checkpointKey) ?? null;
-    this.checkpoints.delete(checkpointKey);
     readSystemPrompt();
     if (info.status !== "starting" && info.status !== "running") {
       this.notifyStatusChange({ ...info, status: "starting", lastActivity: Date.now() });
@@ -1485,9 +1468,6 @@ export class AgentManager {
       if (live.processFinished) return;
       this.clearModelResponseTimer(live);
       live.processFinished = true;
-      this.checkpointExports.delete(live);
-      this.checkpointRestores.delete(live);
-      if (!live.expectedExit) this.checkpoints.delete(this.checkpointKey(live.info));
       const persisted = readInfoFile(live.info.infoFile);
       if (persisted && FINAL_STATUSES.has(persisted.status)) {
         this.adoptTerminalState(live, persisted);
@@ -1548,26 +1528,6 @@ export class AgentManager {
     try {
       if (!proc.pid) throw new Error("Child Pi process did not provide a PID.");
       await this.sendCommand(live, { type: "get_state" }, DEFAULT_STARTUP_TIMEOUT_MS);
-      this.checkpointRestores.set(live, undefined);
-      try {
-        await this.sendCommand(live, { type: "prompt", message: `/${CHECKPOINT_RESTORE_COMMAND} ${JSON.stringify({
-          version: CHECKPOINT_VERSION, checkpoint,
-        })}` });
-      } catch (error) {
-        // Unknown command completion is a startup failure, not permission to
-        // prompt while restoration might still be executing in the child.
-        if (checkpoint !== null) console.error(`[subagents] Commit-boundary checkpoint unavailable for ${info.taskName}; checkpoint dropped.`);
-        throw error;
-      }
-      const restored = this.checkpointRestores.get(live);
-      this.checkpointRestores.delete(live);
-      // Only the helper's explicit synchronous-application result acknowledges
-      // restoration. SDK command completion/error routing is not that contract.
-      if (restored === undefined) throw new Error("Commit-boundary helper restoration result missing or malformed.");
-      if (!restored) {
-        if (checkpoint === null) throw new Error("Commit-boundary helper restoration failed.");
-        console.error(`[subagents] Commit-boundary checkpoint unavailable for ${info.taskName}; checkpoint dropped.`);
-      }
       let snapshot: ProcessSnapshot | undefined;
       for (let attempt = 0; attempt < 20 && !snapshot; attempt++) {
         snapshot = inspectProcess(proc.pid, childToken);
@@ -2031,33 +1991,6 @@ export class AgentManager {
       return;
     }
     if (event.type === "extension_ui_request" && event.method === "notify"
-      && typeof event.message === "string" && event.message.startsWith(CHECKPOINT_NOTIFY)) {
-      // Never broadcast or log checkpoint payloads, including invalid/late ones.
-      if (!this.shutdownController.signal.aborted && this.live.get(live.info.id) === live
-        && !live.expectedExit && !live.processFinished && !live.finalizedRun) {
-        let value: unknown;
-        try { value = JSON.parse(event.message.slice(CHECKPOINT_NOTIFY.length)); } catch {}
-        if (this.checkpointRestores.has(live)) {
-          this.checkpointRestores.set(live, checkpointRestoreResult(value)?.restored);
-        } else {
-          this.checkpointExports.set(live, checkpointEnvelope(value));
-        }
-      }
-      return;
-    }
-    if (event.type === "agent_start" && this.live.get(live.info.id) === live && !live.expectedExit) this.clearCheckpoint(live);
-    if (event.type === "agent_settled") {
-      const exported = this.checkpointExports.get(live);
-      this.checkpointExports.delete(live);
-      if (!this.shutdownController.signal.aborted && this.live.get(live.info.id) === live
-        && !live.expectedExit && !live.processFinished && !live.finalizedRun) {
-        this.checkpoints.delete(this.checkpointKey(live.info));
-        if (!event.aborted && !live.candidateError && exported?.checkpoint) {
-          this.checkpoints.set(this.checkpointKey(live.info), exported.checkpoint);
-        }
-      }
-    }
-    if (event.type === "extension_ui_request" && event.method === "notify"
       && typeof event.message === "string" && event.message.startsWith(LINK_REPLY_NOTIFY)) {
       // Notification handling must not block the RPC response loop (the tool is still running).
       void this.handleLinkReply(live, event.message.slice(LINK_REPLY_NOTIFY.length));
@@ -2151,7 +2084,7 @@ export class AgentManager {
       if (live.candidateError) this.markFailed(live, live.candidateError);
       else this.markCompleted(live);
       if (this.pauses.has(live.info.parentSessionId)) return;
-      void this.terminateProcess(live, false, live.info.status === "completed" && event.aborted !== true).catch((error) => {
+      void this.terminateProcess(live).catch((error) => {
         live.logger.info("hibernate", "failed to terminate settled child", { error: error instanceof Error ? error.message : String(error) });
       });
     }
@@ -2480,10 +2413,8 @@ export class AgentManager {
     });
   }
 
-  private terminateProcess(live: LiveAgent, captured = false, preserveCheckpoint = false): Promise<void> {
+  private terminateProcess(live: LiveAgent, captured = false): Promise<void> {
     this.clearModelResponseTimer(live);
-    if (!preserveCheckpoint) this.clearCheckpoint(live);
-    else this.checkpointExports.delete(live);
     if (live.processFinished) return Promise.resolve();
     if (live.termination) return live.termination;
     live.termination = (async () => {
@@ -2508,9 +2439,6 @@ export class AgentManager {
 
   async shutdown(): Promise<void> {
     this.shutdownController.abort(new Error("Agent manager shut down."));
-    this.checkpoints.clear();
-    this.checkpointExports.clear();
-    this.checkpointRestores.clear();
     await this.reconciliation;
     const terminations: Promise<void>[] = [];
     for (const live of this.live.values()) {

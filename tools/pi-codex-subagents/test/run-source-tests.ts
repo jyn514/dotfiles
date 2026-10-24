@@ -13,7 +13,7 @@ const defaults = [
   "source-core.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts",
   "manager-single-suspension.test.ts", "manager-suspension.test.ts", "capture-retry.test.ts", "discard-live-child.test.ts",
   "restore-startup-failure.test.ts", "manager-link.test.ts", "link-integration.test.ts",
-  "manager-checkpoint.test.ts", "boundary-integration.test.ts",
+  "boundary-integration.test.ts",
   "parent-child-roundtrip.test.ts", "pause-exit-rpc.test.ts",
   "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../peek.test.ts",
 ].map(file => join(here, file));
