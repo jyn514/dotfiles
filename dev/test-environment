@@ -95,22 +95,31 @@ def wait_for_test_processes(process: subprocess.Popen) -> int:
             time.sleep(0.01)
 
 
-def mise_tool_path(tool: str, environment: dict[str, str]) -> str:
-    command = shutil.which(tool, path=environment.get("PATH"))
-    if command is None or Path(command).resolve().name != "mise":
-        return ""
-    # Shims consult HOME for trust and tool selection. Resolve them before
-    # changing HOME rather than letting a setup failure look like no matches.
-    result = subprocess.run(
-        [str(Path(command).resolve()), "which", tool], env=environment,
-        text=True, capture_output=True, check=False,
-    )
-    if result.returncode:
-        raise OSError(f"cannot resolve {tool} before isolation: {result.stderr.strip()}")
-    path = result.stdout.strip()
-    if not Path(path).is_absolute() or not os.access(path, os.X_OK):
-        raise OSError(f"mise returned an invalid executable for {tool}: {path!r}")
-    return path
+def host_tool_path(tool: str, environment: dict[str, str]) -> str:
+    wrappers = Path(__file__).resolve().parent.parent / "libexec/agent-wrappers"
+    for directory in environment.get("PATH", "").split(os.pathsep):
+        command = shutil.which(tool, path=directory or os.curdir)
+        if command is None:
+            continue
+        resolved = Path(command).resolve()
+        # Tests need the native tool, not the sandbox transport selected first on PATH.
+        if resolved == wrappers / tool:
+            continue
+        if resolved.name != "mise":
+            return str(resolved)
+        # Shims consult HOME for trust and tool selection. Resolve them before
+        # changing HOME rather than letting a setup failure look like no matches.
+        result = subprocess.run(
+            [str(resolved), "which", tool], env=environment,
+            text=True, capture_output=True, check=False,
+        )
+        if result.returncode:
+            raise OSError(f"cannot resolve {tool} before isolation: {result.stderr.strip()}")
+        path = result.stdout.strip()
+        if not Path(path).is_absolute() or not os.access(path, os.X_OK):
+            raise OSError(f"mise returned an invalid executable for {tool}: {path!r}")
+        return path
+    return ""
 
 
 def main(arguments: list[str]) -> int:
@@ -118,7 +127,7 @@ def main(arguments: list[str]) -> int:
     real_tools = {
         tool.lower(): (
             environment.get(f"DOTFILES_TEST_{tool}_REAL") or environment.get(f"{tool}_REAL")
-            or mise_tool_path(tool.lower(), environment)
+            or host_tool_path(tool.lower(), environment)
         )
         for tool in ("BB", "JAVA", "JJ", "RG")
     }

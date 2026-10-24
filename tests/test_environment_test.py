@@ -198,6 +198,17 @@ class TestEnvironmentTest(unittest.TestCase):
         self.assertEqual("/original/rg", environment["DOTFILES_TEST_RG_REAL"])
         self.assertFalse(Path(values["FIXTURE_MISE_CALL"]).exists())
 
+    def test_native_tool_fallback_skips_agent_wrapper(self) -> None:
+        wrapper = ROOT / "libexec/agent-wrappers/jj"
+        wrappers = self.root / "wrappers"
+        wrappers.mkdir()
+        (wrappers / "jj").symlink_to(wrapper)
+        native = self.make_tool(self.root / "native/jj")
+        environment = self.run_environment(
+            PATH=os.pathsep.join((str(wrappers), str(native.parent), self.inherited["PATH"])),
+        )
+        self.assertEqual(str(native), environment["DOTFILES_TEST_JJ_REAL"])
+
     def test_nested_use_retains_the_original_real_tool(self) -> None:
         environment = self.run_environment(
             BB_REAL="/replacement/bb", DOTFILES_TEST_BB_REAL="/original/bb",
