@@ -21,10 +21,17 @@ For edits prompted by a failed session, inspect the recorded decision and reject
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
 
-Require a concrete repeated use, second consumer, or hard constraint. Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable routing and constraints in the relevant `AGENTS.md` instead.
+Require a concrete repeated use, second consumer, or hard constraint.
+Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
 
-Before placing a rule in the skill body, ask whether it must act before this skill loads or on tasks the description excludes.
-Keep such entry conditions and constraints in the relevant always-loaded instructions, and link to their owner from the skill.
+Put normal task-discovery conditions in the skill description first.
+Do not duplicate them in always-loaded instructions merely to make invocation more likely.
+Keep an explicit always-loaded trigger only when it must interrupt an otherwise plausible action, protects a constraint outside the skill's discovery scope, or addresses an observed discovery failure.
+When extracting instructions, assess whether the existing skill description can own discovery; do not automatically replace every extracted section with a shared trigger.
+Plain references are not discoverable skills and still need an explicit route from their callers.
+
+Distinguish discovery triggers from constraints that apply even when the skill is not used.
+Keep those constraints in always-loaded instructions and link to their owner from the skill.
 For example, ownership checks also apply to routine commits excluded by `jj-workflow`, and test isolation applies when running existing tests without a test-design procedure.
 
 Use the smallest workflow justified by uncertainty and risk. Give every costly stage an entry condition and stop when simpler evidence settles the task.
