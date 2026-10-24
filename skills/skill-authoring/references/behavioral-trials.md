@@ -5,8 +5,11 @@ These protocols apply when conducting trials; skill edits and textual reviews do
 
 For trials based on a past session, directly resume or fork the original session at the decision point by default.
 Preserve its actual messages, tool calls, and tool results; do not replace them with a summary or a new user message quoting the history.
-Use isolated session forks and disposable task state so replayed actions cannot modify the original session or real user state.
-Restore relevant task state, or report differences that could change the decision.
+Protect the original session and real user state from replayed actions.
+Use disposable resources for state those actions can modify.
+Neither history preservation nor mutation isolation by itself requires reconstructing the historical filesystem.
+Use current task state and report differences that could change the decision, or restore the relevant historical state.
+Choose according to the comparison question; these are alternatives, not sequential steps.
 Run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
 Inspect actual actions and outputs; investigate a failed check before expanding the replay.
 
@@ -23,7 +26,7 @@ vary only the skill under test.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
 Judge actual decisions and actions afterward, not just formatting or workflow compliance.
 
-For a failure-driven revision, reconstruct the inputs available at the recorded failure decision point.
+For a failure-driven revision, use the inputs available at the recorded failure decision point.
 Include a nearby control that should retain its existing path.
 For example, pair a decision about replacing custom profiling instrumentation with an obvious mechanical repair that needs no redesign.
 Test whether the new guidance changes the failure decision without adding unnecessary steps to the control.
