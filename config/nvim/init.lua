@@ -400,6 +400,20 @@ if first_run then
 		},
 		'Olical/conjure',
 		'rafikdraoui/jj-diffconflicts',
+		{
+			'mfussenegger/nvim-lint',
+			config = function()
+				require('lint').linters_by_ft = {
+					markdown = { 'codespell' },
+				}
+
+				vim.api.nvim_create_autocmd({'BufWritePost', 'InsertLeave'}, {
+					callback = function()
+						require('lint').try_lint()
+					end,
+				})
+			end,
+		}
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
@@ -1123,8 +1137,23 @@ vim.lsp.config('tinymist', {
 	}
 })
 
+vim.lsp.config('ltex_plus', {
+	filetypes = { 'markdown' },
+	settings = {
+		ltex = {
+			language = 'en-US',
+			disabledRules = {
+				['en-US'] = {
+					'MORFOLOGIK_RULE_EN_US', 'UPPERCASE_SENTENCE_START', 'COMMA_COMPOUND_SENTENCE_2',
+					'A_INSTALL', 'SENT_START_CONJUNCTIVE_LINKING_ADVERB_COMMA', 'ENGLISH_WORD_REPEAT_BEGINNING_RULE',
+				}
+			}
+		}
+	}
+})
+
 local enabled_lsps = {
-	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
+	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'ltex_plus',
 	'clojure_lsp', 'cssls', 'flix', 'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'rhombus', 'tinymist',
 }
 for _, lsp in ipairs(enabled_lsps) do
