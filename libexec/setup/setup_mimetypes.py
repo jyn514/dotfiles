@@ -71,7 +71,10 @@ def discover_editor_mimes(policy: dict, mime_directories: list[Path]) -> list[st
                 descendants.add(child)
                 changed = True
     editor_mimes.update(descendants)
-    return sorted(editor_mimes)
+    excluded_prefixes = tuple(policy.get("editor_mime_excluded_prefixes", []))
+    return sorted(
+        mime for mime in editor_mimes if not mime.startswith(excluded_prefixes)
+    )
 
 
 def default_mime_directories() -> list[Path]:
@@ -276,9 +279,8 @@ def glide_desktop(dry_run: bool) -> str | None:
 
 
 def linux_setup(policy: dict, dry_run: bool) -> None:
-    mimes = discover_editor_mimes(
-        policy["linux"], default_mime_directories()
-    )
+    linux_policy = policy["linux"]
+    mimes = discover_editor_mimes(linux_policy, default_mime_directories())
     desktop = Path.home() / ".local/share/applications/nvim-generated.desktop"
     if dry_run:
         print("Neovim MIME defaults:")
@@ -290,6 +292,13 @@ def linux_setup(policy: dict, dry_run: bool) -> None:
             run(["update-desktop-database", str(desktop.parent)])
         for mime in mimes:
             run(["xdg-mime", "default", desktop.name, mime])
+
+    directory_handler = linux_policy.get("directory_handler")
+    if directory_handler:
+        if dry_run:
+            print(f"Directory MIME default: {directory_handler}")
+        else:
+            run(["xdg-mime", "default", directory_handler, "inode/directory"])
 
     if command_exists("fx"):
         if dry_run:

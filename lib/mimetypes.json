@@ -1,5 +1,6 @@
 {
   "linux": {
+    "directory_handler": "org.kde.dolphin.desktop",
     "editor_mime_prefixes": [
       "text/"
     ],
@@ -9,6 +10,9 @@
     "editor_mime_exceptions": [
       "application/javascript",
       "application/x-csh"
+    ],
+    "editor_mime_excluded_prefixes": [
+      "message/"
     ]
   },
   "macos": {

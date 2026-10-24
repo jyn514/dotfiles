@@ -29,17 +29,20 @@ class LinuxMimetypeTests(unittest.TestCase):
             "application/x-nested-source\n"
             "application/x-source\n"
             "image/svg+xml\n"
+            "message/delivery-status\n"
             "text/plain\n"
             "text/x-rust\n"
         )
         (self.mime / "subclasses").write_text(
             "application/x-source text/plain\n"
             "application/x-nested-source application/x-source\n"
+            "message/delivery-status text/plain\n"
         )
         self.policy = {
             "editor_mime_prefixes": ["text/"],
             "editor_mime_roots": ["text/plain"],
             "editor_mime_exceptions": ["application/javascript"],
+            "editor_mime_excluded_prefixes": ["message/"],
         }
 
     def tearDown(self) -> None:
@@ -62,6 +65,11 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertIn("application/javascript", discovered)
         self.assertNotIn("application/json", discovered)
         self.assertNotIn("image/svg+xml", discovered)
+
+    def test_excludes_disallowed_descendant_namespaces(self) -> None:
+        discovered = setup_mimetypes.discover_editor_mimes(self.policy, [self.mime])
+
+        self.assertNotIn("message/delivery-status", discovered)
 
     def test_missing_database_still_returns_roots_and_exceptions(self) -> None:
         discovered = setup_mimetypes.discover_editor_mimes(self.policy, [])
@@ -152,6 +160,9 @@ class LinuxMimetypeTests(unittest.TestCase):
         )
         self.assertIn("default fx-usercreated-1.desktop application/json", registrations)
         self.assertIn("default browser.desktop image/svg+xml", registrations)
+        self.assertIn(
+            "default org.kde.dolphin.desktop inode/directory", registrations
+        )
         desktop = home / ".local/share/applications/nvim-generated.desktop"
         self.assertIn("application/x-nested-source", desktop.read_text())
 
@@ -193,6 +204,9 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("Neovim MIME defaults:", result.stdout)
         self.assertIn("  application/x-nested-source", result.stdout)
+        self.assertIn(
+            "Directory MIME default: org.kde.dolphin.desktop", result.stdout
+        )
         self.assertFalse(log.exists())
         self.assertFalse(
             (home / ".local/share/applications/nvim-generated.desktop").exists()
