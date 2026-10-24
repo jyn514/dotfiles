@@ -20,8 +20,9 @@ Before writing, identify:
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
-For a correction-driven revision, identify the question, counterexample, or new fact that prompted reconsideration.
-Consider teaching that reasoning step before prescribing the resulting answer.
+For a correction-driven revision, identify the assumption being challenged, the question or counterexample that challenged it, and why reconsideration was warranted.
+Teach what the agent must inspect or construct to answer that question, and how different answers change its next action.
+Keep the governing outcome fixed; questioning an implementation obligation does not authorize weakening the requirement.
 
 Do not overfit a revision to the session that exposed the failure.
 Broader vocabulary does not make the corrected answer a reusable decision rule.
@@ -122,6 +123,9 @@ do not assume the two errors are equally costly or reduce one by making the othe
 Positive and negative task examples test only those cases, not the complete discovery boundary.
 
 Read each changed caller and the target skill’s description together. Confirm the caller’s intended tasks satisfy the target’s trigger conditions and do not fall under its exclusions. Trace further delegation when it replaces removed policy.
+
+When loaded guidance leaves the target decision unchanged, check whether the failing choice violates the guidance or remains defensible under it.
+If the guidance permits the failure, correct the missing distinction or decision rule rather than adding stronger exhortations.
 
 Review when each recommended operation is warranted, not just whether its syntax is valid.
 When importing or adapting a guide, inspect inherited workflow advice rather than accepting it as policy.
