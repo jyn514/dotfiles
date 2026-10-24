@@ -25,6 +25,8 @@
 (def ^:dynamic *preflight-revision* nil)
 (def ^:dynamic *read-backend* "native")
 (def ^:dynamic *split-result* nil)
+(def ^:dynamic *command-directory* nil)
+(def ^:dynamic *child-shutdown* nil)
 
 (defn- split-result-text []
   (when-let [result (some-> *split-result* deref)]
@@ -57,8 +59,9 @@
   [step & args]
   (let [opts (merge {:out :string
                      :err :string
-                     :shutdown nil
+                     :shutdown *child-shutdown*
                      :continue true}
+                    (when *command-directory* {:dir *command-directory*})
                     (when (map? (first args))
                       (first args)))
         argv (if (map? (first args)) (rest args) args)
@@ -99,6 +102,7 @@
   (println "The split changes workspace history; preflight failures return before invoking jj split or the editor.")
   (println "Exit status 1 means preflight failure, 2 means jj split failure, and 3 means post-split verification failure.")
   (println "Verification failures leave the split intact and report all known resulting revision IDs.")
+  (println "bb agent-split --check-file reads one JSON request on stdin and returns a read-only containment result.")
   (println "--json suppresses human progress output and prints full selected and remaining change IDs as JSON.")
   (println "--remaining-message describes the remaining commit before verification completes.")
   (println "Repeat -m to join message paragraphs with a blank line; each value is literal text.")
@@ -233,22 +237,33 @@
       (fail! "snapshot safety"
              (str label " is inside the Jujutsu workspace outside target/jj-split: " path)))))
 
-(defn- tree-entry-index [revision]
-  (let [template "path ++ \"\\t\" ++ file_type ++ \"\\t\" ++ executable ++ \"\\n\""
-        out (:out (run-jj-read "preflight" "file" "list" "-r" revision "-T" template))]
-    (into {}
-          (keep (fn [line]
-                  (let [[path type executable] (str/split line #"\t")]
-                    (when (seq path)
-                      [path {:type type
-                             :executable? (= "true" executable)}]))))
-          (str/split-lines out))))
+(defn- tree-entry-index
+  ([revision] (tree-entry-index revision []))
+  ([revision paths]
+   (let [template "path ++ \"\\t\" ++ file_type ++ \"\\t\" ++ executable ++ \"\\n\""
+         out (:out (apply run-jj-read "preflight" "file" "list" "-r" revision "-T" template paths))]
+     (into {}
+           (keep (fn [line]
+                   (let [[path type executable] (str/split line #"\t")]
+                     (when (seq path)
+                       [path {:type type
+                              :executable? (= "true" executable)}]))))
+           (str/split-lines out)))))
+
+(defn- literal-file-fileset [path]
+  ;; `--` stops option parsing, not JJ's fileset parser. Root-relative exact
+  ;; patterns also prevent glob/operator characters from fetching other files.
+  ;; JJ strings support these escapes, not JSON's broader escape vocabulary.
+  (str "root-file:\""
+       (str/escape path {\\ "\\\\" \" "\\\"" \tab "\\t" \return "\\r"
+                         \newline "\\n" \u0000 "\\0"})
+       "\""))
 
 (defn- write-file-from-revision! [revision path target executable?]
   (fs/create-dirs (fs/parent target))
   (let [result (run-jj-read "preflight"
                             {:out target}
-                            "file" "show" "-r" revision path)]
+                            "file" "show" "-r" revision "--" (literal-file-fileset path))]
     (when-not (zero? (:exit result))
       (fail! "preflight" (str "could not materialize " path "\n" (:err result)))))
   (when executable?
@@ -311,7 +326,7 @@
   (let [result (process/shell {:dir (git-tool-dir)
                                :out :bytes
                                :err :string
-                               :shutdown nil
+                               :shutdown *child-shutdown*
                                :continue true}
                               "git" "diff" "--no-index" "--binary" "--no-renames"
                               "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right))]
@@ -757,7 +772,151 @@
       (finally
         (fs/delete-tree helper-root)))))))
 
-(defn main [args]
+;; The advisory API deliberately shares the splitter's read route, producer and
+;; containment engine. Only its temporary trees are written during a file check.
+(defn- boundary-unusable! [reason]
+  (throw (ex-info reason {:boundary-unusable true})))
+
+(defn- boundary-require! [condition reason]
+  (when-not condition (boundary-unusable! reason)))
+
+(defn- request-require! [condition reason]
+  (when-not condition (throw (ex-info reason {}))))
+
+(defn- boundary-repository []
+  (let [result (capture-failure
+                #(str (fs/canonicalize
+                       (str/trim-newline
+                        (:out (run-jj-read "file check" "workspace" "root"))))))]
+    (if (:status result)
+      (if (re-find #"There is no jj repo" (:error result))
+        (boundary-unusable! "Jujutsu workspace is unavailable")
+        (fail! "file check" (:error result)))
+      (:value result))))
+
+(defn- boundary-resolve! [commit]
+  ;; Reject revsets and abbreviated/change IDs, and verify exact immutable
+  ;; identity. A collected or otherwise missing revision is an expected skip.
+  (request-require! (and (string? commit) (re-matches #"[0-9a-f]{40}" commit))
+                    "revision requires a full immutable commit ID")
+  (let [result (capture-failure #(revision-commit-id commit))]
+    (when (and (:status result)
+               (not (re-find #"(?i)(doesn't exist|does not exist|no (matching )?revisions|resolved to no revisions)"
+                             (:error result))))
+      (fail! "file check" (:error result)))
+    (boundary-require! (and (not (:status result)) (= commit (:value result)))
+                       "revision is unavailable")))
+
+(defn- boundary-bytes [encoded]
+  (request-require! (string? encoded) "file contents must be base64 strings")
+  (try (.decode (java.util.Base64/getDecoder) ^String encoded)
+       (catch IllegalArgumentException _
+         (throw (ex-info "file contents are not valid base64" {})))))
+
+(defn- boundary-supported-bytes! [bytes]
+  (boundary-require! (and ((ns-resolve 'scripts.containment 'decode-utf8) bytes)
+                          (not-any? zero? bytes))
+                     "only lossless UTF-8 files without NUL bytes are supported"))
+
+(defn- boundary-regular! [path]
+  (when (fs/exists? path)
+    (boundary-supported-bytes! (java.nio.file.Files/readAllBytes (fs/path path)))))
+
+(defn- boundary-materialize! [revision path target]
+  (let [{:keys [type executable?]} (get (tree-entry-index revision ["--" (literal-file-fileset path)]) path)]
+    (boundary-require! (contains? #{nil "file"} type) "revision path has an unsupported file kind")
+    (when type
+      (write-file-from-revision! revision path (fs/file target path) executable?)
+      (boundary-regular! (fs/file target path)))
+    type))
+
+(defn- boundary-write! [tree path bytes executable?]
+  (let [target (fs/file tree path)]
+    (fs/create-dirs (fs/parent target))
+    (java.nio.file.Files/write (fs/path target) bytes
+                              (make-array java.nio.file.OpenOption 0))
+    ;; A proposal retains the actual file's executable bit; creation is non-executable.
+    (.setExecutable target executable? false)))
+
+(defn- boundary-diff [left right path]
+  (let [changes (diff-change-index (normalize-diff-paths (diff-output left right) left right))]
+    ;; The shared parser accepts canonical unquoted path headers. Never mistake
+    ;; a quoted/unrecognized header for an unchanged revision path.
+    (boundary-require! (every? #{path} (keys changes)) "canonical diff path encoding is unsupported")
+    changes))
+
+(defn- boundary-check [{:keys [revision path actual proposed] :as request}]
+  (request-require! (= #{:revision :path :actual :proposed} (set (keys request)))
+                    "expected revision, path, actual, and proposed")
+  (request-require! (and (string? revision) (re-matches #"[0-9a-f]{40}" revision))
+                    "revision requires a full immutable commit ID")
+  (request-require! (and (string? path) (not (unsafe-path? path))
+                         (not (re-find #"[\u0000\t\r\n]" path))
+                         (every? #(not (#{"" "." ".."} %)) (str/split path #"/" -1)))
+                    "path must be a canonical workspace-relative file path")
+  (request-require! (or (nil? actual)
+                        (and (map? actual) (= #{:content :executable} (set (keys actual)))
+                             (boolean? (:executable actual))))
+                    "actual must be null or content and executable")
+  ;; Decode both wire fields before interpreting expected semantic skips.
+  (let [actual-bytes (when actual (boundary-bytes (:content actual)))
+        proposed-bytes (boundary-bytes proposed)]
+    (doseq [bytes (remove nil? [actual-bytes proposed-bytes])]
+      (boundary-supported-bytes! bytes))
+    (binding [*command-directory* (boundary-repository)]
+      (boundary-resolve! revision)
+      (let [parents (parent-commit-ids revision)]
+        (boundary-require! (= 1 (count parents)) "revision must have exactly one parent")
+        (let [parent (first parents)]
+          (boundary-require! (= #{parent} (parent-commit-ids "@"))
+                             "working-copy parent changed")
+          (let [helper (fs/create-temp-dir {:dir (temp-root) :prefix "agent-split-check"})
+                cleanup (Thread. #(fs/delete-tree helper))]
+            ;; OS cancellation can bypass finally; do not retain materialized source
+            ;; bytes when the caller terminates the checker normally with SIGTERM.
+            (.addShutdownHook (Runtime/getRuntime) cleanup)
+            (try
+              (let [[left selected current proposal]
+                    (mapv #(fs/file helper %) ["parent" "revision" "actual" "proposal"])]
+                (doseq [tree [left selected current proposal]] (fs/create-dirs tree))
+                (boundary-materialize! parent path left)
+                (boundary-materialize! revision path selected)
+                (when actual-bytes
+                  (boundary-write! current path actual-bytes (:executable actual)))
+                (let [selection (get (boundary-diff left selected path) path)]
+                  (if-not selection
+                    {:status "preserved"}
+                    (let [baseline (get (boundary-diff left current path) path)
+                          rejection (ns-resolve 'scripts.containment 'rejection-reason)]
+                      (if-let [reason (rejection baseline selection)]
+                        {:status "unusable" :reason (str "boundary was already lost: " reason)}
+                        (do
+                          (run "file check" "cp" "-a" (str current "/.") (str proposal))
+                          (boundary-write! proposal path proposed-bytes
+                                           (boolean (:executable actual)))
+                          (if-let [reason (rejection (get (boundary-diff left proposal path) path) selection)]
+                            {:status "would-lose" :reason reason}
+                            {:status "preserved"})))))))
+              (finally
+                (fs/delete-tree helper)
+                (.removeShutdownHook (Runtime/getRuntime) cleanup)))))))))
+
+(defn- boundary-main []
+  (try
+    (let [requests (vec (json/parsed-seq *in* true))]
+      (request-require! (and (= 1 (count requests)) (map? (first requests)))
+                        "expected one JSON request")
+      (let [result (binding [*child-shutdown* process/destroy-tree]
+                     (let [route (split-route)]
+                       (binding [*read-backend* (:backend route)]
+                         (boundary-check (first requests)))))]
+        (println (json/generate-string result))))
+    (catch Exception ex
+      (if (:boundary-unusable (ex-data ex))
+        (println (json/generate-string {:status "unusable" :reason (ex-message ex)}))
+        (fail! "file check" (ex-message ex))))))
+
+(defn- split-main [args]
   ;; Defer process exit until execute-main's artifact cleanup has run.
   (let [result (capture-failure #(execute-main args))]
     (if-let [status (:status result)]
@@ -768,6 +927,11 @@
         (binding [*out* *err*]
           (print (:stderr result))
           (flush))))))
+
+(defn main [args]
+  (if (and (= 1 (count args)) (= "--check-file" (first args)))
+    (boundary-main)
+    (split-main args)))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

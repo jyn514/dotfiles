@@ -297,6 +297,42 @@ Updating guest validation requires a new worker. Close existing sandbox panes
 and start a new sandbox to deploy the host extension and worker together;
 `/reload` alone cannot replace the worker.
 
+## Commit-boundary warning
+
+The selected `commit-boundary.ts` design records one working-copy boundary after an editing response fully settles, including automatic continuation.
+The harness takes an ordinary wrapped Jujutsu snapshot and saves immutable `@` as a JSON string, for example `"0123..."`, in the ignored, working-copy-local `target/jj-split/commit-boundary.json`.
+The record must never enter a Jujutsu snapshot.
+Guarded native and guest writes, including root and fresh workers with the integration loaded, use that same record; no manager handoff or per-session memory owns it.
+Reloads, session changes, and worker or manager exits do not clear it. Read-only responses do not replace it.
+
+Before a later supported structured `edit` or `write`, the harness asks the existing read-only `agent-split --check-file` operation whether the recorded changes in that file remain separately selectable.
+`preserved` permits the write and keeps the record.
+`would-lose` leaves the target unchanged, returns a warning with the path, and forgets the checked boundary.
+The warning does not expose the splitter's concrete rejection reason; that reason remains in the checker reply.
+The agent can commit first if authorized, or retry the edit to proceed; there is no automatic commit, acknowledgment tool, or special retry state.
+`unusable`, including an already-lost or unavailable boundary, permits ordinary editing and forgets the checked boundary.
+A late result can forget only a record with the same revision it checked, never a different replacement.
+Unexpected producer errors are normal nonzero checker-command failures. The harness catches them, conditionally forgets the checked boundary, reports the actual error once, and permits ordinary editing through the same target-verification and cancellation finalization.
+
+The boundary includes pre-existing dirty changes and does not establish authorship or authorize committing them.
+The record contains only the immutable revision, not source copies, parent/root identity, tokens, timestamps, or host/guest paths. A missing or empty record means no boundary.
+Capture atomically renames a fresh temporary inode; forgetting reads, compares, and truncates the same open `r+` descriptor, never unlinking or writing another ID in place. A newer capture therefore survives a late clear.
+Version one checks regular UTF-8 files and ordinary file creation, not symlinks, binary content, or file-kind conversions; shell commands are not intercepted.
+Native observed target bytes are retained for the check, not reread by the checker.
+Skipped or unusable comparisons still pass through cancellation and target-state verification before writing.
+
+This uses the repository's `bb agent-split` wrapper and Jujutsu, not a second TypeScript containment implementation, new service, or extra public tool.
+The [splitter reference](../../../tools/agent-split/README.md#advisory-commit-boundary-api) documents the read-only JSON check; checkpoint capture uses ordinary wrapped Jujutsu commands, not a splitter `--checkpoint` mode.
+The [design](commit-boundary/design.typ) defines the shared record, exact request/reply contract, lifecycle, and finalization behavior.
+Native tools check the local file; sandbox tools check the file actually being written inside the guest, using common harness record operations rather than checkpoint transport metadata.
+
+The integration must be loaded for these checks to apply. The normal sandbox-subagent wrapper explicitly injects guest tools despite `--no-extensions`, so fresh Luna sandbox workers need no special template once the integration is loaded.
+Native nonsandbox subagents intentionally disable extension discovery, and the current native configuration does not list these extensions; native children do not universally load the guard automatically.
+
+The implementation and integration tests are complete, and jyn manually verified the feature in a sandbox session; this does not establish global activation or universal extension loading.
+It does not activate global configuration or authorize setup or deployment.
+An existing internal guest lifecycle capture request may call the same common capture and storage operations; it is not a new model-facing tool or splitter CLI mode.
+
 ## Compaction
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.

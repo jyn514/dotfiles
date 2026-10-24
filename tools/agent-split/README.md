@@ -102,6 +102,70 @@ jj status
 
 Run tests or lint appropriate to each newly separated change.
 
+## Advisory commit-boundary API
+
+The standalone `--check-file` mode supports the Pi commit-boundary adapter. It
+never splits, snapshots, commits, or writes the checkout. It needs the prerequisites
+above, but not a patch file or an ignored `target/jj-split/` directory.
+
+```sh
+bb agent-split --check-file < request.json
+```
+
+Send exactly one JSON request on stdin:
+
+```json
+{
+  "revision": "<full immutable commit ID>",
+  "path": "relative/path.txt",
+  "actual": {"content":"<base64 bytes>","executable":false},
+  "proposed": "<base64 exact native-tool UTF-8 bytes>"
+}
+```
+
+For an absent target use `"actual":null`. The caller skips unsupported target
+types and retains the actual state observed by its native tool; the checker does
+not reread the checkout file. The workspace is resolved from the command's cwd,
+including repository subdirectories. `path` is always a literal path relative to
+the workspace root, not a JJ fileset expression. Glob and operator characters do
+not select other files. The revision's parent is derived, not supplied.
+
+The three semantic replies have exit status zero:
+
+- `{"status":"preserved"}`: permit the write and keep the boundary.
+- `{"status":"would-lose","reason":"<concrete containment rejection>"}`:
+  warn/block this write and forget the boundary.
+- `{"status":"unusable","reason":"<expected skip reason>"}`:
+  permit the write and forget the boundary.
+
+Malformed JSON, request schema, immutable-ID syntax, base64, or noncanonical paths
+are process failures, as are unexpected checker/subprocess errors: nonzero exit,
+no semantic JSON reply. Cancellation likewise is not a semantic reply. There are
+no diagnostic or retirement fields; the caller owns failure handling.
+
+The checker validates the immutable revision and its unchanged single parent.
+It materializes only the affected path from that parent and revision. If the path
+has no revision diff, it returns `preserved` without either containment comparison.
+Otherwise it first checks the revision against the retained actual state; an
+already-lost boundary is `unusable`, not a warning blaming the proposal. Only a
+proposal that loses containment from a valid current baseline returns `would-lose`,
+with the splitter's concrete rejection reason. This uses the same canonical Git
+diff producer and per-file containment engine as split preflight.
+
+Regular lossless UTF-8 files without NUL bytes and ordinary creation are supported.
+Absence and executable modes are preserved; symlinks, malformed UTF-8, binary data,
+file-kind conversions, and unsupported canonical path encodings are `unusable`.
+Missing revisions, changed parents, and unavailable workspaces are also expected
+`unusable` results. Revision reads use the existing native or protected inspection
+backend without snapshots during checks.
+
+There is no capture mode or persistent record in this producer. The harness owns
+ordinary JJ snapshot plus immutable `@` ID capture, any ignored `target/jj-split/`
+state, boundary retirement, cancellation of the checker process and its children,
+target-state verification, warning presentation, and the final write. See the
+[commit-boundary design](../../config/pi-agent/pi-extensions/commit-boundary/design.typ)
+for the adapter's lifecycle and finalization contract.
+
 ## Safety and recovery
 
 - The patch must contain only changes already present in `jj diff --git -r <revision>`. Never use the tool to introduce new content.
@@ -141,7 +205,7 @@ From the repository root:
 
 ```sh
 dev/test-environment bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
-dev/test-environment python3 -m unittest discover -s tools/agent-split/tests -p 'bb_wrapper_test.py'
+dev/test-environment python3 -m unittest discover -s tools/agent-split/tests -p '*_test.py'
 ```
 
 The Babashka suite includes unit and real-repository integration coverage and therefore requires `bb`, `git`, and `jj`.
@@ -160,7 +224,14 @@ A real-repository regression adds unrelated new and modified files, verifies unc
 The tests cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection.
 Repositories are disposable and outside the source repository; test artifacts remain ignored.
 `tests/run.clj` registers these tests and is invoked by `dev/test`.
-The Python suite checks wrapper dispatch and executable resolution.
+The Python suites check wrapper dispatch and executable resolution, plus the
+advisory check through the real CLI in disposable JJ repositories. Advisory
+cases cover reorganization/extraction warnings, already-lost baselines, repeated
+independent requests, successive preserved proposals, unrelated dirty hunks,
+read-only command counts, modes, absence, unsupported kinds, malformed UTF-8, changed
+bases, missing IDs, and nonzero malformed-input/infrastructure failures. They are discovered by the default
+pytest suite under `tools/`. Pi retirement, retries, and final writes belong to
+the adapter integration tests, not these producer tests.
 
 ## Design and reference
 

@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { expandInstructionFile } from "./pi-instruction-includes.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-  createBashTool, createEditTool, createFindTool, createGrepTool,
+  createBashTool, createEditTool, createEditToolDefinition, createFindTool, createGrepTool,
   createLsTool, createReadTool, createWriteTool,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { rewritePiResourcePaths } from "./guest-tools-core.ts";
+import { createBoundaryController, type BoundaryMetadata } from "./commit-boundary.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
 
@@ -39,8 +41,20 @@ export function callContext(ctx: ExtensionContext): CallContext {
 type GuestFrame =
   | { kind: "update"; result: unknown }
   | { kind: "data"; data: string }
-  | { kind: "result"; result: any }
-  | { kind: "error"; message: string };
+  | { kind: "result"; result: any; boundary?: BoundaryMetadata }
+  | { kind: "error"; message: string; boundary?: BoundaryMetadata };
+
+type BoundaryCall = {
+  onBoundary: (metadata: BoundaryMetadata | undefined) => void;
+};
+
+function boundaryReply(metadata: BoundaryMetadata | undefined) {
+  if (metadata === undefined) return undefined;
+  if (!metadata || Object.keys(metadata).length !== 1 || typeof metadata.error !== "string") {
+    throw new Error("invalid guest boundary error");
+  }
+  return metadata;
+}
 
 export function callGuest(
   tool: string,
@@ -49,6 +63,7 @@ export function callGuest(
   signal?: AbortSignal,
   onUpdate?: (result: any) => void,
   onData?: (data: Buffer) => void,
+  boundary?: BoundaryCall,
 ): Promise<any> {
   const connector = process.env.CODEX_SANDBOX_TOOL_CONNECT;
   if (!connector || !process.env.CODEX_SANDBOX_TOOL_CONTAINER) {
@@ -101,8 +116,17 @@ export function callGuest(
       if (protocolError) reject(protocolError);
       else if (signal?.aborted) reject(new Error("guest tool cancelled"));
       else if (pending || !terminal) reject(new Error(errorText || `guest tool transport ended (${status})`));
-      else if (terminal.kind === "error") reject(new Error(terminal.message));
-      else resolve(terminal.result);
+      else {
+        try {
+          if (boundary && (terminal.kind === "result" || terminal.kind === "error")) {
+            boundary.onBoundary(boundaryReply(terminal.boundary));
+          }
+          if (terminal.kind === "error") reject(new Error(terminal.message));
+          else if (terminal.kind === "result") resolve(terminal.result);
+        } catch (error) {
+          reject(error);
+        }
+      }
     });
   });
 }
@@ -111,6 +135,8 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
   const cwd = process.env.CODEX_SANDBOX_GUEST_CWD;
   if (!cwd) throw new Error("guest working directory is unavailable");
+  const boundary = createBoundaryController(pi, (ctx, signal) =>
+    callGuest("commit_boundary_checkpoint", {}, callContext(ctx), signal));
   const repository = process.env.CODEX_SANDBOX_GUEST_REPO;
   const sandboxContext = repository
     ? readFileSync(new URL("../../agents/sandbox-context.md", import.meta.url), "utf8")
@@ -152,15 +178,43 @@ export default function guestTools(pi: ExtensionAPI) {
       ].join("\n"),
     }, { triggerTurn: false });
   });
+  const edit = createEditToolDefinition(cwd);
+  const guestEdit: typeof edit = {
+    ...createEditTool(cwd),
+    // Guest paths do not name host files. Never start Pi's local edit preview;
+    // show only the guest's actual diff or error through its result renderer.
+    renderCall(args, theme, context) {
+      return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${args.path ?? "..."}`, context.outputPad, 0);
+    },
+    renderResult(result, options, theme, context) {
+      return edit.renderResult!(result, options, theme, { ...context, state: {} });
+    },
+  };
   const tools = [
-    createReadTool(cwd), createBashTool(cwd), createEditTool(cwd),
+    createReadTool(cwd), createBashTool(cwd), guestEdit,
     createWriteTool(cwd), createGrepTool(cwd), createFindTool(cwd), createLsTool(cwd),
   ];
   for (const tool of tools) {
     pi.registerTool({
       ...tool,
-      execute: (id, params, signal, onUpdate, ctx) =>
-        callGuest(tool.name, params as Record<string, unknown>, callContext(ctx), signal, onUpdate),
+      async execute(id, params, signal, onUpdate, ctx) {
+        if (tool.name !== "edit" && tool.name !== "write") {
+          return callGuest(tool.name, params as Record<string, unknown>, callContext(ctx), signal, onUpdate);
+        }
+        const call = boundary.begin(ctx);
+        let metadata: BoundaryMetadata | undefined;
+        let successfulWrite = false;
+        try {
+          const result = await callGuest(tool.name, params as Record<string, unknown>, callContext(ctx),
+            signal, onUpdate, undefined, {
+              onBoundary(value) { metadata = value; },
+            });
+          successfulWrite = !result.isError;
+          return result;
+        } finally {
+          boundary.finish(call, metadata, successfulWrite);
+        }
+      },
     });
   }
   pi.on("user_bash", (_event, ctx) => {

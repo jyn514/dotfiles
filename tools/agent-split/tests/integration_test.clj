@@ -803,7 +803,7 @@
             (is (= 0 (:exit result)) (:err result))
             (swap! reads-per-run conj (count blob-reads))
             (is (seq blob-reads) "recording observes actual JJ blob reads")
-            (is (every? #(= "note.txt" (last %)) blob-reads)
+            (is (every? #(= "root-file:\"note.txt\"" (last %)) blob-reads)
                 "only selected paths cross the per-file read boundary")
             (when (zero? (:exit result))
               (let [{:strs [selected remaining]} (json/parse-string (:out result))]

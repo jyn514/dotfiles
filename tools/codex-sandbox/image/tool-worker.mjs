@@ -1,4 +1,5 @@
 import { createServer } from "node:net";
+import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operations.mjs";
 
 const toolModule = process.env.CODEX_SANDBOX_PI_TOOL_MODULE ??
   "/opt/agent-pi/src/packages/coding-agent/dist/index.js";
@@ -76,6 +77,11 @@ const server = createServer((socket) => {
     }
     started = true;
     void (async () => {
+      let guarded;
+      const reply = (frame) => {
+        const boundary = guarded?.metadata();
+        send(socket, { ...frame, ...(boundary ? { boundary } : {}) });
+      };
       try {
         const request = JSON.parse(input.subarray(0, newline).toString("utf8"));
         if (!request || typeof request !== "object" ||
@@ -98,7 +104,12 @@ const server = createServer((socket) => {
           return env;
         };
         let result;
-        if (request.tool === "validate_skill") {
+        if (request.tool === "commit_boundary_checkpoint") {
+          if (Object.keys(request.params).length !== 0) throw new Error("invalid checkpoint request");
+          result = await captureCheckpoint(process.cwd(), {
+            signal: controller.signal, env: callEnv(process.env),
+          });
+        } else if (request.tool === "validate_skill") {
           if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
               Object.keys(request.params).some(key => key !== "path")) {
             throw new Error("invalid skill path request");
@@ -127,15 +138,20 @@ const server = createServer((socket) => {
           if (!Object.hasOwn(toolFactories, request.tool)) throw new Error("unknown tool");
           const shellOptions = request.tool === "bash" || request.tool === "powershell"
             ? { spawnHook } : undefined;
-          const tool = toolFactories[request.tool](process.cwd(), shellOptions);
+          if (request.tool === "edit" || request.tool === "write") {
+            guarded = createBoundaryTool({ createEditTool, createWriteTool }, request.tool, process.cwd(), {
+              signal: controller.signal, env: callEnv(process.env),
+            });
+          }
+          const tool = guarded?.tool ?? toolFactories[request.tool](process.cwd(), shellOptions);
           result = await tool.execute(
             request.id ?? "guest-tool", request.params, controller.signal,
             (partialResult) => send(socket, { kind: "update", result: partialResult }),
           );
         }
-        send(socket, { kind: "result", result });
+        reply({ kind: "result", result });
       } catch (error) {
-        send(socket, { kind: "error", message: error instanceof Error ? error.message : String(error) });
+        reply({ kind: "error", message: error instanceof Error ? error.message : String(error) });
       } finally {
         settled = true;
         socket.end();

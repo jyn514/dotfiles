@@ -177,6 +177,44 @@ If the platform cannot make the replacement atomic, the tool must exit non-zero 
 
 #requirement[The production tool should print a compact summary of selected files and hunk counts before exiting zero.]
 
+= Advisory file checks <agent-jj-split-advisory>
+
+The same wrapper also provides `--check-file` for the Pi commit-boundary
+adapter, independently of patch selection and splitting.
+The #link("README.md")[operator guide] owns its minimal JSON request and reply
+schemas; the #link("../../config/pi-agent/pi-extensions/commit-boundary/design.typ")[commit-boundary design]
+owns the adapter's warning, retirement, and write-finalization behavior.
+
+The request contains only an immutable `revision`, a literal workspace-relative
+`path`, retained `actual` bytes and executable mode (or null for absence), and
+base64 `proposed` bytes. The workspace comes from command cwd, and the single
+parent is derived from the revision. The harness owns ordinary JJ snapshot and
+immutable ID capture; this producer has no capture mode or persistent record.
+
+`--check-file` performs no snapshot or history mutation. It validates that the
+working-copy parent still matches, then reads only the affected path's contents
+from the immutable parent and revision through the existing inspection backend.
+Per-file reads use an escaped `root-file:` literal pattern; `--` alone does not
+disable JJ fileset parsing. This keeps glob and operator characters in filenames
+from selecting unrelated contents. It uses the caller's retained actual bytes
+and exact proposed bytes, not a newly snapshotted working-copy tree. Temporary
+materialization, canonical diff production, and per-file containment reuse the
+split preflight implementation.
+
+The current baseline must contain the revision before a proposal can produce a
+`would-lose` reply with a concrete rejection reason; an already-lost baseline is
+`unusable`. A path without revision changes is `preserved` without containment
+comparisons. These are the only semantic statuses: `preserved` permits and keeps,
+`would-lose` warns/blocks and forgets, and `unusable` permits and forgets.
+
+This interface supports regular lossless UTF-8 files without NUL bytes and
+ordinary creation, preserving absence and executable modes. Unsupported kinds,
+binary content, missing revisions, and changed parents are `unusable` comparisons.
+Malformed requests and unexpected checker failures instead exit nonzero without
+a semantic reply. The producer retains no retry state and writes no checkout
+file or shared state; the adapter owns cancellation, target verification,
+boundary retirement, and the actual write.
+
 = Agent workflow <agent-jj-split-workflow>
 
 The agent workflow is a controlled sequence.
