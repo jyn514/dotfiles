@@ -55,6 +55,7 @@
       "$HOME/.config/containers/containers.conf": "config/containers.conf",
       "$HOME/.config/clojure/deps.edn": "config/deps.edn",
       "$HOME/.config/niri/config.kdl": "config/niri/config.kdl",
+      "$HOME/.config/noctalia/config.toml": "config/noctalia/config.toml",
       "$HOME/.editorconfig": "config/editorconfig",
       "$HOME/.config/gdb/gdbearlyinit": "config/gdbearlyinit",
       "$HOME/.config/gdb/gdbinit": "config/gdbinit",

@@ -1,0 +1,114 @@
+[bar.default]
+position = "bottom"
+radius = 10
+reserve_space = false
+smart_auto_hide = true
+
+[calendar]
+enabled = true
+
+[control_center]
+sidebar = "full"
+
+[dock]
+enabled = true
+launcher_position = "start"
+pinned = ["kitty", "glide-browser-bin"]
+position = "left"
+reserve_space = false
+show_dots = true
+smart_auto_hide = true
+
+[hot_corners]
+delay_ms = 300
+enabled = true
+
+[hot_corners.bottom_right]
+action = "window_switcher"
+
+[hot_corners.top_left]
+action = "launcher"
+
+[hot_corners.top_right]
+action = "control_center"
+
+[idle]
+behavior_order = ["lock", "screen-off", "lock-and-suspend"]
+pre_action_fade_seconds = 10
+
+[idle.behavior.lock]
+action = "lock"
+enabled = true
+timeout = 300.0
+
+[idle.behavior.lock-and-suspend]
+action = "lock_and_suspend"
+enabled = false
+timeout = 900.0
+
+[idle.behavior.screen-off]
+action = "screen_off"
+enabled = true
+timeout = 360.0
+
+[lockscreen]
+transition = ["disc", "honeycomb", "stripes"]
+transition_duration = 500
+
+[nightlight]
+enabled = true
+
+[shell]
+app_icon_color = "surface"
+
+[shell.panel]
+floating_layer = "top"
+open_near_click_clipboard = true
+open_near_click_control_center = true
+
+[shell.screenshot]
+annotate = true
+confirm_region = true
+remember_last_region = true
+skip_annotate_on_copy_save = true
+
+[[shell.session.actions]]
+action = "lock"
+countdown_seconds = 0.0
+enabled = true
+shortcut = "1"
+variant = "default"
+
+[[shell.session.actions]]
+action = "logout"
+countdown_seconds = 0.0
+enabled = true
+shortcut = "2"
+variant = "default"
+
+[[shell.session.actions]]
+action = "lock_and_suspend"
+countdown_seconds = 0.0
+enabled = false
+shortcut = "3"
+variant = "default"
+
+[[shell.session.actions]]
+action = "reboot"
+countdown_seconds = 0.0
+enabled = true
+shortcut = "4"
+variant = "default"
+
+[[shell.session.actions]]
+action = "shutdown"
+countdown_seconds = 0.0
+enabled = true
+shortcut = "5"
+variant = "destructive"
+
+[theme]
+mode = "auto"
+
+[theme.templates]
+builtin_ids = ["btop", "niri"]
