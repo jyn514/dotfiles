@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = ROOT / "lib/mimetypes.json"
 BROWSER_MIMES = ("text/html", "application/xhtml+xml", "image/svg+xml")
 BROWSER_SCHEMES = ("x-scheme-handler/http", "x-scheme-handler/https")
+MAIL_SCHEME = "x-scheme-handler/mailto"
 BUNDLE_ID = "dev.jyn.nvim"
 MANAGED_UTI_PREFIXES = (
     "dev.jyn.nvim.document.",
@@ -278,6 +279,28 @@ def glide_desktop(dry_run: bool) -> str | None:
     return desktop.name
 
 
+def glide_mail_desktop(dry_run: bool) -> str:
+    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    destination = data_home / "applications/fastmail-glide.desktop"
+    if not dry_run:
+        launcher = data_home / "dotfiles/open-fastmail"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / "libexec/setup/open_fastmail.py", launcher)
+        launcher.chmod(0o755)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Fastmail in Glide\n"
+            "NoDisplay=true\n"
+            f"Exec={launcher} %u\n"
+            f"MimeType={MAIL_SCHEME};\n"
+        )
+        if command_exists("update-desktop-database"):
+            run(["update-desktop-database", str(destination.parent)])
+    return destination.name
+
+
 def linux_setup(policy: dict, dry_run: bool) -> None:
     linux_policy = policy["linux"]
     mimes = discover_editor_mimes(linux_policy, default_mime_directories())
@@ -337,6 +360,12 @@ def linux_setup(policy: dict, dry_run: bool) -> None:
         else:
             for mime in browser_mimes:
                 run(["xdg-mime", "default", browser, mime])
+    if glide_browser is not None:
+        mail_handler = glide_mail_desktop(dry_run)
+        if dry_run:
+            print(f"Mail scheme default: {mail_handler}")
+        else:
+            run(["xdg-mime", "default", mail_handler, MAIL_SCHEME])
 
 
 def export_launch_services(path: Path) -> bool:

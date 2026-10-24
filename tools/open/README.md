@@ -26,7 +26,7 @@ Apply them:
 
 On macOS, a second dry-run should report `(none)` in every section. The setup owns only the types listed in `lib/mimetypes.json`; it does not reset the complete Launch Services database.
 
-On Linux, setup assigns HTML, XHTML, and SVG to the browser after registering editor defaults. When Glide is installed, it selects Glide for those types and HTTP/HTTPS URLs. Otherwise it uses the current default browser for the file types.
+On Linux, setup assigns HTML, XHTML, and SVG to the browser after registering editor defaults. When Glide is installed, it selects Glide for those types and HTTP/HTTPS URLs. It also registers a hidden launcher that opens `mailto:` links in Fastmail through Glide. Otherwise it uses the current default browser for the file types.
 
 `./setup install-local` installs `glide-browser-bin` on Arch, using pacman when a repository supplies it or an existing paru/yay for the AUR. macOS uses `brew install --cask glide-browser`; other Linux systems retain the locked mise provider. Native Linux Glide disables its mise provider through a managed `~/.config/mise/conf.d/dotfiles-glide.toml`. Setup leaves old installed copies in place.
 

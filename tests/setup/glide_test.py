@@ -22,6 +22,7 @@ def load(name, path):
 
 glide = load("glide_setup", "libexec/setup/glide.py")
 mimetypes = load("setup_mimetypes", "libexec/setup/setup_mimetypes.py")
+open_fastmail = load("open_fastmail", "libexec/setup/open_fastmail.py")
 
 
 class GlideTests(unittest.TestCase):
@@ -158,6 +159,38 @@ class GlideTests(unittest.TestCase):
             self.assertIsNone(mimetypes.glide_desktop(False))
         self.assertFalse(self.data.exists())
 
+    def test_mail_launcher_opens_fastmail_compose_in_glide(self):
+        applications = self.data / "applications"
+        applications.mkdir(parents=True)
+        with mock.patch.object(mimetypes, "command_exists", return_value=False):
+            name = mimetypes.glide_mail_desktop(False)
+        mail = applications / name
+        self.assertIn(
+            f"Exec={self.data}/dotfiles/open-fastmail %u\n",
+            mail.read_text(),
+        )
+        self.assertIn("MimeType=x-scheme-handler/mailto;\n", mail.read_text())
+        launcher = self.data / "dotfiles/open-fastmail"
+        self.assertEqual((ROOT / "libexec/setup/open_fastmail.py").read_text(),
+                         launcher.read_text())
+        self.assertTrue(os.access(launcher, os.X_OK))
+        if validator := shutil.which("desktop-file-validate"):
+            result = subprocess.run(
+                [validator, str(mail)], text=True, capture_output=True
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_mail_launcher_encodes_the_complete_mailto_uri(self):
+        self.assertEqual(
+            "https://app.fastmail.com/mail/compose?mailto="
+            "mailto%3Afriend%40example.com%3Fsubject%3Dtwo%2520words%26body%3Done%2520line",
+            open_fastmail.fastmail_compose(
+                "mailto:friend@example.com?subject=two%20words&body=one%20line"
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "expected a mailto URI"):
+            open_fastmail.fastmail_compose("https://example.com")
+
     def test_browser_registration_restores_html_after_editor_defaults(self):
         calls = []
         additional_mime = "text/x-browser-test"
@@ -166,6 +199,7 @@ class GlideTests(unittest.TestCase):
              mock.patch.object(mimetypes, "write_linux_desktop"), \
              mock.patch.object(mimetypes, "command_exists", return_value=False), \
              mock.patch.object(mimetypes, "glide_desktop", return_value="glide-browser-bin.desktop"), \
+             mock.patch.object(mimetypes, "glide_mail_desktop", return_value="fastmail-glide.desktop"), \
              mock.patch.object(mimetypes, "run", side_effect=lambda argv: calls.append(argv)):
             for _ in range(2):
                 mimetypes.linux_setup({"linux": {}}, False)
@@ -175,6 +209,8 @@ class GlideTests(unittest.TestCase):
                              and argv[-1] == mime]
             self.assertEqual("glide-browser-bin.desktop", registrations[-1])
         self.assertEqual(2, calls.count(["xdg-mime", "default", "nvim-generated.desktop", "text/html"]))
+        self.assertEqual(2, calls.count(["xdg-mime", "default", "fastmail-glide.desktop",
+                                        "x-scheme-handler/mailto"]))
 
 
 class NativePackageInstallerTests(unittest.TestCase):
