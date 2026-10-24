@@ -110,7 +110,8 @@ Establish a concrete constraint or failure case before adding a mechanism; reuse
 ### 2. Challenge the hardest part
 
 Name the hardest part of the proposed design and the guarantee, distinction, or coordination that makes it hard.
-Recover the required outcome independently of the proposal; a request to elaborate is not approval of every mechanism.
+A positive response to a proposal does not by itself approve every detail.
+Distinguish the user’s requirements from assumptions and guarantees introduced by the proposal; keep the latter open to reconsideration.
 Ask whether the hard part can be made unnecessary before working out how to implement it.
 Construct the smallest complete caller-to-result path without it, keeping the required behavior, timing, and coverage fixed.
 Compare that alternative against the governing requirements: which required behavior fails, and where?
