@@ -86,6 +86,19 @@ Check release order, interrupted migration, and rollback where applicable; rever
 If a transition cannot preserve data or authority, name the required migration or rollout decision before endorsing the boundary.
 Do not impose mixed-version support or permanent compatibility where no consumer or requirement needs it.
 
+Treat every compatibility signal as a bounded claim, not proof of behavioral compatibility.
+A version, schema, fixture digest, or contract test covers only the behavior it represents;
+it can miss changes to timing, ordering, errors, side effects, and lifecycle semantics.
+Define the observable guarantees that cross the boundary before selecting compatibility checks.
+Do not compare implementation details, mutable content state, or fields whose changes cannot alter those guarantees;
+such checks falsely reject compatible peers and add operational churn without protecting the boundary.
+Before replacing exact artifact identity or coordinated deployment with a selective compatibility check,
+compare the cost of falsely accepting an incompatible pair with the cost of falsely rejecting a compatible pair.
+Require evidence for both directions: accepted variation preserves the guarantees,
+and rejection identifies a consequential incompatibility.
+When the available evidence cannot support either claim, retain matched implementations or require coordinated replacement;
+do not invent a weak signal or broad equality check merely to shift operational friction.
+
 ## Diagnosability
 
 Identify who must understand an unsuccessful operation and what safe next action they can take.
