@@ -114,6 +114,13 @@ Check both layers independently:
 - **Before loading:** does the description trigger on every intended request without claiming adjacent work?
 - **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition? Check for rules that conflict, unclear precedence when rules interact, and edge cases where the next action is underspecified. State which rule takes priority or what the agent should do when it cannot resolve the conflict safely.
 
+Treat discovery as classification against the skill's declared scope.
+A false positive loads the skill for adjacent work it does not own;
+a false negative misses work that needs its procedure.
+Identify the concrete consequence of each error and tune triggers and exclusions accordingly;
+do not assume the two errors are equally costly or reduce one by making the other unbounded.
+Positive and negative task examples test only those cases, not the complete discovery boundary.
+
 Read each changed caller and the target skill’s description together. Confirm the caller’s intended tasks satisfy the target’s trigger conditions and do not fall under its exclusions. Trace further delegation when it replaces removed policy.
 
 Review when each recommended operation is warranted, not just whether its syntax is valid.
