@@ -208,10 +208,7 @@ function messagePreview(
 // ─── Extension ───────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  // Managed children have only the manager-provided reply tool, never a root socket.
-  if (process.env.PI_SUBAGENT_OWNER_TOKEN) return;
-
-  // First root statement, so an unsupported host leaves behind no flag, event, tool,
+  // First statement, so an unsupported host leaves behind no flag, event, tool,
   // command, timer or socket to half-run with. Pi reports a factory that throws as an
   // extension load error naming this message, and keeps running without pi-link.
   if (!piVersionSupported(PI_VERSION)) {
@@ -1890,7 +1887,14 @@ export default function (pi: ExtensionAPI) {
       message: Type.String({ description: "Reply content" }),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal) {
-      return messaging.reply(params, signal);
+      // The child helper alone validates manager-delivered transcript entries.
+      // Claim synchronously, before sending; a claimed unknown/failure is final.
+      let managed: Promise<LinkResult> | undefined;
+      pi.events.emit("pi-link:child-reply:v1", {
+        version: 1, ...params, signal,
+        respond(result: Promise<LinkResult>) { managed ??= result; },
+      });
+      return managed ?? messaging.reply(params, signal);
     },
     renderResult: (result, _options, theme) => renderIconResult(result, theme),
   });

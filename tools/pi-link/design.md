@@ -124,7 +124,7 @@ Generate one message UUID and preserve it, the sender attribution, content, and 
 Show that a received message was broadcast, so recipients do not mistake it for an individual assignment.
 Root recipients can use `link_reply` with that UUID to resolve the delivered author by session identity.
 An ordinary direct `link_send` may still carry `replyTo` as unchecked correlation only.
-With manager integration, workers use the reply-only API below; receiving a broadcast does not grant them broadcast permission.
+Manager-delivered messages use the delivered-author reply API below; receiving a broadcast does not itself grant additional tools.
 There is no automatic response or reply-all.
 The existing inbox batching, busy/idle delivery behavior, and compaction holds still apply to root deliveries.
 
@@ -141,8 +141,9 @@ Root selection and worker selection are not one atomic snapshot across processes
 Workers started after the owner's selection do not receive the message.
 
 The owning `pi-codex-subagents` extension must perform worker delivery without invoking the parent model.
-Children normally disable automatic extension discovery and do not load pi-link.
-Do not connect every child to the link just to receive broadcasts, infer parentage from names or cwd, or access another owner's workers.
+Children load configured extensions unless their template disables them.
+The manager bridge does not require a child link connection; templates can disable pi-link while retaining bridge delivery and replies.
+Do not infer parentage from names or cwd, or access another owner's workers.
 
 This requires a supported integration point between pi-link and the subagent extension.
 The subagent extension remains authoritative for worker identity, lifecycle, pause state, and RPC steering.
@@ -159,7 +160,7 @@ Deliver the original sender, message ID, and broadcast context to the worker rat
 
 Normal worker task results continue through their parent channel.
 Workers may ask a message's sender for clarification through the reply-only API below.
-They do not receive `link_send`, `link_set_identity`, group discovery, or independent link connections.
+Independent link connections and the ordinary pi-link tools follow extension configuration and explicit template tool lists, not worker role.
 Automatic recursive delivery to deeper descendant managers is outside this proposal.
 
 #### Delivered-author replies and worker conversations
@@ -184,7 +185,7 @@ link_reply({
 ```
 
 `link_reply` is available to roots with required `replyTo` and `message` fields.
-The manager/child integration exposes only this reply API to workers.
+The manager/child integration itself supplies only this reply API; an enabled pi-link extension additionally registers its ordinary tools.
 It has no `to`, recipient-list, broadcast, or worker-inclusion option.
 One call replies to the original author of one message delivered to the caller, never to everyone who received that message.
 A received broadcast therefore permits a private reply to its sender, not to its audience.
@@ -210,7 +211,7 @@ Existing group restrictions still apply between owning roots; a reply does not b
 The subagent bridge transports worker replies and incoming answers without asking the parent model to forward them.
 An answer to a worker's question goes only to that worker, not to its siblings or its parent's model context.
 Keep both directions visible in the owning session's worker transcript for inspection.
-This extends the integration contract; it does not make workers independent link terminals.
+This bridge is independent of any pi-link connection separately enabled in the worker.
 
 Worker answers use the same active-only lifecycle rules as broadcast delivery.
 If the destination worker finishes, pauses, or becomes unavailable, report that outcome instead of restarting, resuming, or queueing work.
@@ -277,7 +278,11 @@ The in-process manager emits `pi-link:worker-reply:v1` with version, current `ow
 Root verifies the current owner and calls `respond` synchronously during event emission, resolving the destination from the manager-authoritative reference, not its own root references.
 The manager is responsible for validating child transcript admission before emitting.
 Worker metadata survives owner-to-hub-to-recipient transport.
-Managed children (`PI_SUBAGENT_OWNER_TOKEN`) skip the root extension entirely and load only the manager reply helper.
+`PI_SUBAGENT_OWNER_TOKEN` does not suppress pi-link. Template extension exclusions decide whether a managed child loads it; explicit tool lists decide which ordinary tools the model can use.
+When both packages load, pi-link owns public `link_reply`; the helper registers a fallback at `session_start` only if that tool is absent.
+Before independent endpoint routing, pi-link synchronously emits `pi-link:child-reply:v1` with `{ version: 1, replyTo, message, signal, respond(Promise<LinkResult>) }`.
+The helper claims only an admitted manager-delivery reference in this child's transcript and reuses its normal reply implementation.
+No claim means ordinary pi-link reply resolution; a claim selects the manager route permanently, including failure or unknown outcomes, without retrying on the endpoint.
 
 The caller's routing deadline is five seconds (`ROUTING_DEADLINE_MS = 5_000`).
 Owner-worker receipt waits use half that deadline (2.5 seconds), leaving time for aggregation.
@@ -310,7 +315,7 @@ Worker checks below additionally require the actual subagent manager/helper, not
 - A broadcast reaches only the selected group, excludes the sender's root context, and preserves one UUID across recipient copies.
 - Replies remain direct, and no terminal name becomes reserved by the broadcast syntax.
 - Worker inclusion reaches the sender's workers too, without waiting for the parent model.
-- Workers can reply only to messages delivered to their session, with no arbitrary destination or broadcast option.
+- Manager-bridge replies require a message delivered to that worker, with no arbitrary destination or broadcast option; other tool access follows template policy.
 - A worker's clarification and the root's answer each reach one recipient without parent-model forwarding or sibling delivery.
 - Worker attribution and reply references survive the exchange; renaming or name reuse never redirects it to another session.
 - Unknown references, group changes, unsupported integration, and unavailable reply recipients produce explicit failures.

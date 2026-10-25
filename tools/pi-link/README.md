@@ -161,7 +161,7 @@ With two projects open, you may not want their terminals to see each other. Put 
 
 ## LLM Tools
 
-Five root tools cover identity, messaging, discovery, and remote compaction.
+Five tools cover identity, messaging, discovery, and remote compaction.
 The bundled **pi-link-tools** skill supplies model action conventions; the reference below describes observable behavior.
 
 ### Which tool should I use?
@@ -273,7 +273,9 @@ Children also need Pi's native fresh-input admission and pause APIs; missing cap
 The manager owns selection and lifecycle: finished or paused workers are not restarted or resumed.
 Root delivery does not wait for the parent model to forward the correction.
 Without a manager, that owner's worker outcome is `unsupported` with `worker_integration_unavailable`; root copies can still succeed.
-Workers have only `link_reply`, not independent link connections, arbitrary targeting, discovery, identity, or broadcast tools.
+The manager's child helper supplies `link_reply` for manager-delivered messages.
+Workers also load configured extensions normally: if pi-link is enabled, it registers its ordinary tools and an independent connection.
+Use template `disabledExtensions` to opt out of pi-link, or an explicit `tools` list to restrict the model's tools; worker status alone does not suppress the extension.
 Private replies route by stable worker ID and owner session, never by task name.
 Older hubs or peers without messaging v2 (which preserves worker reply attribution) remain explicitly unsupported for broadcast and `link_reply`.
 Upgrade and restart linked terminals together.

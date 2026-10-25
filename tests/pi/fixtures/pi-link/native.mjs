@@ -1071,20 +1071,37 @@ test("installed root bridge discovers per operation and transports worker replie
   stop();
   const missing = await tool(author, "link_send", { to: { broadcast: true }, message: "bridge removed", includeSubagents: true });
   assert.ok(missing.details.outcomes.some(o => o.sessionId === ownerSessionId && o.reason === "worker_integration_unavailable"));
+
+  // Once a helper claims a reference, an unknown outcome must not fall through
+  // to the independent endpoint's otherwise-valid reply route and send again.
+  const direct = messageId(await send(author, "alice", "claim-once reference"));
+  await received(owner, "claim-once reference");
+  const claimed = { content: [{ type: "text", text: "unknown managed outcome" }],
+    details: { status: "unknown", reason: "worker_routing_deadline" } };
+  const stopChild = owner.eventBus.on("pi-link:child-reply:v1", (request) => {
+    assert.equal(request.version, 1);
+    if (request.replyTo === direct) request.respond(Promise.resolve(claimed));
+  });
+  const settled = await tool(owner, "link_reply", { replyTo: direct, message: "must not retry on endpoint" });
+  assert.deepEqual(settled.details, claimed.details);
+  stopChild();
+  await pause(300);
+  assert.ok(!providerText(author).includes("must not retry on endpoint"));
 });
 
-test("managed child loading the root package registers no root tools, flags, or hooks", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "pi-link-child-disabled-"));
+test("managed child loading the configured package registers ordinary link tools and hooks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-child-enabled-"));
   const previous = process.env.PI_SUBAGENT_OWNER_TOKEN;
   try {
     process.env.PI_SUBAGENT_OWNER_TOKEN = "fixture-owner-token";
     const loaded = await discoverAndLoadExtensions([sourcePath], directory, join(directory, "agent"));
     assert.deepEqual(loaded.errors, []);
     const extension = loaded.extensions[0];
-    assert.equal(extension.tools.size, 0);
-    assert.equal(extension.flags.size, 0);
-    assert.equal(extension.handlers.size, 0);
-    assert.equal(extension.commands.size, 0);
+    assert.deepEqual([...extension.tools.keys()].sort(),
+      ["link_compact", "link_list", "link_reply", "link_send", "link_set_identity"]);
+    assert.ok(extension.flags.has("link"));
+    assert.ok(extension.handlers.has("session_start"));
+    assert.ok(extension.commands.has("link-connect"));
   } finally {
     if (previous === undefined) delete process.env.PI_SUBAGENT_OWNER_TOKEN;
     else process.env.PI_SUBAGENT_OWNER_TOKEN = previous;

@@ -20,7 +20,7 @@ This changelog is based on the git history from `2026-03-21` (initial commit) th
   Root reply permission comes only from admitted messages in the actual session transcript and survives reload and resume.
   Queued or cleared steering messages grant no permission; unknown references fail, group restrictions remain, and unsupported old peers are explicit.
 - Broadcasts with `includeSubagents: true` reach active workers through the supported `pi-codex-subagents` manager/child bridge, including the sender's workers.
-  Workers use reply-only conversations; private answers go only to the requesting worker, without parent-model forwarding.
+  Manager-bridge conversations use delivered-author replies; private answers go only to the requesting worker, without parent-model forwarding.
   Missing integration reports unsupported, and paused or finished workers are never resumed or restarted for delivery.
 - The bundled skill covers identity, broadcasts, and delivered-author replies, with no unsolicited acknowledgments or automatic parent forwarding.
   General clarifications use current-group broadcasts requesting worker inclusion; task-specific answers stay private.

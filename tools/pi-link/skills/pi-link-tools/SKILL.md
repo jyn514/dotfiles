@@ -1,6 +1,6 @@
 ---
 name: pi-link-tools
-description: "Coordinate Pi sessions with link_set_identity, link_send, link_reply, link_list, and link_compact. Use for link identity or group changes, direct messages, group clarifications, delivered-author replies, callbacks, status, and remote compaction. Covers reply-only worker conventions when manager integration is available; not general subagent creation or task management."
+description: "Coordinate Pi sessions with link_set_identity, link_send, link_reply, link_list, and link_compact. Use for link identity or group changes, direct messages, group clarifications, delivered-author replies, callbacks, status, and remote compaction. Covers manager-delivered worker replies and configured worker tool access; not general subagent creation or task management."
 ---
 
 # Pi-Link Tools
@@ -81,8 +81,9 @@ description: "Coordinate Pi sessions with link_set_identity, link_send, link_rep
 These rules apply only when a supported manager/child bridge exposes `link_reply` and delivers attributed messages to workers.
 The installed `pi-codex-subagents` manager/child bridge supplies this capability; without it, worker delivery is unsupported.
 
-- Workers have `link_reply` only, addressed to the author of a message actually delivered to that worker.
-  Never use arbitrary targeting, broadcast, group discovery, identity changes, or independent link connections.
+- The manager helper's `link_reply` addresses the author of a message actually delivered to that worker.
+  Other link tools and an independent connection are available when pi-link is enabled and the template's tool list permits them.
+  Follow the configured tool surface; do not infer a reply-only restriction from worker status.
 - Ask the delivered author only for clarification that can change the next action, or send an answer they requested.
   Send normal task completions through the parent channel.
 - Several workers may independently ask the same question.
