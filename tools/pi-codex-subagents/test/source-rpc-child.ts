@@ -48,7 +48,7 @@ const respond: FauxResponseFactory = (context) => {
   faux.appendResponses([respond]);
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
-  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name) })}\n`);
+  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name), ...(process.env.PI_TEST_CAPTURE_CONTEXT === "1" ? { messages: context.messages } : {}) })}\n`);
   const savedLinkTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^saved-link-reference:(.+)$/m)).find(Boolean);
   if (savedLinkTask) {

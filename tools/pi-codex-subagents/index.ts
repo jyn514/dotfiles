@@ -245,6 +245,7 @@ export default function (pi: ExtensionAPI) {
     modelReference?: string;
     thinking?: ThinkingLevel;
     templatePromptPosition?: "before" | "after";
+    forkFrom?: { session_id: string; through_entry_id: string };
     admittedToolCallId?: string;
   }
 
@@ -266,6 +267,7 @@ export default function (pi: ExtensionAPI) {
     return manager.spawnAgent({
       task_name: request.taskName,
       message: request.message,
+      fork_from: request.forkFrom,
       agent_type: request.agentType,
       skills: requestedSkills,
       loadedSkillPaths,
@@ -287,7 +289,7 @@ export default function (pi: ExtensionAPI) {
     name: "spawn_agent",
     label: "Spawn Agent",
     get description() {
-      return `Spawn a fresh-context Pi subagent for a concrete task. Children discover built-in, configured, and local extensions, skills, and prompt templates using the parent's resolved project trust. Agent templates may configure a provider/model pair, thinking level, tools, skills, and extensions; template-only \`disabledExtensions\` excludes extension entrypoints (including \`builtin:name\`) before they execute. Omitted model and thinking settings inherit from the parent. Omitted template tools use normal activation, not the parent's active tool names.
+      return `Spawn a Pi subagent for a concrete task. Without fork_from it starts fresh; fork_from retains the named native session branch through the selected entry (inclusive), then appends the required message. Current child configuration still applies. Children discover built-in, configured, and local extensions, skills, and prompt templates using the parent's resolved project trust. Agent templates may configure a provider/model pair, thinking level, tools, skills, and extensions; template-only \`disabledExtensions\` excludes extension entrypoints (including \`builtin:name\`) before they execute. Omitted model and thinking settings inherit from the parent. With template tools omitted, fresh children use normal activation and forks retain native source-active selection among currently registered tools. Plain-name template tools override that selection; modifiers follow Pi's native rules.
 ${spawnModels.size ? `
 A task may run on a model of its own, without a template: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort.
 ` : ""}
@@ -304,7 +306,11 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     get parameters() {
       return Type.Object({
         task_name: Type.String({ description: "Task name for the new agent. Use letters, digits, underscores, dashes, and optional slash path separators." }),
-        message: Type.String({ description: "Initial task for the new agent." }),
+        message: Type.String({ description: "Required initial task, appended after any retained fork context." }),
+        fork_from: Type.Optional(Type.Object({
+          session_id: Type.String({ minLength: 1, description: "Exact native source session ID." }),
+          through_entry_id: Type.String({ minLength: 1, description: "Inclusive final entry on the source branch." }),
+        }, { additionalProperties: false })),
         agent_type: Type.Optional(Type.String({ description: "Optional agent template name from ~/.pi/agent/pi-codex-subagents/agents/." })),
         skills: Type.Optional(Type.Array(Type.String(), { description: "Additional skill names from the loaded parent skills listed in this tool description." })),
         ...(spawnModels.size
@@ -321,6 +327,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
           admittedToolCallId: _toolCallId,
           taskName: params.task_name,
           message: params.message,
+          forkFrom: params.fork_from,
           agentType: params.agent_type,
           skills: params.skills,
           modelReference: params.model,
@@ -329,6 +336,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
         const info = manager.getAgentInfo(result.task_name, parentSessionId(ctx));
         return textResult(`Spawned ${result.task_name}.`, {
           ...result,
+          session_id: info.sessionId,
+          ...(info.forkFrom ? { fork_from: info.forkFrom } : {}),
           provider: info.provider,
           modelId: info.modelId,
           thinking: info.thinking,

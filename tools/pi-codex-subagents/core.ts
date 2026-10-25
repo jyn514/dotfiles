@@ -87,6 +87,11 @@ export interface ChildProcessOwnership {
   startedAt: number;
 }
 
+export interface ForkFrom {
+  session_id: string;
+  through_entry_id: string;
+}
+
 export interface AgentInfo {
   id: string;
   taskName: string;
@@ -108,6 +113,9 @@ export interface AgentInfo {
   projectTrusted?: boolean;
   cwd: string;
   sessionFile: string;
+  /** Actual native child identity; distinct from the managed task ID. */
+  sessionId?: string;
+  forkFrom?: ForkFrom;
   infoFile: string;
   logFile: string;
   createdAt: number;
@@ -144,6 +152,7 @@ export interface AgentResponseEntry {
 export interface SpawnAgentParams {
   task_name: string;
   message: string;
+  fork_from?: ForkFrom;
   agent_type?: string;
   skills?: string[];
   loadedSkillPaths?: Record<string, string>;
@@ -381,6 +390,7 @@ function isAgentArtifact(name: string, agentId: string): boolean {
   return name === `${agentId}.jsonl`
     || name === `${agentId}.info.json`
     || name === `${agentId}.log`
+    || name === `${agentId}.fork`
     || new RegExp(`^${agentId}\\.info\\.json\\.\\d+\\.tmp$`).test(name);
 }
 
@@ -392,7 +402,7 @@ function pruneScope(directory: string, cutoff: number): void {
     const agentId = entry.name.slice(0, -".info.json".length);
     if (!AGENT_ID_PATTERN.test(agentId)) continue;
     const info = readInfoFile(path.join(directory, entry.name));
-    const agentEntries = entries.filter((candidate) => candidate.isFile() && isAgentArtifact(candidate.name, agentId));
+    const agentEntries = entries.filter((candidate) => isAgentArtifact(candidate.name, agentId));
     let latest = Math.max(info?.lastActivity ?? 0, info?.updatedAt ?? 0, info?.createdAt ?? 0);
     for (const candidate of agentEntries) {
       try { latest = Math.max(latest, fs.statSync(path.join(directory, candidate.name)).mtimeMs); } catch {}
@@ -400,7 +410,7 @@ function pruneScope(directory: string, cutoff: number): void {
     if (info?.status === "suspended" || info?.suspensionGeneration || isRunActive(agentId) || latest >= cutoff) continue;
     let failed = false;
     for (const candidate of agentEntries.filter((candidate) => candidate.name !== entry.name)) {
-      try { fs.rmSync(path.join(directory, candidate.name), { force: true }); } catch { failed = true; }
+      try { fs.rmSync(path.join(directory, candidate.name), { force: true, recursive: true }); } catch { failed = true; }
     }
     if (failed) continue;
     try { fs.rmSync(path.join(directory, entry.name), { force: true }); } catch {}
@@ -1422,6 +1432,44 @@ export class AgentManager {
         status: "starting",
         lastTaskMessage: params.message,
       };
+      if (params.fork_from) {
+        const origin = params.fork_from;
+        if (!origin.session_id?.trim() || !origin.through_entry_id?.trim()) {
+          throw new Error("fork_from requires session_id and through_entry_id.");
+        }
+        const paths = new Set<string>();
+        const consider = (sessions: Awaited<ReturnType<typeof SessionManager.list>>): void => {
+          for (const session of sessions) {
+            if (session.id === origin.session_id) paths.add(fs.realpathSync(session.path));
+          }
+        };
+        consider(await SessionManager.listAll());
+        if (params.parentSessionFile) consider(await SessionManager.list(cwd, path.dirname(params.parentSessionFile)));
+        for (const managed of readAllInfos()) {
+          consider(await SessionManager.list(managed.cwd, path.dirname(managed.sessionFile)));
+        }
+        const sources = [...paths];
+        if (sources.length !== 1) {
+          throw new Error(sources.length ? `Ambiguous source session: ${origin.session_id}` : `Source session not found: ${origin.session_id}`);
+        }
+        const forkDirectory = path.join(directory, `${id}.fork`);
+        ensurePrivateDir(forkDirectory, true);
+        try {
+          const child = SessionManager.forkFrom(sources[0], cwd, forkDirectory);
+          if (!child.getEntry(origin.through_entry_id)) throw new Error(`Source entry not found: ${origin.through_entry_id}`);
+          const sessionFile = child.createBranchedSession(origin.through_entry_id);
+          // Empty-history persistence is public in newer Pi; older versions may
+          // intentionally defer the file until a response that cannot run here.
+          if ("ensurePersisted" in child) (child as SessionManager & { ensurePersisted(): void }).ensurePersisted();
+          if (!sessionFile || !fs.existsSync(sessionFile)) throw new Error("This Pi version cannot persist the selected fork cut before child startup.");
+          info.sessionFile = sessionFile;
+          info.sessionId = child.getSessionId();
+          info.forkFrom = { ...origin };
+        } catch (error) {
+          fs.rmSync(forkDirectory, { recursive: true, force: true });
+          throw error;
+        }
+      }
       saveInfo(info);
       this.notifyStatusChange(info);
       const targets = this.defaultWaitAllTargets.get(params.parentSessionId) ?? new Set<string>();
@@ -1593,7 +1641,8 @@ export class AgentManager {
     let prompted = false;
     try {
       if (!proc.pid) throw new Error("Child Pi process did not provide a PID.");
-      await this.sendCommand(live, { type: "get_state" }, DEFAULT_STARTUP_TIMEOUT_MS);
+      const state = await this.sendCommand(live, { type: "get_state" }, DEFAULT_STARTUP_TIMEOUT_MS);
+      if (typeof state?.sessionId === "string") info.sessionId = state.sessionId;
       let snapshot: ProcessSnapshot | undefined;
       for (let attempt = 0; attempt < 20 && !snapshot; attempt++) {
         snapshot = inspectProcess(proc.pid, childToken);

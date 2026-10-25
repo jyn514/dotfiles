@@ -68,7 +68,7 @@ The fixture supports the tested CLI subset: `--session`, ordered `--extension` a
 `--tools`, `--no-tools`, `--no-builtin-tools`, `--approve`/`--no-approve`, resource-discovery suppression flags,
 `--no-context-files`, `--system-prompt`, and `--append-system-prompt`.
 Explicit tool selection goes through the real SDK's registration and activation rules, including plain lists and native modifiers.
-Without tool-selection flags, normal builtin and extension-tool activation applies.
+Without tool-selection flags, fresh sessions use normal builtin and extension-tool activation; resumed or forked sessions retain native transcript selection among currently registered tools.
 Model selection remains faux.
 Native settings load from disposable user/project files with the supplied project-trust decision;
 only compaction and retry are overridden for deterministic tests.
@@ -96,6 +96,14 @@ Completed tool results prevent either batch from being resent on fresh continuat
 production options or fixture-only APIs.
 
 ## Coverage and limits
+
+`fork.test.ts` creates owned native branched sources with messages, completed tool results, compaction, metadata cuts and labels.
+It checks actual provider context and the registered `spawn_agent` schema, including required `message`, exact source/cut failures and fresh omission.
+Explicit-tool cases exercise settled continuation, native pause/recreation, retained source-tool effects and retention of both linked native child files.
+They remove the source before continuation to detect accidental re-extraction and check that expired child cleanup leaves the source and neighboring tasks intact.
+A separate selection case records a real source loadout with public `setActiveTools()`, then checks inherited `read`/`grep` selection and native template modifiers.
+Current default-active and default-inactive extension tools remain registered without automatically joining that restored selection.
+An actual attempted call verifies that an unavailable historical tool is neither registered nor executable; the explicit plain-list case separately checks template override behavior.
 
 `discovery.test.ts` checks native configured-package discovery, user/project skills and prompt templates,
 canonical-path and package-basename exclusions, and explicit additions subject to exclusions.

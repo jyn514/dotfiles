@@ -21,7 +21,7 @@ pi install /absolute/path/to/pi-extensions/packages/pi-codex-subagents
 
 | Tool | Purpose |
 |---|---|
-| `spawn_agent` | Spawn a fresh-context child Pi process |
+| `spawn_agent` | Spawn a child Pi process, optionally from bounded native session history |
 | `wait_agent` | Block for one completion and return its final text |
 | `wait_all_agents` | Block until every selected agent finishes |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
@@ -35,6 +35,48 @@ Agent names are unique within their parent session. The same task name can exist
 name. The tool lists permitted names without repeating descriptions from Pi's
 parent skill catalog. Disabled or unloaded skills are refused; refreshing the
 parent's skill list updates the permitted names.
+
+### Forking retained history
+
+`spawn_agent` starts fresh unless you supply `fork_from`:
+
+```json
+{
+  "task_name": "review-earlier-work",
+  "message": "Review the retained work and report any remaining risks. Do not modify files.",
+  "fork_from": {
+    "session_id": "exact-native-session-id",
+    "through_entry_id": "exact-native-entry-id"
+  }
+}
+```
+
+`message` is always required.
+The child retains the source branch from its root through `through_entry_id`, **including that entry**, then receives the task through the normal template and prompt path.
+The selected entry need not be the source's current head; later entries and other branches do not become child context.
+Use native session and entry IDs, not managed task names or transcript filenames.
+Sources can be sessions in Pi's normal session storage, the current parent's saved session, or known managed child transcripts.
+Missing or ambiguous session IDs and missing entry IDs fail before the child starts provider work.
+
+The retained history is native conversation data, including tool calls, completed results and compaction entries—not a generated handoff summary.
+Existing compaction still determines which earlier messages reach the model.
+Native labels and bookmarks use Pi's current-label behavior and can include labels changed after the selected cut.
+The source conversation and active parent remain in place; Pi may repair a missing trailing newline when reading the source file.
+
+A fork uses current child configuration for its dedicated system prompt, selected model and thinking level, template, skills and resources.
+Pi restores the source's active tool selection when template `tools` are omitted; it does not reset that selection to current defaults.
+Only tools registered by current child configuration remain usable; a historical declaration cannot install or enable an unavailable tool.
+An explicit plain-name template `tools` list overrides the retained selection; `+name` and `-name` modifiers follow Pi's native rules.
+Newly registered tools do not automatically join a restored selection, and default-inactive tools are not activated merely because they are registered.
+The fork does not restore historical settings, credentials, environment variables or filesystem contents.
+Retained tool calls are history, not instructions for the harness to execute again; the model can still choose to perform a similar action in a new turn.
+Choose a cut at a completed tool boundary; a pending tool call can be rejected by Pi's native session or provider validation.
+Older Pi versions that cannot materialize the selected cut before startup refuse the fork instead of starting without its retained context.
+
+The result includes the new native `session_id`, existing model provenance and the selected `fork_from` origin.
+The child is an ordinary managed task: use the same list, response, message, interrupt, wait and pause operations.
+A later message or durable resume reopens the child's own transcript; it does not re-extract the source or resubmit the initial task.
+Direct skill routes remain fresh-context routes and do not acquire history implicitly.
 
 ## Agent templates
 
@@ -66,7 +108,9 @@ You are a focused review subagent. Return concise findings with file paths.
 When both are present, Pi launches that exact provider/model combination.
 If either is absent, the child inherits the parent agent's provider and model.
 `thinking` is also optional and otherwise inherits the parent.
-Template `tools` select an explicit task-tool allowlist; omitting them uses Pi's normal activation, not the parent's active tool names.
+A plain-name template `tools` list selects an explicit task-tool allowlist.
+Omitting it uses normal activation for a fresh child, or restores native source-active selection for a fork.
+Template `+name` and `-name` modifiers follow Pi's native selection rules.
 
 `skills` may contain skill names or paths.
 `extensions` may contain local files/directories or npm package names already installed by Pi.
@@ -77,7 +121,7 @@ Children discover configured and local extensions, skills, and prompt templates 
 They run in the parent's `ctx.cwd` and retain its resolved project-trust decision for that directory, including after recreation.
 Declining project trust prevents protected project resources from loading; user resources remain available.
 If an older parent or saved worker supplies no trust decision, the child does not grant project trust.
-Discovered extension tools are available even when they were not active in the parent.
+Fresh children can use discovered extension tools even when they were not active in the parent.
 
 `disabledExtensions` belongs only to agent-template frontmatter, not `config.json`, its `defaults`, or Pi's `settings.json`.
 It accepts comma-separated canonical entrypoint file paths, package names (including an unscoped basename), or `builtin:name` selectors.
@@ -140,7 +184,7 @@ Configuration is read when agents spawn, while cleanup runs when the extension l
 
 Template skills and extensions override configured defaults; these are additions to native discovery, not its replacement.
 Skills explicitly requested by the parent are added to configured template/default skills.
-Tool selection belongs to the template or uses normal Pi activation when omitted.
+Tool selection belongs to the template or uses native activation when omitted: fresh defaults for a fresh child, retained source-active selection for a fork.
 A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model without a template.
 
 ## Direct skill routing
