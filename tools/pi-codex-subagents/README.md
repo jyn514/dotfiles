@@ -17,6 +17,16 @@ For local development:
 pi install /absolute/path/to/pi-extensions/packages/pi-codex-subagents
 ```
 
+To smoke-test uncommitted changes without installing or updating a package, start a fresh Pi process from the repository root:
+
+```sh
+pi --no-extensions --extension ./packages/pi-codex-subagents/index.ts
+```
+
+This loads the checkout directly and disables other parent extensions for this run, avoiding a second copy from configured packages.
+If your provider requires an extension, load it with another `--extension` argument.
+Children still use the resource-discovery rules described under [Agent templates](#agent-templates).
+
 ## Tools
 
 | Tool | Purpose |
