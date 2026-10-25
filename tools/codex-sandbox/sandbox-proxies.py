@@ -2145,8 +2145,6 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         return resource_exists(runtime, ResourceKind(kind), name)
 
     def volume_presence() -> ResourcePresence:
-        if not listed("volume", proxy["volume"]):
-            return ResourcePresence.ABSENT
         if managed:
             authority = (ResourceOwnerAuthority.VOLUME_CREATOR if "volume-owner" in proxy
                          else ResourceOwnerAuthority.SERVICE)
@@ -2159,16 +2157,16 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
                 runtime, ResourceKind.VOLUME, proxy["volume"], proxy["volume-owner"],
                 authority=ResourceOwnerAuthority.VOLUME_CREATOR,
             )
-        return ResourcePresence.OWNED
+        return (ResourcePresence.OWNED if listed("volume", proxy["volume"])
+                else ResourcePresence.ABSENT)
 
     def container_presence() -> ResourcePresence:
-        if not listed("container", proxy["container"]):
-            return ResourcePresence.ABSENT
         if managed:
             return resource_presence(
                 runtime, ResourceKind.CONTAINER, proxy["container"], service_owner,
             )
-        return ResourcePresence.OWNED
+        return (ResourcePresence.OWNED if listed("container", proxy["container"])
+                else ResourcePresence.ABSENT)
 
     def remove(arguments: list[str]) -> None:
         result = runtime.run(arguments, check=False, capture_output=True)

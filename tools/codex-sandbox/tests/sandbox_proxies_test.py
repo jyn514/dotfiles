@@ -2272,7 +2272,8 @@ class ManifestTest(unittest.TestCase):
             "forwarding": {"owner": "b" * 32, "target": "/legacy/socket"},
         }
         owner = mock.Mock(provider="lima-docker")
-        owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        owner.run.side_effect = lambda args, **kwargs: subprocess.CompletedProcess(
+            args, 1 if args[:2] == ["volume", "inspect"] else 0, stdout="", stderr="")
         registry = sandbox_proxies._proxy_registry(owner, legacy)
         self.assertFalse(registry.cleanup(0).remaining)
         owner.stop_proxy_forward.assert_called_once_with(legacy["forwarding"])

@@ -425,24 +425,32 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_existing_network_owner_is_adopted_only_for_same_owner(self):
         presence = self.launcher["_gateway_network_presence"]
         for actual, expected in (("owner", "owned"), ("other", "mismatched")):
-            run = Mock(side_effect=[
-                SimpleNamespace(returncode=0, stdout="network\n"),
-                SimpleNamespace(returncode=0, stdout=actual + "\n"),
-            ])
-            with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
+            run = Mock(return_value=SimpleNamespace(returncode=0, stdout=actual + "\n"))
+            with self.subTest(owner=actual), patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
                 self.assertEqual(expected, presence("network", "owner").value)
+            run.assert_called_once()
+            self.assertEqual(["network", "inspect"], run.call_args.args[0][:2])
 
     def test_network_listing_or_inspection_failure_is_not_absence(self):
         presence = self.launcher["_gateway_network_presence"]
         failed = SimpleNamespace(returncode=125, stdout="")
-        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", return_value=failed):
+        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", return_value=failed) as run:
             with self.assertRaisesRegex(Exception, "listing failed"):
                 presence("network", "owner")
-        run = Mock(side_effect=[SimpleNamespace(returncode=0, stdout="network\n"), failed])
+        self.assertEqual([["network", "inspect"], ["network", "ls"]],
+                         [call.args[0][:2] for call in run.call_args_list])
+        # Failed inspect is not absence when a successful list still finds it.
+        run = Mock(side_effect=[failed, SimpleNamespace(returncode=0, stdout="network\n")])
         with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
             with self.assertRaisesRegex(Exception, "inspection failed"):
                 presence("network", "owner")
+        self.assertEqual([["network", "inspect"], ["network", "ls"]],
+                         [call.args[0][:2] for call in run.call_args_list])
+        run = Mock(side_effect=[failed, SimpleNamespace(returncode=0, stdout="")])
+        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
+            self.assertEqual("absent", presence("network", "owner").value)
         lima = Mock(spec=presence.__globals__["VMRuntime"])
+        lima.relay_owner_label.return_value = "dev.codex.relay-owner"
         lima.run.side_effect = OSError("VM unavailable")
         with patch.dict(presence.__globals__, OUTER_RUNTIME=lima):
             with self.assertRaisesRegex(OSError, "VM unavailable"):

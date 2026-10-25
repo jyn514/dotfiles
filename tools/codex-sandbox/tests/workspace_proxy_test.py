@@ -177,8 +177,18 @@ class WorkspaceProxyTest(unittest.TestCase):
         staging = Path(proxy["workspace-source-view"])
         staging.mkdir(parents=True)
         (staging / "placeholder").touch()
-        with mock.patch.object(helpers, "resource_exists", return_value=False):
-            result = helpers._proxy_registry(SimpleNamespace(), proxy).cleanup(0)
+        runtime = helpers.ContainerRuntime()
+        def absent(arguments, **kwargs):
+            self.assertIn(arguments[0], ("container", "volume"))
+            if arguments[1] == "inspect":
+                return SimpleNamespace(returncode=125, stdout="")
+            self.assertEqual("ls", arguments[1], "absent resources must not be removed")
+            return SimpleNamespace(returncode=0, stdout="")
+        runtime.run = mock.Mock(side_effect=absent)
+        result = helpers._proxy_registry(runtime, proxy).cleanup(0)
+        self.assertEqual([["container", "inspect"], ["container", "ls"],
+                          ["volume", "inspect"], ["volume", "ls"]],
+                         [call.args[0][:2] for call in runtime.run.call_args_list])
         self.assertEqual((), result.remaining)
         self.assertFalse(staging.exists())
         self.assertTrue(all(Path(record["lock_file"]).is_file() for record in self.records))

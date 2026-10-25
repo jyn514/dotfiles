@@ -95,7 +95,7 @@ class ResourceOperationsTest(unittest.TestCase):
             runtime.remove_stopped_sandbox_holders(backend, {"recorded-volume"})
         self.assertEqual(1, backend.run.call_count)
 
-    def test_each_runtime_lists_volumes_with_the_singular_name_template_and_its_owner_label(self):
+    def test_each_runtime_inspects_present_volumes_once_with_its_owner_label(self):
         from docker_runtime import Docker
 
         cases = (
@@ -123,11 +123,8 @@ class ResourceOperationsTest(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(
-                    ["volume", "ls", "--format", "{{.Name}}"], calls[0],
-                )
-                self.assertEqual(
                     ["volume", "inspect", "--format",
-                     '{{index .Labels "' + label + '"}}', "owned"], calls[1],
+                     '{{index .Labels "' + label + '"}}', "owned"], calls[0],
                 )
                 self.assertEqual(
                     relay_label,
@@ -140,7 +137,6 @@ class ResourceOperationsTest(unittest.TestCase):
     def test_container_resource_contract_uses_container_metadata_and_validates_kind(self):
         backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
-            SimpleNamespace(args=[], returncode=0, stdout="owned\n", stderr=""),
             SimpleNamespace(args=[], returncode=0, stdout="owner\n", stderr=""),
         ])
 
@@ -151,13 +147,9 @@ class ResourceOperationsTest(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            ["container", "ls", "--all", "--format", "{{.Names}}"],
-            backend.run.call_args_list[0].args[0],
-        )
-        self.assertEqual(
             ["container", "inspect", "--format",
              '{{index .Config.Labels "dev.codex.service-owner"}}', "owned"],
-            backend.run.call_args_list[1].args[0],
+            backend.run.call_args_list[0].args[0],
         )
         with self.assertRaisesRegex(runtime.RuntimeError, "ResourceKind"):
             runtime.resource_exists(backend, "container", "owned")
@@ -165,7 +157,6 @@ class ResourceOperationsTest(unittest.TestCase):
     def test_removal_revalidates_owner_before_mutating_the_resource(self):
         backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
-            SimpleNamespace(args=[], returncode=0, stdout="claimed\n", stderr=""),
             SimpleNamespace(args=[], returncode=0, stdout="another-owner\n", stderr=""),
         ])
 
@@ -174,12 +165,11 @@ class ResourceOperationsTest(unittest.TestCase):
                 backend, runtime.ResourceKind.VOLUME, "claimed", "our-owner",
             )
 
-        self.assertEqual(2, backend.run.call_count)
+        self.assertEqual(1, backend.run.call_count)
 
     def test_container_removal_uses_recovery_admitted_top_level_commands(self):
         backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
-            SimpleNamespace(returncode=0, stdout="owned\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="owner\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="", stderr=""),
             SimpleNamespace(returncode=0, stdout="", stderr=""),

@@ -109,8 +109,8 @@ def remove_stopped_sandbox_holders(runtime, volumes):
 
 def resource_presence(runtime, kind, name, owner, *,
                       authority=ResourceOwnerAuthority.RUNTIME):
-    if not resource_exists(runtime, kind, name):
-        return ResourcePresence.ABSENT
+    if not isinstance(kind, ResourceKind):
+        raise RuntimeError("resource kind must be a ResourceKind")
     labels = ".Config.Labels" if kind is ResourceKind.CONTAINER else ".Labels"
     label = resource_owner_label(runtime, kind, authority)
     inspected = runtime.run([
@@ -118,6 +118,11 @@ def resource_presence(runtime, kind, name, owner, *,
         "{{index " + labels + " \"" + label + "\"}}", name,
     ], check=False, capture_output=True)
     if inspected.returncode:
+        # An inspect error alone does not prove absence (engine/transport errors
+        # must retain recovery state). List only on this exceptional path. Keep
+        # every operation on the supplied, engine-bound runtime; no lifetime cache.
+        if not resource_exists(runtime, kind, name):
+            return ResourcePresence.ABSENT
         raise RuntimeError(f"{kind.value} resource ownership inspection failed")
     return (ResourcePresence.OWNED if inspected.stdout.strip() == owner
             else ResourcePresence.MISMATCHED)

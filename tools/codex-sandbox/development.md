@@ -167,6 +167,23 @@ Initialized dotfiles checkouts take only the checkout-specific initialization
 lock, not the service coordination lock; missing metadata still initializes
 under both locks. All workspaces are validated on every launch.
 
+`Sandbox preparation:` measures launcher preparation, not interactive UI readiness.
+TicGit startup overlaps shared proxy startup once its image inputs are settled;
+the agent still waits for both, and optional TicGit failures still omit its endpoint.
+Preparation phase durations are inclusive and can overlap, so do not add them to
+estimate wall time. Cancellation closes the TicGit creation gate and joins all
+startup workers before resource cleanup.
+
+`Sandbox cleanup total:` includes final scratch removal. TicGit admission and its
+lifetime pipe are revoked synchronously before independent teardown; `TicGit
+teardown=... (overlapped)` then runs alongside the existing gateway/shared-proxy
+cleanup path. The shared-session final-holder lock remains authoritative, and
+scratch removal waits for both paths. Do not add that overlapping teardown span
+to the other cleanup durations. Owned runtime cleanup inspects ownership directly
+on the present-resource path, lists only to establish absence after inspection
+failure, and rechecks ownership before removal; no inspection lifetime cache or
+engine-verification bypass is used.
+
 From the checkout being measured, run this repository's probe on a Unix host with local container-socket access:
 
 ```sh

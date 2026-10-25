@@ -285,6 +285,12 @@ class TicBrokerLaunch:
             os.close(self.lifetime_writer)
             self.lifetime_writer = None
 
+    def revoke(self) -> None:
+        """Revoke admission synchronously before independent teardown can block."""
+        self.token = ""
+        self.address = None
+        self.close_lifetime()
+
     def _process_presence(self):
         # An exited Popen still owns its pipe descriptors until explicit reap/
         # close; retain it in the registry even after poll reports process exit.
@@ -323,8 +329,7 @@ class TicBrokerLaunch:
         # container removal deliberately retains its registry predecessors, so
         # delegating this step to the cleanup DAG could leave an authenticated
         # broker and its native child alive after the owning launch has ended.
-        self.token = ""
-        self.address = None
+        self.revoke()
         stop_error = None
         try:
             self._stop_process()

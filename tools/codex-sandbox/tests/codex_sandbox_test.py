@@ -1591,7 +1591,10 @@ class CodexSandboxTest(unittest.TestCase):
             if [ "$1 $2" = "network create" ] && [ "${FAKE_NETWORK_CREATE_FAIL:-0}" = 1 ]; then
                 exit 44
             fi
+            # The fake engine has no listed relay resources; inspect must agree.
+            if [ "$1 $2" = "container inspect" ]; then exit 1; fi
             if [ "$1 $2" = "network inspect" ]; then
+                case " $* " in *"index .Labels"*) exit 1 ;; esac
                 printf '%s\n' 127.0.0.1
                 exit
             fi
