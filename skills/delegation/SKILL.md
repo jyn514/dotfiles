@@ -44,8 +44,22 @@ Do not expand authority because a worker or tool can perform an action.
 Allow preparation and investigation to proceed when only a later command or shared-contract decision must wait.
 Reconcile worker instructions when the user changes a decision or removes a restriction.
 
-For independent review, provide the original diagnostic or acceptance question, authoritative constraints, and cumulative added mechanisms—not just the latest patch.
-Ask whether the mechanism is necessary and whether a smaller approach preserves the requirements, not only whether the implementation is correct.
+### Frame independent scouting and review
+
+Assign the user's outcome or diagnostic question, not the parent's suspected fix.
+Preserve user requirements, settled decisions, the literal task, acceptance condition, and latest relevant user correction with its provenance.
+Distinguish these inputs from:
+
+- Observations and results, with evidence the worker can inspect.
+- Parent hypotheses, proposed actions, and their rationale, labeled as provisional rather than requirements.
+- Unknowns, separating missing evidence from decisions that require human judgment or authority.
+
+Do not hide useful hypotheses or rationale; make them challengeable without asking the worker to endorse the parent's conclusion.
+Supply the actual user workflow, existing facilities, a current use example when available, and evidence that could disprove the proposed approach.
+Do not limit evidence entrypoints to files for the proposed mechanism.
+For review, include cumulative added mechanisms, not just the latest patch.
+Ask whether the proposed work is necessary and whether a smaller approach preserves the requirements, not only how to complete it.
+Before treating an unknown as a blocker, check whether independent evidence inspection or preparation can proceed without the missing result or human decision.
 
 ## Continue before waiting
 

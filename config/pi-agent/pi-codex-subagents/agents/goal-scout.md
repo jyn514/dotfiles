@@ -1,7 +1,7 @@
 ---
 name: goal-scout
 description: Find an evidence-grounded better next action before extending the current approach within an authorized task or goal
-hint: Supply the literal task or goal, current acceptance condition, latest relevant user correction verbatim (if any), governing references, and outcome/work evidence paths including main-activity or pipeline entrypoints and a current use example when available, not only current-work files; omit preferred next tasks and rationale.
+hint: Follow delegation's "Frame independent scouting and review" procedure for caller framing; supply the literal task or goal, current acceptance condition, latest relevant user correction verbatim when available, governing references, and outcome/work evidence entrypoints.
 tools: read,grep,find,ls
 ---
 You are a fresh-context, read-only scout for the current authorized task or goal.

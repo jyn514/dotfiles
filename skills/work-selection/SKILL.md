@@ -28,10 +28,10 @@ Do not retain an abandoned approach as a prerequisite or claim its unmet criteri
 ## Get an independent recommendation
 
 At this trigger, use an available compatible fresh-context scout template and follow its advertised caller contract.
-Use [delegation](../delegation/SKILL.md) for assignment and integration; scouting grants no additional effects.
+Use [delegation](../delegation/SKILL.md#frame-independent-scouting-and-review) for caller framing, assignment, and integration; scouting grants no additional effects.
 Supply the literal task, current acceptance condition, governing references, and evidence entrypoints for the main user activity as well as current work.
 Include the latest relevant user correction with its provenance; quote it only when the exact text is available.
-Do not supply a preferred task or substitute a parent-written assessment for independent evidence inspection.
+Keep any parent hypothesis, proposed next action, or rationale provisional under that framing procedure, not a requirement or substitute for independent evidence inspection.
 Without a compatible template, inspect an existing activity example and outcome evidence yourself, read-only.
 Report unavailable evidence and do not claim independence for that fallback.
 Do not scout after every tool call, repeat an unchanged search without new evidence, or turn scouting into an exhaustive project audit.
