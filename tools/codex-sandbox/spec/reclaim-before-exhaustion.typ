@@ -1,24 +1,37 @@
 = Reclaim before exhaustion
 
-*Status:* Implemented and fixture-tested, 2026-09-12. New provisioning enables
-reclamation after its audit; existing VM generations are unchanged.
-The measured settings and replay limits are in `experiments/reclaim-timer.md`.
+*Status:* Guest fallback implemented and fixture-tested, 2026-09-12.
+Host-pressure control implemented for Linux QEMU VirtioFS, 2026-10-25.
+The fallback timer's measured settings and replay limits are in
+`experiments/reclaim-timer.md`; its cost results do not cover adaptive recovery.
 Paths are relative to `tools/codex-sandbox/`.
 
 == Design
 
-Keep a persistent container parent and a guest systemd timer that starts a
-bounded reclaim job. Systemd owns scheduling and execution; no host polling,
-launchd service, SSH orchestration, or custom controller is needed.
+Keep a persistent container parent and a guest job that performs one bounded
+reclaim request.
+On Linux QEMU VirtioFS, a host user timer measures the owned virtiofsd worker
+and invokes that job only under descriptor pressure.
+Other platforms retain the calibrated guest timer as a blind fallback.
 
-This mitigates cache pressure, not descriptor exhaustion. If active work
-retains or creates host descriptors faster than reclaim releases them, ENFILE
-remains possible.
-The timer cannot detect that host pressure or warn about ineffective descriptor
-reclamation. It can report job failures. Periodic reclaim may evict useful
-caches even when the host has ample headroom; measure that cost before rollout.
+The host controller starts recovery at 80% of the worker's descriptor limit.
+It requests at most three 1 GiB batches and stops at 60%, after a batch releases
+no descriptors, or after the batch limit.
+This hysteresis avoids routine eviction with ample headroom and measures actual
+descriptor release instead of treating a successful cgroup write as recovery.
+If active work creates descriptors faster than bounded reclaim releases them,
+ENFILE remains possible.
 
-== Three components
+== Components
+
++ *Host pressure controller.* Resolve the virtiofsd supervisor from Lima's
+  owned PID file, require exactly one same-user worker, and read its descriptor
+  count and hard limit from `/proc`.
+  Run as an instance-specific systemd user timer every 30 seconds.
+  Each activation is a oneshot with a 50-second deadline; state locking and the
+  guest reclaim lock prevent overlapping work.
+  Stop on VM or worker identity changes rather than reclaiming an unverified
+  target.
 
 + *Persistent parent.* Set the owned Docker daemon's default cgroup parent to
   `sandbox.slice`, retaining individual container scopes. Make Docker's user
@@ -39,7 +52,7 @@ caches even when the host has ample headroom; measure that cost before rollout.
   do not use a service runtime directory removed on service stop. The helper
   performs the write itself without spawning children. A surviving worker
   retains the lock, so a new invocation reports busy and exits without reclaim.
-+ *Guest timer.* Activate the same service with `OnActiveSec` for the first
++ *Guest fallback timer.* Activate the same service with `OnActiveSec` for the first
   run and `OnUnitInactiveSec` for subsequent runs. The interval begins after
   the previous job deactivates, avoiding immediate retries after slow reclaim.
   Set `AccuracySec` deliberately when calibrating cadence; its installed
@@ -71,9 +84,9 @@ See `experiments/enfile.md` and `experiments/enfile-causes.md`.
 
 Treat `EAGAIN` as an expected partial/empty result, not a reason for an immediate
 retry or a warning every tick. Report actual I/O/configuration errors and
-timeouts in the guest journal. Existing status/doctor should show timer state,
-next activation, and last job result; successful execution must not be labelled
-successful host-pressure recovery. Host sampling remains a diagnostic/test tool.
+timeouts in the guest journal. Existing status/doctor should show fallback
+timer state, next activation, and last job result. The host controller reports
+its before and after descriptor counts, stop reason, and batch count.
 
 The timer runs while Docker is active, including when no containers remain:
 retired containers can still own cached inodes. Use these dependency directions:
@@ -178,8 +191,8 @@ the criteria to fit a result.
   results. Require zero unexpected worker overlap, lost timer rearming, or
   unrecovered shutdown jobs in lifecycle fixtures.
 
-Keep automatic reclamation disabled until ownership, lifecycle, and replay
-gates pass. Publish the chosen batch size, interval, accuracy, and deadlines
-with the results. If adequate headroom requires unacceptable cache cost or a
-hard stop, return to the policy decision with evidence; neither automatic
-freezing nor a broader reclaim target is implicit implementation work.
+Keep adaptive reclamation opt-in until an active-workload replay measures its
+1 GiB recovery cost. Publish the chosen thresholds, batch size, interval, and
+deadlines with the results. If adequate headroom requires unacceptable cache
+cost or a hard stop, return to the policy decision with evidence; neither
+automatic freezing nor a broader reclaim target is implicit implementation work.

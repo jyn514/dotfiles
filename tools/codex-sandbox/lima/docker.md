@@ -170,35 +170,52 @@ It restarts shared Docker and refuses to proceed while containers are running un
 
 ## Container cache reclamation
 
-New VMs put containers under a persistent `sandbox.slice`. A guest systemd
-timer can reclaim one cache batch every 30 seconds after the previous job
-finishes, including after the last container exits. The batch is 32 MiB, with
-1-second timer accuracy, a 10-second execution timeout, and a 5-second stop timeout.
-New VM generations enable the timer after their provisioning audit succeeds;
-these settings are experimental, not a proven host-descriptor budget.
+New VMs put containers under a persistent `sandbox.slice`.
+The default guest timer reclaims one 32 MiB cache batch every 30 seconds after
+the previous job finishes, including after the last container exits.
+It is a fallback for platforms where the host cannot inspect VirtioFS.
+
+On a Linux host with a QEMU VirtioFS VM, enable adaptive reclamation instead.
+Its host user timer measures the owned virtiofsd worker every 30 seconds.
+Below 80% of the worker's descriptor limit it does nothing.
+At or above 80%, it requests at most three 1 GiB batches from the guest and
+stops after reaching 60%, after a batch releases no descriptors, or after the
+batch limit.
+Each guest request retains the existing lock and a 15-second command deadline.
+Enabling adaptive reclamation disables the blind guest timer; disabling it
+restores the guest timer.
 
 ```sh
 python3 tools/codex-sandbox/lima/docker_host.py reclaim once
+python3 tools/codex-sandbox/lima/docker_host.py reclaim pressure
+python3 tools/codex-sandbox/lima/docker_host.py reclaim adaptive-enable
+python3 tools/codex-sandbox/lima/docker_host.py reclaim adaptive-disable
 python3 tools/codex-sandbox/lima/docker_host.py reclaim enable
 python3 tools/codex-sandbox/lima/docker_host.py reclaim disable
 python3 tools/codex-sandbox/lima/docker_host.py status
 python3 tools/codex-sandbox/lima/docker_host.py doctor
 ```
 
-`enable` restores periodic reclaim; `disable` stops the timer and job and
-checks that no worker still holds the reclaim lock. Disablement survives Docker
-restart, VM reboot, and setup repair. An unsettled worker is reported as an
-error; do not delete its lock file. Inspection reports timer enablement, next
-activation, and the last job result. Job success means a reclaim request ran,
-not that host descriptor pressure was resolved; partial reclaim is normal.
+`pressure` performs one adaptive measurement and possible recovery cycle.
+`adaptive-enable` installs and enables an instance-specific host user timer;
+its generated unit records the selected state directory and this checkout's
+controller path. Move or remove neither while the timer is enabled.
+`enable` and `disable` control only the fallback guest timer.
+Guest disablement survives Docker restart, VM reboot, and setup repair.
+An unsettled worker is reported as an error; do not delete its lock file.
+Inspection reports guest timer state and the last guest job result.
+Job success means a reclaim request ran, not that host descriptor pressure was
+resolved; the adaptive controller judges that from the subsequent host count.
 For guest diagnostics use `sudo journalctl _SYSTEMD_USER_UNIT=sandbox-reclaim.service`
 inside the selected VM (the guest user may lack journal read permission).
 
-Containers keep running, and may reload evicted data. The timer neither measures
-host pressure nor prevents ENFILE when active demand outruns reclamation.
+Containers keep running, and may reload evicted data. The fallback timer does
+not measure host pressure. Neither policy prevents ENFILE when active demand
+outruns bounded reclamation.
 Daemon/BuildKit caches are outside the container slice. The
-[replay results](../experiments/reclaim-timer.md) record a 6% median slowdown;
-the [specification](../spec/reclaim-before-exhaustion.typ) defines the ownership and lifecycle rules.
+[replay results](../experiments/reclaim-timer.md) record a 6% median slowdown
+for the 32 MiB fallback timer, not adaptive 1 GiB recovery.
+The [specification](../spec/reclaim-before-exhaustion.typ) defines the ownership and lifecycle rules.
 
 Existing VMs keep their immutable provisioning snapshots and report reclamation
 as `not-installed`. Use a new `--state` directory and `--instance` to adopt this
@@ -456,18 +473,18 @@ historical results, not a rerun against every subsequent launcher change.
 See the [validation record](../../../notes/lima-docker-remaining-gaps.md#2-validate-sustained-concurrency-and-failure-cleanup).
 
 Host-wide `ENFILE` recurred during real work, with many descriptors retained by
-the VirtioFS VM processes and few open guest files. No durable pressure remedy
-is installed. See the [incident record](../../../notes/virtiofs-file-table-pressure.md)
-and [September 12 investigation](../experiments/enfile.md): cgroup reclamation
-released retained descriptors in an owned fixture, but sustained recovery is
-not yet validated. Use the [bounded sampler](../experiments/file-pressure.md)
-to measure current headroom.
+the VirtioFS VM processes and few open guest files. Adaptive reclamation can
+measure this VM's virtiofsd process and perform bounded recovery, but sustained
+active-workload recovery and a host-wide budget remain unvalidated.
+See the [incident record](../../../notes/virtiofs-file-table-pressure.md), the
+[September 12 investigation](../experiments/enfile.md), and the
+[bounded sampler](../experiments/file-pressure.md).
 The [cause investigation](../experiments/enfile-causes.md) also found substantial
 retention in Podman and nerdctl VMs with no running containers; rollback engines
 need an explicit cold-standby or shared-budget policy.
-New provisioning enables a [reclamation timer](#container-cache-reclamation).
+New provisioning enables the fallback [reclamation timer](#container-cache-reclamation).
 Its [replay](../experiments/reclaim-timer.md) passed the selected cost and sampled
-headroom criteria; it does not establish a host-wide budget for concurrent VMs.
+headroom criteria; adaptive recovery remains opt-in and does not inherit that result.
 Remaining work: establish a host file-table budget under repeated
 large-tree work and concurrent sessions, and rerun the disposable Docker gates
 against the selected revision. `dev/test --lima` exercises nerdctl, not Docker.

@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -18,6 +19,12 @@ from lima.host import Host, SOURCE, GUEST, atomic_json, command, machines, priva
 from network_policy import policy_bytes
 from lima.docker_client import docker_client, pin_buildx, pin_docker
 from lima.docker_platform import current
+
+
+PRESSURE_HIGH_PERCENT = 80
+PRESSURE_LOW_PERCENT = 60
+PRESSURE_BATCH_BYTES = 1024 ** 3
+PRESSURE_MAX_BATCHES = 3
 
 
 class DockerHost(Host):
@@ -379,13 +386,155 @@ class DockerHost(Host):
             units[values.pop('Id')] = values
         return units
 
+    def virtiofs_pressure(self, record):
+        if sys.platform != 'linux' or record.get('mount_type') != 'virtiofs':
+            return None
+        machine = self.machine(record)
+        if machine.get('status') != 'Running':
+            return None
+        pidfile = Path(machine['dir']) / 'virtiofsd-0.sock.pid'
+        fields = pidfile.read_text().split()
+        if not fields or not fields[0].isdigit():
+            raise ValueError('invalid virtiofsd PID file')
+        supervisor = int(fields[0])
+        children = (Path('/proc') / str(supervisor) / 'task' / str(supervisor) / 'children').read_text().split()
+        if len(children) != 1 or not children[0].isdigit():
+            raise ValueError('expected exactly one virtiofsd worker')
+        worker = int(children[0])
+        process = Path('/proc') / str(worker)
+        command_line = process.joinpath('cmdline').read_bytes().split(b'\0')
+        socket = os.fsencode(str(Path(machine['dir']) / 'virtiofsd-0.sock'))
+        if (not command_line or Path(os.fsdecode(command_line[0])).name != 'virtiofsd' or
+                not any(command_line[index:index + 2] == [b'--socket-path', socket]
+                        for index in range(len(command_line) - 1)) or
+                os.stat(process).st_uid != os.getuid()):
+            raise ValueError('virtiofsd worker identity changed')
+        limits = process.joinpath('limits').read_text().splitlines()
+        row = next((line.split() for line in limits if line.startswith('Max open files')), None)
+        if row is None or len(row) < 5 or not row[3].isdigit():
+            raise ValueError('virtiofsd descriptor limit is unavailable')
+        count = sum(1 for _ in os.scandir(process / 'fd'))
+        return {'pid': worker, 'count': count, 'limit': int(row[3])}
+
+    def reclaim_batch(self, record, amount=PRESSURE_BATCH_BYTES):
+        if not 0 < amount <= 1024 ** 3:
+            raise ValueError('reclaim batch must be 1..1073741824 bytes')
+        unit = 'sandbox-reclaim-pressure-' + uuid.uuid4().hex
+        self.guest(record, 'systemd-run', '--user', '--wait', '--collect', '--quiet',
+                   '--unit=' + unit, '/usr/bin/python3', GUEST + '/docker-reclaim.py',
+                   '--bytes', str(amount), timeout=15)
+
+    def reclaim_pressure(self, record):
+        initial = self.virtiofs_pressure(record)
+        if initial is None:
+            return {'state': 'unsupported'}
+        high = initial['limit'] * PRESSURE_HIGH_PERCENT // 100
+        low = initial['limit'] * PRESSURE_LOW_PERCENT // 100
+        result = {**initial, 'state': 'below-threshold', 'batches': 0,
+                  'high': high, 'low': low}
+        if initial['count'] < high:
+            return result
+        result['state'] = 'reclaiming'
+        previous = initial['count']
+        for attempt in range(1, PRESSURE_MAX_BATCHES + 1):
+            self.reclaim_batch(record)
+            current = self.virtiofs_pressure(record)
+            if current is None or current['pid'] != initial['pid'] or current['limit'] != initial['limit']:
+                raise ValueError('virtiofsd changed during pressure reclaim')
+            result.update(count=current['count'], batches=attempt)
+            if current['count'] <= low:
+                result['state'] = 'recovered'
+                break
+            if current['count'] >= previous:
+                result['state'] = 'no-progress'
+                break
+            previous = current['count']
+        else:
+            result['state'] = 'batch-limit'
+        return result
+
+    def pressure_unit_names(self, record):
+        suffix = record['instance'].removeprefix('sandbox-host-docker').lstrip('-') or 'default'
+        return (f'codex-sandbox-pressure-{suffix}.service',
+                f'codex-sandbox-pressure-{suffix}.timer')
+
+    def pressure_unit_directory(self):
+        configuration = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+        return configuration / 'systemd/user'
+
+    def pressure_unit_content(self, record):
+        service, timer = self.pressure_unit_names(record)
+        arguments = [str(Path(sys.executable).resolve()), str(Path(__file__).resolve()),
+                     '--state', str(self.state), 'reclaim', 'pressure']
+        if any(any(character in argument for character in ('\n', '\r', '\0')) for argument in arguments):
+            raise ValueError('pressure controller path cannot be represented in a systemd unit')
+        command_line = ' '.join(json.dumps(argument) for argument in arguments)
+        return {
+            service: ('[Unit]\nDescription=Reclaim VirtioFS cache under measured descriptor pressure\n\n'
+                      '[Service]\nType=oneshot\nTimeoutStartSec=50s\n'
+                      f'ExecStart={command_line}\n'),
+            timer: ('[Unit]\nDescription=Measure sandbox VirtioFS descriptor pressure\n\n'
+                    '[Timer]\nOnActiveSec=30s\nOnUnitInactiveSec=30s\nAccuracySec=1s\n'
+                    'WakeSystem=no\nPersistent=no\nUnit=' + service + '\n\n'
+                    '[Install]\nWantedBy=timers.target\n'),
+        }
+
+    def install_pressure_units(self, record):
+        directory = self.pressure_unit_directory()
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for name, content in self.pressure_unit_content(record).items():
+            descriptor, temporary = tempfile.mkstemp(prefix='.pressure-', dir=directory)
+            try:
+                with os.fdopen(descriptor, 'w') as stream:
+                    stream.write(content)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, directory / name)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        command('systemctl', '--user', 'daemon-reload', timeout=30)
+
+    def adaptive_reclaim(self, record, operation):
+        service, timer = self.pressure_unit_names(record)
+        if operation == 'adaptive-enable':
+            self.doctor(record)
+            self.install_pressure_units(record)
+            command('systemctl', '--user', 'disable', '--now', timer, timeout=30)
+            self.guest(record, 'systemctl', '--user', 'disable', '--now',
+                       'sandbox-reclaim.timer', timeout=30)
+            try:
+                command('systemctl', '--user', 'enable', '--now', timer, timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                self.guest(record, 'systemctl', '--user', 'enable', '--now',
+                           'sandbox-reclaim.timer', timeout=30)
+                raise
+        elif operation == 'adaptive-disable':
+            command('systemctl', '--user', 'disable', '--now', timer, timeout=30)
+            command('systemctl', '--user', 'stop', service, timeout=30)
+            try:
+                self.guest(record, 'systemctl', '--user', 'enable', '--now',
+                           'sandbox-reclaim.timer', timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                command('systemctl', '--user', 'enable', '--now', timer, timeout=30)
+                raise
+        else:
+            raise ValueError('expected adaptive-enable or adaptive-disable')
+        return {**record, 'reclamation': self.reclaim_status(record),
+                'adaptive_reclamation': {'service': service, 'timer': timer,
+                                         'operation': operation}}
+
     def reclaim(self, operation):
         record = self.record()
         self.machine(record)
         if 'docker-reclaim.py' not in record['files']:
             raise ValueError('reclamation is not installed; use a new VM/state generation')
+        if operation == 'pressure':
+            return {**record, 'pressure_reclamation': self.reclaim_pressure(record)}
+        if operation in ('adaptive-enable', 'adaptive-disable'):
+            return self.adaptive_reclaim(record, operation)
         if operation not in ('once', 'enable', 'disable'):
-            raise ValueError('expected once, enable, or disable')
+            raise ValueError('expected once, pressure, adaptive-enable, adaptive-disable, enable, or disable')
         if operation == 'disable':
             # Recovery remains available when Docker is stopped or unready.
             self.guest(record, 'systemctl', '--user', 'disable', '--now', 'sandbox-reclaim.timer')
@@ -419,8 +568,10 @@ def main():
     upgrade.add_argument('--allow-running-containers', action='store_true')
     pin = sub.add_parser('pin-client')
     pin.add_argument('--source', type=Path)
-    reclaim = sub.add_parser('reclaim', help='run, enable, or disable guest cache reclamation')
-    reclaim.add_argument('action', choices=('once', 'enable', 'disable'), nargs='?', default='once')
+    reclaim = sub.add_parser('reclaim', help='measure pressure or control host/guest cache reclamation')
+    reclaim.add_argument('action', choices=('once', 'pressure', 'adaptive-enable',
+                                            'adaptive-disable', 'enable', 'disable'),
+                         nargs='?', default='once')
     args = parser.parse_args()
     host = DockerHost(args.state)
     with host.locked():
@@ -468,7 +619,9 @@ def main():
             atomic_json(host.record_path, record)
         else:
             record = getattr(host, args.operation)()
-        if args.operation in ('setup', 'upgrade'):
+        if args.operation == 'reclaim' and args.action == 'pressure':
+            print(json.dumps(record['pressure_reclamation'], sort_keys=True))
+        elif args.operation in ('setup', 'upgrade'):
             print(f"Docker VM {record['instance']}: {args.operation} complete.")
         else:
             print(json.dumps(record))
