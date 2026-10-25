@@ -345,11 +345,15 @@ Failed startup leaves existing panes running; worker loss affects all attached
 panes. `/split` is a human command and is unavailable outside
 an interactive sandbox.
 
-`/cd DIRECTORY` validates an existing Jujutsu workspace, releases only this pane's
-attachment, and forks into a new sandbox. Peers retain the old guest, which is
-cleaned up before handoff only after its final attachment releases. Cross-directory
-resume also forks and preserves the saved session. An empty session starts fresh;
-unsaved messages block handoff.
+`/cd DIRECTORY` validates an existing Jujutsu workspace and prepares the destination sandbox images and enabled TicGit artifacts while the current Pi session stays open.
+TicGit preparation uses the normal source-key cache and checks the trusted destination context without starting a broker or relay; explicit `tic: false` skips it.
+If a build fails, Pi displays the error without aborting the current run or releasing its attachment; fix the error and retry `/cd`.
+An unsupported TicGit context only warns and permits handoff after the builds succeed; destination startup disables TicGit as it does for a fresh session.
+After the builds succeed, it releases only this pane's attachment and forks into a new sandbox.
+Peers retain the old guest, which is cleaned up before handoff only after its final attachment releases.
+Destination service startup still happens after handoff; image preparation does not guarantee those services will start.
+Cross-directory resume also forks and preserves the saved session.
+An empty session starts fresh; unsaved messages block handoff.
 The model receives a recorded directory-switch notice appended to the destination session, including before goal-triggered turns.
 Reloading that session does not duplicate the notice or insert it into the historical leading prompt.
 The notice authorizes work in the destination within the user's existing objective.

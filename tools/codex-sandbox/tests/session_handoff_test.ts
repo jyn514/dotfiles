@@ -86,6 +86,28 @@ test("/cd prepares images before stopping Pi and preserves the session on build 
     expect(existsSync(request)).toBe(false);
     expect(readFileSync(session, "utf8")).toBe("saved session");
 
+    for (const result of [
+      { code: 1, killed: false, stdout: "", stderr: "TicGit bundle resolution failed: compiler failed" },
+      { code: 130, killed: false, stdout: "", stderr: "TicGit build interrupted: KeyboardInterrupt" },
+      { ...success, killed: true },
+      { code: 0, killed: false, stdout: "TicGit build started\n", stderr: "" },
+      { code: 0, killed: false, stdout: "{broken completion\n", stderr: "" },
+    ]) {
+      events.length = 0;
+      preparation = Promise.resolve(result);
+      await command(".", ctx);
+      expect(events).toEqual(["prepare", expect.stringMatching(/^error:/)]);
+      expect(existsSync(request)).toBe(false);
+      expect(readFileSync(session, "utf8")).toBe("saved session");
+    }
+    events.length = 0;
+    // Exec can reject too (for example an interrupted preparation invocation).
+    // Reject inside the exec await, rather than creating an unhandled promise.
+    preparation = { then: (_resolve: any, reject: any) => reject(new Error("TicGit preparation cancelled")) } as any;
+    await command(".", ctx);
+    expect(events).toEqual(["prepare", "error:TicGit preparation cancelled"]);
+    expect(existsSync(request)).toBe(false);
+
     events.length = 0;
     let completeBuild: (result: any) => void;
     preparation = new Promise((resolve) => { completeBuild = resolve; });

@@ -584,6 +584,25 @@ def active_repository_root(*, initialize_missing: bool) -> Path:
     return Path(result.stdout.strip()).resolve(strict=True)
 
 
+def discover_launch_workspaces(home: Path, repository: Path) -> list[WorkspaceLayout]:
+    # Pure discovery is shared with /cd preflight: it must cover the same guest
+    # writable workspaces without creating request locks or publishing authority.
+    dotfiles = DOTFILES.resolve(strict=True)
+    guest = container_repository_path(home, repository)
+    with validation_timing("active workspace discovery"):
+        active = discover_workspace(repository, guest, home, runner=run)
+    dotfiles_guest = workspace_guest_root(
+        home, repository, guest, dotfiles, reserved=[
+            *active.metadata_mounts(),
+            *((active.host_root, alias) for alias in active.repository_aliases()),
+        ])
+    workspaces = [active]
+    if dotfiles != repository:
+        with validation_timing("dotfiles workspace discovery"):
+            workspaces.append(discover_workspace(dotfiles, dotfiles_guest, home, runner=run))
+    return workspaces
+
+
 def validate_repository(state: State, *, initialize_missing: bool = True) -> None:
     if initialize_missing:
         dotfiles = DOTFILES.resolve(strict=True)
@@ -606,17 +625,10 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
         state.metadata_roots = (repository / ".jj", metadata.jj_repo,
                                 metadata.git_dir, metadata.common_dir)
         return
-    guest = container_repository_path(state.home, repository)
     try:
-        active = discover_workspace(repository, guest, state.home, runner=run)
-        dotfiles_guest = workspace_guest_root(
-            state.home, repository, guest, dotfiles, reserved=[
-                *active.metadata_mounts(),
-                *((active.host_root, alias) for alias in active.repository_aliases()),
-            ])
-        workspaces = [active]
-        if dotfiles != repository:
-            workspaces.append(discover_workspace(dotfiles, dotfiles_guest, state.home, runner=run))
+        workspaces = discover_launch_workspaces(state.home, repository)
+        active = workspaces[0]
+        guest = active.guest_root
         for workspace in workspaces:
             ensure_request_lock(workspace)
     except WorkspaceError as error:
@@ -2421,6 +2433,35 @@ def prepare_declared_images(state: State, manifest: dict, sidecar_selected: bool
         image_policy=manifest.get('images'))
 
 
+def prepare_cd_tic(state: State, *, sidecar_selected: bool) -> None:
+    if 'tic' not in state.capabilities:
+        return
+    # Unlike fresh startup's optional service, /cd must finish deterministic
+    # builds before its final record permits the old Pi to close.
+    # Reuse the normal source-key cache; no broker, relay, or session is started.
+    try:
+        state.workspaces = discover_launch_workspaces(state.home, state.repository)
+    except WorkspaceError as error:
+        raise LauncherError(str(error)) from error
+    state.skills_source = (state.home / '.agents/skills').resolve(strict=True)
+    if not state.skills_source.is_dir():
+        raise LauncherError(f'Agent skills directory is invalid: {state.skills_source}')
+    _workspace_mount_plan(state)
+    build = resolved_tic_build(state)
+    try:
+        context = inspect_tic_context(build, state.workspaces[0])
+        if set(context) != {'user_name', 'user_email', 'namespace'}:
+            raise LauncherError('TicGit trusted context returned invalid authority')
+    except LauncherError as error:
+        # Unsupported optional TicGit context must not prevent Pi from starting.
+        # Build/cache and workspace authority errors above remain fatal; target
+        # startup repeats inspection and disables TicGit through its usual owner.
+        print(f'warning: TicGit unavailable for this session; continuing without it: {error}',
+              file=sys.stderr)
+    if not sidecar_selected:
+        OUTER_RUNTIME.verify_builder_image(resolve_sidecar_image())
+
+
 def prepare_cd_images(state: State) -> None:
     # Build through the normal image owners, without session locks, attachment
     # release, terminal takeover, or destination service startup. Normal launch
@@ -2443,6 +2484,7 @@ def prepare_cd_images(state: State) -> None:
                 module.resolve_images(state.repository, manifest)
             except module.ConfigError as error:
                 raise LauncherError(str(error)) from error
+        prepare_cd_tic(state, sidecar_selected=sidecar_selected)
     finally:
         if state.manifest is not None:
             state.manifest.unlink(missing_ok=True)

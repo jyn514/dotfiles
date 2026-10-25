@@ -37,6 +37,7 @@ export default function sessionHandoff(pi: ExtensionAPI): void {
         if (!validated.destination || !validated.repository) {
           throw new Error("directory validation returned no destination");
         }
+        ctx.ui.notify("Preparing destination sandbox images and TicGit; this session stays open until preparation succeeds.", "info");
         const prepared = await pi.exec(validator, ["prepare-cd", validated.destination], { cwd: ctx.cwd });
         if (prepared.code !== 0 || prepared.killed) {
           throw new Error(prepared.stderr.trim() || prepared.stdout.trim() || "Destination preparation failed");
