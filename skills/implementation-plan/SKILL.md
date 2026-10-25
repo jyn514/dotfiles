@@ -11,7 +11,8 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 
 ## Procedure
 
-1. **Observe first.** Inspect entry points, data flow, side effects, tests, docs, dependencies, and repository guidance.
+1. **Observe first.** Identify the effects and transitions the selected change introduces or alters.
+   Inspect their entry points, data flow, side effects, tests, docs, dependencies, and repository guidance.
    Separate observations from assumptions.
    Before treating preservation as required, cite its source and trace affected consumers, including whether they change and deploy together.
    Apply [Compatibility](../references/change-with-evidence.md#compatibility).
@@ -21,7 +22,10 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 3. **Record decisions.** Classify material choices as `decided`, `conservative default`, or `unresolved`; mark unresolved choices as blocking or non-blocking.
 4. **Carry boundaries forward.** Reference the existing ownership, effects, representations, lifecycle, compatibility, and non-goals.
    Fill only decision-changing gaps using the applicable [boundary-contract questions](../architecture-design/references/boundary-contracts.md); do not require a separate declaration.
-5. **Trace and validate the lifecycle.** Cover setup, normal operation, errors, cancellation, cleanup, concurrency, and shutdown, including paths outside the apparent core function. Check proposed interfaces against every known caller, producer, transition, and bypass path; state capabilities and invariants instead of inventing unjustified method signatures.
+5. **Trace and validate the affected lifecycle.** Trace the identified effects and transitions through actual deployed consumers and affected bypass paths, including paths outside the apparent core function.
+   Use that trace to select relevant checks for setup, normal operation, errors, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions such as hibernate/resume.
+   Reuse settled contracts for unchanged behavior instead of reopening every lifecycle category.
+   Check proposed interfaces against affected callers, producers, and transitions; state capabilities and invariants instead of inventing unjustified method signatures.
 6. **Choose the smallest coherent change.** Separate required outcomes from chosen mechanisms and reuse sufficient existing facilities.
    For each added interface, option, field, transition, or helper, identify the consumer or concrete failure that needs it.
    Remove adjacent extensions that the selected change does not require, such as widening existing operations to match a new operation.
@@ -34,7 +38,8 @@ For a staged new-tool workflow only, require a ready implementation specificatio
    When justified, use [property-based-testing](../property-based-testing/SKILL.md) to choose properties and generators within scope.
    Use integration, pseudo-terminal, migration, or real-service tests only when the boundary requires them.
 8. **Order independently valid commits.** For each commit, give an imperative subject, useful result, principal files or subsystem, and verification that passes at that point. Land tests with their behavior. Preparatory refactors must be independently justified and behavior-preserving; do not introduce architecture merely to replace it in the next commit.
-9. **Review against the repository.** Check bypass paths, global state, unbounded resources, cancellation ownership, error precedence, compatibility, docs, generated files, dependencies, platform behavior, and whether detail exceeds evidence.
+9. **Review against the repository.** Within the affected paths and boundaries, check bypass paths, global state, unbounded resources, cancellation ownership, error precedence, compatibility, docs, generated files, dependencies, and platform behavior.
+   Check whether detail exceeds evidence.
    In new and revised plans, group related failure cases under one governing invariant.
    Keep individual reproductions and expected outcomes in one acceptance section instead of repeating normative rules.
    Do not add a mechanism per finding unless a distinct contract requires it.
@@ -65,6 +70,6 @@ Separate docs from behavior only when repository practice or generated output wa
 - Do not edit implementation files unless implementation was also requested.
 - A request to create the selected design's artifact or execute agreed work is implementation, not a request for another plan.
 - Give effort ranges only with evidence and dominant assumptions.
-- Make cancellation, cleanup, output ownership, compatibility, and error precedence explicit.
+- Make affected cancellation, cleanup, output ownership, compatibility, and error precedence explicit; reference settled contracts for unchanged behavior.
 - Review existing facilities before proposing a dependency.
 - Prefer a short complete plan over possibilities or premature implementation detail.
