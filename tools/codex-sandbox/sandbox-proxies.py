@@ -31,7 +31,7 @@ from sandbox_runtime import (
 )
 from trusted_services import (
     LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
-    ResourceTopology, ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
+    ResourceTopology, ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope, service_timing,
 )
 from codex_broker import (
     PAIR_STATUS_FIELDS, SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
@@ -1168,12 +1168,14 @@ def attach_main(args: argparse.Namespace) -> int:
         metadata_path.unlink(missing_ok=True)
         metadata = None
     if shared:
-        state, accepted = accepted_session(args, repo, metadata)
+        with service_timing("proxies", "shared-reuse-validation"):
+            state, accepted = accepted_session(args, repo, metadata)
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
         return 0
     current_manifest = load_accepted_manifest(Path(args.manifest))
-    state = cached_session_state(args, repo, metadata, current_manifest)
+    with service_timing("proxies", "cache-reuse-validation"):
+        state = cached_session_state(args, repo, metadata, current_manifest)
     if state is not None:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         return 0
@@ -1196,7 +1198,8 @@ def attach_main(args: argparse.Namespace) -> int:
         else:
             stop_state(previous)
     metadata_path.unlink(missing_ok=True)
-    start_main(args)
+    with service_timing("proxies", "command-start"):
+        start_main(args)
     return 0
 
 
@@ -1704,21 +1707,24 @@ def start_one_proxy(
         if zulip_network:
             pair_effect = lambda status, operation: _recorded_effect(
                 proxy, status, persist, cancelled, operation, name)
-            start_egress_pair(
-                OUTER_RUNTIME, zulip_pair, pair_effect,
-                cancelled=lambda: cancelled is not None and cancelled.is_set(),
-                error=ConfigError, logs=proxy_logs,
-            )
-        proxy["resource-status"]["volume"] = "intended"; persist()
-        try:
-            if isinstance(OUTER_RUNTIME, VMRuntime):
-                OUTER_RUNTIME.initialize_volume(volume, container_uid, container_gid, proxy["volume-owner"])
-            else:
-                _docker("volume", "create", "--uid", str(container_uid), "--gid", str(container_gid),
-                        "--label", f"dev.codex.service-owner={service_owner}", volume)
-        except BaseException:
-            proxy["resource-status"]["volume"] = "unknown"; persist(); raise
-        proxy["resource-status"]["volume"] = "created"; persist()
+            with service_timing(name, 'authenticated-egress-start-ready'):
+                start_egress_pair(
+                    OUTER_RUNTIME, zulip_pair, pair_effect,
+                    cancelled=lambda: cancelled is not None and cancelled.is_set(),
+                    error=ConfigError, logs=proxy_logs,
+                    timing=lambda operation: service_timing(name, operation),
+                )
+        with service_timing(name, 'volume-initialize'):
+            proxy["resource-status"]["volume"] = "intended"; persist()
+            try:
+                if isinstance(OUTER_RUNTIME, VMRuntime):
+                    OUTER_RUNTIME.initialize_volume(volume, container_uid, container_gid, proxy["volume-owner"])
+                else:
+                    _docker("volume", "create", "--uid", str(container_uid), "--gid", str(container_gid),
+                            "--label", f"dev.codex.service-owner={service_owner}", volume)
+            except BaseException:
+                proxy["resource-status"]["volume"] = "unknown"; persist(); raise
+            proxy["resource-status"]["volume"] = "created"; persist()
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
         if cancelled is not None and cancelled.is_set():
@@ -1756,13 +1762,16 @@ def start_one_proxy(
                 "--env", f"ZULIP_CADDY_ENDPOINT=http://{proxy['caddy-container']}:8787/api/v1/messages",
             ]
         checked_repository_path(repo, command["workdir"], f"command {name} workdir")
-        docker_args += proxy_repository_mount_args(
-            repo, container_repo, name, command, workspaces=workspaces,
-            staging=Path(proxy["workspace-source-view"]) if workspaces is not None else None,
-        )
+        with service_timing(name, 'repository-mounts'):
+            docker_args += proxy_repository_mount_args(
+                repo, container_repo, name, command, workspaces=workspaces,
+                staging=Path(proxy["workspace-source-view"]) if workspaces is not None else None,
+            )
         docker_args += [images[name], *command["argv"][1:]]
         proxy["resource-status"]["container"] = "intended"; persist()
-        try: _docker(*docker_args)
+        try:
+            with service_timing(name, "container-run"):
+                _docker(*docker_args)
         except BaseException:
             proxy["resource-status"]["container"] = "unknown"; persist(); raise
         proxy["resource-status"]["container"] = "created"; persist()
@@ -1782,41 +1791,44 @@ def start_one_proxy(
             proxy["forwarding"] = forwarding
             proxy["resource-status"]["forward"] = "intended"
             persist()
-            try: OUTER_RUNTIME.start_proxy_forward(forwarding)
+            try:
+                with service_timing(name, "forward-publication"):
+                    OUTER_RUNTIME.start_proxy_forward(forwarding)
             except BaseException:
                 proxy["resource-status"]["forward"] = "unknown"; persist(); raise
             proxy["resource-status"]["forward"] = "created"; persist()
             if cancelled is not None and cancelled.is_set():
                 raise ConfigError(f"proxy {name} startup cancelled")
-        readiness_budget = JJ_STARTUP_TIMEOUT_SECONDS + 10 if name == "jj" else 10
-        deadline = time.monotonic() + readiness_budget
-        readiness_error = ""
-        while (remaining := deadline - time.monotonic()) > 0:
-            if cancelled is not None and cancelled.is_set():
-                raise ConfigError(f"proxy {name} startup cancelled")
-            check = subprocess.run(
-                OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
-                                    container, "/trusted/bin/sandbox-proxy-forward",
-                                    *(["--health"] if name == "zulip" else [])]),
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE, text=True, timeout=remaining,
-            )
-            readiness_error = check.stderr.strip()
-            if check.returncode == 0:
-                lifecycle.transition(LifecycleState.READY)
-                proxy["lifecycle-state"] = "ready"
-                persist()
-                return proxy
-            status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
-            if status != "true":
-                logs = proxy_logs(container)
-                detail = f":\n{logs}" if logs else ""
-                raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
-            time.sleep(0.1)
-        logs = proxy_logs(container)
-        diagnostics = "\n".join(dict.fromkeys(output for output in (logs, readiness_error) if output))
-        detail = f":\n{diagnostics}" if diagnostics else ""
-        raise ConfigError(f"proxy {name} did not become ready{detail}")
+        with service_timing(name, 'readiness'):
+            readiness_budget = JJ_STARTUP_TIMEOUT_SECONDS + 10 if name == "jj" else 10
+            deadline = time.monotonic() + readiness_budget
+            readiness_error = ""
+            while (remaining := deadline - time.monotonic()) > 0:
+                if cancelled is not None and cancelled.is_set():
+                    raise ConfigError(f"proxy {name} startup cancelled")
+                check = subprocess.run(
+                    OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
+                                        container, "/trusted/bin/sandbox-proxy-forward",
+                                        *(["--health"] if name == "zulip" else [])]),
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE, text=True, timeout=remaining,
+                )
+                readiness_error = check.stderr.strip()
+                if check.returncode == 0:
+                    lifecycle.transition(LifecycleState.READY)
+                    proxy["lifecycle-state"] = "ready"
+                    persist()
+                    return proxy
+                status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
+                if status != "true":
+                    logs = proxy_logs(container)
+                    detail = f":\n{logs}" if logs else ""
+                    raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
+                time.sleep(0.1)
+            logs = proxy_logs(container)
+            diagnostics = "\n".join(dict.fromkeys(output for output in (logs, readiness_error) if output))
+            detail = f":\n{diagnostics}" if diagnostics else ""
+            raise ConfigError(f"proxy {name} did not become ready{detail}")
     except BaseException:
         lifecycle.transition(LifecycleState.FAILED)
         proxy["lifecycle-state"] = "failed"
@@ -2303,17 +2315,18 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
 
 
 def _cleanup_proxy_service(runtime, proxy: dict[str, Any]) -> None:
-    registry = _proxy_registry(runtime, proxy)
-    result = registry.cleanup(0)
-    if result.remaining:
-        failures = ", ".join(f"{item.identity}={item.code}" for item in result.failures)
-        raise ConfigError(
-            "recorded proxy resources remain after cleanup; retaining recovery metadata: "
-            + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
-            + f"; recovery: {RECOVERY_COMMAND}"
-        )
-    for diagnostic in registry.adapter_diagnostics:
-        print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
+    with service_timing(proxy.get("name"), 'cleanup-registry'):
+        registry = _proxy_registry(runtime, proxy)
+        result = registry.cleanup(0)
+        if result.remaining:
+            failures = ", ".join(f"{item.identity}={item.code}" for item in result.failures)
+            raise ConfigError(
+                "recorded proxy resources remain after cleanup; retaining recovery metadata: "
+                + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
+                + f"; recovery: {RECOVERY_COMMAND}"
+            )
+        for diagnostic in registry.adapter_diagnostics:
+            print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
 
 
 def stop_state(state: dict[str, Any]) -> None:
@@ -2336,12 +2349,14 @@ def stop_state(state: dict[str, Any]) -> None:
     # recovery record must not trigger any backend interaction.
     for proxy in all_proxies:
         _managed_proxy_record(proxy)
-    owner = state_runtime(state, recovery=True)
+    with service_timing("proxies", "cleanup-runtime-query"):
+        owner = state_runtime(state, recovery=True)
     if (not managed_auth and
             not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies)):
-        removed = remove_stopped_sandbox_holders(
-            owner, recorded_proxy_volumes(state),
-        )
+        with service_timing("proxies", "cleanup-stopped-holders"):
+            removed = remove_stopped_sandbox_holders(
+                owner, recorded_proxy_volumes(state),
+            )
         for container in removed:
             print(f"Sandbox proxy cleanup: removed stopped agent container {container}",
                   file=sys.stderr)
@@ -2356,7 +2371,8 @@ def stop_state(state: dict[str, Any]) -> None:
             if service_owner in seen:
                 raise ConfigError("trusted service recovery owner was reused")
             seen.add(service_owner)
-    removed = remove_stopped_sandbox_holders(owner, recorded_proxy_volumes(state))
+    with service_timing("proxies", "cleanup-stopped-holders"):
+        removed = remove_stopped_sandbox_holders(owner, recorded_proxy_volumes(state))
     for container in removed:
         print(f"Sandbox proxy cleanup: removed stopped agent container {container}",
               file=sys.stderr)
@@ -2372,102 +2388,103 @@ def stop_state(state: dict[str, Any]) -> None:
                 failures.append(f"{proxy.get('name', 'unknown')}: {error}")
     auth = state.get("auth")
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
-        auth_container = auth["container"]
-        if pair_auth:
-            service_owner = auth["service-owner"]
-            auth["lifecycle-state"] = "stopping"
-            registry = ResourceRegistry(service_owner)
-            names = {"container": [auth["container"], auth["helper-container"]],
-                     "network": [auth["networks"]["application"], auth["networks"]["refresh"]],
-                     "volume": [auth["socket-volume"]]}
+        with service_timing('auth', 'cleanup'):
+            auth_container = auth["container"]
+            if pair_auth:
+                service_owner = auth["service-owner"]
+                auth["lifecycle-state"] = "stopping"
+                registry = ResourceRegistry(service_owner)
+                names = {"container": [auth["container"], auth["helper-container"]],
+                         "network": [auth["networks"]["application"], auth["networks"]["refresh"]],
+                         "volume": [auth["socket-volume"]]}
 
-            def owned_presence(kind: str, name: str) -> ResourcePresence:
-                return resource_presence(owner, ResourceKind(kind), name, service_owner)
-            def resource_remove(kind: str, name: str) -> None:
-                remove_owned_resource(owner, ResourceKind(kind), name, service_owner)
+                def owned_presence(kind: str, name: str) -> ResourcePresence:
+                    return resource_presence(owner, ResourceKind(kind), name, service_owner)
+                def resource_remove(kind: str, name: str) -> None:
+                    remove_owned_resource(owner, ResourceKind(kind), name, service_owner)
 
-            config_id = "file:caddy-config"
-            config_path = Path(auth["configuration"]["path"])
-            def config_presence() -> ResourcePresence:
+                config_id = "file:caddy-config"
+                config_path = Path(auth["configuration"]["path"])
+                def config_presence() -> ResourcePresence:
+                    try:
+                        from caddy_foundation import configuration_digest
+                        return (ResourcePresence.OWNED
+                                if configuration_digest(config_path.read_bytes()) == auth["configuration"]["digest"]
+                                else ResourcePresence.MISMATCHED)
+                    except FileNotFoundError:
+                        return ResourcePresence.ABSENT
+                def remove_config() -> None:
+                    config_path.unlink(missing_ok=True)
+                    descriptor = os.open(config_path.parent, os.O_DIRECTORY)
+                    try: os.fsync(descriptor)
+                    finally: os.close(descriptor)
+                registry.register(OwnedResource(config_id, service_owner, config_presence, remove_config))
+                volume_id = f"volume:{auth['socket-volume']}"
+                app_id = f"network:{auth['networks']['application']}"
+                refresh_id = f"network:{auth['networks']['refresh']}"
+                helper_id = f"container:{auth['helper-container']}"
+                caddy_id = f"container:{auth['container']}"
+                pair_dependencies = egress_pair_topology(
+                    application_network_role="application-network",
+                    helper_network_role="refresh-network",
+                ).bind({
+                    "configuration": config_id,
+                    "socket-volume": volume_id,
+                    "application-network": app_id,
+                    "refresh-network": refresh_id,
+                    "helper-container": helper_id,
+                    "caddy-container": caddy_id,
+                })
+                for kind, name in (("volume", auth["socket-volume"]),
+                                   ("network", auth["networks"]["application"]),
+                                   ("network", auth["networks"]["refresh"])):
+                    identity = f"{kind}:{name}"
+                    registry.register(OwnedResource(identity, service_owner,
+                        lambda k=kind,n=name: owned_presence(k,n),
+                        lambda k=kind,n=name: resource_remove(k,n), pair_dependencies[identity]))
+                registry.register(OwnedResource(helper_id, service_owner,
+                    lambda: owned_presence("container", auth["helper-container"]),
+                    lambda: resource_remove("container", auth["helper-container"]),
+                    pair_dependencies[helper_id]))
+                registry.register(OwnedResource(caddy_id, service_owner,
+                    lambda: owned_presence("container", auth["container"]),
+                    lambda: resource_remove("container", auth["container"]),
+                    pair_dependencies[caddy_id]))
+                result = registry.cleanup(0)
+                if result.remaining:
+                    auth["lifecycle-state"] = "cleanup-failed"
+                    details = ", ".join(
+                        f"{failure.identity}={failure.code}" for failure in result.failures
+                    )
+                    failures.append(
+                        "authentication pair owner validation or removal failed; resources remain: "
+                        + ", ".join(result.remaining)
+                        + (f" ({details})" if details else "")
+                    )
+                else:
+                    auth["lifecycle-state"] = "removed"
+                    auth["resource-status"] = {key: "removed" for key in auth["resource-status"]}
+            elif managed_auth:
+                # Stale pre-pair managed records are accepted only as owner-checked
+                # recovery authority; active publication and joins reject them.
+                service_owner = auth["service-owner"]
                 try:
-                    from caddy_foundation import configuration_digest
-                    return (ResourcePresence.OWNED
-                            if configuration_digest(config_path.read_bytes()) == auth["configuration"]["digest"]
-                            else ResourcePresence.MISMATCHED)
-                except FileNotFoundError:
-                    return ResourcePresence.ABSENT
-            def remove_config() -> None:
-                config_path.unlink(missing_ok=True)
-                descriptor = os.open(config_path.parent, os.O_DIRECTORY)
-                try: os.fsync(descriptor)
-                finally: os.close(descriptor)
-            registry.register(OwnedResource(config_id, service_owner, config_presence, remove_config))
-            volume_id = f"volume:{auth['socket-volume']}"
-            app_id = f"network:{auth['networks']['application']}"
-            refresh_id = f"network:{auth['networks']['refresh']}"
-            helper_id = f"container:{auth['helper-container']}"
-            caddy_id = f"container:{auth['container']}"
-            pair_dependencies = egress_pair_topology(
-                application_network_role="application-network",
-                helper_network_role="refresh-network",
-            ).bind({
-                "configuration": config_id,
-                "socket-volume": volume_id,
-                "application-network": app_id,
-                "refresh-network": refresh_id,
-                "helper-container": helper_id,
-                "caddy-container": caddy_id,
-            })
-            for kind, name in (("volume", auth["socket-volume"]),
-                               ("network", auth["networks"]["application"]),
-                               ("network", auth["networks"]["refresh"])):
-                identity = f"{kind}:{name}"
-                registry.register(OwnedResource(identity, service_owner,
-                    lambda k=kind,n=name: owned_presence(k,n),
-                    lambda k=kind,n=name: resource_remove(k,n), pair_dependencies[identity]))
-            registry.register(OwnedResource(helper_id, service_owner,
-                lambda: owned_presence("container", auth["helper-container"]),
-                lambda: resource_remove("container", auth["helper-container"]),
-                pair_dependencies[helper_id]))
-            registry.register(OwnedResource(caddy_id, service_owner,
-                lambda: owned_presence("container", auth["container"]),
-                lambda: resource_remove("container", auth["container"]),
-                pair_dependencies[caddy_id]))
-            result = registry.cleanup(0)
-            if result.remaining:
-                auth["lifecycle-state"] = "cleanup-failed"
-                details = ", ".join(
-                    f"{failure.identity}={failure.code}" for failure in result.failures
-                )
-                failures.append(
-                    "authentication pair owner validation or removal failed; resources remain: "
-                    + ", ".join(result.remaining)
-                    + (f" ({details})" if details else "")
-                )
-            else:
-                auth["lifecycle-state"] = "removed"
-                auth["resource-status"] = {key: "removed" for key in auth["resource-status"]}
-        elif managed_auth:
-            # Stale pre-pair managed records are accepted only as owner-checked
-            # recovery authority; active publication and joins reject them.
-            service_owner = auth["service-owner"]
-            try:
-                presence = resource_presence(
-                    owner, ResourceKind.CONTAINER, auth_container, service_owner,
-                )
-                if presence is ResourcePresence.MISMATCHED:
-                    failures.append("authentication container owner validation failed")
-                elif presence is ResourcePresence.OWNED:
-                    remove_owned_resource(
+                    presence = resource_presence(
                         owner, ResourceKind.CONTAINER, auth_container, service_owner,
                     )
-            except (OSError, ValueError, subprocess.SubprocessError):
-                failures.append("authentication container removal failed")
-        else:
-            if resource_exists(owner, ResourceKind.CONTAINER, auth_container):
-                owner.run(["kill", auth_container], check=False, capture_output=True)
-                if owner.run(["rm", auth_container], check=False, capture_output=True).returncode:
+                    if presence is ResourcePresence.MISMATCHED:
+                        failures.append("authentication container owner validation failed")
+                    elif presence is ResourcePresence.OWNED:
+                        remove_owned_resource(
+                            owner, ResourceKind.CONTAINER, auth_container, service_owner,
+                        )
+                except (OSError, ValueError, subprocess.SubprocessError):
                     failures.append("authentication container removal failed")
+            else:
+                if resource_exists(owner, ResourceKind.CONTAINER, auth_container):
+                    owner.run(["kill", auth_container], check=False, capture_output=True)
+                    if owner.run(["rm", auth_container], check=False, capture_output=True).returncode:
+                        failures.append("authentication container removal failed")
     if failures:
         raise ConfigError("cleanup failed; retaining recovery metadata:\n" + "\n".join(failures))
 

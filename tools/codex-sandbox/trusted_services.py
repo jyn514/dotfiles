@@ -8,13 +8,16 @@ owner-validating resource and endpoint values.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 from graphlib import CycleError, TopologicalSorter
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 from threading import Lock
 from types import MappingProxyType
@@ -27,6 +30,39 @@ _IMAGE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}\Z")
 _OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*\Z")
 _RESOURCE = re.compile(r"[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _RESOLUTION_KEY = object()
+
+
+_TIMING_LOCK = Lock()
+_TIMING_ROLES = frozenset({'proxies', 'auth', 'tic', 'gh', 'jj', 'zulip'})
+
+
+@contextmanager
+def service_timing(role: str, operation: str):
+    """Inclusive opt-in spans; operation is a static adapter-owned label.
+
+    Never pass argv, paths, endpoints, resource names, or credential values.
+    Unknown/custom command names share the stable command role.
+    """
+    if not os.environ.get('CODEX_SANDBOX_TIMING'):
+        yield
+        return
+    role = role if role in _TIMING_ROLES else 'command'
+    started = time.monotonic()
+    failed = False
+    try:
+        yield
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        elapsed = time.monotonic() - started
+        suffix = ' failed' if failed else ''
+        with _TIMING_LOCK:
+            try:
+                sys.stderr.write(f'Sandbox service: {role}/{operation}={elapsed:.2f}s{suffix}\n')
+            except (OSError, ValueError):
+                # Diagnostics must not change operation or cleanup outcomes.
+                pass
 
 
 class LifecycleError(ValueError):

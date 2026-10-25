@@ -167,6 +167,28 @@ Initialized dotfiles checkouts take only the checkout-specific initialization
 lock, not the service coordination lock; missing metadata still initializes
 under both locks. All workspaces are validated on every launch.
 
+`Sandbox service: role/operation=0.00s` lines split the real operations inside
+proxy and TicGit startup and shared-proxy cleanup. They use the same opt-in flag,
+write only to stderr (never helper JSON stdout), and emit elapsed time even when
+an exception leaves the span (with a `failed` suffix). Roles are fixed `proxies`, `auth`, `tic`, `gh`, `jj`, or
+`zulip`; custom command names are reported as `command`, not copied into logs.
+No endpoints, arguments, credential values, paths, or resource identities are
+included. `command-attach` contains cache/shared-reuse validation or command
+startup; per-command spans separate volume initialization, repository mounts,
+container run, forwarding publication, and readiness. Authentication attachment
+is separate from session publication; nested auth spans distinguish configuration
+publication, socket volume, networks, helper and Caddy container starts, the extra
+Caddy network attachment, and readiness. Tic spans separate bundle/context work,
+client staging and mount checks, broker startup through readiness, each network,
+host bridge, relay run/address lookup, listener readiness, and the single guest
+help request. Timing never replays that application request. Cleanup separates
+runtime recovery query, stopped-holder discovery, each command registry, and auth
+cleanup. Registry spans include owner inspection, removal, and retries.
+All spans are inclusive: command workers, Tic startup, and registry cleanup waves
+can overlap; child spans are already included in parent preparation/cleanup
+phases. Do not sum these lines. Timing serializes only each output line, never
+the measured operations.
+
 `Sandbox preparation:` measures launcher preparation, not interactive UI readiness.
 TicGit startup overlaps shared proxy startup once its image inputs are settled;
 the agent still waits for both, and optional TicGit failures still omit its endpoint.

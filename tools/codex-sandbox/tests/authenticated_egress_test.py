@@ -1,4 +1,5 @@
 """Behavioral tests for the shared authenticated-egress instance owner."""
+from contextlib import contextmanager
 from pathlib import Path
 from dataclasses import replace
 import subprocess
@@ -76,6 +77,32 @@ class AuthenticatedEgressTest(unittest.TestCase):
             self.assertNotIn("--header=Authorization: Bearer token", runtime.commands[-1])
             self.assertIn("CADDY_PROFILE_TOKEN=different-token", runtime.commands[0])
             self.assertNotIn("CADDY_PROFILE_TOKEN=token", runtime.commands[0])
+
+    def test_timing_spans_cover_each_effect_and_readiness_without_changing_order(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            spans = []
+
+            @contextmanager
+            def timing(operation):
+                spans.append(("start", operation))
+                try:
+                    yield
+                finally:
+                    spans.append(("finish", operation))
+
+            runtime = Runtime()
+            egress.start_egress_pair(
+                runtime, self.plan(directory, "codex"),
+                lambda status, operation: operation(), timing=timing,
+            )
+            operations = ["configuration", "socket-volume", "network",
+                          "helper-container", "caddy-container", "readiness"]
+            self.assertEqual(
+                [(boundary, operation) for operation in operations
+                 for boundary in ("start", "finish")],
+                spans,
+            )
+            self.assertEqual(3, len(runtime.commands))
 
     def test_pair_rejects_duplicate_or_invalid_admission_authority(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:

@@ -51,7 +51,7 @@ from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, check_agent_pi_revision, resolve_agent
 from trusted_services import (
     LifecycleError, LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
-    ServiceLifecycle,
+    ServiceLifecycle, service_timing,
 )
 from codex_broker import (
     CREDENTIAL_DOMAIN, ENDPOINT_PORT, NETWORK as CODEX_BROKER_NETWORK,
@@ -761,9 +761,12 @@ def attach_proxies(state: State) -> list[str]:
     auth_directory = _secure_codex_auth_directory(state)
     if auth_directory is not None:
         arguments.append("--auth-enabled")
-    helper(*arguments)
-    sidecar_arguments = attach_codex_sidecar(state, auth_directory)
-    result = [*sidecar_arguments, *finalize_proxy_session(state)]
+    with service_timing("proxies", "command-attach"):
+        helper(*arguments)
+    with service_timing("auth", "attach"):
+        sidecar_arguments = attach_codex_sidecar(state, auth_directory)
+    with service_timing("proxies", "publication"):
+        result = [*sidecar_arguments, *finalize_proxy_session(state)]
     state.proxy_lock.release_coordination()
     return result
 
@@ -1174,8 +1177,8 @@ def resolved_tic_build(state: State) -> InstalledTicBuild:
             writable.append(root)
 
     def provision(expected):
-        # The unpublished native fork has no default remote. Source selection is
-        # host authority, not a repository policy field or inherited guest input.
+        # Missing explicit host source configuration uses the pinned public fork.
+        # Neither source choice nor its fetch URL comes from guest/project input.
         return build_bundle(native_source(state.home, writable), expected)
 
     try:
@@ -1381,9 +1384,11 @@ def _start_tic(state: State) -> list[str]:
     if workspace.host_root != state.repository:
         raise LauncherError('TicGit active workspace binding mismatch')
     check_tic_cancelled(state)
-    build = resolved_tic_build(state)
+    with service_timing("tic", "bundle"):
+        build = resolved_tic_build(state)
     check_tic_cancelled(state)
-    context = inspect_tic_context(build, workspace)
+    with service_timing("tic", "context-capture"):
+        context = inspect_tic_context(build, workspace)
     if set(context) != {'user_name', 'user_email', 'namespace'}:
         raise LauncherError('TicGit trusted context returned invalid authority')
     check_tic_cancelled(state)
@@ -1391,8 +1396,9 @@ def _start_tic(state: State) -> list[str]:
     # of required shared-service preparation when no other capability needs it.
     sidecar_image = state.sidecar_image
     if not sidecar_image:
-        sidecar_image = resolve_sidecar_image()
-        OUTER_RUNTIME.verify_builder_image(sidecar_image)
+        with service_timing('tic', 'sidecar-image'):
+            sidecar_image = resolve_sidecar_image()
+            OUTER_RUNTIME.verify_builder_image(sidecar_image)
     # Do not publish a Tic-only fallback into shared state while proxy startup
     # reads its immutable image inputs.
     check_tic_cancelled(state)
@@ -1404,13 +1410,15 @@ def _start_tic(state: State) -> list[str]:
                                   f'codex-tic-{state.suffix}')
     state.tic_resources = resources
     try:
-        client = stage_tic_client(build)
+        with service_timing("tic", "client-staging-mounts"):
+            client = stage_tic_client(build)
         handle.registry.register(OwnedResource(
             'temporary:tic-client', handle.owner,
             lambda: ResourcePresence.OWNED if client.parent.exists() else ResourcePresence.ABSENT,
             lambda: remove_tic_stage(client.parent)))
         check_tic_cancelled(state)
-        handle.start()
+        with service_timing("tic", "broker-start-ready"):
+            handle.start()
         for name, internal in ((resources.link_network, True), (resources.egress_network, False)):
             handle.registry.register(OwnedResource(
                 f'network:{name}', handle.owner,
@@ -1419,9 +1427,11 @@ def _start_tic(state: State) -> list[str]:
                     OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
                     authority=ResourceOwnerAuthority.RELAY)))
             check_tic_cancelled(state)
-            create_relay_network(state, name, internal=internal, owner=handle.owner)
+            with service_timing("tic", "link-network" if internal else "egress-network"):
+                create_relay_network(state, name, internal=internal, owner=handle.owner)
         check_tic_cancelled(state)
-        bridge = handle.start_bridge(set())
+        with service_timing("tic", "host-bridge"):
+            bridge = handle.start_bridge(set())
         container_resource = f'container:{resources.container}'
         handle.registry.register(OwnedResource(
             container_resource, handle.owner,
@@ -1433,20 +1443,22 @@ def _start_tic(state: State) -> list[str]:
         mount = f'type=bind,src={client},dst=/opt/agent-tools/bin/ti,readonly'
         relay_mount = f'type=bind,src={client.parent / "relay"},dst=/trusted/tic,readonly'
         check_tic_cancelled(state)
-        run(['docker', 'run', '--detach', '--name', resources.container,
-             '--label', f'dev.codex.service-owner={handle.owner}',
-             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
-             '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
-             '--network', resources.egress_network, '--network', resources.link_network,
-             *proxy_flags(), *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
-                              ['--add-host', 'host.docker.internal:host-gateway']),
-             '--mount', mount, '--mount', relay_mount,
-             '--env', 'PYTHONDONTWRITEBYTECODE=1', '--entrypoint', '/usr/local/bin/python3',
-             sidecar_image, '/trusted/tic/tic_relay.py',
-             '--target-host', OUTER_RUNTIME.host_address,
-             '--target-port', str(bridge.port)], discard_stdout=True)
-        addresses = OUTER_RUNTIME.network_addresses(
-            resources.container, (resources.link_network, resources.egress_network))
+        with service_timing('tic', 'relay-run'):
+            run(['docker', 'run', '--detach', '--name', resources.container,
+                 '--label', f'dev.codex.service-owner={handle.owner}',
+                 '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
+                 '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
+                 '--network', resources.egress_network, '--network', resources.link_network,
+                 *proxy_flags(), *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
+                                  ['--add-host', 'host.docker.internal:host-gateway']),
+                 '--mount', mount, '--mount', relay_mount,
+                 '--env', 'PYTHONDONTWRITEBYTECODE=1', '--entrypoint', '/usr/local/bin/python3',
+                 sidecar_image, '/trusted/tic/tic_relay.py',
+                 '--target-host', OUTER_RUNTIME.host_address,
+                 '--target-port', str(bridge.port)], discard_stdout=True)
+        with service_timing('tic', 'relay-addresses'):
+            addresses = OUTER_RUNTIME.network_addresses(
+                resources.container, (resources.link_network, resources.egress_network))
         if not all(addresses.values()):
             raise LauncherError('TicGit relay has incomplete network addresses')
         # Lima's host.lima.internal forwarding reaches host loopback listeners
@@ -1455,22 +1467,24 @@ def _start_tic(state: State) -> list[str]:
         # as well as inspected relay IPs. Fresh broker authentication still applies.
         bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
         check_tic_cancelled(state)
-        listener = OUTER_RUNTIME.run(
-            ['exec', resources.container, '/usr/local/bin/python3', '/trusted/tic/tic_relay.py', '--probe'],
-            capture_output=True, timeout=7, check=False)
-        if listener.returncode != 0:
-            raise LauncherError('TicGit relay listener readiness failed; no fallback')
+        with service_timing('tic', 'relay-listening'):
+            listener = OUTER_RUNTIME.run(
+                ['exec', resources.container, '/usr/local/bin/python3', '/trusted/tic/tic_relay.py', '--probe'],
+                capture_output=True, timeout=7, check=False)
+            if listener.returncode != 0:
+                raise LauncherError('TicGit relay listener readiness failed; no fallback')
         # The local bounded listener probe is not an application request. Send
         # exactly one authenticated help through the complete guest path, never
         # replay it after transport failure. Help never opens SQLite.
         check_tic_cancelled(state)
         environment = handle.environment(f'127.0.0.1:{tic_port}')
-        with OUTER_RUNTIME.environment_file(environment) as flags:
-            probe = OUTER_RUNTIME.run(
-                ['exec', *flags, resources.container, '/opt/agent-tools/bin/ti', '--help'],
-                capture_output=True, timeout=15, check=False)
-        if probe.returncode != 0:
-            raise LauncherError('TicGit guest transport readiness failed; no fallback')
+        with service_timing('tic', 'guest-help-once'):
+            with OUTER_RUNTIME.environment_file(environment) as flags:
+                probe = OUTER_RUNTIME.run(
+                    ['exec', *flags, resources.container, '/opt/agent-tools/bin/ti', '--help'],
+                    capture_output=True, timeout=15, check=False)
+            if probe.returncode != 0:
+                raise LauncherError('TicGit guest transport readiness failed; no fallback')
         check_tic_cancelled(state)
         state.tic_environment = handle.environment(f'{addresses[resources.link_network]}:{tic_port}')
         handle.attach()
@@ -1602,9 +1616,11 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
     application_network = caddy + "-application"
     refresh_network = caddy + "-refresh"
     owner = uuid.uuid4().hex
-    helper_plan = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
-                                state.sidecar_image, state.uid, state.gid)
-    caddy_identity = resolve_caddy_image(OUTER_RUNTIME)
+    with service_timing('auth', 'helper-plan'):
+        helper_plan = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
+                                    state.sidecar_image, state.uid, state.gid)
+    with service_timing('auth', 'caddy-image'):
+        caddy_identity = resolve_caddy_image(OUTER_RUNTIME)
     configuration_bytes = generate_caddy_config(
         "codex", "chatgpt.com", token=key)
     configuration_path = state.proxy_state.parent / (caddy + ".json")
@@ -1700,9 +1716,10 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         "resource-status": statuses,
     }
     handle = CodexBrokerHandle(lifecycle, registry, record)
-    partial = json.loads(state.proxy_state.read_text(encoding="utf-8"))
-    partial["trusted-services"] = SESSION_LIFECYCLE_SCHEMA
-    partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+    with service_timing('auth', 'initial-state-publication'):
+        partial = json.loads(state.proxy_state.read_text(encoding="utf-8"))
+        partial["trusted-services"] = SESSION_LIFECYCLE_SCHEMA
+        partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
     try:
         def pair_effect(status, operation):
             operation()
@@ -1716,9 +1733,11 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
             cancelled=lambda: cancelled is not None and cancelled.is_set(),
             error=LauncherError,
             logs=proxy_module().proxy_logs,
+            timing=lambda operation: service_timing('auth', operation),
         )
         lifecycle.transition(LifecycleState.READY); record["lifecycle-state"] = "ready"
-        partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+        with service_timing('auth', 'ready-state-publication'):
+            partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
         return handle, codex_sidecar_arguments(caddy, key)
     except BaseException as startup_error:
         lifecycle.transition(LifecycleState.FAILED); record["lifecycle-state"] = "failed"

@@ -1,6 +1,7 @@
 """Own the common Caddy/profile-helper topology for authenticated egress."""
 from __future__ import annotations
 
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 import hashlib
 import json
@@ -97,6 +98,7 @@ def start_egress_pair(
     cancelled: Callable[[], bool] = lambda: False,
     error: Callable[[str], Exception] = RuntimeError,
     logs: Callable[[str], str] | None = None,
+    timing: Callable[[str], AbstractContextManager[None]] = lambda _operation: nullcontext(),
 ) -> None:
     """Create one pair in dependency order while its caller records each effect."""
     def check_cancelled() -> None:
@@ -104,16 +106,19 @@ def start_egress_pair(
             raise error(f"{plan.domain} authenticated egress startup cancelled")
 
     check_cancelled()
-    effect("configuration", lambda: publish_configuration(
-        plan.configuration_path, plan.configuration))
+    with timing("configuration"):
+        effect("configuration", lambda: publish_configuration(
+            plan.configuration_path, plan.configuration))
     check_cancelled()
-    effect("socket-volume", lambda: runtime.create_owned_volume(
-        plan.socket_volume, plan.uid, plan.gid, plan.service_owner,
-        plan.domain, "profile-socket"))
+    with timing("socket-volume"):
+        effect("socket-volume", lambda: runtime.create_owned_volume(
+            plan.socket_volume, plan.uid, plan.gid, plan.service_owner,
+            plan.domain, "profile-socket"))
     check_cancelled()
     for status, role, network in plan.public_networks:
-        effect(status, lambda role=role, network=network: runtime.create_public_service_network(
-            network, plan.service_owner, domain=plan.domain, role=role))
+        with timing(status):
+            effect(status, lambda role=role, network=network: runtime.create_public_service_network(
+                network, plan.service_owner, domain=plan.domain, role=role))
         check_cancelled()
 
     common = [
@@ -135,7 +140,8 @@ def start_egress_pair(
         helper += ["--env", value]
     helper += ["--entrypoint", "/trusted/bin/profile-helper", plan.helper_image,
                *plan.helper_arguments]
-    effect("helper-container", lambda: runtime.run(helper, stdout=subprocess.DEVNULL))
+    with timing("helper-container"):
+        effect("helper-container", lambda: runtime.run(helper, stdout=subprocess.DEVNULL))
     check_cancelled()
 
     caddy = [
@@ -146,23 +152,26 @@ def start_egress_pair(
         "--mount", f"type=bind,src={plan.configuration_path},dst=/etc/caddy/caddy.json,readonly",
         plan.caddy_image.runtime_reference, "caddy", "run", "--config", "/etc/caddy/caddy.json",
     ]
-    effect("caddy-container", lambda: runtime.run(caddy, stdout=subprocess.DEVNULL))
+    with timing("caddy-container"):
+        effect("caddy-container", lambda: runtime.run(caddy, stdout=subprocess.DEVNULL))
     for network in plan.extra_caddy_networks:
         check_cancelled()
-        effect("caddy-attachment", lambda network=network: runtime.run(
-            ["network", "connect", network, plan.caddy_name], stdout=subprocess.DEVNULL))
+        with timing("caddy-attachment"):
+            effect("caddy-attachment", lambda network=network: runtime.run(
+                ["network", "connect", network, plan.caddy_name], stdout=subprocess.DEVNULL))
 
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        check_cancelled()
-        ready = runtime.run([
-            "exec", plan.caddy_name, "wget", "-q", "-O", "/dev/null",
-            "--header=Authorization: Bearer " + plan.session_token,
-            "http://127.0.0.1:8787/ready",
-        ], check=False, capture_output=True)
-        if ready.returncode == 0:
-            return
-        time.sleep(.1)
+    with timing("readiness"):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            check_cancelled()
+            ready = runtime.run([
+                "exec", plan.caddy_name, "wget", "-q", "-O", "/dev/null",
+                "--header=Authorization: Bearer " + plan.session_token,
+                "http://127.0.0.1:8787/ready",
+            ], check=False, capture_output=True)
+            if ready.returncode == 0:
+                return
+            time.sleep(.1)
     detail = ""
     if logs is not None:
         output = "\n".join(filter(None, (logs(plan.caddy_name), logs(plan.helper_name))))
