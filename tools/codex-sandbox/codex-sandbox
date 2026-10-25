@@ -520,24 +520,50 @@ def existing_git_root() -> Path:
     return Path(result.stdout.strip()).resolve(strict=True)
 
 
+@contextmanager
+def validation_timing(name: str):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        if os.environ.get("CODEX_SANDBOX_TIMING"):
+            print(f"Sandbox validation: {name}={time.monotonic() - started:.2f}s", file=sys.stderr)
+
+
 def initialize_dotfiles(repository: Path) -> None:
-    """Coordinate initialization before acquiring any session lifetime lock."""
-    directory = proxy_module().runtime_directory(repository)
-    with (directory / "coordination.lock").open("a+b") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    """Serialize initialization independently of session provisioning."""
+    # The session coordination lock can be held during long builds/recovery.
+    # Use a canonical-checkout initialization lock even for the existing case:
+    # merely checking .jj first could observe another initializer's partial tree.
+    repository = repository.resolve(strict=True)
+    locks = Path.home() / ".cache/codex-sandbox-proxies/initialization"
+    locks.mkdir(mode=0o700, parents=True, exist_ok=True)
+    identity = hashlib.sha256(os.fsencode(repository)).hexdigest()
+    with (locks / f"{identity}.lock").open("a+b") as initialization:
+        with validation_timing("dotfiles initialization lock"):
+            fcntl.flock(initialization, fcntl.LOCK_EX)
         entry = repository / ".jj"
         # lexists semantics: dangling symlinks and partial initialization are
         # existing metadata, not permission to replace it with a fresh store.
         if entry.exists() or entry.is_symlink():
             return
-        try:
-            root = run(["git", "-C", str(repository), "rev-parse", "--show-toplevel"],
-                       capture=True).stdout.strip()
-            if Path(root).resolve(strict=True) != repository:
-                raise LauncherError(f"Dotfiles is not a Git checkout root: {repository}")
-            run(["jj", "git", "init", "--colocate", str(repository)], cwd=repository)
-        except subprocess.CalledProcessError as error:
-            raise LauncherError(f"Dotfiles could not be initialized as a Jujutsu workspace: {repository}") from error
+        # First initialization still respects the existing service authority.
+        # Ordinary workspace validation below remains authoritative on reuse.
+        with validation_timing("dotfiles initialization metadata"):
+            directory = proxy_module().runtime_directory(repository)
+        with (directory / "coordination.lock").open("a+b") as lock:
+            with validation_timing("dotfiles coordination lock"):
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            if entry.exists() or entry.is_symlink():
+                return
+            try:
+                root = run(["git", "-C", str(repository), "rev-parse", "--show-toplevel"],
+                           capture=True).stdout.strip()
+                if Path(root).resolve(strict=True) != repository:
+                    raise LauncherError(f"Dotfiles is not a Git checkout root: {repository}")
+                run(["jj", "git", "init", "--colocate", str(repository)], cwd=repository)
+            except subprocess.CalledProcessError as error:
+                raise LauncherError(f"Dotfiles could not be initialized as a Jujutsu workspace: {repository}") from error
 
 
 def active_repository_root(*, initialize_missing: bool) -> Path:
@@ -563,8 +589,10 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
         dotfiles = DOTFILES.resolve(strict=True)
         # Finish dotfiles initialization before active/session lifetime locks,
         # including when dotfiles and the active checkout are the same tree.
-        initialize_dotfiles(dotfiles)
-    repository = active_repository_root(initialize_missing=initialize_missing)
+        with validation_timing("dotfiles initialization"):
+            initialize_dotfiles(dotfiles)
+    with validation_timing("active repository root"):
+        repository = active_repository_root(initialize_missing=initialize_missing)
     if not initialize_missing:
         # validate-cd is active-only: no dotfiles lookup, guest mapping, request
         # locks, source-view allocation or authority publication belongs here.
@@ -603,7 +631,8 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
             workspace.host_root / ".jj", workspace.jj_repo, workspace.git_dir, workspace.common_dir)))
     state.workspaces_file = temporary_file()
     state.workspaces_file.write_text(json.dumps([workspace.to_dict() for workspace in workspaces]))
-    _workspace_mount_plan(state)
+    with validation_timing("workspace mount plan"):
+        _workspace_mount_plan(state)
     proxy_module().use_repository_metadata(repository, (active.git_dir, active.common_dir))
 
 
@@ -2446,8 +2475,8 @@ def execute(state: State) -> int:
     else:
         phase("repository policy", lambda: load_repository_policy(state))
         print(
-            "notice: Preparing sandbox image and proxies from current repository policy; "
-            "a cold build may take several minutes.",
+            "notice: Checking sandbox images and preparing services from current repository policy; "
+            "cached resources are reused when valid; builds run only when needed.",
             file=sys.stderr,
         )
         manifest = (json.loads(state.manifest.read_text()) if getattr(state, "manifest", None) is not None

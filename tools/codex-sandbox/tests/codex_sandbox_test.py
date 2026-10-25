@@ -1105,8 +1105,8 @@ class BackgroundRelayTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "stop after notice"):
                 execute(state)
         self.assertIn(
-            "Preparing sandbox image and proxies from current repository policy; "
-            "a cold build may take several minutes.",
+            "Checking sandbox images and preparing services from current repository policy; "
+            "cached resources are reused when valid; builds run only when needed.",
             output.getvalue(),
         )
 

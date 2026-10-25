@@ -156,6 +156,10 @@ host with the supported runtime before claiming VM acceptance.
 
 ## Measure interactive startup
 
+Initialized dotfiles checkouts take only the checkout-specific initialization
+lock, not the service coordination lock; missing metadata still initializes
+under both locks. All workspaces are validated on every launch.
+
 From the checkout being measured, run this repository's probe on a Unix host with local container-socket access:
 
 ```sh
