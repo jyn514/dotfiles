@@ -629,8 +629,9 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
         workspaces = discover_launch_workspaces(state.home, repository)
         active = workspaces[0]
         guest = active.guest_root
-        for workspace in workspaces:
-            ensure_request_lock(workspace)
+        with validation_timing("workspace request locks"):
+            for workspace in workspaces:
+                ensure_request_lock(workspace)
     except WorkspaceError as error:
         raise LauncherError(str(error)) from error
     state.repository = repository

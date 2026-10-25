@@ -156,6 +156,13 @@ host with the supported runtime before claiming VM acceptance.
 
 ## Measure interactive startup
 
+For a phase breakdown of a normal launch, use `env CODEX_SANDBOX_TIMING=1 pi`.
+`Sandbox validation:` lines split repository validation into initialization,
+lock waits, active-root lookup, workspace discovery, request locks, and mount
+planning. These substeps are included in the enclosing `repository validation`
+phase; initialization lock/metadata timings are also included in `dotfiles
+initialization`. Do not sum nested timings. They are emitted on failure too,
+so a slow or failed validation need not be attributed to the entire phase.
 Initialized dotfiles checkouts take only the checkout-specific initialization
 lock, not the service coordination lock; missing metadata still initializes
 under both locks. All workspaces are validated on every launch.
