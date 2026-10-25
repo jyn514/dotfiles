@@ -758,13 +758,138 @@ class DirectoryHandoffTest(unittest.TestCase):
                               str(custom_session.resolve()), "--session-id"],
                              state.codex_arguments[:5])
 
+    def test_prepare_cd_builds_the_destination_base_without_starting_or_releasing_sessions(self) -> None:
+        for failure in (False, True):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                destination = root / "destination"
+                subprocess.run([os.environ.get("DOTFILES_TEST_JJ_REAL", "jj"), "git", "init", "--colocate",
+                                str(destination)], cwd=root, check=True, capture_output=True)
+                policy = destination / ".agents/sandbox"
+                policy.mkdir(parents=True)
+                (policy / "proxy-commands.json").write_text(json.dumps({
+                    "version": 2, "commands": {},
+                    "images": {"base": "destination-base", "resolver": {"kind": "command", "argv": [
+                        sys.executable, str(TOOL / "tests/fixtures/launch-resolver.py")]}}}))
+                launcher = runpy.run_path(str(LAUNCHER))
+                launch = launcher["launch"]
+                module = launcher["proxy_module"]()
+                manifest = root / "snapshot.json"
+                module.snapshot_main(SimpleNamespace(repo=str(destination), output=str(manifest), jj_image_command=None))
+                snapshot = manifest.read_text()
+                state = SimpleNamespace(repository=destination, host_working_directory=destination,
+                                        manifest=None, capabilities=frozenset(), uid=501, gid=20)
+                runtime = mock.Mock(spec=launcher["ContainerRuntime"], provider="container")
+                runtime.build_platform.return_value = "linux/amd64"
+                runtime.builder_environment.side_effect = lambda: dict(os.environ)
+                runtime.verify_builder_image.side_effect = lambda image: SimpleNamespace(reference=image)
+                compose = mock.Mock(return_value="agent-image")
+                if failure:
+                    compose.side_effect = ValueError("Cannot find module './identity.js'")
+                def load_policy(value):
+                    value.manifest = manifest
+                    manifest.write_text(snapshot)
+                forbidden = {name: mock.Mock(side_effect=AssertionError(name + " must not run during preparation"))
+                             for name in ("acquire_lock", "run_agent", "cleanup", "unregister_tmux_pane",
+                                          "ensure_network", "attach_proxies", "register_tmux_pane")}
+                replacements = {**forbidden, "image_runtime": lambda: runtime,
+                                "new_state": lambda _args: state,
+                                "validate_repository": mock.Mock(),
+                                "load_repository_policy": load_policy, "resolve_agent": compose,
+                                "_secure_codex_auth_directory": lambda _state: None}
+                request = root / "request.json"
+                output = io.StringIO()
+                errors = io.StringIO()
+                previous_cwd = Path.cwd()
+                try:
+                    with mock.patch.dict(launch.__globals__, replacements), mock.patch.dict(os.environ, {
+                        "LAUNCH_RESOLVER_REQUEST": str(request),
+                        "LAUNCH_RESOLVER_IMAGES": json.dumps({"destination-base": "sha256:" + "1" * 64}),
+                    }), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        self.assertEqual(int(failure), launch(["prepare-cd", str(destination)]))
+                finally:
+                    os.chdir(previous_cwd)
+                replacements["validate_repository"].assert_called_once_with(state, initialize_missing=False)
+                compose.assert_called_once_with(runtime, 501, 20, "sha256:" + "1" * 64)
+                self.assertFalse(manifest.exists(), "preparation must remove its private policy snapshot")
+                for function in forbidden.values():
+                    function.assert_not_called()
+                if failure:
+                    self.assertEqual(output.getvalue(), "")
+                    self.assertIn("Cannot find module './identity.js'", errors.getvalue())
+                else:
+                    self.assertEqual(json.loads(output.getvalue()), {
+                        "destination": str(destination), "repository": str(destination)})
+                self.assertEqual(json.loads(request.read_text())["images"], ["destination-base"])
+
+    def test_prepare_cd_uses_the_existing_legacy_base_builder_and_cleans_on_failure(self) -> None:
+        prepare = runpy.run_path(str(LAUNCHER))["prepare_cd_images"]
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            builder = repository / ".agents/sandbox/base-image"
+            builder.parent.mkdir(parents=True, exist_ok=True)
+            write_executable(builder, "#!/bin/sh\nprintf 'legacy-base\\n'\n")
+            manifest = repository / "manifest.json"
+            def load_policy(state):
+                state.manifest = manifest
+                manifest.write_text(json.dumps({"commands": {}}))
+            state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset(), uid=501, gid=20)
+            compose = mock.Mock(side_effect=ValueError("build failed"))
+            runtime = SimpleNamespace(provider="container")
+            with mock.patch.dict(prepare.__globals__, {
+                "OUTER_RUNTIME": runtime,
+                "load_repository_policy": load_policy,
+                "_secure_codex_auth_directory": lambda _state: None,
+                "resolve_agent": compose,
+            }):
+                with self.assertRaisesRegex(ValueError, "build failed"):
+                    prepare(state)
+            compose.assert_called_once_with(runtime, 501, 20, "legacy-base")
+            self.assertFalse(manifest.exists())
+
+    def test_prepare_cd_rejects_a_failed_legacy_proxy_image_build(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        prepare = launcher["prepare_cd_images"]
+        module = launcher["proxy_module"]()
+        runtime = SimpleNamespace(provider="lima")
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            manifest = repository / "manifest.json"
+            def load_policy(state):
+                state.manifest = manifest
+                manifest.write_text(json.dumps({"commands": {"broken": {
+                    "image-command": ["/bin/false"], "argv": ["proxy", "serve"],
+                    "workdir": ".", "network": False, "mounts": [],
+                }}}))
+            state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset())
+            model = mock.Mock(return_value="agent-image")
+            with mock.patch.dict(prepare.__globals__, {
+                "OUTER_RUNTIME": runtime, "load_repository_policy": load_policy,
+                "_secure_codex_auth_directory": lambda _state: None,
+                "resolve_model_image": model, "proxy_module": lambda: module,
+            }), mock.patch.object(module, "OUTER_RUNTIME", runtime):
+                with self.assertRaisesRegex(launcher["LauncherError"], "image-command for broken"):
+                    prepare(state)
+            model.assert_called_once_with(state)
+            self.assertFalse(manifest.exists())
+
     def test_validation_does_not_initialize_a_destination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run(
-                [str(LAUNCHER), "validate-cd", directory], capture_output=True, text=True,
-            )
-            self.assertNotEqual(0, result.returncode)
-            self.assertFalse((Path(directory) / ".jj").exists())
+            for operation in ("validate-cd", "prepare-cd"):
+                with self.subTest(operation=operation):
+                    result = subprocess.run(
+                        [str(LAUNCHER), operation, directory], capture_output=True, text=True,
+                    )
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse((Path(directory) / ".jj").exists())
+
+    def test_prepare_cd_does_not_detach_a_new_owner(self) -> None:
+        main = runpy.run_path(str(LAUNCHER))["main"]
+        launch = mock.Mock(return_value=17)
+        with mock.patch.dict(main.__globals__, launch=launch), mock.patch(
+                "host_pi_owner.detached_frontend", side_effect=AssertionError("preparation must not detach")):
+            self.assertEqual(17, main(["prepare-cd", "/destination"]))
+        launch.assert_called_once_with(["prepare-cd", "/destination"])
 
     def test_successful_handoff_cleans_before_starting_fork(self) -> None:
         launch = runpy.run_path(str(LAUNCHER))["launch"]

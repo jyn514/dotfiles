@@ -2298,6 +2298,60 @@ def startup_workers(state: State, max_workers: int) -> Iterator[ThreadPoolExecut
             raise SignalExit(state.deferred_signal)
 
 
+def resolve_model_image(state: State, phase=None) -> str:
+    if phase is None:
+        def phase(_name, action):
+            return action()
+    builder = state.repository / ".agents/sandbox/base-image"
+    if builder.is_file() and os.access(builder, os.X_OK):
+        base_image = phase(
+            "base image resolution",
+            lambda: run([str(builder)], capture=True, cwd=state.repository, builder=True).stdout.strip(),
+        )
+        if isinstance(OUTER_RUNTIME, VMRuntime):
+            base_image = OUTER_RUNTIME.builder_image(base_image)
+    else:
+        base_image = DEFAULT_BASE
+    return phase("model image resolution", lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, base_image))
+
+
+def prepare_declared_images(state: State, manifest: dict, sidecar_selected: bool):
+    if OUTER_RUNTIME.provider != 'lima-docker' and not manifest.get('images'):
+        return None
+    return prepare_launch_images(
+        OUTER_RUNTIME, state.repository, manifest['commands'], include_base=True,
+        auth_builder=(([str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')], DOTFILES)
+                      if sidecar_selected else None),
+        image_policy=manifest.get('images'))
+
+
+def prepare_cd_images(state: State) -> None:
+    # Build through the normal image owners, without session locks, attachment
+    # release, terminal takeover, or destination service startup. Normal launch
+    # revalidates and reuses these content-addressed builds after the handoff.
+    try:
+        load_repository_policy(state)
+        manifest = json.loads(state.manifest.read_text())
+        sidecar_selected = bool((state.capabilities - {'tic'}) or _secure_codex_auth_directory(state))
+        prepared = prepare_declared_images(state, manifest, sidecar_selected)
+        if prepared is not None:
+            resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base)
+        else:
+            resolve_model_image(state)
+            if sidecar_selected:
+                resolve_sidecar_image()
+            # Legacy proxy builders normally run during attach. Check them now
+            # through that same owner, before the source attachment is released.
+            module = proxy_module()
+            try:
+                module.resolve_images(state.repository, manifest)
+            except module.ConfigError as error:
+                raise LauncherError(str(error)) from error
+    finally:
+        if state.manifest is not None:
+            state.manifest.unlink(missing_ok=True)
+
+
 def execute(state: State) -> int:
     started = time.monotonic()
     timings: list[tuple[str, float]] = []
@@ -2347,34 +2401,17 @@ def execute(state: State) -> int:
         or _secure_codex_auth_directory(state)
     )
     def model_image() -> str:
-        builder = state.repository / ".agents/sandbox/base-image"
-        if builder.is_file() and os.access(builder, os.X_OK):
-            base_image = phase(
-                "base image resolution",
-                lambda: run([str(builder)], capture=True, cwd=state.repository, builder=True).stdout.strip(),
-            )
-            if isinstance(OUTER_RUNTIME, VMRuntime):
-                base_image = OUTER_RUNTIME.builder_image(base_image)
-        else:
-            base_image = DEFAULT_BASE
-        return phase(
-            "model image resolution",
-            lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, base_image),
-        )
+        return resolve_model_image(state, phase)
 
     prepared = None
-    if not state.proxy_lock.shared and (OUTER_RUNTIME.provider == 'lima-docker' or manifest.get('images')):
+    if not state.proxy_lock.shared:
         # Preparation owns all builder groups before container workers start.
-        prepared = phase('image preparation', lambda: prepare_launch_images(
-            OUTER_RUNTIME, state.repository, manifest['commands'], include_base=True,
-            auth_builder=(([
-                str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')
-            ], DOTFILES) if sidecar_selected else None),
-            image_policy=manifest.get('images')))
-        state.image = phase(
-            'model image resolution',
-            lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base),
-        )
+        prepared = phase('image preparation', lambda: prepare_declared_images(state, manifest, sidecar_selected))
+        if prepared is not None:
+            state.image = phase(
+                'model image resolution',
+                lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base),
+            )
 
     def optional_relay(name: str, action: Callable[[], object]) -> None:
         try:
@@ -2795,7 +2832,7 @@ def main(arguments: list[str]) -> int:
     """Public CLI/import entry; interactive callers must have no live threads."""
     # Administrative and noninteractive interfaces retain their existing process
     # ownership. Interactive UI is separated before execute creates any resources.
-    administrative = arguments[:1] in (["validate-cd"], ["restart"], ["restart-all"], ["auth"])
+    administrative = arguments[:1] in (["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"], ["auth"])
     options = arguments[:arguments.index("--")] if "--" in arguments else arguments
     noninteractive = any(argument in ("--print", "-p", "--export") for argument in options)
     for index, argument in enumerate(options):
@@ -2825,7 +2862,7 @@ def detached_owner_main(arguments: list[str], bootstrap: socket.socket) -> int:
 
 def launch(arguments: list[str]) -> int:
     global OUTER_RUNTIME
-    if len(arguments) == 2 and arguments[0] == "validate-cd":
+    if len(arguments) == 2 and arguments[0] in ("validate-cd", "prepare-cd"):
         try:
             # Validation is read-only even when an agent shell supplied jj author overrides.
             os.environ.pop("JJ_USER", None)
@@ -2837,6 +2874,10 @@ def launch(arguments: list[str]) -> int:
             os.chdir(destination)
             checked = new_state([])
             validate_repository(checked, initialize_missing=False)
+            if arguments[0] == "prepare-cd":
+                OUTER_RUNTIME = image_runtime()
+                proxy_module.cache_clear()
+                prepare_cd_images(checked)
             print(json.dumps({"destination": str(checked.host_working_directory),
                               "repository": str(checked.repository)}))
             return 0

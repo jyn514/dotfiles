@@ -37,6 +37,19 @@ export default function sessionHandoff(pi: ExtensionAPI): void {
         if (!validated.destination || !validated.repository) {
           throw new Error("directory validation returned no destination");
         }
+        const prepared = await pi.exec(validator, ["prepare-cd", validated.destination], { cwd: ctx.cwd });
+        if (prepared.code !== 0 || prepared.killed) {
+          throw new Error(prepared.stderr.trim() || prepared.stdout.trim() || "Destination preparation failed");
+        }
+        // Pi's exec API can report a signal-killed child as code 0. Require the
+        // launcher's final success record, emitted only after all builds finish.
+        let completion: ValidatedDirectory | undefined;
+        try {
+          completion = JSON.parse(prepared.stdout.trim().split("\n").at(-1) || "null");
+        } catch { /* Missing or incomplete success record is not a completed build. */ }
+        if (completion?.destination !== validated.destination || completion?.repository !== validated.repository) {
+          throw new Error("Destination preparation did not confirm completion; this session stays open.");
+        }
         ctx.abort();
         await ctx.waitForIdle();
         const session = ctx.sessionManager.getSessionFile();
