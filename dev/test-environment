@@ -111,14 +111,17 @@ def wait_for_test_processes(process: subprocess.Popen) -> int:
 
 
 def host_tool_path(tool: str, environment: dict[str, str]) -> str:
-    wrappers = Path(__file__).resolve().parent.parent / "libexec/agent-wrappers"
+    root = Path(__file__).resolve().parent.parent
+    excluded = {root / "libexec/agent-wrappers" / tool}
+    if tool == "bb":
+        excluded.add(root / "tools/agent-split/bb")
     for directory in environment.get("PATH", "").split(os.pathsep):
         command = shutil.which(tool, path=directory or os.curdir)
         if command is None:
             continue
         resolved = Path(command).resolve()
         # Tests need the native tool, not the sandbox transport selected first on PATH.
-        if resolved == wrappers / tool:
+        if resolved in excluded:
             continue
         if resolved.name != "mise":
             return str(resolved)
