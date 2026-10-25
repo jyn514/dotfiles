@@ -927,12 +927,14 @@ describe("extension completion delivery and TUI", () => {
     fs.writeFileSync(configFile, JSON.stringify({ shortcut }));
     const commands = new Map<string, any>();
     const shortcuts = new Map<string, any>();
+    const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
     let shutdown: (() => Promise<void>) | undefined;
     let menusOpened = 0;
     const ctx: any = {
       mode: "tui",
       sessionManager: { getSessionId: () => "shortcut-test-parent" },
       ui: {
+        setWidget() {},
         async custom(create: any) {
           const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
           const menu = create({ requestRender() {} }, theme, {}, () => {});
@@ -946,12 +948,24 @@ describe("extension completion delivery and TUI", () => {
     try {
       subagentExtension({
         events: new EventEmitter(),
-        on(name: string, handler: any) { if (name === "session_shutdown") shutdown = handler; },
+        on(name: string, handler: any) {
+          const entries = handlers.get(name) ?? [];
+          entries.push(handler);
+          handlers.set(name, entries);
+          if (name === "session_shutdown") shutdown = handler;
+        },
         registerTool() {},
         registerMessageRenderer() {},
         registerCommand(name: string, command: any) { commands.set(name, command); },
         registerShortcut(key: string, options: any) { shortcuts.set(key, options); },
       } as any);
+      for (const handler of [...handlers.get("session_start") ?? []]) {
+        await handler({ reason: "startup" }, {
+          ...ctx,
+          modelRegistry: { getAvailable: () => [] },
+          scopedModels: [],
+        });
+      }
       expect(commands.has("subagents")).toBe(true);
       expect(commands.get("pause").allowedWhilePaused).toBe(true);
       expect(commands.get("unpause").allowedWhilePaused).toBe(true);
@@ -1062,7 +1076,7 @@ describe("extension completion delivery and TUI", () => {
     subagentExtension(pi);
     const emit = async (name: string, event: any = {}) => {
       let result: any;
-      for (const handler of handlers.get(name) ?? []) result = await handler(event, ctx);
+      for (const handler of [...handlers.get(name) ?? []]) result = await handler(event, ctx);
       return result;
     };
     const findDirectAgent = (prefix: string) => fs.readdirSync(scope)
@@ -1070,20 +1084,15 @@ describe("extension completion delivery and TUI", () => {
       .map((file) => JSON.parse(fs.readFileSync(path.join(scope, file), "utf8")) as any)
       .find((entry) => entry.taskName.startsWith(prefix));
 
-    // Session start is the single resolution point, so before it the arguments are absent.
+    // The lightweight facade registers no placeholder tools before session startup.
     const spawnArgs = () => tools.get("spawn_agent").parameters.properties;
-    expect(spawnArgs().model).toBeUndefined();
-    expect(spawnArgs().thinking).toBeUndefined();
+    expect(tools.has("spawn_agent")).toBe(false);
 
     try {
-      // Ordinary session startup keeps the manager implementation unloaded.
+      // Awaited startup loads the implementation and resolves its session-scoped state.
       await emit("session_start", { reason: "startup" });
-      expect(spawnArgs().model).toBeUndefined();
-      // The first run depends on the tools, so its pre-start boundary initializes the
-      // implementation before Pi snapshots the active tool loadout.
-      await emit("before_agent_start", { systemPromptOptions: { skills: [] } });
       // Model allowlist entries are filtered to what is available and unioned with
-      // Pi's scoped models before the first provider request.
+      // Pi's scoped models before startup submission becomes available.
       expect(spawnArgs().model.enum).toEqual(["test/fake", "fireworks/accounts/fireworks/models/glm-5p2", "openai/gpt-5"]);
       expect(spawnArgs().thinking.enum).toContain("max");
       expect(notifications).toEqual(['spawn_agent models not available: typo/nope']);

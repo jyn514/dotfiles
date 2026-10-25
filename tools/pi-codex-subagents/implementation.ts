@@ -25,6 +25,7 @@ import {
 import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscovery, type LinkResult, type LinkWorkerReply } from "./link.js";
 import { SubagentPeekOverlay } from "./peek.js";
 import { SuspensionCoordinator } from "./suspension.js";
+import type { StartupSession } from "./index.js";
 
 function textResult(text: string, details?: any) {
   return { content: [{ type: "text" as const, text }], details };
@@ -86,7 +87,7 @@ function runtimeLabel(info: AgentInfo): string {
   return formatDuration(end - start);
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI, startup?: StartupSession): void | Promise<void> {
   const widgetKey = "pi-codex-subagents";
   const completionMessageType = "pi-codex-subagent-completion";
   let cachedSkills: Array<{ name: string; description: string; filePath: string }> = [];
@@ -417,7 +418,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     return { action: "handled" as const };
   });
 
-  pi.on("session_start", async (_event: any, ctx: any) => {
+  const startSession = async (_event: any, ctx: any) => {
     activeContext = ctx;
     // Synchronous discovery fences admission before the first await/automatic startup work.
     suspension.discover(ctx);
@@ -434,7 +435,9 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
       if (entry.agent_status === "starting" || entry.agent_status === "running") activeAgents.add(entry.agent_name);
     }
     refreshAgentWidget();
-  });
+  };
+
+  pi.on("session_start", startSession);
 
   pi.on("before_agent_start", async (event: any) => {
     const skills = event?.systemPromptOptions?.skills;
@@ -756,4 +759,6 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     description: "Browse subagents",
     handler: async (_args, ctx) => { suspension.setCommandContext(ctx); await browseAgents(ctx); },
   });
+
+  if (startup) return startSession(startup.event, startup.ctx);
 }

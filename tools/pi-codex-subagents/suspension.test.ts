@@ -695,11 +695,14 @@ test("paused configured direct skill leaves input unhandled and never spawns bef
       submitInput: async () => { throw new Error("input callback must not submit anything"); },
     };
     extension(pi);
+    for (const handler of [...handlers.get("session_start") ?? []]) {
+      await handler({ reason: "startup" }, ctx);
+    }
     await commands.get("pause").handler("", ctx);
     assert.equal(JSON.parse(readFileSync(join(root, "runs/parent-scope/group.json"), "utf8")).phase, "saved");
     assert.equal(paused, true);
     const inputHandlers = handlers.get("input");
-    assert.equal(inputHandlers.length, 2);
+    assert.equal(inputHandlers.length, 1);
     let result;
     for (const handler of inputHandlers) {
       const next = await handler({ source: "interactive", text: "/skill:eligible concrete work" }, ctx);

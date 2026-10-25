@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { expect, test } from "bun:test";
-import { createLazyExtension } from "./index.js";
+import { createDeferredStartupExtension, type StartupSession } from "./index.js";
 
 function fixture(load: () => Promise<any>) {
   const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
@@ -18,7 +18,7 @@ function fixture(load: () => Promise<any>) {
     registerShortcut() {},
     registerMessageRenderer() {},
   };
-  createLazyExtension(load)(pi as any);
+  createDeferredStartupExtension(load)(pi as any);
   const emit = async (name: string, event: any, ctx: any) => {
     let result: any;
     for (const handler of [...handlers.get(name) ?? []]) result = await handler(event, ctx);
@@ -27,67 +27,57 @@ function fixture(load: () => Promise<any>) {
   return { commands, emit, handlers, pi, tools };
 }
 
-test("defers implementation through ordinary startup and initializes once for concurrent tool use", async () => {
-  let loads = 0;
-  let starts = 0;
-  let calls = 0;
+function implementation(record: { loads: number; starts: string[]; beforeStarts: number }) {
+  return async (pi: any, startup?: StartupSession) => {
+    record.loads++;
+    const start = (event: any) => { record.starts.push(event.reason); };
+    pi.on("session_start", start);
+    pi.on("before_agent_start", () => { record.beforeStarts++; });
+    pi.registerTool({ name: "list_agents", async execute() { return "listed"; } });
+    pi.registerCommand("subagents", { async handler() { return "opened"; } });
+    if (startup) start(startup.event);
+  };
+}
+
+test("loads during awaited session startup and registers the implementation normally", async () => {
+  const record = { loads: 0, starts: [] as string[], beforeStarts: 0 };
+  const f = fixture(async () => ({ default: implementation(record) }));
+
+  expect(f.tools.size).toBe(0);
+  expect(f.commands.size).toBe(0);
+
+  await f.emit("session_start", { reason: "startup" }, { session: "first" });
+
+  expect(record).toEqual({ loads: 1, starts: ["startup"], beforeStarts: 0 });
+  expect(await f.tools.get("list_agents").execute()).toBe("listed");
+  expect(await f.commands.get("subagents").handler()).toBe("opened");
+});
+
+test("replays the startup session once and leaves later lifecycle events to the implementation", async () => {
+  const record = { loads: 0, starts: [] as string[], beforeStarts: 0 };
+  const f = fixture(async () => ({ default: implementation(record) }));
+
+  await f.emit("session_start", { reason: "startup" }, {});
+  await f.emit("before_agent_start", {}, {});
+  await f.emit("session_start", { reason: "reload" }, {});
+  await f.emit("before_agent_start", {}, {});
+
+  expect(record).toEqual({ loads: 1, starts: ["startup", "reload"], beforeStarts: 2 });
+});
+
+test("shares one initialization when startup delivery is repeated before loading finishes", async () => {
+  const record = { loads: 0, starts: [] as string[], beforeStarts: 0 };
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
   const f = fixture(async () => {
-    loads++;
-    await Promise.resolve();
-    return { default(pi: any) {
-      pi.on("session_start", () => { starts++; });
-      pi.registerTool({
-        name: "list_agents", label: "List Agents", description: "fixture",
-        parameters: { type: "object", properties: {} },
-        async execute() { calls++; return { content: [{ type: "text", text: "listed" }] }; },
-      });
-    } };
+    await held;
+    return { default: implementation(record) };
   });
-  const ctx = { sessionManager: { getSessionId: () => "lazy-parent" } };
-  await f.emit("session_start", { reason: "startup" }, ctx);
-  expect({ loads, starts }).toEqual({ loads: 0, starts: 0 });
 
-  const placeholder = f.tools.get("list_agents");
-  const [first, second] = await Promise.all([
-    placeholder.execute("one", {}, undefined, undefined, ctx),
-    placeholder.execute("two", {}, undefined, undefined, ctx),
-  ]);
-  expect({ loads, starts, calls }).toEqual({ loads: 1, starts: 1, calls: 2 });
-  expect(first.content[0].text).toBe("listed");
-  expect(second.content[0].text).toBe("listed");
-});
+  const first = f.emit("session_start", { reason: "startup" }, {});
+  const second = f.emit("session_start", { reason: "startup" }, {});
+  release();
+  await Promise.all([first, second]);
 
-test("initializes before the first run and dispatches the current boundary once", async () => {
-  let loads = 0;
-  let starts = 0;
-  let beforeStarts = 0;
-  const f = fixture(async () => ({ default(pi: any) {
-    loads++;
-    pi.on("session_start", () => { starts++; });
-    pi.on("before_agent_start", (event: any) => { beforeStarts++; event.initialized = true; });
-  } }));
-  const ctx = { sessionManager: { getSessionId: () => "lazy-run-parent" } };
-  await f.emit("session_start", { reason: "startup" }, ctx);
-  const event: any = {};
-  await f.emit("before_agent_start", event, ctx);
-  expect({ loads, starts, beforeStarts, initialized: event.initialized })
-    .toEqual({ loads: 1, starts: 1, beforeStarts: 1, initialized: true });
-
-  await f.emit("before_agent_start", {}, ctx);
-  expect({ loads, starts, beforeStarts }).toEqual({ loads: 1, starts: 1, beforeStarts: 2 });
-});
-
-test("loads a command on first invocation and preserves its result", async () => {
-  let loads = 0;
-  const f = fixture(async () => ({ default(pi: any) {
-    loads++;
-    pi.registerCommand("subagents", {
-      description: "Browse subagents",
-      allowedWhilePaused: true,
-      async handler(args: string, ctx: any) { ctx.seen = args; return "opened"; },
-    });
-  } }));
-  const ctx: any = { sessionManager: { getSessionId: () => "lazy-command-parent" } };
-  const result = await f.commands.get("subagents").handler("current", ctx);
-  expect({ loads, result, seen: ctx.seen }).toEqual({ loads: 1, result: "opened", seen: "current" });
+  expect(record).toEqual({ loads: 1, starts: ["startup"], beforeStarts: 0 });
 });
