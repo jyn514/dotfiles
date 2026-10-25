@@ -25,6 +25,11 @@ Revise agent-selected means when a smaller approach meets the same requirements.
 Ask before changing governing scope, acceptance, preservation obligations, permissions, or user-required or explicitly approved design choices.
 Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
 
+When a dependency follows from a chosen approach, name the choice that creates it.
+“Keeping X requires Y” is not the same as “the user’s goal requires Y.”
+Approval makes a choice binding, not intrinsic to the goal.
+If changing it removes the dependency, propose that alternative and ask before changing an approved choice.
+
 ## Get an independent recommendation
 
 At this trigger, use an available compatible fresh-context scout template and follow its advertised caller contract.
