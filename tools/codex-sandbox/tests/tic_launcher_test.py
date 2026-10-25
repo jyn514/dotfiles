@@ -1284,6 +1284,51 @@ class TicLauncherTest(unittest.TestCase):
             if errors:
                 raise errors[0]
 
+    def test_tic_only_fallback_image_is_private_not_shared_startup_state(self):
+        self.state.sidecar_image = ''
+        with self.provider() as runtime, mock.patch.dict(
+                self.globals, resolve_sidecar_image=lambda: 'sha256:tic-only-helper'):
+            self.assertTrue(self.launcher['start_tic'](self.state))
+            self.assertEqual('', self.state.sidecar_image)
+            containers = [event[1] for event in runtime.events if event[0] == 'container']
+            self.assertIn('sha256:tic-only-helper', containers[0])
+
+    def test_cancellation_during_context_prevents_later_service_creation(self):
+        self.state.tic_cancelled = threading.Event()
+        self.state.sidecar_image = ''
+        transport = mock.Mock(side_effect=AssertionError('cancelled startup built a fallback image'))
+        def context(*_args):
+            self.state.tic_cancelled.set()
+            return self.context
+        with self.provider() as runtime, mock.patch.dict(
+                self.globals, inspect_tic_context=context, resolve_sidecar_image=transport):
+            with mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+                self.assertEqual([], self.launcher['start_tic'](self.state))
+            self.assertIn('startup cancelled', warning.getvalue())
+            transport.assert_not_called()
+            self.assertIsNone(self.state.tic_handle)
+            self.assertFalse(runtime.present)
+
+    def test_cancellation_during_readiness_never_projects_endpoint_and_reaps_broker(self):
+        self.state.tic_cancelled = threading.Event()
+        with self.provider() as runtime:
+            run = runtime.run
+            def cancel_after_probe(args, **kwargs):
+                result = run(args, **kwargs)
+                if args[-1] == '--help':
+                    self.state.tic_cancelled.set()
+                return result
+            runtime.run = cancel_after_probe
+            with mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+                self.assertEqual([], self.launcher['start_tic'](self.state))
+            self.assertIn('startup cancelled', warning.getvalue())
+            self.assertEqual({}, self.state.tic_environment)
+            self.assertIsNone(self.state.tic_handle.process)
+            self.assertIsNone(self.state.tic_handle.lifetime_writer)
+            self.assertFalse(runtime.present)
+            self.assertEqual(1, sum(event[0] == 'probe' and event[1][-1] == '--help'
+                                    for event in runtime.events))
+
     def test_independent_owning_launches_do_not_adopt_endpoint_or_token(self):
         with self.provider():
             self.launcher['start_tic'](self.state)
