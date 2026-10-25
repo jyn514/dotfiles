@@ -29,7 +29,9 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 6. **Choose the smallest coherent change.** Separate required outcomes from chosen mechanisms and reuse sufficient existing facilities.
    For each added interface, option, field, transition, or helper, identify the consumer or concrete failure that needs it.
    Remove adjacent extensions that the selected change does not require, such as widening existing operations to match a new operation.
-   Require a concrete second consumer or hard constraint before adding general machinery.
+   Require a concrete second consumer or governing constraint before adding reusable infrastructure or supporting additional scopes.
+   A current caller’s need to choose a value can justify a narrowly scoped option without a second consumer.
+   Compare alternatives that preserve the required behavior and who controls it; do not replace caller choice with a fixed system rule merely to remove configuration.
    Specify high-risk behavior; leave low-risk mechanics to implementation.
 7. **Specify verification.** Tie each test to a consumer-visible requirement or realistic regression.
    For a small finite behavior space, use an exhaustive table or transition matrix with focused regression cases.
