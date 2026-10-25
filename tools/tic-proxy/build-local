@@ -5,6 +5,7 @@ Usage: build-local [--guest-client ELF --guest-platform linux/amd64] REPO [cargo
 Run through dev/test-environment. Never installs or enables the capability.
 """
 import argparse
+import fcntl
 import hashlib
 import io
 import json
@@ -17,44 +18,18 @@ import sys
 import tarfile
 import tempfile
 
+from bundle import guest_platform, build_identity, host_platform, validate_bundle
+
 
 def sha256(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def guest_platform(path):
-    with path.open('rb') as stream:
-        header = stream.read(64)
-    if len(header) < 64 or header[:4] != b'\x7fELF' or header[4:6] != b'\x02\x01':
-        raise ValueError('guest client must be a 64-bit little-endian Linux ELF, not a host Mach-O binary')
-    # System-V (0) or Linux (3) ABI; static musl artifacts normally use System-V.
-    if header[7] not in (0, 3):
-        raise ValueError('unsupported guest ELF ABI')
-    arch = {62: 'linux/amd64', 183: 'linux/arm64'}.get(int.from_bytes(header[18:20], 'little'))
-    if arch is None:
-        raise ValueError('unsupported Linux guest architecture')
-    # Only static clients are portable into the guest image; an arbitrary ELF
-    # interpreter path does not establish that the provider image can execute it.
-    offset = int.from_bytes(header[32:40], 'little')
-    entry_size = int.from_bytes(header[54:56], 'little')
-    count = int.from_bytes(header[56:58], 'little')
-    if not 56 <= entry_size <= 256 or count > 1024:
-        raise ValueError('invalid guest ELF program headers')
-    with path.open('rb') as stream:
-        stream.seek(offset)
-        for _ in range(count):
-            entry = stream.read(entry_size)
-            if len(entry) != entry_size:
-                raise ValueError('truncated guest ELF program headers')
-            if int.from_bytes(entry[:4], 'little') == 3:
-                raise ValueError('guest client must be statically linked (ELF PT_INTERP is unsupported)')
-    return arch
-
-
-def stage_bundle(base, pin, native, broker, client, arch):
+def stage_bundle(base, pin, native, broker, client, arch, identity=None):
     artifacts = {'native': ('native/ti', native), 'broker': ('host/tic-broker', broker), 'client': ('guest/ti-proxy', client)}
-    manifest = {'version': 1, 'native_revision': pin, 'policy_version': 1}
+    manifest = {'version': 2, 'native_revision': pin, 'policy_version': 1,
+                'build': identity or build_identity(host_platform(), arch)}
     for key, (relative, source) in artifacts.items():
         manifest[key] = {'path': relative, 'sha256': sha256(source)}
     manifest['client']['platform'] = arch
@@ -62,6 +37,7 @@ def stage_bundle(base, pin, native, broker, client, arch):
     identity = hashlib.sha256(encoded).hexdigest()
     destination = base / ('bundle-' + identity)
     if destination.exists():
+        validate_bundle(destination, manifest['build'])
         if (destination / 'manifest.json').read_bytes() != encoded:
             raise ValueError('existing content-addressed bundle manifest mismatch')
         for key, (relative, _) in artifacts.items():
@@ -102,6 +78,7 @@ def main():
         parser.error('host build cannot use --target; provide a separately built static Linux --guest-client')
     root = Path(__file__).resolve().parent
     pin = (root / 'native-revision').read_text().strip()
+    before = build_identity(host_platform(), options.guest_platform or host_platform().replace('darwin/', 'linux/'))
     repo = options.repository.resolve()
     actual = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', pin + '^{commit}'], text=True).strip()
     if actual != pin:
@@ -109,42 +86,72 @@ def main():
     archive = subprocess.check_output(['git', '-C', str(repo), 'archive', '--format=tar', pin])
     base = root.parent.parent / 'target' / 'tic-proxy-build'
     base.mkdir(parents=True, exist_ok=True)
-    # Fresh private captures avoid compiling previous build-context edits.
-    with tempfile.TemporaryDirectory(prefix='source-', dir=base) as source:
-        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-            tar.extractall(source, filter='data')
-        env = os.environ.copy()
-        env['CARGO_TARGET_DIR'] = str(base / 'cargo')
-        cargo = os.environ.get('CARGO', 'cargo')
-        profile_args = ['--release'] if '--release' in args else []
-        subprocess.run([cargo, 'build', '--locked', '--manifest-path', source + '/Cargo.toml', '-p', 'ticgit', '--bin', 'ti', *profile_args], env=env, check=True)
-        output = base / 'cargo' / ('release' if profile_args else 'debug')
-        native = output / 'ti'
-        binding = {'native_revision': pin, 'policy_version': 1, 'sha256': sha256(native)}
-        native.with_name(native.name + '.tic-proxy.json').write_text(json.dumps(binding) + '\n')
-        env['TIC_PROXY_TEST_NATIVE'] = str(native)
-        overrides = ['--config', 'patch.crates-io.ticgit.path=' + json.dumps(source + '/crates/ticgit')]
-        subprocess.run([cargo, *(args or ['build', '--bins']), '--locked', '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
-        # Tests also build binaries, but check/doc-only commands do not. Never
-        # substitute a stale host binary for an explicitly requested artifact.
-        if args and args[0] not in ('build', 'test'):
+    # Native and proxy Cargo builds share outputs and a sibling native binding.
+    # Cargo's own per-command lock cannot protect the gap between those commands
+    # and bundle copying, so retain one build-output lock through final staging.
+    descriptor = os.open(base / '.build.lock', os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
+                         | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(descriptor, 'r+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        # Fresh private captures avoid compiling previous build-context edits.
+        with tempfile.TemporaryDirectory(prefix='source-', dir=base) as source:
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                tar.extractall(source, filter='data')
+            env = os.environ.copy()
+            env['CARGO_TARGET_DIR'] = str(base / 'cargo')
+            # Normal launcher builds use Cargo's dev profile, but its debug
+            # payload dominated bundle copying and repeated SHA-256 validation
+            # (including the broker's native binding check). Omit only debug
+            # information; keep all validations and avoid a host strip-tool
+            # dependency or the much longer release build on a cold cache.
+            env['CARGO_PROFILE_DEV_DEBUG'] = '0'
+            cargo = os.environ.get('CARGO', 'cargo')
+            profile_args = ['--release'] if '--release' in args else []
+            subprocess.run([cargo, 'build', '--locked', '--manifest-path', source + '/Cargo.toml', '-p', 'ticgit', '--bin', 'ti', *profile_args], env=env, check=True)
+            output = base / 'cargo' / ('release' if profile_args else 'debug')
+            native = output / 'ti'
+            binding = {'native_revision': pin, 'policy_version': 1, 'sha256': sha256(native)}
+            native.with_name(native.name + '.tic-proxy.json').write_text(json.dumps(binding) + '\n')
+            env['TIC_PROXY_TEST_NATIVE'] = str(native)
+            overrides = ['--config', 'patch.crates-io.ticgit.path=' + json.dumps(source + '/crates/ticgit')]
+            subprocess.run([cargo, *(args or ['build', '--bins']), '--locked', '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
+            # Tests also build binaries, but check/doc-only commands do not. Never
+            # substitute a stale host binary for an explicitly requested artifact.
+            if args and args[0] not in ('build', 'test'):
+                print('native executable:', native)
+                return
+            subprocess.run([cargo, 'build', '--bins', '--locked', *profile_args, '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
+            if options.guest_client:
+                client = options.guest_client.resolve(strict=True)
+            else:
+                guest = options.guest_platform or before['guest_platform']
+                client = output / 'ti-proxy'
+                # Alpine's ordinary host target already produces a portable static
+                # Linux client. Keep it when validation proves the requested target;
+                # dynamic Linux and Darwin hosts need a separate Linux musl build.
+                try:
+                    compatible_host = platform.system() == 'Linux' and guest_platform(client) == guest
+                except ValueError:
+                    compatible_host = False
+                if not compatible_host:
+                    target = {'linux/amd64': 'x86_64-unknown-linux-musl',
+                              'linux/arm64': 'aarch64-unknown-linux-musl'}[guest]
+                    subprocess.run([cargo, 'build', '--bin', 'ti-proxy', '--locked',
+                                    '--target', target, *profile_args,
+                                    '--manifest-path', str(root / 'Cargo.toml'), *overrides],
+                                   env=env, check=True)
+                    client = base / 'cargo' / target / ('release' if profile_args else 'debug') / 'ti-proxy'
+            arch = guest_platform(client)
+            if options.guest_platform and arch != options.guest_platform:
+                raise ValueError('guest artifact architecture does not match --guest-platform')
+            if options.guest_client and not options.guest_platform:
+                raise ValueError('--guest-platform is required with --guest-client')
+            identity = build_identity(host_platform(), arch)
+            if identity != {**before, 'guest_platform': arch}:
+                raise ValueError('proxy sources changed during build; rebuild current sources')
+            bundle = stage_bundle(base, pin, native, output / 'tic-broker', client, arch, identity)
             print('native executable:', native)
-            return
-        subprocess.run([cargo, 'build', '--bins', '--locked', *profile_args, '--manifest-path', str(root / 'Cargo.toml'), *overrides], env=env, check=True)
-        if options.guest_client:
-            client = options.guest_client.resolve(strict=True)
-        elif platform.system() == 'Linux':
-            client = output / 'ti-proxy'
-        else:
-            raise ValueError('host broker/native built, but staging requires a separately built static Linux --guest-client and --guest-platform')
-        arch = guest_platform(client)
-        if options.guest_platform and arch != options.guest_platform:
-            raise ValueError('guest artifact architecture does not match --guest-platform')
-        if options.guest_client and not options.guest_platform:
-            raise ValueError('--guest-platform is required with --guest-client')
-        bundle = stage_bundle(base, pin, native, output / 'tic-broker', client, arch)
-        print('native executable:', native)
-        print('staged bundle:', bundle)
+            print('staged bundle:', bundle)
 
 
 if __name__ == '__main__':

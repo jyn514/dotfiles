@@ -180,6 +180,8 @@ RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && for command in docker; do \
         ln -sf "../../../libexec/sandbox-wrappers/$command" "/opt/agent-tools/bin/$command"; \
     done
+# Always shadow lower-PATH native ti, including on opt-out or failed startup.
+COPY --chmod=755 ./tools/codex-sandbox/image/ti /libexec/sandbox-wrappers/ti
 ENV BB_REAL=/opt/agent-tools/libexec/bb
 ENV BB_SOURCE_ROOT=/
 ENV CONTAINER_CLI_REAL_DIR=/opt/agent-tools/libexec

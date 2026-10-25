@@ -8,8 +8,8 @@ The remaining acceptance gap is Flower's bounded R2 connection-establishment
 retry, blocked because `/src/flower` is read-only in this checkout. Until that
 external client change lands, an early R2 request may fail rather than wait for
 the best-effort relay; no possibly accepted request is replayed.
-The proposed #link("tic-proxy.typ")[TicGit broker] uses required `agent-launch` scope with a host-native command-proxy adapter.
-Its installed TicGit fork, command broker, capability selection, and host-endpoint representation are not implemented.
+The #link("tic-proxy.typ")[TicGit broker] uses best-effort `agent-launch` startup with a host-native command-proxy adapter.
+Its implementation has bounded local Linux coverage, not actual Linux/macOS provider acceptance.
 The TicGit contract owns native storage, permitted effects, repository support restrictions, and request semantics.
 
 == Objective
@@ -132,7 +132,7 @@ Directory changes release only the invoking attachment, and a new workload gets
 its own per-launch authorization.
 Agent Podman gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
-The proposed required TicGit broker also uses this scope, with a fresh endpoint and token for the owning launch's ordinary children and `/split` peers until final attachment release.
+The TicGit broker also uses this scope, with a fresh endpoint and token for the owning launch's ordinary children and `/split` peers until final attachment release.
 
 Every selected shared service is required: the agent must not start or join without it ready.
 Failure aborts startup and cleans every unpublished resource created for that attempt.
@@ -143,6 +143,9 @@ For per-launch services, `required` has the same meaning.
 The endpoint is projected into the agent, and its client performs bounded retries only for connection establishment or an explicit not-ready result.
 If startup later fails, the launcher warns and cleans the service after its startup worker terminates; client retries end with an unavailable error.
 A client never retries a request after the service may have accepted it.
+TicGit uses best-effort startup without early endpoint projection: it waits for complete readiness before exposing its endpoint.
+A TicGit startup failure warns, revokes broker authority, attempts owned cleanup, and starts the agent with no TicGit endpoint, token, client mount, or network attachment.
+Its client reports unavailable with no native fallback, broker replacement, or request replay; it does not inherit other relays' connection retry behavior.
 Repository configuration cannot weaken installed availability policy.
 
 == State machine
@@ -326,7 +329,7 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
 + Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
 + Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
 + Completed: command proxies use supervised shared publication and host routing.
-+ Proposed: add a required host-native `agent-launch` command-proxy adapter for TicGit.
++ Implemented locally: a best-effort-startup host-native `agent-launch` command-proxy adapter for TicGit; actual provider acceptance remains unproven.
   Reuse per-launch readiness and resource cleanup with a launcher-owned child and lifetime pipe, not shared-session endpoint/token or durable PID records.
 + Completed: each Codex and Zulip trust domain uses a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container, minimal helper container, and private socket volume; credentials mount only into the helper, and the custom authenticated HTTP brokers are removed.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
@@ -350,7 +353,8 @@ Do not retain a service-specific cleanup path beside generic cleanup as a fallba
 - Required per-launch failure prevents agent startup; best-effort failure leaves its projected endpoint unavailable, reports failure after bounded retries, and completes owned cleanup without terminating the agent.
 - Agent root cannot use lifecycle metadata to select another endpoint, credential domain, repository, executable, mount, or runtime operation.
 - Host routing validates published service and endpoint identity and never falls back to privileged local execution while a session is active.
-- TicGit retains accepted workspace capability authority but creates a fresh required per-launch broker, endpoint, and token.
+- TicGit retains accepted workspace capability authority and attempts a fresh per-launch broker, endpoint, and token.
+  Startup failure warns and omits its endpoint, token, client mount, and network attachment while completing owned cleanup; the agent may continue.
   Ordinary children and `/split` peers retain their launch's broker until final attachment release; one pane's exit does not stop peers.
   Readiness precedes endpoint projection; lifetime EOF stops the broker's listener and active child without durable process recovery records.
   Broker death may leave an unknown native outcome and never permits replay.

@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
-use tic_proxy::{broker::NATIVE_REVISION, inspect::MAX_CONTEXT_OUTPUT, protocol::VERSION};
+use tic_proxy::{broker::NATIVE_REVISION, inspect::MAX_CONTEXT_OUTPUT};
 
 struct Fixture {
     root: TempDir,
@@ -173,7 +173,7 @@ fn reject(command: &mut Command) -> Output {
     output
 }
 fn expected(workspace: &Path, common: &Path, invocation: &Path) -> Value {
-    json!({"version":VERSION,"policy_version":1,"native_revision":NATIVE_REVISION,
+    json!({"version":1,"policy_version":1,"native_revision":NATIVE_REVISION,
         "workspace":workspace,"common_dir":common,"invocation_git_dir":invocation})
 }
 fn fifo(path: &Path) {

@@ -22,6 +22,7 @@ import secrets
 import selectors
 import shutil
 import subprocess
+import stat
 import tempfile
 import time
 
@@ -49,19 +50,17 @@ def _unique(pairs):
     return result
 
 
-def _hash(path: Path) -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
 def _executable(value: object, digest: object) -> Path:
     if not isinstance(value, str) or not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
         raise LifecycleError("invalid installed TicGit executable binding")
     path = Path(value)
     if not path.is_absolute() or path.resolve(strict=True) != path:
         raise LifecycleError("installed TicGit paths must be canonical and absolute")
-    if not path.is_file() or not os.access(path, os.X_OK) or _hash(path) != digest:
-        raise LifecycleError("installed TicGit executable/hash mismatch")
+    metadata = path.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or not os.access(path, os.X_OK)
+            or metadata.st_uid != os.getuid() or metadata.st_nlink != 1
+            or metadata.st_mode & 0o022):
+        raise LifecycleError("unsafe installed TicGit executable ownership/mode/link")
     return path
 
 
@@ -78,35 +77,26 @@ class InstalledTicBuild:
 
     @classmethod
     def load(cls, manifest_path: Path) -> "InstalledTicBuild":
-        """Load a trusted installed manifest (not a project configuration).
-
-        The installed native also needs its sibling .tic-proxy.json binding,
-        validated by the Rust broker before it announces readiness.
-        """
-        with Path(manifest_path).open("rb") as stream:
-            raw = stream.read(65537)
-        if len(raw) > 65536:
-            raise LifecycleError("installed TicGit manifest too large")
-        value = json.loads(raw, object_pairs_hook=_unique)
-        fields = {"version", "native_revision", "policy_version", "broker_executable",
-                  "broker_sha256", "native_executable", "native_sha256",
-                  "guest_client_executable", "guest_client_sha256", "guest_client_platform"}
-        if not isinstance(value, dict) or set(value) != fields:
-            raise LifecycleError("invalid installed TicGit manifest fields")
-        if (type(value["version"]) is not int or value["version"] != 1
-                or type(value["policy_version"]) is not int or value["policy_version"] != POLICY_VERSION
-                or not isinstance(value["native_revision"], str)
-                or _REVISION.fullmatch(value["native_revision"]) is None):
-            raise LifecycleError("unsupported installed TicGit build/policy")
-        broker = _executable(value["broker_executable"], value["broker_sha256"])
-        native = _executable(value["native_executable"], value["native_sha256"])
-        guest = _executable(value["guest_client_executable"], value["guest_client_sha256"])
-        if value["guest_client_platform"] not in ("linux/amd64", "linux/arm64"):
-            raise LifecycleError("TicGit guest client must target a supported Linux platform")
-        return cls(broker, value["broker_sha256"], native, value["native_sha256"],
-                   guest, value["guest_client_sha256"], value["guest_client_platform"], value["native_revision"])
+        """Derive absolute paths from the single relative bundle manifest."""
+        from tic_artifact import protected_bundle
+        try:
+            if Path(manifest_path).name != 'manifest.json':
+                raise ValueError('bundle manifest has a fixed relative name')
+            bundle = Path(manifest_path).parent
+            _, value, _ = protected_bundle(bundle)
+            broker = bundle / value['broker']['path']
+            native = bundle / value['native']['path']
+            guest = bundle / value['client']['path']
+            result = cls(broker, value['broker']['sha256'], native, value['native']['sha256'],
+                         guest, value['client']['sha256'], value['client']['platform'], value['native_revision'])
+            result.verify()
+            return result
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise LifecycleError('invalid TicGit bundle manifest or artifacts') from error
 
     def verify(self) -> None:
+        # The publisher verified artifact bytes. Keep cheap path authority
+        # checks here, not repeated detection of host-owned cache corruption.
         if not isinstance(self.native_revision, str) or _REVISION.fullmatch(self.native_revision) is None:
             raise LifecycleError("invalid installed TicGit native revision")
         _executable(str(self.broker_executable), self.broker_sha256)
@@ -136,7 +126,7 @@ class TicBrokerLaunch:
             except UnicodeEncodeError as error:
                 raise LifecycleError("accepted TicGit identity/namespace is not UTF-8 representable") from error
         self.build = build
-        self.owner = owner or (registry.owner if registry else "tic-" + secrets.token_hex(16))
+        self.owner = owner or (registry.owner if registry else secrets.token_hex(16))
         if registry is not None and registry.owner != self.owner:
             raise LifecycleError("TicGit registry owner mismatch")
         self.registry = registry if registry is not None else ResourceRegistry(self.owner)
@@ -147,7 +137,7 @@ class TicBrokerLaunch:
         self.plan = ServicePlan(
             role="tic", family=ServiceFamily.COMMAND_PROXY, scope=ServiceScope.AGENT_LAUNCH,
             adapter="tic-broker", adapter_identity="sha256:" + hashlib.sha256(adapter_bytes).hexdigest(),
-            state_schema=1, availability=Availability.REQUIRED, endpoint_kinds=("tic-tcp",),
+            state_schema=1, availability=Availability.BEST_EFFORT, endpoint_kinds=("tic-tcp",),
             fixed_parameters={**self.config, "broker_executable": str(build.broker_executable),
                               "broker_sha256": build.broker_sha256,
                               "native_revision": build.native_revision, "policy_version": POLICY_VERSION,

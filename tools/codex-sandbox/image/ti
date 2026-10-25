@@ -1,0 +1,8 @@
+#!/bin/sh
+# Never search PATH for a native guest executable when TicGit is unavailable.
+set -eu
+if [ -z "${SANDBOX_TIC_ENDPOINT:-}" ] || [ -z "${SANDBOX_TIC_TOKEN:-}" ] || [ ! -x /opt/agent-tools/bin/ti ]; then
+	printf '%s\n' 'tic proxy: unavailable for this session; no fallback' >&2
+	exit 125
+fi
+exec /opt/agent-tools/bin/ti "$@"

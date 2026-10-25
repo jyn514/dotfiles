@@ -6,6 +6,7 @@ its guest readiness result are fake; native provider acceptance remains separate
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -118,13 +119,15 @@ class TicLauncherTest(unittest.TestCase):
         self.launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
         self.globals = self.launcher['start_tic'].__globals__
         self.home = self.root / 'home'
-        self.install = self.home / '.local/share/tic-proxy'
+        self.home.mkdir()
+        self.install = self.root / 'owned-process-fixture'
         self.install.mkdir(parents=True)
         workspace = self.root / 'workspace'
         common = workspace / '.git'
         common.mkdir(parents=True)
         self.state = SimpleNamespace(
-            home=self.home, repository=workspace, host_working_directory=workspace / 'nested',
+            home=self.home, codex_auth_directory=self.home / '.codex',
+            repository=workspace, host_working_directory=workspace / 'nested',
             workspaces=[SimpleNamespace(host_root=workspace, common_dir=common)],
             capabilities={'tic'}, sidecar_image='sha256:helper', image='sha256:agent',
             suffix='first', tic_handle=None, tic_resources=None, tic_environment={})
@@ -138,7 +141,9 @@ class TicLauncherTest(unittest.TestCase):
             'from tic_broker_fixture import main\nmain("ready")\n')
         self.broker.chmod(0o700)
         self.client = self.install / 'guest-ti'
-        self.manifest = self.install / 'installed.json'
+        self.manifest = self.install / 'process-fixture.json'
+        self.real_resolver = self.globals['resolved_tic_build']
+        self.globals['resolved_tic_build'] = self.fixture_build
         self.write_build('linux/amd64')
         self.context = {'user_name': 'Accepted Author', 'user_email': 'accepted@example.invalid',
                         'namespace': 'fixture'}
@@ -162,6 +167,16 @@ class TicLauncherTest(unittest.TestCase):
                      guest_client_executable=str(self.client), guest_client_sha256=digest(self.client),
                      guest_client_platform=platform)
         self.manifest.write_text(json.dumps(value))
+
+    def fixture_build(self, state=None):
+        from tic_broker import InstalledTicBuild
+        value = json.loads(self.manifest.read_text())
+        build = InstalledTicBuild(Path(value['broker_executable']), value['broker_sha256'],
+                                  Path(value['native_executable']), value['native_sha256'],
+                                  Path(value['guest_client_executable']), value['guest_client_sha256'],
+                                  value['guest_client_platform'], value['native_revision'])
+        build.verify()
+        return build
 
     @contextmanager
     def provider(self, mac=False, context=True):
@@ -201,7 +216,7 @@ class TicLauncherTest(unittest.TestCase):
         host, port = (address or handle.address).rsplit(':', 1)
         with socket.create_connection((host, int(port)), timeout=2) as connection:
             data = json.dumps({'token': handle.token, 'request': {
-                'version': 1, 'command': 'tic', 'argv': ['--help'], 'stdin': ''}}).encode()
+                'version': 2, 'command': 'tic', 'argv': ['--help'], 'stdin': ''}}).encode()
             connection.sendall(struct.pack('!I', len(data)) + data)
             connection.shutdown(socket.SHUT_WR)
             response = bytearray()
@@ -209,11 +224,227 @@ class TicLauncherTest(unittest.TestCase):
                 response.extend(chunk)
         return json.loads(response[4:])
 
-    def test_default_off_does_not_read_install_or_start_resources(self):
+    def assert_tic_unavailable(self, message):
+        with mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+            self.assertEqual([], self.launcher['start_tic'](self.state))
+        self.assertIn('warning: TicGit unavailable for this session', warning.getvalue())
+        self.assertIn(message, warning.getvalue())
+        self.assertEqual({}, self.state.tic_environment)
+
+    def test_explicit_opt_out_does_not_resolve_artifacts_or_start_resources(self):
         self.state.capabilities = set()
         self.manifest.unlink()
         self.assertEqual([], self.launcher['start_tic'](self.state))
         self.assertIsNone(self.state.tic_handle)
+        self.assertFalse((self.home / '.cache').exists())
+
+    def test_new_policy_defaults_and_explicit_true_warn_while_false_has_no_host_contact(self):
+        module = self.globals['proxy_module']()
+        for source in (None, {'version': 1, 'commands': {}}, {'version': 2},
+                       {'version': 1, 'commands': {}, 'capabilities': {'tic': True}},
+                       {'version': 2, 'capabilities': {'tic': True}},
+                       {'version': 1, 'commands': {}, 'capabilities': {'tic': False}},
+                       {'version': 2, 'capabilities': {'tic': False}}):
+            with self.subTest(source=source):
+                policy = None
+                if source is not None:
+                    policy = self.root / 'source-policy.json'
+                    policy.write_text(json.dumps(source))
+                manifest = module.load_manifest_file(policy)
+                self.state.capabilities = {name for name, selected in manifest['capabilities'].items() if selected}
+                self.state.tic_environment = {'SANDBOX_TIC_ENDPOINT': 'stale', 'SANDBOX_TIC_TOKEN': 'stale'}
+                resolve = mock.Mock(side_effect=self.launcher['LauncherError']('owned bundle build failed'))
+                with self.provider() as runtime, mock.patch.dict(self.globals, resolved_tic_build=resolve):
+                    if 'tic' in self.state.capabilities:
+                        self.assert_tic_unavailable('owned bundle build failed')
+                        resolve.assert_called_once_with(self.state)
+                    else:
+                        self.assertEqual([], self.launcher['start_tic'](self.state))
+                        resolve.assert_not_called()
+                        self.assertFalse(runtime.events)
+                    self.assertEqual({}, self.state.tic_environment)
+                    self.assertIsNone(self.state.tic_handle)
+                    self.assertFalse(runtime.present)
+
+    def test_missing_first_use_source_warns_without_accepting_bundle_or_starting_resources(self):
+        with self.provider() as runtime, mock.patch.dict(self.globals, resolved_tic_build=self.real_resolver):
+            self.assert_tic_unavailable('requires a trusted native repository path')
+            self.assertIsNone(self.state.tic_handle)
+            self.assertFalse(runtime.present)
+        self.assertEqual(['.resolve.lock'], [path.name for path in
+                         (self.home / '.cache/codex-sandbox/tic').iterdir()])
+
+    def test_startup_warning_does_not_swallow_process_control_or_workspace_authority_rejection(self):
+        for failure in (KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(failure=failure), self.provider(), mock.patch.dict(
+                    self.globals, _start_tic=mock.Mock(side_effect=failure)):
+                with self.assertRaises(type(failure)), mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+                    self.launcher['start_tic'](self.state)
+                self.assertEqual('', warning.getvalue())
+        self.state.workspaces[0].host_root = self.root / 'another-workspace'
+        resolve = mock.Mock(side_effect=AssertionError('invalid authority reached artifact resolution'))
+        with self.provider(), mock.patch.dict(self.globals, resolved_tic_build=resolve):
+            with self.assertRaisesRegex(self.launcher['LauncherError'], 'workspace authority'):
+                self.launcher['start_tic'](self.state)
+        resolve.assert_not_called()
+
+    def test_startup_interrupt_is_not_replaced_by_a_cleanup_exception(self):
+        broker = self.globals['TicBrokerLaunch']
+        stop = broker.stop
+        def cleanup_then_fail(handle, *args):
+            stop(handle, *args)
+            raise RuntimeError('owned cleanup reporting failed')
+        for failure in (KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(failure=failure), self.provider():
+                with mock.patch.object(broker, 'stop', autospec=True, side_effect=cleanup_then_fail), mock.patch.dict(
+                        self.globals, stage_tic_client=mock.Mock(side_effect=failure)):
+                    with self.assertRaises(type(failure)), mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+                        self.launcher['start_tic'](self.state)
+                    self.assertIn('startup cleanup failed', warning.getvalue())
+                    self.assertNotIn('continuing without it', warning.getvalue())
+                    self.assertIsNone(self.state.tic_handle.process)
+                    self.assertEqual({}, self.state.tic_environment)
+
+    def test_failed_startup_retains_cleanup_ownership_but_stops_broker_when_provider_cleanup_fails(self):
+        with self.provider() as runtime:
+            runtime.probe_status = 125
+            remove = mock.Mock(side_effect=RuntimeError('owned provider removal failed'))
+            with mock.patch.dict(self.globals, remove_owned_resource=remove):
+                self.assert_tic_unavailable('readiness failed')
+                handle = self.state.tic_handle
+                self.assertIsNone(handle.process)
+                self.assertEqual('', handle.token)
+                self.assertIsNone(handle.address)
+                self.assertEqual(LifecycleState.CLEANUP_FAILED, handle.lifecycle.state)
+                self.assertIsNotNone(self.state.tic_resources)
+                self.assertTrue(runtime.present)
+                self.assertEqual(handle.owner, handle.registry.owner)
+            result = handle.stop()
+            self.assertFalse(result.remaining)
+            self.assertFalse(runtime.present)
+
+    def test_tic_only_transport_build_failure_does_not_block_new_session(self):
+        self.state.deferred_signal = None
+        self.state.proxy_lock = SimpleNamespace(shared=False)
+        self.state.sidecar_image = ''
+        self.state.manifest = self.root / 'snapshot.json'
+        self.state.manifest.write_text(json.dumps({'commands': {}}))
+        empty = ('validate_repository', 'acquire_lock', 'load_repository_policy', 'bind_repository_policy',
+                 'recover_relays', 'stage_skills', 'agent_repository_mounts', 'prepare_host_pi_resources',
+                 'register_tmux_pane', 'ensure_network', 'prepare_gateway', 'attach_proxies')
+        replacements = {name: mock.Mock(return_value=[]) for name in empty}
+        prepare = mock.Mock(return_value=None)
+        transport = mock.Mock(side_effect=self.launcher['LauncherError']('owned transport build failed'))
+        agent = mock.Mock(return_value=19)
+        replacements.update(prepare_declared_images=prepare, run_agent=agent,
+                            resolve_model_image=mock.Mock(return_value=self.state.image),
+                            resolve_sidecar_image=transport, _secure_codex_auth_directory=lambda state: None)
+        with self.provider() as runtime, mock.patch.dict(self.globals, replacements), mock.patch(
+                'sys.stderr', new_callable=io.StringIO) as warning:
+            self.assertEqual(19, self.launcher['execute'](self.state))
+            self.assertIn('owned transport build failed', warning.getvalue())
+            prepare.assert_called_once_with(self.state, {'commands': {}}, False)
+            transport.assert_called_once_with()
+            agent.assert_called_once()
+            self.assertNotIn('dst=/opt/agent-tools/bin/ti', ' '.join(agent.call_args.args[1]))
+            self.assertEqual({}, self.state.tic_environment)
+            self.assertIsNone(self.state.tic_handle)
+            self.assertFalse(runtime.present)
+
+    def test_first_use_source_option_configures_host_then_forwards_normal_pi_arguments(self):
+        import tic_artifact
+        repository = self.root / 'native-source'
+        for options in (['--set-tic-native-source', str(repository)],
+                        ['--set-tic-native-source=' + str(repository)]):
+            with self.subTest(options=options), mock.patch.object(tic_artifact, 'configure_native_source') as configure, mock.patch(
+                    'host_pi_owner.detached_frontend', return_value=17) as frontend, mock.patch('threading.active_count', return_value=1), mock.patch.dict(
+                        self.globals, {'image_runtime': mock.Mock(side_effect=AssertionError('no provider'))}):
+                with mock.patch('pathlib.Path.home', return_value=self.home):
+                    self.assertEqual(17, self.launcher['main']([*options, '--session-id', 'fixture']))
+                configure.assert_called_once_with(self.home, repository, replace=True)
+                self.assertEqual(['--session-id', 'fixture'], frontend.call_args.args[0])
+
+    def test_first_use_source_option_failure_never_launches_pi_or_changes_configuration(self):
+        import tic_artifact
+        for arguments in (['--set-tic-native-source'], ['--set-tic-native-source='],
+                          ['--set-tic-native-source=a', '--set-tic-native-source=b']):
+            with self.subTest(arguments=arguments), mock.patch.object(tic_artifact, 'configure_native_source') as configure, mock.patch(
+                    'host_pi_owner.detached_frontend', side_effect=AssertionError('no Pi')):
+                self.assertEqual(1, self.launcher['main'](arguments))
+                configure.assert_not_called()
+        with mock.patch.object(tic_artifact, 'configure_native_source', side_effect=ValueError('owned invalid source')), mock.patch(
+                'host_pi_owner.detached_frontend', side_effect=AssertionError('no Pi')):
+            self.assertEqual(1, self.launcher['main'](['--set-tic-native-source', '/fixture']))
+        with mock.patch.object(tic_artifact, 'configure_native_source') as configure, mock.patch(
+                'host_pi_owner.detached_frontend', return_value=0) as frontend, mock.patch('threading.active_count', return_value=1):
+            arguments = ['--', '--set-tic-native-source', '/not-a-setting']
+            self.assertEqual(0, self.launcher['main'](arguments))
+            configure.assert_not_called()
+            self.assertEqual(arguments, frontend.call_args.args[0])
+
+    def test_normal_tic_on_resolver_cold_cache_invokes_owned_builder(self):
+        from tic_artifact import ROOT as proxy_root
+        import tic_artifact
+        # Only source choice is injected. The ordinary launcher calls its real
+        # resolver and stages the builder result; this is not a custom starter.
+        source_repository = self.root / 'trusted-native-source'
+        source_repository.mkdir()
+        setting = self.home / '.config/codex-sandbox/tic-native-source'
+        setting.parent.mkdir(parents=True)
+        setting.write_text(str(source_repository) + '\n')
+        setting.chmod(0o600)
+        import bundle
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader('launcher_bundle_fixture', str(proxy_root / 'build-local'))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        builder = importlib.util.module_from_spec(spec)
+        loader.exec_module(builder)
+        header = bytearray(120)
+        header[:8] = b'\x7fELF\x02\x01\x01\x00'
+        header[18:20] = (62).to_bytes(2, 'little')
+        header[32:40] = (64).to_bytes(8, 'little')
+        header[54:56] = (56).to_bytes(2, 'little')
+        self.client.write_bytes(header)
+        Path(str(self.native) + '.tic-proxy.json').write_text(json.dumps(dict(
+            native_revision=NATIVE_REVISION, policy_version=1, sha256=bundle.sha256(self.native))))
+        source = builder.stage_bundle(self.install, NATIVE_REVISION, self.native, self.broker,
+                                      self.client, 'linux/amd64')
+        with self.provider() as runtime, mock.patch.object(tic_artifact, 'build_bundle', return_value=source) as build:
+            resolved = self.real_resolver(self.state)
+            build.assert_called_once_with(source_repository,
+                                           bundle.build_identity(bundle.host_platform(), 'linux/amd64'))
+            self.assertTrue(resolved.native_executable.is_relative_to(self.home / '.cache/codex-sandbox/tic'))
+            self.assertFalse(resolved.native_executable.is_relative_to(self.install))
+            self.assertFalse(runtime.events)
+            build.reset_mock()
+            self.assertEqual(resolved, self.real_resolver(self.state))
+            build.assert_not_called()
+        for directory, _, _ in os.walk(self.home, followlinks=False):
+            Path(directory).chmod(0o700)
+
+    def test_real_resolver_excludes_writable_workspace_and_skills_aliases_before_provisioning(self):
+        import tic_artifact
+        alias = self.root / 'skills-alias'
+        alias.symlink_to(self.home, target_is_directory=True)
+        for source in ('workspace', 'skills'):
+            with self.subTest(source=source), self.provider() as runtime, mock.patch.object(tic_artifact, 'build_bundle') as build:
+                if source == 'workspace':
+                    self.state.workspaces.append(SimpleNamespace(host_root=self.home))
+                else:
+                    self.state.workspaces.pop()
+                    self.state.skills_source = alias
+                with self.assertRaisesRegex(self.launcher['LauncherError'], 'guest-writable'):
+                    self.real_resolver(self.state)
+                build.assert_not_called()
+                self.assertFalse(runtime.events)
+        self.assertFalse((self.home / '.cache').exists())
+
+    def test_normal_cold_cache_reports_unsettled_native_source_without_creating_cache(self):
+        with self.provider(), self.assertRaisesRegex(self.launcher['LauncherError'], 'requires a trusted native repository path'):
+            self.real_resolver(self.state)
+        cache = self.home / '.cache/codex-sandbox/tic'
+        self.assertEqual(['.resolve.lock'], [p.name for p in cache.iterdir()])
 
     def test_linux_and_mac_fake_provider_compose_required_host_child_and_staged_client(self):
         for mac in (False, True):
@@ -281,12 +512,11 @@ class TicLauncherTest(unittest.TestCase):
             self.assertGreater(probe_index, next(index for index, event in enumerate(runtime.events)
                                                 if event[0] == 'container'))
 
-    def test_selected_tic_inspection_failure_prevents_resources_without_fallback(self):
+    def test_selected_tic_inspection_failure_warns_without_resources_or_fallback(self):
         with self.provider(context=False) as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'trusted context inspection failed'):
-                self.launcher['start_tic'](self.state)
+            self.assert_tic_unavailable('trusted context inspection failed')
             self.assertIsNone(self.state.tic_handle)
-            self.assertFalse(runtime.events)
+            self.assertEqual([('image', self.state.image), ('image', self.state.sidecar_image)], runtime.events)
 
     def inspection_document(self):
         return dict(version=1, policy_version=1, native_revision=NATIVE_REVISION,
@@ -309,7 +539,7 @@ class TicLauncherTest(unittest.TestCase):
             source = f'print({json.dumps(self.inspection_document())!r})\n'
         self.broker.write_text(f'#!{sys.executable}\nimport json, os, sys, time\n' + source)
         self.write_build('linux/amd64')
-        return self.launcher['installed_tic_build'](self.state)
+        return self.fixture_build(self.state)
 
     def test_context_inspects_absolute_installed_broker_once_with_normal_host_config(self):
         observed = self.root / 'inspection-input.json'
@@ -481,13 +711,14 @@ class TicLauncherTest(unittest.TestCase):
             self.launcher['inspect_tic_context'](build, self.state.workspaces[0])
         self.assertNotIn('raw-fixture-secret', str(error.exception))
 
-    def test_context_revalidates_build_and_canonical_paths_before_calling_inspector(self):
+    def test_context_revalidates_executable_and_repository_paths_before_calling_inspector(self):
         marker = self.root / 'inspector-called'
         build = self.write_inspector(f'open({str(marker)!r}, "w").close()\n')
-        self.broker.write_text(self.broker.read_text() + '# modified after selection\n')
-        with self.assertRaisesRegex(LifecycleError, 'hash mismatch'):
+        self.broker.chmod(0o777)
+        with self.assertRaisesRegex(LifecycleError, 'ownership/mode/link'):
             self.launcher['inspect_tic_context'](build, self.state.workspaces[0])
         self.assertFalse(marker.exists())
+        self.broker.chmod(0o700)
         build = self.write_inspector(f'open({str(marker)!r}, "w").close()\n')
         alias = self.root / 'workspace-alias'
         alias.symlink_to(self.state.repository, target_is_directory=True)
@@ -569,8 +800,7 @@ class TicLauncherTest(unittest.TestCase):
             with self.subTest(header=header[:6]):
                 self.write_build('linux/amd64', header)
                 with self.provider() as runtime:
-                    with self.assertRaisesRegex(self.launcher['LauncherError'], 'matching Linux ELF'):
-                        self.launcher['start_tic'](self.state)
+                    self.assert_tic_unavailable('matching Linux ELF')
                     self.assertFalse(runtime.present)
                     self.assertIsNone(self.state.tic_handle.process)
                     self.assertEqual({}, self.state.tic_environment)
@@ -578,49 +808,15 @@ class TicLauncherTest(unittest.TestCase):
     def test_manifest_provider_architecture_mismatch_rejects(self):
         self.write_build('linux/arm64')
         with self.provider() as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'provider platform'):
-                self.launcher['start_tic'](self.state)
+            self.assert_tic_unavailable('provider platform')
             self.assertFalse(runtime.present)
 
-    def test_bad_installed_binding_rejects_before_any_provider_effect(self):
-        self.native.write_text('changed')
+    def test_unsafe_installed_executable_disables_tic_before_child_or_relay_effect(self):
+        self.native.chmod(0o777)
         with self.provider() as runtime:
-            with self.assertRaisesRegex(LifecycleError, 'hash mismatch'):
-                self.launcher['start_tic'](self.state)
-            self.assertFalse(runtime.events)
+            self.assert_tic_unavailable('ownership/mode/link')
             self.assertIsNone(self.state.tic_handle)
-
-    def test_guest_writable_installation_is_not_authority(self):
-        self.state.workspaces.append(SimpleNamespace(host_root=self.home))
-        with self.provider() as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'guest-writable'):
-                self.launcher['start_tic'](self.state)
-            self.assertFalse(runtime.events)
-
-    def test_native_binding_symlink_and_hardlinked_client_cannot_bypass_write_protection(self):
-        binding = Path(str(self.native) + '.tic-proxy.json')
-        binding.unlink()
-        target = self.state.repository / 'guest-editable-binding'
-        target.write_text('{}')
-        binding.symlink_to(target)
-        with self.provider() as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'canonical regular files'):
-                self.launcher['start_tic'](self.state)
-            self.assertFalse(runtime.present)
-        binding.unlink()
-        binding.write_text('{}')
-        (self.state.repository / 'client-alias').hardlink_to(self.client)
-        with self.provider() as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'without hard links'):
-                self.launcher['start_tic'](self.state)
-            self.assertFalse(runtime.present)
-
-    def test_separately_mounted_writable_skills_are_not_an_installation_source(self):
-        self.state.skills_source = self.install
-        with self.provider() as runtime:
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'guest-writable'):
-                self.launcher['start_tic'](self.state)
-            self.assertFalse(runtime.present)
+            self.assertEqual([('image', self.state.image), ('image', self.state.sidecar_image)], runtime.events)
 
     def test_failed_transport_readiness_cleans_child_relay_and_staged_client(self):
         for failure in ('listener', 'authenticated-help'):
@@ -629,8 +825,7 @@ class TicLauncherTest(unittest.TestCase):
                     runtime.listener_status = 125
                 else:
                     runtime.probe_status = 125
-                with self.assertRaisesRegex(self.launcher['LauncherError'], 'readiness failed'):
-                    self.launcher['start_tic'](self.state)
+                self.assert_tic_unavailable('readiness failed')
                 self.assertFalse(runtime.present)
                 self.assertIsNone(self.state.tic_handle.process)
                 self.assertEqual({}, self.state.tic_environment)
@@ -648,29 +843,27 @@ class TicLauncherTest(unittest.TestCase):
             self.assertIsNone(self.state.tic_handle)
             self.assertFalse(runtime.present)
 
-    def test_staged_copy_hash_is_verified_not_only_source_manifest(self):
+    def test_staged_copy_failure_cleans_private_output(self):
         original = self.globals['shutil'].copyfile
         for name in ('guest-ti', 'tic_relay.py', 'host_tcp_bridge.py'):
             with self.subTest(source=name):
-                def corrupt(source, destination):
+                def fail(source, destination):
                     original(source, destination)
                     if Path(source).name == name:
-                        Path(destination).write_bytes(b'changed during copy')
-                with self.provider() as runtime, mock.patch('shutil.copyfile', side_effect=corrupt):
-                    with self.assertRaisesRegex(self.launcher['LauncherError'], 'staged .*hash mismatch'):
-                        self.launcher['start_tic'](self.state)
+                        raise OSError('owned copy failure')
+                with self.provider() as runtime, mock.patch('shutil.copyfile', side_effect=fail):
+                    self.assert_tic_unavailable('owned copy failure')
                     self.assertFalse(runtime.present)
                     self.assertEqual([], list((runtime.host.state / 'scratch').glob('sandbox-tic-client-*')))
 
     def test_missing_endpoint_never_attaches_guest(self):
         with self.provider() as runtime:
             runtime.network_address = lambda container, network: ''
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'incomplete network'):
-                self.launcher['start_tic'](self.state)
+            self.assert_tic_unavailable('incomplete network')
             self.assertEqual({}, self.state.tic_environment)
             self.assertFalse(runtime.present)
 
-    def test_shared_join_runs_actual_tic_composition_without_resolvers_and_blocks_failed_guest(self):
+    def test_shared_join_runs_tic_without_resolvers_and_continues_without_failed_tic(self):
         self.state.deferred_signal = None
         self.state.proxy_lock = SimpleNamespace(shared=True)
         empty = ('validate_repository', 'prepare_host_session', 'acquire_lock', 'load_accepted_session',
@@ -691,9 +884,15 @@ class TicLauncherTest(unittest.TestCase):
             agent.reset_mock()
             self.state.suffix = 'failed-join'
             runtime.probe_status = 125
-            with self.assertRaisesRegex(self.launcher['LauncherError'], 'readiness failed'):
-                self.launcher['execute'](self.state)
-            agent.assert_not_called()
+            with mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
+                self.assertEqual(19, self.launcher['execute'](self.state))
+            self.assertIn('TicGit unavailable for this session', warning.getvalue())
+            agent.assert_called_once()
+            arguments = agent.call_args.args[1]
+            self.assertNotIn('codex-tic-link-failed-join', arguments)
+            self.assertNotIn('dst=/opt/agent-tools/bin/ti', ' '.join(arguments))
+            self.assertEqual({}, self.state.tic_environment)
+            self.assertIsNone(self.state.tic_handle.process)
             self.assertFalse(runtime.present)
         for resolver in forbidden.values():
             resolver.assert_not_called()
@@ -724,10 +923,12 @@ class TicLauncherTest(unittest.TestCase):
             self.assertEqual([fresh], environments)
             self.assertNotIn('fresh-fixture-token', ' '.join(command))
 
-    def install_test_bundle(self):
+    def install_test_bundle(self, *, provision=False):
         # Installation and permissions changes are confined to this fixture's
         # disposable prefix. No host installation or provider acceptance.
         shutil.rmtree(self.install)
+        self.install = self.home / '.cache/codex-sandbox/tic'
+        self.globals['resolved_tic_build'] = self.real_resolver
         def writable_install_cleanup():
             # Only this test's disposable installation is changed. Register
             # before the fallible installer so partial read-only output cannot
@@ -739,9 +940,18 @@ class TicLauncherTest(unittest.TestCase):
                 if not path.is_symlink():
                     path.chmod(0o700)
         self.addCleanup(writable_install_cleanup)
-        subprocess.run([sys.executable, str(TOOL.parent / 'tic-proxy/install-bundle'),
-                        os.environ['TIC_LAUNCHER_TEST_BUNDLE'], '--prefix', str(self.install)],
-                       check=True, capture_output=True, text=True)
+        from tic_artifact import resolve_bundle, configure_native_source
+        if provision:
+            # Exercise ordinary cold provisioning with the real pinned builder,
+            # not just a local-bundle override. The source file is in temp HOME.
+            configure_native_source(self.home, Path(os.environ['TIC_LAUNCHER_TEST_NATIVE_REPOSITORY']))
+            with self.provider():
+                build = self.real_resolver(self.state)
+            self.manifest = build.native_executable.parent.parent / 'manifest.json'
+        else:
+            self.manifest = resolve_bundle(self.install, 'linux/amd64', [self.state.repository],
+                                          mock.Mock(side_effect=AssertionError('explicit fixture bundle')),
+                                          local_bundle=Path(os.environ['TIC_LAUNCHER_TEST_BUNDLE']))
         system = self.root / 'system.gitconfig'
         system.write_text('')
         environment = {'HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.home / '.config'),
@@ -752,9 +962,20 @@ class TicLauncherTest(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
                          'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
+    def test_installed_warm_start_never_hashes_artifacts_or_opens_store(self):
+        environment = self.install_test_bundle()
+        with mock.patch.dict(os.environ, environment, clear=True), self.provider(context=False), mock.patch.object(
+                hashlib, 'file_digest', side_effect=AssertionError('runtime file hashing')):
+            self.assertTrue(self.launcher['start_tic'](self.state))
+            self.assertIsNotNone(self.state.tic_handle.process)
+            self.assertFalse((self.state.workspaces[0].common_dir / 'git-meta.sqlite').exists())
+
+    @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
+                         'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
     def test_installed_context_absent_defaults_and_literal_empty_whitespace_values(self):
         environment = self.install_test_bundle()
-        build = self.launcher['installed_tic_build'](self.state)
+        with self.provider():
+            build = self.real_resolver(self.state)
         global_config = self.home / '.gitconfig'
         with mock.patch.dict(os.environ, environment, clear=True):
             for values in ({'user_name': 'unknown', 'user_email': 'unknown', 'namespace': 'meta'},
@@ -775,7 +996,7 @@ class TicLauncherTest(unittest.TestCase):
     def test_installed_native_client_broker_roundtrip_with_local_fake_provider_transport(self):
         # Real installed inspection, broker, staged client/wrapper and native;
         # only provider effects are replaced with owned local TCP transport.
-        environment = self.install_test_bundle()
+        environment = self.install_test_bundle(provision=bool(os.environ.get('TIC_LAUNCHER_TEST_NATIVE_REPOSITORY')))
         Path(environment['GIT_CONFIG_SYSTEM']).write_text(
             '[user]\nname = System Author\nemail = system@example.invalid\n'
             '[meta]\nnamespace = system-fixture\n')
@@ -911,8 +1132,8 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertEqual(0, history.returncode, history.stderr)
                     self.assertIn(expected['user_email'], history.stdout)
                     self.assertNotIn('changed@example.invalid', history.stdout)
-                    installed = json.loads(self.manifest.read_bytes())
-                    human = subprocess.run([installed['native_executable'], 'list', '--json'],
+                    installed = self.real_resolver(self.state)
+                    human = subprocess.run([str(installed.native_executable), 'list', '--json'],
                                            cwd=self.state.repository, env=environment,
                                            capture_output=True, text=True, timeout=15)
                     self.assertEqual(0, human.returncode, human.stderr)
@@ -959,9 +1180,9 @@ class TicLauncherTest(unittest.TestCase):
                         relay.stop()
 
     def assert_delayed_python_response(self, client, script):
-        # A complete authenticated request is half-closed before a normal framed
-        # response arrives. The actual staged Python wrapper must preserve both
-        # a >1s delayed response and its normal EOF, without protocol changes.
+        # Wire 2 admits the complete length-delimited request while the client
+        # write side remains open. Preserve a >1s delayed framed response and its
+        # normal EOF through the unchanged staged Python TCP transport.
         errors = []
         with socket.socket() as server:
             server.bind(('127.0.0.1', 0))
@@ -972,18 +1193,21 @@ class TicLauncherTest(unittest.TestCase):
                     while True:
                         with server.accept()[0] as connection:
                             connection.settimeout(5)
-                            data = bytearray()
-                            while chunk := connection.recv(65536):
-                                data.extend(chunk)
-                            if not data:  # Listener/readiness probes send no application bytes.
-                                continue
-                            self.assertEqual(len(data) - 4, struct.unpack('!I', data[:4])[0])
-                            request = json.loads(data[4:])
+                            with connection.makefile('rb') as stream:
+                                header = stream.read(4)
+                                if not header:  # TCP-only listener probes.
+                                    continue
+                                self.assertEqual(4, len(header))
+                                size = struct.unpack('!I', header)[0]
+                                self.assertLessEqual(size, 8 * 1024 * 1024)
+                                data = stream.read(size)
+                                self.assertEqual(size, len(data))
+                            request = json.loads(data)
                             self.assertEqual('owned-delay-token', request['token'])
-                            self.assertEqual({'version': 1, 'command': 'tic', 'argv': ['--help'], 'stdin': ''},
+                            self.assertEqual({'version': 2, 'command': 'tic', 'argv': ['--help'], 'stdin': ''},
                                              request['request'])
                             time.sleep(1.25)
-                            frame = json.dumps({'version': 1, 'exit': 0, 'stdout': 'delayed complete response',
+                            frame = json.dumps({'version': 2, 'exit': 0, 'stdout': 'delayed complete response',
                                                 'stderr': ''}).encode()
                             connection.sendall(struct.pack('!I', len(frame)) + frame)
                             break

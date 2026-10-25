@@ -53,7 +53,8 @@ class ImageInputsTest(unittest.TestCase):
             dockerfile = root / 'tools/codex-sandbox/image/Dockerfile'
             dockerfile.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / dockerfile.relative_to(root), dockerfile)
-            runtime = ['tools/codex-sandbox/image/agent-entrypoint',
+            runtime = ['tools/codex-sandbox/image/ti',
+                       'tools/codex-sandbox/image/agent-entrypoint',
                        'tools/codex-sandbox/image/stage-pi-runtime.mjs',
                        'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',

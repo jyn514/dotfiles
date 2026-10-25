@@ -21,9 +21,9 @@ fn server() -> (String, std::thread::JoinHandle<AuthenticatedRequest>) {
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
         let request =
-            serde_json::from_slice(&read_frame(&mut stream, MAX_REQUEST).unwrap()).unwrap();
+            serde_json::from_slice(&read_frame_body(&mut stream, MAX_REQUEST).unwrap()).unwrap();
         let response = Response {
-            version: 1,
+            version: WIRE_VERSION,
             exit: 7,
             stdout: "native output\n".into(),
             stderr: "native error\n".into(),
@@ -147,7 +147,7 @@ fn lost_response_is_unknown_and_never_replayed() {
     let accepted = listener.try_clone().unwrap();
     let broker = std::thread::spawn(move || {
         let (mut stream, _) = accepted.accept().unwrap();
-        read_frame(&mut stream, MAX_REQUEST).unwrap();
+        read_frame_body(&mut stream, MAX_REQUEST).unwrap();
         // It may have mutated tickets before dying. No response can establish
         // success or failure, so the client must never send the request again.
     });
@@ -171,7 +171,7 @@ fn lost_response_is_unknown_and_never_replayed() {
 fn invalid_response_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     for body in [
-        br#"{"version":2,"exit":0,"stdout":"","stderr":""}"#.to_vec(),
+        br#"{"version":1,"exit":0,"stdout":"","stderr":""}"#.to_vec(),
         br#"{"version":1,"exit":0,"stdout":"","stderr":"","extra":true}"#.to_vec(),
         b"not JSON".to_vec(),
     ] {
@@ -179,7 +179,7 @@ fn invalid_response_fails_closed() {
         let endpoint = listener.local_addr().unwrap();
         let broker = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            read_frame(&mut stream, MAX_REQUEST).unwrap();
+            read_frame_body(&mut stream, MAX_REQUEST).unwrap();
             write_frame(&mut stream, &body, MAX_RESPONSE).unwrap();
             stream.shutdown(Shutdown::Write).unwrap();
         });

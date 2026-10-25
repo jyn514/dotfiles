@@ -14,7 +14,6 @@ from pathlib import Path
 import select
 import signal
 import socket
-import struct
 import subprocess
 import sys
 import tempfile
@@ -46,7 +45,7 @@ def until(predicate, message, timeout=5):
 
 
 def frame(argv):
-    data = json.dumps(dict(token=TOKEN, request=dict(version=1, command='tic', argv=argv, stdin=''))).encode()
+    data = json.dumps(dict(token=TOKEN, request=dict(version=2, command='tic', argv=argv, stdin=''))).encode()
     return len(data).to_bytes(4, 'big') + data
 
 
@@ -104,6 +103,9 @@ class LocalCancellationProof(unittest.TestCase):
         # The private wrapper has one fixed port. Reserve/check it without
         # contacting another service, then launch the exact production CLI.
         with socket.socket() as reserved:
+            # Match the production relay: natural FIN leaves owned TIME_WAIT
+            # sockets between cases, not a conflicting live listener.
+            reserved.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 reserved.bind(('0.0.0.0', PORT))
             except OSError as error:
@@ -166,16 +168,15 @@ class LocalCancellationProof(unittest.TestCase):
         self.addCleanup(cleanup)
         return child
 
-    def raw(self, argv, eof=True):
+    def raw(self, argv, eof=False):
         client = socket.create_connection(self.endpoint, timeout=3)
-        client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
         self.addCleanup(client.close)
         client.sendall(frame(argv))
         if eof:
             client.shutdown(socket.SHUT_WR)
         return client
 
-    def test_strict_eof_survives_a_delayed_native_response(self):
+    def test_open_request_side_survives_a_delayed_native_response(self):
         self.set_mode('delay')
         start = time.monotonic()
         client = self.start_client(['list'])
@@ -219,13 +220,13 @@ class LocalCancellationProof(unittest.TestCase):
         self.assertEqual(125, client.returncode, stderr)
         self.assertLess(time.monotonic() - start, 4)
 
-    def test_process_exit_resets_after_eof_and_cancels_reaps_running_native(self):
+    def test_process_exit_fin_cancels_and_reaps_running_native(self):
         client = self.start_client(['list'])
         events = until(lambda: self.events(), 'native did not start')
         pid = events[0]['pid']
         self.assertTrue(alive(pid))
         # Native fixture ignores SIGTERM. No response bytes exist; cancellation
-        # must traverse the quiet post-EOF bridge, then force kill and reap.
+        # must traverse the quiet bridge as ordinary EOF, then force kill and reap.
         start = time.monotonic()
         client.kill()
         client.communicate(timeout=3)
@@ -237,25 +238,24 @@ class LocalCancellationProof(unittest.TestCase):
         _, stderr = fresh.communicate(timeout=5)
         self.assertEqual(17, fresh.returncode, stderr)
 
-    def test_reset_before_held_broker_resumes_executes_nothing(self):
-        tasks = Path(f'/proc/{self.broker.pid}/task')
-        until(lambda: len(list(tasks.iterdir())) == 1, 'probe worker not released')
-        client = self.raw(['new', '--title', 'must not execute'], eof=False)
-        until(lambda: len(list(tasks.iterdir())) >= 2, 'request not accepted')
-        # Hold the real broker while its accepted request still lacks mandatory
-        # EOF. Complete strict framing and reset through the bridge while held;
-        # on resume it must not turn that canceled request into a native spawn.
-        os.kill(self.broker.pid, signal.SIGSTOP)
-        client.shutdown(socket.SHUT_WR)
-        time.sleep(0.3)
-        client.close()
-        def no_connections():
-            with self.bridge.workers_lock:
-                return not self.bridge.workers
-        until(no_connections, 'bridge did not propagate held request reset')
-        self.assertEqual([], self.events())
-        os.kill(self.broker.pid, signal.SIGCONT)
-        time.sleep(0.3)
+    def test_incomplete_frame_fin_through_bridge_executes_nothing(self):
+        with socket.create_connection(self.endpoint, timeout=3) as client:
+            client.sendall(frame(['list'])[:-1])
+            client.shutdown(socket.SHUT_WR)
+            # Request EOF is cancellation, never the missing admission step.
+            def exact(size):
+                data = bytearray()
+                while len(data) < size:
+                    part = client.recv(size - len(data))
+                    self.assertTrue(part, 'truncated cancellation response')
+                    data.extend(part)
+                return bytes(data)
+            size = int.from_bytes(exact(4), 'big')
+            self.assertLessEqual(size, 32 * 1024 * 1024)
+            response = json.loads(exact(size))
+            self.assertEqual(2, response['version'])
+            self.assertEqual(125, response['exit'])
+            self.assertEqual(b'', client.recv(1))
         self.assertEqual([], self.events())
         self.set_mode('exit')
         fresh = self.start_client(['list'])

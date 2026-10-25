@@ -1,10 +1,22 @@
-# TicGit command broker (default-off)
+# TicGit command broker
 
 This is the selected host-side command broker, not a native TicGit server or an
 OS sandbox. See `../codex-sandbox/spec/tic-proxy.typ` for governing authority and
-outcome semantics, and [BUILD.md](BUILD.md) for pinned builds and installer input.
+outcome semantics, and [BUILD.md](BUILD.md) for pinned builds and launcher cache resolution.
 Its admitted native execution remains trusted code with the host user's process
 permissions; argument validation does not contain arbitrary native-code bugs.
+
+## Artifact resolution
+
+The launcher selects one bundle containing the pinned native fork, host Rust
+broker, and static Linux guest client. One relative manifest binds the artifact
+hashes and current proxy source/native/policy/host/guest identity. Writable build
+output is copied into a verified content-addressed cache outside guest-writable
+mount sources before execution; there is no global `installed.json` or manual
+installation prerequisite. A cache miss uses the ordinary pinned builder and
+the host-only native-source setting, configured once with the normal Pi
+`--set-tic-native-source` option; see
+[BUILD.md](BUILD.md#normal-launcher-resolution). The cache does not change per-launch broker or relay ownership.
 
 ## Launcher interface
 
@@ -18,10 +30,14 @@ root, not an ordinary subdirectory), canonical `common_dir`, absolute canonical
 `namespace`, and fresh `token`. The JSON must be an owner-owned regular `0600`
 file outside guest writable mounts. Installed executable and sibling native
 manifest are trusted protected artifacts. The native manifest binds the complete
-native revision, policy version, and SHA-256; launcher configuration must match.
+native revision, policy version, and publication-time SHA-256; launcher
+configuration must match the binding metadata. Artifact bytes are verified at
+build/cache publication, not repeatedly during warm startup or before native
+requests. Protected paths outside guest-writable mounts supply runtime authority;
+host-manual rewrites of the immutable cache are not a supported integrity check.
 Configuration and native authority are fixed for the process lifetime.
 
-Startup verifies the native binding and configuration-free repository preflight,
+Startup checks the native binding metadata and configuration-free repository preflight,
 then binds only an ephemeral `127.0.0.1` port. It opens no SQLite database. Broker
 stdout is **only** one JSON readiness line, bounded to 1024 bytes, with `version`,
 `address`, `native_revision`, and `policy_version`. Startup failures go to stderr;
@@ -41,12 +57,16 @@ watchdogs. Broker death is an unknown in-flight outcome, not replay permission.
 ## Request execution
 
 One connection carries the strict typed `token`/`request` authenticated envelope
-and one version-one response. Both use four-byte big-endian byte lengths. The
+and one response. Both use four-byte big-endian byte lengths. The
 application request is `{version,command,argv,stdin}` with fixed `command: "tic"`.
-The client must write-half-close after its frame; the broker verifies EOF before
-policy or execution, rejecting trailing bytes, duplicate/unknown fields,
-unsupported versions, malformed JSON/UTF-8, and oversize input. Requests select
-no endpoint, executable, cwd, repository, identity, namespace, or environment.
+The request and response wire version is `2`; configuration, readiness, and
+inspect-context schemas remain version `1`, as does command policy. The client
+keeps its write side open while awaiting the response. The broker validates one
+complete bounded frame without waiting for request EOF, rejecting duplicate or
+unknown fields, unsupported versions, malformed JSON/UTF-8, and oversize input.
+There is at most one native execution and one framed response, then close;
+additional frames are never parsed or executed. Requests select no endpoint,
+executable, cwd, repository, identity, namespace, or environment.
 The broker validates native parsed arguments independently of the guest shim.
 
 Request frame: 8 MiB; response frame: 32 MiB; stdout: 4 MiB; stderr: 256 KiB;
@@ -75,24 +95,50 @@ Rust integration tests exercise the real archived native fork against disposable
 main/linked repositories and independent human writers, including concurrent
 writes and shared history. Owned fake executables test environment/stdio,
 framing/authentication/policy rejection, byte limits, blocked native stdin,
-deadlines, overload, resets, lifetime shutdown, forced termination, and reaping.
+deadlines, overload, graceful FIN, lifetime shutdown, forced termination, and reaping.
 Repository and policy/client suites are owned separately within this crate.
 Readiness tests verify that absent databases remain absent and unsupported
 repositories fail before publication.
 
-The existing required write-half-close protocol makes a later graceful peer
-full-close indistinguishable from its earlier FIN on ordinary TCP. Reset/HUP
-cancellation and lifetime cancellation are tested; immediate cancellation on
-**every** graceful disconnect is not established. Removing the application
-backlog eliminates the reproduced stale queued-request execution, but does not
-by itself resolve that protocol limitation. No alternate cancellation envelope,
-wall-clock deadline field, or EOF relaxation has been introduced. This remains
-an acceptance concern for governing-contract review, not a claimed guarantee.
+Readable EOF, unexpected post-frame bytes, or a socket error observed before or
+while executing cancel the exchange. Ordinary FIN therefore signals client
+disappearance; the Tic client does not require abortive close. Cancellation can
+race the single spawn or native completion and may leave partial or complete
+mutations. Trailing input is terminal, not a second command; unlike the old EOF
+admission protocol, it does not guarantee zero executions. A framed response
+still requires response EOF. Shared bridge reset/half-close handling remains
+available for its other consumers.
 
-Neither actual provider composition nor macOS execution is accepted by these
-local Linux tests. Keep the capability default-off until those checks and all
-remaining boundary review findings are resolved. Ordinary host `ti` remains
-independent of broker/runtime availability.
+TicGit defaults on for new sessions; explicit `capabilities.tic: false` opts out.
+Startup failure warns and lets Pi start without TicGit for that session, including
+when `true` was explicit. No unavailable launch projects its endpoint, token,
+client mount, or network attachment; the fixed guest entrypoint never searches
+PATH for native TicGit. Its private read-only runtime bind covers accepted older
+images too, without rebuilding or reselecting them. It is independent of Tic
+artifact resolution and uses existing launch-owned scratch cleanup.
+Once a broker is ready, request failures still fail
+without fallback, replacement, or replay.
+Ordinary host `ti` remains independent of broker/runtime availability.
+
+### Acceptance checkpoint — 2026-10-25
+
+One actual Linux/Docker launch through normal `pi` passed a bounded guest smoke in a fixture with matching Git/JJ roots.
+It covered help, relative-file/stdin/guest-only-file creation, comment/show/list/history, Unicode ticket content and setup rejection.
+This does not complete Linux provider acceptance; macOS composition remains untested.
+Actual main/linked shared-store, sidecar, contention and overlapping-writer checks remain unfinished.
+Frozen settings after host changes, remaining adversarial/input/bounds cases, provider lifecycle/failure cleanup and stopped-VM human use also remain unfinished.
+The default-on selection does not close these gaps.
+
+The actual host-built client differs from the local test bundle; expected fixture native/source metadata is not selected-build attestation.
+The selected protected host cache manifest still needs inspection; see [BUILD.md](BUILD.md#disposable-normal-pi-acceptance).
+No actual host-after startup timing or separate warm-launch report has been supplied.
+A later manual ticket read is not warm-launch evidence, and local measurements with fake provider operations are not Pi/provider startup timings.
+
+The final local unfiltered Rust broker group passed, but a complete current Cargo-target run is not established.
+An optional replay stopped before compilation/tests because mutable Cargo outputs no longer matched the immutable final bundle.
+The original greater-than-200-second broker-test stall remains unexplained.
+A test-only whole-request-write deadline now bounds a demonstrated harness gap; later passing runs do not establish the historical stall's cause.
+TUI reader evidence uses the prior native source, unchanged by the final metadata-only pin update, not a fresh final-artifact TUI replay.
 
 ## Trusted local repository inspection and configuration capture
 

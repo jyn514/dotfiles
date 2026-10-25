@@ -13,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tic_broker import InstalledTicBuild, TicBrokerLaunch
+from docker_runtime import Docker
 NATIVE_REVISION = (Path(__file__).resolve().parents[2] / "tic-proxy/native-revision").read_text().strip()
 from trusted_services import (LifecycleError, LifecycleState, OwnedResource, OwnerSet,
                               ResourcePresence, ResourceRegistry)
@@ -26,7 +27,7 @@ class TicBrokerTest(unittest.TestCase):
         self.workspace = self.root / "workspace"
         self.common = self.workspace / ".git"
         self.common.mkdir(parents=True)
-        self.manifest = self.root / "installed.json"
+        self.manifest = self.root / "process-fixture.json"
         self.native = self.root / "ti"
         self.native.write_text("#!/bin/sh\necho native-must-not-run > \"$0.executed\"\nexit 99\n")
         self.native.chmod(0o700)
@@ -45,13 +46,22 @@ class TicBrokerTest(unittest.TestCase):
                             guest_client_executable=str(self.native), guest_client_sha256=digest(self.native),
                             guest_client_platform="linux/amd64")
         self.manifest.write_text(json.dumps(self.binding))
-        return InstalledTicBuild.load(self.manifest)
+        return self.fixture_build()
+
+    def fixture_build(self):
+        value = json.loads(self.manifest.read_text())
+        build = InstalledTicBuild(Path(value['broker_executable']), value['broker_sha256'],
+                                  Path(value['native_executable']), value['native_sha256'],
+                                  Path(value['guest_client_executable']), value['guest_client_sha256'],
+                                  value['guest_client_platform'], value['native_revision'])
+        build.verify()
+        return build
 
     def launch(self, build=None, **kwargs):
         authority = dict(workspace=self.workspace, common_dir=self.common,
                          user_name="Fixture Author", user_email="fixture@example.invalid", namespace="fixture")
         authority.update(kwargs)
-        launch = TicBrokerLaunch(build or InstalledTicBuild.load(self.manifest), **authority)
+        launch = TicBrokerLaunch(build or self.fixture_build(), **authority)
         self.addCleanup(launch.stop)
         return launch
 
@@ -59,17 +69,32 @@ class TicBrokerTest(unittest.TestCase):
         host, port = address.rsplit(":", 1)
         with socket.create_connection((host, int(port)), timeout=2) as connection:
             request = json.dumps({"token": token, "request": {
-                "version": 1, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
+                "version": 2, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
             connection.sendall(struct.pack("!I", len(request)) + request)
-            connection.shutdown(socket.SHUT_WR)
+            # Wire 2 uses the length, not request EOF. Keep the client alive
+            # until the response; FIN intentionally cancels an active request.
             data = bytearray()
             while chunk := connection.recv(65536):
                 data.extend(chunk)
         self.assertEqual(len(data) - 4, struct.unpack("!I", data[:4])[0])
         return json.loads(data[4:])
 
-    def test_required_readiness_and_fixed_bridge_preserve_half_closed_response(self):
+    def test_default_owner_is_accepted_by_docker_relay_validator_without_starting_services(self):
+        launch = self.launch()
+        runtime = Docker.__new__(Docker)
+        runtime.record = {}
+        runtime.run = mock.Mock()
+        with mock.patch("tic_broker.subprocess.Popen") as spawn:
+            runtime.create_relay_network("tic-owner-contract", internal=True, owner=launch.owner)
+        spawn.assert_not_called()
+        runtime.run.assert_called_once()
+        self.assertIn("dev.codex.relay-owner=" + launch.owner, runtime.run.call_args.args[0])
+        self.assertIsNone(launch.process)
+        self.assertIsNone(launch.directory)
+
+    def test_required_readiness_and_fixed_bridge_preserve_framed_response_without_request_eof(self):
         launch = self.launch().start()
+        self.assertEqual('best-effort', launch.plan.availability.value)
         self.assertEqual(LifecycleState.READY, launch.lifecycle.state)
         config = json.loads((launch.directory / "config.json").read_text())
         evidence = json.loads((launch.directory / "evidence.json").read_text())
@@ -269,15 +294,15 @@ class TicBrokerTest(unittest.TestCase):
                 self.assertIsNone(launch.lifetime_writer)
                 self.assertFalse(launch.directory.exists())
 
-    def test_manifest_rejects_wrong_policy_revision_hash_platform_and_unknown_fields(self):
-        for field, value in (("version", True), ("policy_version", 2), ("native_revision", "invalid-revision"),
-                             ("broker_sha256", "0" * 64), ("native_sha256", "0" * 64),
-                             ("guest_client_sha256", "0" * 64),
-                             ("guest_client_platform", "darwin/arm64"), ("extra", "no")):
+    def test_build_rejects_malformed_revision_digest_and_platform(self):
+        for field, value in (("native_revision", "invalid-revision"),
+                             ("broker_sha256", "invalid"), ("native_sha256", "invalid"),
+                             ("guest_client_sha256", "invalid"),
+                             ("guest_client_platform", "darwin/arm64")):
             with self.subTest(field=field):
                 self.manifest.write_text(json.dumps({**self.binding, field: value}))
                 with self.assertRaises(LifecycleError):
-                    InstalledTicBuild.load(self.manifest)
+                    self.fixture_build()
 
     def test_ready_revision_must_match_trusted_installed_manifest(self):
         # A well-formed trusted manifest revision is authoritative, but a broker
@@ -291,9 +316,9 @@ class TicBrokerTest(unittest.TestCase):
         self.assertFalse(launch.registry.identities)
         self.assertIsNone(launch.process)
 
-    def test_build_is_revalidated_before_any_launch_effect(self):
+    def test_unsafe_executable_mode_is_rejected_before_any_launch_effect(self):
         launch = self.launch()
-        self.native.write_text("changed installed bytes")
+        self.native.chmod(0o777)
         with self.assertRaises(LifecycleError):
             launch.start()
         self.assertIsNone(launch.directory)
@@ -326,9 +351,9 @@ class TicBrokerTest(unittest.TestCase):
 
     def send_active_request(self, launch, connection):
         request = json.dumps({"token": launch.token, "request": {
-            "version": 1, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
+            "version": 2, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
         connection.sendall(struct.pack("!I", len(request)) + request)
-        connection.shutdown(socket.SHUT_WR)
+        # Hold the request connection open while testing lifetime cancellation.
         deadline = time.monotonic() + 3
         while not self.native.with_suffix(".started").exists() and time.monotonic() < deadline:
             time.sleep(.01)

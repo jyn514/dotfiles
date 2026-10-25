@@ -1,8 +1,8 @@
 = TicGit command proxy
 
-*Status:* Selected replacement design; not implemented or accepted for production.
+*Status:* Implemented with bounded local Linux tests; actual provider composition and macOS acceptance remain unproven.
 This contract replaces the unmodified-TicGit/SRT implementation preserved on the local `ticgit-proxy-wip` branch.
-The capability remains default-off.
+TicGit defaults on for new sessions, with best-effort startup and an explicit per-repository opt-out.
 
 == Purpose and architecture
 
@@ -39,7 +39,7 @@ Accepted metadata must not redirect those reads into guest-writable targets; pro
 Rejecting includes and alternates does not by itself prove that every object read stays beneath the common directory.
 Do not replace this restriction with recursive include/alternate trust analysis.
 The restriction applies only to broker use; ordinary host TicGit retains native repository support.
-Guest requests grant ticket and writeup operations, not arbitrary host file access, repository administration, credential use, network access, or program execution.
+Guest requests grant ticket and writeup operations, not arbitrary host file access, repository administration, credential use, network access, or guest-selected host program execution.
 Bad ticket edits within that authority are not an escape from the boundary.
 
 Enforce the boundary through the fork's behavior and the broker's command-and-option policy.
@@ -50,11 +50,12 @@ Do not describe argument filtering as protection against arbitrary native-code v
 In particular, rejecting a `setup` request is insufficient if an admitted `list` can perform automatic setup.
 The fork removes that implicit behavior.
 Likewise, admitting `comment` is insufficient if omitted text or an editor option can launch a program.
-The broker rejects every invocation that can take an interactive or external-command path.
+The broker rejects interactive selection, editor launches, and guest-selected host commands or executable paths.
+Implementation-internal helpers are not inherently forbidden; they remain within the trust placed in the installed native code.
 
 The accepted native path may read its fixed repository context and ticket data, and may create or update the selected database and SQLite sidecars.
 It receives input through stdin and may use broker-owned request-private files for ephemeral UI state.
-It must not mutate code refs, Jujutsu metadata, host configuration, or working-tree files, or execute a helper selected by configuration or request data.
+It must not mutate code refs, Jujutsu metadata, host configuration, or working-tree files, or let guest-controlled configuration, executable-search paths, or request data select host helper commands or executables.
 Verify configuration-source restrictions, object lookup, and missing-blob behavior as part of that claim; do not assume that removing the top-level setup command proves it.
 
 == Native fork and repository context <tic-transactions>
@@ -69,7 +70,7 @@ The fork makes these changes:
 - Discover the invocation repository, canonicalize its common directory, then pass that directory to `Session::open` through git-meta-lib's existing public API.
   A git-meta-lib fork is not required for this selection.
 - Remove automatic setup from ordinary store opening.
-  Reading or changing `.git-meta` must not cause an ordinary ticket operation to initialize a remote, fetch, or launch Git.
+  Reading or changing `.git-meta` must not cause an ordinary ticket operation to initialize a remote, fetch, or launch Git for setup or synchronization.
   Explicit host setup remains available as an administrative operation.
 - Make direct SQLite readers, including history and TUI closed-time queries, use the same store-location authority as the opened metadata session.
 - Make file-input options, including `-F` / `--file`, accept `-` as ordinary CLI stdin input wherever the broker admits file input.
@@ -123,11 +124,32 @@ Old worktree-local native invocations are not supported alternate writers to thi
 
 == Broker ownership and lifecycle <tic-ownership>
 
-Select the default-off version 2 `capabilities.tic` boolean under the #link("launcher-interface.typ")[launcher contract].
-Reject a simultaneous project command named `tic`.
-The capability selects an installed host command broker, not a project-selected executable or a native-TicGit container in the VM.
+Select the default-on `capabilities.tic` boolean under the #link("launcher-interface.typ")[launcher contract].
+Raw version 1 and version 2 declarations accept the boolean; explicit `false` opts out without artifact resolution or TicGit host contact.
+Accepted snapshots retain their recorded selection, including absence, without applying new defaults.
+Reject explicit `true` with a simultaneous project command named `tic`; if only the implicit default conflicts, warn and disable TicGit while preserving that project command.
+The capability selects a launcher-resolved host command broker, not a project-selected executable or a native-TicGit container in the VM.
+Resolve one pinned bundle containing native TicGit, the host Rust broker, and a static Linux guest shim.
+Use its single relative manifest as build-selection authority, binding current proxy source bytes, native pin, command policy, wire version, and host/guest platforms.
+Copy validated build output into a protected content-addressed cache outside all actual guest-writable mount sources and aliases before execution; never execute a writable build stage in place.
+Verify artifact bytes and copied content at build/cache publication. Warm startup selects current bounded build inputs and checks protected paths, ownership, modes, link counts, fixed manifest fields, native/policy/wire versions, and platform without rehashing executables.
+The trusted host rewriting its own published immutable cache is unsupported; repeated runtime hashing is not part of the guest boundary. Preserve native binding metadata and repository preflight without reading native executable contents before readiness or requests.
+Do not require a global current-build record, flattened absolute-path artifact record, or human-managed TicGit installation.
+A cold cache uses the ordinary pinned builder and the approved local checkout recorded in one host-only native-source setting.
+The explicit first-use `--set-tic-native-source` option sets that path once during normal Pi startup; subsequent launches require no source flag.
+Do not infer the unpublished fork source from sibling paths or an unknown remote.
 
-Use the #link("trusted-service-lifecycle.typ")[required `agent-launch` lifecycle] with one launcher-owned host broker per launch.
+Use the #link("trusted-service-lifecycle.typ")[best-effort `agent-launch` lifecycle] with one launcher-owned host broker per launch.
+There is one startup policy for all selected TicGit launches; explicit `true` does not introduce a required-service mode.
+Missing source configuration, unsupported repository configuration, build, inspection, or readiness failure warns and allows Pi to start with TicGit unavailable for that session.
+Revoke broker authority and attempt cleanup of all partial launch-owned resources, retaining ownership for final cleanup and provider recovery.
+Project no endpoint, token, guest client mount, or TicGit network attachment on failure.
+The fixed `ti` guard reports unavailable instead of searching PATH for a native guest executable.
+Every launch read-only binds a private copy at `/libexec/sandbox-wrappers/ti`, already first on the canonical image PATH, even when TicGit is off or startup failed.
+This does not depend on accepted-image freshness or change accepted-image selection.
+The copy lives in existing launch-owned skills scratch, outside every actual guest-writable bind source including resolved aliases, and follows that scratch's cleanup/recovery ownership.
+Unavailable launches explicitly clear endpoint/token environment values, including stale values baked into an older image.
+Do not soften unrelated repository-policy, accepted-metadata, or provider-admission rejection.
 The owning launch and its execution attachments use that broker; separate launches have separate brokers and endpoints, even when they share ticket data.
 Bind accepted authority to the workspace, canonical common directory, installed fork/build, command policy, identity, and fresh authenticated launch endpoint.
 No shared-session TicGit publication, broker join, or durable host-process record is required.
@@ -141,7 +163,7 @@ Keep transport credentials, host credential agents, and reusable upstream creden
 
 Reuse provider transport and session authentication; reject unauthenticated access and never expose generic host execution.
 The broker invokes the fixed native program directly, without a shell, and owns bounded output collection, cancellation, termination, and reaping.
-The admitted native paths must not spawn external programs; test this rather than introducing another per-request descendant watchdog.
+Trusted native code may invoke implementation-internal helpers; that does not authorize guest-selected host commands, executable paths, or unsafe environment/argument overrides.
 Do not carry forward Linux pidfd identity or waitid/WNOWAIT requirements merely because the archived implementation used them.
 Keep a lifetime pipe's write end in the owning launcher and its read end in the broker's event loop.
 Do not let unrelated children inherit the write end.
@@ -152,7 +174,7 @@ If the broker itself dies, an in-flight native command may finish; report the un
 Provider-owned relay resources still use the existing lifecycle cleanup rules.
 
 Readiness validates the installed build/policy, fixed authority, supported repository configuration, storage layout, and endpoint without opening or mutating SQLite.
-The required broker must be ready before its execution attachment can use it.
+The broker must be ready before its execution attachment can use it; best-effort startup never publishes a partially ready TicGit endpoint.
 An absent database is allowed; native TicGit may create it during an admitted command.
 Owning-launch cleanup leaves ticket data, other launches' brokers, and independent host writers alone.
 Do not replace a failed broker under attached clients or replay its requests.
@@ -170,7 +192,7 @@ Admit `next` with its native selection update confined to request-private UI sta
 Admit ticket mutations through `new`, `edit`, `comment`, `state`, `claim`, `close`, `tag`, `assign`, `priority`, `points`, `milestone`, `code`, `depends`, `subissue`, `meta`, and `spec`.
 Admit native writeup creation, editing, promotion, closing/archiving, linking, and unlinking.
 Retain native aliases only when their dispatch path is admitted; empty argv means `list`.
-Reject `mine`: without an explicit assigned filter it runs `git config user.email` before listing, and it is not merely a `list` alias.
+`mine` remains outside the admitted command set: it is not merely a `list` alias and, without an explicit assigned filter, queries `git config user.email` before listing.
 Use `list --assigned` for that query instead.
 
 Reject setup, initialization, migration, update, import, pull, push, sync, interactive UI, agent installation, user administration, saved-view administration, checkout, and review commands.
@@ -189,7 +211,7 @@ Evaluate these conditions on the authoritative parsed values, not raw option spe
 Explicit empty comment/spec/writeup-body values do not invoke an editor; do not confuse them with absent options or arguments.
 Blank explicit titles can invoke an editor and require the nonblank checks above.
 A missing metadata value produces a native validation error, not an editor fallback.
-Audit changed admitted paths under the same no-interaction/no-external-command rule.
+Audit changed admitted paths for the same noninteractive ticket-operation boundary and against guest-selected host execution.
 Do not confuse ticket mutation, which is intended, with repository or host mutation, which is not.
 Preserve ordinary host help and commands; agent help must advertise only admitted commands and options.
 Export the fork's existing parser as library code rather than maintaining a second argv grammar.
@@ -200,7 +222,16 @@ Help/version do not open the store.
 
 == File inputs and request outcomes <tic-bounds>
 
-Reuse the #link("proxy-design.typ")[bounded framed request/response and fail-closed transport contracts].
+Reuse the #link("proxy-design.typ")[bounded framed request/response and fail-closed transport contracts], with this Tic-specific exception to request EOF admission.
+The request and response wire version is `2`; launcher configuration, readiness, inspect-context, and command policy remain version `1`.
+One connection carries one bounded length-prefixed authenticated and policy-validated request, at most one native CLI execution, and one framed response, then closes.
+The client keeps its write side open while waiting; the broker does not wait for request EOF before admission.
+No additional frames, multiplexing, replay, or fallback are allowed.
+Readable EOF, unexpected post-frame bytes, or a socket error observed before or during execution cancel the exchange; the client needs no abortive-close requirement solely to distinguish cancellation from framing.
+Post-frame input is terminal and can race the first spawn: it never authorizes a second execution, but does not guarantee zero executions.
+Cancellation is not instantaneous or rollback; the broker still owns child termination and reaping under the bounds below.
+The client still verifies EOF after the response frame.
+Other proxies retain the shared request-EOF contract, and shared bridge reset and half-close handling remains unchanged.
 The application request identifies `tic`, normalized argv, and input text in the existing `stdin` field.
 Encode that text as UTF-8 for native stdin; reject input that cannot be represented by the framed JSON protocol without changing its contents.
 The response carries version, native exit status, stdout, and stderr; no request field selects execution authority.
@@ -290,7 +321,7 @@ Then verify the complete path with disposable host-local repositories:
   The guest cannot alter effective metadata or object paths through mount aliases, symlinks, or multi-pack-index pack-name indirections.
   Verify session repository identity for supported nonstandard common-directory layouts without opening SQLite during readiness.
   Ordinary host commands retain native repository support.
-- Admitted commands never execute external helpers or access unauthorized host files, even when `.git-meta`, editor settings, and workspace symlinks change.
+- Admitted commands cannot use guest-controlled `.git-meta`, editor settings, workspace files/symlinks, or environment/arguments to select host commands or obtain unauthorized host-file access.
   Test missing/blank inputs, explicit versus absent lifecycle for `state`/`status`, option clusters, aliases, `--`, and direct authenticated requests, not just well-formed guest-client calls.
 - File inputs work from relative paths, guest-only directories, and caller stdin; literal dash filenames use `./-`.
   Direct requests naming host files and requests with unexpected or oversize stdin reject before execution.
@@ -304,4 +335,5 @@ Then verify the complete path with disposable host-local repositories:
 - Human host use works with the VM stopped; guest failures do not reroute to it.
   Run composed acceptance separately on Linux and macOS before claiming either platform supported.
 
-Keep this capability default-off until the fork, broker, and actual provider path pass these checks.
+The user-selected default is on with warn-and-disable startup failure semantics.
+This selection does not establish actual Linux/macOS provider acceptance; keep those acceptance checks explicitly unproven until exercised.

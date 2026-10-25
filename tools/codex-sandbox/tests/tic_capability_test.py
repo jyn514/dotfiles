@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -44,8 +45,10 @@ class TicCapabilityTest(unittest.TestCase):
             "argv": ["ticket-proxy"], "workdir": ".", "network": False, "mounts": [],
         }
 
-    def test_missing_and_omitted_policy_defaults_off_independent_of_host_tools(self) -> None:
-        for source in (None, {"version": 1, "commands": {}}, {"version": 2},
+    def test_missing_and_omitted_policy_defaults_on_independent_of_host_tools(self) -> None:
+        for source in (None, {"version": 1, "commands": {}},
+                       {"version": 1, "commands": {}, "capabilities": {}},
+                       {"version": 2}, {"version": 2, "capabilities": {}},
                        {"version": 2, "capabilities": {"host-editor": True}}):
             with self.subTest(source=source):
                 if source is not None:
@@ -56,14 +59,17 @@ class TicCapabilityTest(unittest.TestCase):
                     snapshot = self.snapshot()
                 which.assert_not_called()
                 self.assertEqual({"zulip": True, "nested-containers": False,
-                                  "flower-r2": False, "tic": False}, snapshot["capabilities"])
+                                  "flower-r2": False, "tic": True}, snapshot["capabilities"])
                 self.assertEqual({}, snapshot["commands"])
                 self.assertNotIn("host-editor", snapshot["capabilities"])
         self.write({"version": 2})
-        self.assertFalse(sandbox_proxies.load_manifest(self.repo)["capabilities"]["tic"])
+        self.assertTrue(sandbox_proxies.load_manifest(self.repo)["capabilities"]["tic"])
 
-    def test_v1_rejects_every_explicit_source_tic_value_without_effects(self) -> None:
-        for value in (True, False, None, 0, "false"):
+    def test_v1_accepts_tic_booleans_but_rejects_invalid_values(self) -> None:
+        for selected in (True, False):
+            self.write({"version": 1, "capabilities": {"tic": selected}, "commands": {}})
+            self.assertEqual(selected, self.snapshot()["capabilities"]["tic"])
+        for value in (None, 0, "false"):
             with self.subTest(value=value):
                 self.write({"version": 1, "capabilities": {"tic": value}, "commands": {}})
                 with mock.patch.object(sandbox_proxies, "write_atomic") as publish:
@@ -82,6 +88,28 @@ class TicCapabilityTest(unittest.TestCase):
                 self.write({"version": version, "commands": {}})
                 with self.assertRaises(sandbox_proxies.ConfigError):
                     sandbox_proxies.load_manifest(self.repo)
+
+    def test_accepted_policy_never_acquires_new_tic_default_or_changes_other_capabilities(self) -> None:
+        for version in (1, 2):
+            for capabilities in (None, {}, {"tic": False}, {"tic": True}):
+                with self.subTest(version=version, capabilities=capabilities):
+                    data = {"version": version, "commands": {}}
+                    if capabilities is not None:
+                        data["capabilities"] = capabilities
+                    with mock.patch.object(Path, "read_text", side_effect=AssertionError("source read")):
+                        accepted = sandbox_proxies.load_accepted_manifest(data=data)
+                    expected = capabilities or {}
+                    if version == 2:
+                        expected = {"zulip": True, "nested-containers": False, "flower-r2": False, **expected}
+                    self.assertEqual(expected, accepted.get("capabilities", {}))
+
+    def test_explicit_false_wins_in_every_new_policy_producer(self) -> None:
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.write({"version": version, "commands": {}, "capabilities": {"tic": False}})
+                self.assertFalse(sandbox_proxies.load_manifest(self.repo)["capabilities"]["tic"])
+                self.assertFalse(sandbox_proxies.load_optional_manifest(self.repo)["capabilities"]["tic"])
+                self.assertFalse(self.snapshot()["capabilities"]["tic"])
 
     def test_boolean_roundtrips_and_join_authority_contains_no_tic_service(self) -> None:
         for selected in (True, False):
@@ -119,8 +147,6 @@ class TicCapabilityTest(unittest.TestCase):
     def test_project_tic_collision_only_when_capability_selected(self) -> None:
         for version in (1, 2):
             for selected in (None, False, True):
-                if version == 1 and selected is not None:
-                    continue  # Raw v1 tic declarations are rejected independently.
                 with self.subTest(version=version, selected=selected):
                     data = {"version": version, "commands": {"tic": self.command(version)}}
                     if version == 2:
@@ -128,15 +154,19 @@ class TicCapabilityTest(unittest.TestCase):
                     if selected is not None:
                         data["capabilities"] = {"tic": selected}
                     self.write(data)
-                    if selected:
+                    if selected is True:
                         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "tic.*conflicts"):
                             sandbox_proxies.load_manifest(self.repo)
                     else:
-                        policy = sandbox_proxies.load_manifest(self.repo)
+                        with mock.patch("sys.stderr", new_callable=io.StringIO) as warning:
+                            policy = sandbox_proxies.load_manifest(self.repo)
+                            snapshot = self.snapshot()
                         self.assertIn("tic", policy["commands"])
-                        snapshot = self.snapshot()
+                        self.assertFalse(policy["capabilities"]["tic"])
+                        self.assertFalse(snapshot["capabilities"]["tic"])
+                        self.assertEqual(selected is None, "implicit default conflicts" in warning.getvalue())
                         self.assertIn("tic", sandbox_proxies.load_accepted_manifest(data=snapshot)["commands"])
-        # Normalized v1 authority can retain v2 selections, but not ambiguous commands.
+        # Accepted authority cannot retain a contradictory recorded selection.
         data = {"version": 1, "commands": {"tic": self.command(1)}, "capabilities": {"tic": True}}
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "tic.*conflicts"):
             sandbox_proxies.load_accepted_manifest(data=data)

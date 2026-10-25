@@ -1,9 +1,7 @@
-"""Owned disposable build/installer fixtures; no host installation or execution.
-
-Synthetic ELF headers exercise artifact validation, not client executability.
-Real native/broker execution belongs to the separately selected native tests.
-"""
+"""Disposable bundle/cache fixtures; never install in user HOME or start providers."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import io
 import importlib.machinery
 import importlib.util
 import json
@@ -14,22 +12,22 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tarfile
+import threading
 import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT.parent / 'codex-sandbox'))
+import bundle as bundles
+import tic_artifact
+from tic_broker import InstalledTicBuild
 
-
-def load(name):
-    loader = importlib.machinery.SourceFileLoader(name.replace('-', '_'), str(ROOT / name))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
-
-
-build = load('build-local')
-installer = load('install-bundle')
+loader = importlib.machinery.SourceFileLoader('tic_build_local', str(ROOT / 'build-local'))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+build = importlib.util.module_from_spec(spec)
+loader.exec_module(build)
 
 
 def elf(machine=62, interpreter=False):
@@ -49,27 +47,23 @@ class BuildRecipeTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
-        # Installed artifact directories intentionally deny owner writes. Restore
-        # only owned fixture directories before TemporaryDirectory removes them.
         self.addCleanup(self.writable_fixtures)
-        self.prefix = self.root / 'home/.local/share/tic-proxy'
-        self.prefix.parent.mkdir(parents=True)
+        self.prefix = self.root / 'cache'
 
     def writable_fixtures(self):
-        for directory, subdirs, _ in os.walk(self.root, followlinks=False):
-            path = Path(directory)
-            if not path.is_symlink():
-                path.chmod(0o700)
+        for directory, _, _ in os.walk(self.root, followlinks=False):
+            if not Path(directory).is_symlink():
+                Path(directory).chmod(0o700)
 
-    def bundle(self, root=None):
+    def bundle(self, root=None, identity=None):
         root = root or self.root
         native, broker, client = [root / name for name in ['ti', 'tic-broker', 'ti-proxy']]
         native.write_bytes(b'owned native fixture, not executable machine code')
         broker.write_bytes(b'owned broker fixture, not executable machine code')
         client.write_bytes(elf())
-        binding = {'native_revision': installer.PIN, 'policy_version': 1, 'sha256': build.sha256(native)}
+        binding = dict(native_revision=bundles.PIN, policy_version=1, sha256=build.sha256(native))
         native.with_name('ti.tic-proxy.json').write_text(json.dumps(binding))
-        return build.stage_bundle(root, installer.PIN, native, broker, client, 'linux/amd64')
+        return build.stage_bundle(root, bundles.PIN, native, broker, client, 'linux/amd64', identity)
 
     def rewrite_manifest(self, bundle, modify):
         path = bundle / 'manifest.json'
@@ -82,10 +76,10 @@ class BuildRecipeTest(unittest.TestCase):
         bundle.rename(destination)
         return destination
 
-    def test_pin_comes_from_the_canonical_build_input(self):
-        self.assertEqual((ROOT / 'native-revision').read_text().strip(), installer.PIN)
+    def resolve(self, provision, **kwargs):
+        return tic_artifact.resolve_bundle(self.prefix, 'linux/amd64', (), provision, **kwargs)
 
-    def test_guest_artifact_is_static_linux_elf_and_architecture_is_explicit(self):
+    def test_static_linux_elf_and_architecture(self):
         path = self.root / 'client'
         for machine, arch in [(62, 'linux/amd64'), (183, 'linux/arm64')]:
             path.write_bytes(elf(machine))
@@ -95,212 +89,439 @@ class BuildRecipeTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build.guest_platform(path)
 
-    def test_installs_content_addressed_artifacts_and_fixed_regular_adapter_manifest(self):
-        bundle = self.bundle()
-        result = installer.install(bundle, self.prefix)
-        self.assertEqual(self.prefix / 'installed.json', result)
-        self.assertFalse(result.is_symlink())
-        self.assertEqual(1, result.stat().st_nlink)
-        installed = json.loads(result.read_bytes())
-        destination = self.prefix / bundle.name
-        self.assertEqual(str(destination / 'native/ti'), installed['native_executable'])
-        self.assertEqual(str(destination / 'host/tic-broker'), installed['broker_executable'])
-        self.assertEqual(str(destination / 'guest/ti-proxy'), installed['guest_client_executable'])
-        self.assertEqual('linux/amd64', installed['guest_client_platform'])
-        self.assertEqual(installer.PIN, installed['native_revision'])
-        for relative in ('', *installer.DIRECTORIES):
-            self.assertEqual(0o555, stat.S_IMODE((destination / relative).stat().st_mode))
-        for relative in installer.FILES:
-            path = destination / relative
+    def test_cache_uses_one_relative_manifest_without_installed_record(self):
+        source = self.bundle()
+        provision = mock.Mock(return_value=source)
+        manifest = self.resolve(provision)
+        provision.assert_called_once_with(bundles.build_identity(bundles.host_platform(), 'linux/amd64'))
+        self.assertEqual([], list(self.root.rglob('installed.json')))
+        self.assertEqual(1, len(list(manifest.parent.glob('*.json'))))
+        value = InstalledTicBuild.load(manifest)
+        self.assertEqual(manifest.parent / 'native/ti', value.native_executable)
+        self.assertNotEqual(source / 'native/ti', value.native_executable)
+        self.assertEqual(bundles.PIN, value.native_revision)
+        for relative in ('', *bundles.DIRECTORIES):
+            self.assertEqual(0o555, stat.S_IMODE((manifest.parent / relative).stat().st_mode))
+        for relative in bundles.FILES:
+            path = manifest.parent / relative
             self.assertEqual(1, path.stat().st_nlink)
-            expected = 0o555 if relative in installer.ARTIFACTS.values() else 0o444
-            self.assertEqual(expected, stat.S_IMODE(path.stat().st_mode))
-        sandbox = ROOT.parent / 'codex-sandbox'
-        with mock.patch.object(sys, 'path', [str(sandbox), *sys.path]):
-            from tic_broker import InstalledTicBuild
-            binding = InstalledTicBuild.load(result)
-        self.assertEqual(installed['native_revision'], binding.native_revision)
-        self.assertEqual(Path(installed['guest_client_executable']), binding.guest_client_executable)
+            self.assertEqual(0o555 if relative in bundles.ARTIFACTS.values() else 0o444,
+                             stat.S_IMODE(path.stat().st_mode))
 
-    def test_identical_install_verifies_idempotently_without_overwriting(self):
-        bundle = self.bundle()
-        record = installer.install(bundle, self.prefix)
-        paths = [record, *(self.prefix / bundle.name / relative for relative in installer.FILES)]
-        before = [(path.stat().st_ino, path.stat().st_mtime_ns, path.read_bytes()) for path in paths]
-        self.assertEqual(record, installer.install(bundle, self.prefix))
-        self.assertEqual(before, [(path.stat().st_ino, path.stat().st_mtime_ns, path.read_bytes()) for path in paths])
+    def test_warm_cache_never_requires_source_or_rewrites_artifacts(self):
+        manifest = self.resolve(mock.Mock(return_value=self.bundle()))
+        before = [(p.stat().st_ino, p.stat().st_mtime_ns, p.read_bytes())
+                  for p in manifest.parent.rglob('*') if p.is_file()]
+        no_build = mock.Mock(side_effect=AssertionError('warm cache must not provision'))
+        self.assertEqual(manifest, self.resolve(no_build))
+        self.assertEqual(before, [(p.stat().st_ino, p.stat().st_mtime_ns, p.read_bytes())
+                                  for p in manifest.parent.rglob('*') if p.is_file()])
 
-    def test_existing_mismatch_is_never_repaired_or_overwritten(self):
-        for changed in ('record', 'artifact', 'binding', 'directory-mode', 'file-mode', 'hardlink', 'extra'):
+    def test_warm_cache_and_loaded_build_never_hash_artifact_contents(self):
+        manifest = self.resolve(mock.Mock(return_value=self.bundle()))
+        with mock.patch.object(hashlib, 'file_digest', side_effect=AssertionError('runtime file hashing')):
+            self.assertEqual(manifest, self.resolve(mock.Mock(side_effect=AssertionError('must stay warm'))))
+            InstalledTicBuild.load(manifest).verify()
+
+    def test_warm_cache_rejects_symlinked_artifacts_and_directories_without_hashing(self):
+        for relative in ('host/tic-broker', 'native'):
+            with self.subTest(relative=relative):
+                case = self.root / relative.replace('/', '-')
+                case.mkdir()
+                self.prefix = case / 'cache'
+                manifest = self.resolve(mock.Mock(return_value=self.bundle(case)))
+                original = manifest.parent / relative
+                alias = case / 'outside-alias'
+                original.parent.chmod(0o755)
+                if original.is_dir():
+                    original.chmod(0o755)
+                original.rename(alias)
+                original.symlink_to(alias, target_is_directory=alias.is_dir())
+                original.parent.chmod(0o555)
+                with mock.patch.object(hashlib, 'file_digest', side_effect=AssertionError('runtime file hashing')):
+                    with self.assertRaisesRegex(ValueError, 'symlink'):
+                        self.resolve(mock.Mock(side_effect=AssertionError('must not repair')))
+
+    def test_warm_cache_rejects_wrong_owner_without_hashing(self):
+        self.resolve(mock.Mock(return_value=self.bundle()))
+        wrong_owner = os.getuid() + 1
+        with mock.patch.object(os, 'getuid', return_value=wrong_owner), mock.patch.object(
+                hashlib, 'file_digest', side_effect=AssertionError('runtime file hashing')):
+            with self.assertRaisesRegex(ValueError, 'ownership'):
+                self.resolve(mock.Mock(side_effect=AssertionError('must not repair')))
+
+    def test_incoming_artifact_bytes_are_verified_before_publication(self):
+        source = self.bundle()
+        artifact = source / 'host/tic-broker'
+        artifact.chmod(0o755)
+        artifact.write_bytes(b'changed after build manifest')
+        artifact.chmod(0o555)
+        with self.assertRaisesRegex(ValueError, 'artifact hash mismatch'):
+            self.resolve(mock.Mock(return_value=source))
+        self.assertEqual(['.resolve.lock'], [p.name for p in self.prefix.iterdir()])
+
+    def test_host_rewriting_protected_bytes_is_not_a_warm_integrity_contract(self):
+        manifest = self.resolve(mock.Mock(return_value=self.bundle()))
+        artifact = manifest.parent / 'host/tic-broker'
+        artifact.chmod(0o755)
+        artifact.write_bytes(b'host manually rewrote its own immutable snapshot')
+        artifact.chmod(0o555)
+        # This is not guest authority: the cache is outside writable mounts.
+        with mock.patch.object(hashlib, 'file_digest', side_effect=AssertionError('runtime file hashing')):
+            self.assertEqual(manifest, self.resolve(mock.Mock(side_effect=AssertionError('must stay warm'))))
+            InstalledTicBuild.load(manifest).verify()
+
+    def test_development_bundle_uses_same_copy_and_validation(self):
+        source = self.bundle()
+        manifest = self.resolve(mock.Mock(side_effect=AssertionError('override must not build')), local_bundle=source)
+        self.assertEqual((source / 'manifest.json').read_bytes(), manifest.read_bytes())
+        self.assertEqual(manifest, self.resolve(mock.Mock(), local_bundle=source))
+
+    def test_proxy_source_changes_cannot_reuse_old_bundle(self):
+        source = self.bundle()
+        self.resolve(mock.Mock(return_value=source))
+        original = bundles.build_identity(bundles.host_platform(), 'linux/amd64')
+        changed = {**original, 'proxy_source': '0' * 64}
+        provision = mock.Mock(return_value=source)
+        with mock.patch.object(tic_artifact, 'build_identity', return_value=changed):
+            with self.assertRaisesRegex(ValueError, 'current proxy sources'):
+                self.resolve(provision)
+        provision.assert_called_once_with(changed)
+        self.assertEqual(1, len([p for p in self.prefix.iterdir() if p.name != '.resolve.lock']))
+
+    def test_identity_hashes_source_bytes_and_paths_not_mtime_or_checkout(self):
+        copied = self.root / 'proxy-source'
+        shutil.copytree(ROOT, copied, ignore=shutil.ignore_patterns('target', 'tests', '__pycache__'))
+        original = bundles.source_identity(copied)
+        source = copied / 'src/protocol.rs'
+        os.utime(source, (1, 1))
+        self.assertEqual(original, bundles.source_identity(copied))
+        source.write_bytes(source.read_bytes() + b'\n// owned test change\n')
+        self.assertNotEqual(original, bundles.source_identity(copied))
+
+    def test_old_wire_bundle_and_wrong_native_policy_platform_source_are_rejected(self):
+        changes = [lambda v: v.update(version=1), lambda v: v.update(native_revision='0' * 40),
+                   lambda v: v.update(policy_version=2), lambda v: v['build'].update(wire_version=1),
+                   lambda v: v['build'].update(host_platform='darwin/arm64'),
+                   lambda v: v['build'].update(proxy_source='0' * 64),
+                   lambda v: v['build'].update(guest_platform='linux/arm64'),
+                   lambda v: v['native'].update(path='/outside/ti'), lambda v: v.update(extra=True)]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                case = self.root / str(index)
+                case.mkdir()
+                source = self.rewrite_manifest(self.bundle(case), change)
+                with self.assertRaises((ValueError, TypeError)):
+                    self.resolve(mock.Mock(return_value=source))
+                self.assertEqual([], [p for p in self.prefix.iterdir() if p.name != '.resolve.lock'] if self.prefix.exists() else [])
+
+    def test_partial_cache_and_unsafe_protection_fail_without_repair_or_rebuild(self):
+        for changed in ('manifest', 'binding', 'directory-mode', 'file-mode', 'hardlink', 'extra', 'missing'):
             with self.subTest(changed=changed):
                 case = self.root / changed
                 case.mkdir()
-                bundle = self.bundle(case)
-                prefix = case / 'installed'
-                record = installer.install(bundle, prefix)
-                destination = prefix / bundle.name
-                mutated = record
-                if changed in ('record', 'artifact', 'binding', 'file-mode'):
-                    mutated = {'record': record, 'artifact': destination / 'host/tic-broker',
-                               'binding': destination / 'native/ti.tic-proxy.json',
-                               'file-mode': destination / 'guest/ti-proxy'}[changed]
+                self.prefix = case / 'cache'
+                manifest = self.resolve(mock.Mock(return_value=self.bundle(case)))
+                destination = manifest.parent
+                mutated = {'manifest': manifest,
+                           'binding': destination / 'native/ti.tic-proxy.json',
+                           'file-mode': destination / 'guest/ti-proxy'}.get(changed, destination)
+                if changed in ('manifest', 'binding', 'file-mode'):
                     mutated.chmod(0o600)
                     if changed != 'file-mode':
-                        mutated.write_bytes(b'fixture mismatch')
+                        mutated.write_bytes(b'fixture tamper')
                 elif changed == 'directory-mode':
-                    mutated = destination / 'host'
                     mutated.chmod(0o755)
                 elif changed == 'hardlink':
-                    mutated = destination / 'host/tic-broker'
-                    os.link(mutated, case / 'artifact-alias')
-                else:
-                    destination.chmod(0o755)
-                    mutated = destination / 'extra'
-                    mutated.write_text('unexpected')
-                before = mutated.lstat()
-                contents = mutated.read_bytes() if mutated.is_file() else None
-                with self.assertRaises(ValueError):
-                    installer.install(bundle, prefix)
-                self.assertEqual(before.st_ino, mutated.lstat().st_ino)
-                self.assertEqual(before.st_mode, mutated.lstat().st_mode)
-                if contents is not None:
-                    self.assertEqual(contents, mutated.read_bytes())
-
-    def test_a_different_build_does_not_replace_the_stable_installed_manifest(self):
-        bundle = self.bundle()
-        record = installer.install(bundle, self.prefix)
-        before = record.read_bytes()
-        source = self.root / 'next-build'
-        source.mkdir()
-        next_bundle = self.bundle(source)
-        native = next_bundle / 'native/ti'
-        native.chmod(0o600)
-        native.write_bytes(b'different owned native artifact')
-        next_bundle = self.rewrite_manifest(next_bundle, lambda value: value['native'].update(sha256=build.sha256(native)))
-        binding = next_bundle / 'native/ti.tic-proxy.json'
-        binding.chmod(0o600)
-        binding.write_text(json.dumps({'native_revision': installer.PIN, 'policy_version': 1,
-                                       'sha256': build.sha256(next_bundle / 'native/ti')}))
-        with self.assertRaisesRegex(ValueError, 'refusing overwrite'):
-            installer.install(next_bundle, self.prefix)
-        self.assertEqual(before, record.read_bytes())
-        self.assertFalse((self.prefix / next_bundle.name).exists())
-
-    def test_corrupt_escaping_or_ambiguous_bundle_is_not_installed(self):
-        for changed in ('bytes', 'name', 'path', 'binding', 'leaf-symlink', 'directory-symlink', 'extra',
-                        'boolean-version', 'wrong-pin', 'duplicate', 'platform', 'dynamic-client'):
-            with self.subTest(changed=changed):
-                case = self.root / changed
-                case.mkdir()
-                bundle = self.bundle(case)
-                if changed == 'bytes':
-                    path = bundle / 'host/tic-broker'
-                    path.chmod(0o600)
-                    path.write_bytes(b'changed')
-                elif changed == 'name':
-                    destination = bundle.with_name('bundle-' + '0' * 64)
-                    bundle.rename(destination)
-                    bundle = destination
-                elif changed == 'path':
-                    bundle = self.rewrite_manifest(bundle, lambda value: value['client'].update(path='../outside'))
-                elif changed == 'binding':
-                    path = bundle / 'native/ti.tic-proxy.json'
-                    path.chmod(0o600)
-                    path.write_text('{}')
-                elif changed == 'leaf-symlink':
-                    path = bundle / 'host/tic-broker'
-                    path.unlink()
-                    path.symlink_to(case / 'tic-broker')  # Same bytes/hash; still forbidden.
-                elif changed == 'directory-symlink':
-                    path = bundle / 'host'
-                    outside = case / 'directory-alias-target'
-                    path.rename(outside)
-                    path.symlink_to(outside, target_is_directory=True)
+                    os.link(destination / 'host/tic-broker', case / 'alias')
                 elif changed == 'extra':
-                    (bundle / 'unexpected').write_text('extra')
-                elif changed == 'boolean-version':
-                    bundle = self.rewrite_manifest(bundle, lambda value: value.update(version=True))
-                elif changed == 'wrong-pin':
-                    bundle = self.rewrite_manifest(bundle, lambda value: value.update(native_revision='0' * 40))
-                elif changed == 'duplicate':
-                    path = bundle / 'manifest.json'
-                    path.chmod(0o600)
-                    path.write_text('{"version":1,"version":1}')
-                elif changed == 'platform':
-                    bundle = self.rewrite_manifest(bundle, lambda value: value['client'].update(platform='linux/arm64'))
+                    mutated.chmod(0o755)
+                    (mutated / 'extra').write_text('unexpected')
                 else:
-                    path = bundle / 'guest/ti-proxy'
-                    path.chmod(0o600)
-                    path.write_bytes(elf(interpreter=True))
-                    bundle = self.rewrite_manifest(bundle, lambda value: value['client'].update(sha256=build.sha256(path)))
-                prefix = case / 'must-not-exist'
-                with self.assertRaises(ValueError):
-                    installer.install(bundle, prefix)
-                self.assertFalse(prefix.exists())
+                    mutated.chmod(0o755)
+                    manifest.unlink()
+                before = mutated.lstat()
+                provision = mock.Mock(side_effect=AssertionError('must not repair'))
+                with self.assertRaises((ValueError, OSError)):
+                    self.resolve(provision)
+                provision.assert_not_called()
+                self.assertEqual(before, mutated.lstat())
 
-    def test_known_guest_mount_overlap_is_rejected_in_both_directions(self):
-        bundle = self.bundle()
-        for mount in (self.prefix.parent, self.prefix / 'future-guest-write'):
-            mount.mkdir(parents=True, exist_ok=True)
-            with self.assertRaisesRegex(ValueError, 'guest-writable'):
-                installer.install(bundle, self.prefix, [mount])
-        self.assertFalse((self.prefix / 'installed.json').exists())
+    def test_empty_authored_key_is_not_adopted(self):
+        source = self.bundle()
+        manifest = self.resolve(mock.Mock(return_value=source))
+        bundles.remove_stage(manifest.parent)
+        with self.assertRaisesRegex(ValueError, 'partial or ambiguous'):
+            self.resolve(mock.Mock(side_effect=AssertionError('must not repair')))
 
-    def test_unsafe_parent_and_symlinked_prefix_are_rejected(self):
-        bundle = self.bundle()
-        unsafe = self.root / 'unsafe'
-        unsafe.mkdir(mode=0o777)
-        unsafe.chmod(0o777)
-        with self.assertRaises(ValueError):
-            installer.install(bundle, unsafe / 'installation')
-        self.assertFalse((unsafe / 'installation').exists())
-        alias = self.root / 'alias'
-        alias.symlink_to(self.prefix.parent, target_is_directory=True)
+    def test_cache_outside_canonical_writable_roots_including_symlink_aliases(self):
+        source = self.bundle()
+        alias = self.root / 'writable-alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        provision = mock.Mock(return_value=source)
+        with self.assertRaisesRegex(ValueError, 'guest-writable'):
+            tic_artifact.resolve_bundle(self.prefix, 'linux/amd64', [alias], provision)
+        provision.assert_not_called()
+        cache_alias = self.root / 'cache-alias'
+        cache_alias.symlink_to(self.prefix, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, 'canonical'):
-            installer.install(bundle, alias / 'installation')
+            tic_artifact.resolve_bundle(cache_alias, 'linux/amd64', [], provision)
 
-    def test_existing_partial_destination_is_not_taken_over(self):
-        bundle = self.bundle()
-        destination = self.prefix / bundle.name
-        destination.mkdir(parents=True)
-        before = destination.stat().st_ino
-        with self.assertRaises(ValueError):
-            installer.install(bundle, self.prefix)
-        self.assertEqual(before, destination.stat().st_ino)
-        self.assertEqual([], list(destination.iterdir()))
-        self.assertFalse((self.prefix / 'installed.json').exists())
+    def test_symlinked_bundle_ancestors_and_hardlinked_cache_files_are_rejected(self):
+        source = self.bundle()
+        native = source / 'native'
+        native.rename(self.root / 'native-alias')
+        native.symlink_to(self.root / 'native-alias', target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'symlinks'):
+            self.resolve(mock.Mock(return_value=source))
+        self.assertEqual([], [p for p in self.prefix.iterdir() if p.name != '.resolve.lock'] if self.prefix.exists() else [])
 
-    def test_changed_copy_or_native_binding_leaves_no_stage_or_record(self):
-        bundle = self.bundle()
-        copy = shutil.copyfile
-        for changed in ('artifact', 'binding'):
-            with self.subTest(changed=changed):
-                prefix = self.root / ('failed-' + changed)
+    def test_host_native_source_setting_is_one_path_not_an_artifact_record(self):
+        home = self.root / 'home'
+        setting = home / '.config/codex-sandbox/tic-native-source'
+        setting.parent.mkdir(parents=True)
+        source = self.root / 'native repo with spaces'
+        source.mkdir()
+        setting.write_text(str(source) + '\n')
+        setting.chmod(0o600)
+        self.assertEqual(source, tic_artifact.native_source(home, ()))
+        for content in ('relative/path', str(source) + '\nsecond line', 'bad\0path', 'x' * 4097):
+            setting.write_text(content)
+            with self.assertRaises(ValueError):
+                tic_artifact.native_source(home, ())
+        setting.write_text(str(source))
+        setting.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, '0600'):
+            tic_artifact.native_source(home, ())
+        setting.chmod(0o600)
+        os.link(setting, self.root / 'setting-alias')
+        with self.assertRaisesRegex(ValueError, 'single-link'):
+            tic_artifact.native_source(home, ())
+        (self.root / 'setting-alias').unlink()
+        with self.assertRaisesRegex(ValueError, 'guest-writable'):
+            tic_artifact.native_source(home, [home])
+        setting.unlink()
+        setting.symlink_to(self.root / 'ti')
+        (self.root / 'ti').write_text(str(source))
+        with self.assertRaisesRegex(ValueError, 'canonical'):
+            tic_artifact.native_source(home, ())
 
-                def corrupt(source, destination):
-                    result = copy(source, destination)
-                    if (changed == 'artifact' and Path(destination).name == 'tic-broker'
-                            or changed == 'binding' and Path(destination).name == 'ti.tic-proxy.json'):
-                        Path(destination).write_bytes(b'changed during copy')
+    def test_source_configuration_validates_pin_and_is_idempotent_without_overwrite(self):
+        home, repository, other = [self.root / name for name in ('home', 'native-repository', 'other')]
+        repository.mkdir()
+        other.mkdir()
+        success = mock.Mock(stdout=bundles.PIN + '\n')
+        with mock.patch.object(tic_artifact.subprocess, 'run', return_value=success) as git:
+            setting = tic_artifact.configure_native_source(home, repository)
+            self.assertEqual(['git', '-C', str(repository), 'rev-parse', bundles.PIN + '^{commit}'],
+                             git.call_args.args[0])
+            self.assertEqual(repository, tic_artifact.native_source(home, ()))
+            self.assertEqual(0o600, stat.S_IMODE(setting.stat().st_mode))
+            before = (setting.stat().st_ino, setting.stat().st_mtime_ns, setting.read_bytes())
+            self.assertEqual(setting, tic_artifact.configure_native_source(home, repository))
+            self.assertEqual(before, (setting.stat().st_ino, setting.stat().st_mtime_ns, setting.read_bytes()))
+            with self.assertRaisesRegex(ValueError, 'refusing to overwrite'):
+                tic_artifact.configure_native_source(home, other)
+            self.assertEqual(before, (setting.stat().st_ino, setting.stat().st_mtime_ns, setting.read_bytes()))
+            setting.write_text('authored malformed setting')
+            before = setting.read_bytes()
+            with self.assertRaises(ValueError):
+                tic_artifact.configure_native_source(home, repository)
+            self.assertEqual(before, setting.read_bytes())
+        self.assertEqual([], list(setting.parent.glob('.tic-native-source-*')))
+
+    def test_explicit_source_update_is_atomic_and_preserves_unrelated_host_configuration(self):
+        home, repository, other = [self.root / name for name in ('home', 'native-repository', 'other')]
+        repository.mkdir()
+        other.mkdir()
+        with mock.patch.object(tic_artifact.subprocess, 'run', return_value=mock.Mock(stdout=bundles.PIN)):
+            setting = tic_artifact.configure_native_source(home, repository)
+            unrelated = setting.with_name('github-token')
+            unrelated.write_bytes(b'owned unrelated fixture')
+            before = unrelated.stat(), unrelated.read_bytes()
+            repository.rmdir()  # Explicit updates can replace a stale source location.
+            self.assertEqual(setting, tic_artifact.configure_native_source(home, other, replace=True))
+            self.assertEqual(other, tic_artifact.native_source(home, ()))
+            self.assertEqual(0o600, stat.S_IMODE(setting.stat().st_mode))
+            self.assertEqual(before, (unrelated.stat(), unrelated.read_bytes()))
+            self.assertEqual([], list(setting.parent.glob('.tic-native-source-*')))
+            setting.chmod(0o644)
+            before = setting.read_bytes()
+            with self.assertRaisesRegex(ValueError, '0600'):
+                tic_artifact.configure_native_source(home, other, replace=True)
+            self.assertEqual(before, setting.read_bytes())
+
+    def test_failed_explicit_source_update_keeps_previous_setting_and_removes_private_stage(self):
+        home, repository, other = [self.root / name for name in ('home', 'native-repository', 'other')]
+        repository.mkdir()
+        other.mkdir()
+        with mock.patch.object(tic_artifact.subprocess, 'run', return_value=mock.Mock(stdout=bundles.PIN)):
+            setting = tic_artifact.configure_native_source(home, repository)
+            before = setting.stat(), setting.read_bytes()
+            with mock.patch.object(tic_artifact.os, 'replace', side_effect=OSError('owned publish failure')):
+                with self.assertRaisesRegex(OSError, 'owned publish failure'):
+                    tic_artifact.configure_native_source(home, other, replace=True)
+            self.assertEqual(before, (setting.stat(), setting.read_bytes()))
+            self.assertEqual([], list(setting.parent.glob('.tic-native-source-*')))
+
+    def test_source_configuration_failed_git_or_wrong_pin_never_publishes_setting(self):
+        repository = self.root / 'native-repository'
+        repository.mkdir()
+        for index, result in enumerate((mock.Mock(stdout='0' * 40), subprocess.CalledProcessError(1, 'git'))):
+            home = self.root / str(index)
+            if isinstance(result, Exception):
+                operation = mock.patch.object(tic_artifact.subprocess, 'run', side_effect=result)
+            else:
+                operation = mock.patch.object(tic_artifact.subprocess, 'run', return_value=result)
+            with operation, self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                tic_artifact.configure_native_source(home, repository)
+            self.assertFalse(home.exists())
+
+    def test_normal_builder_uses_guest_target_flag_and_requires_one_valid_bundle(self):
+        source = self.bundle()
+        expected = bundles.build_identity(bundles.host_platform(), 'linux/amd64')
+        native = self.root / 'native-repository'
+        completed = mock.Mock(stdout='native executable: ignored\nstaged bundle: ' + str(source) + '\n')
+        with mock.patch.object(tic_artifact.subprocess, 'run', return_value=completed) as run:
+            self.assertEqual(source, tic_artifact.build_bundle(native, expected))
+        self.assertEqual([sys.executable, str(ROOT / 'build-local'), '--guest-platform', 'linux/amd64',
+                          str(native), 'build', '--bins'], run.call_args.args[0])
+        self.assertTrue(run.call_args.kwargs['check'])
+        for output in ('', 'staged bundle: one\nstaged bundle: two\n'):
+            with mock.patch.object(tic_artifact.subprocess, 'run', return_value=mock.Mock(stdout=output)):
+                with self.assertRaisesRegex(ValueError, 'one staged bundle'):
+                    tic_artifact.build_bundle(native, expected)
+
+    def test_concurrent_normal_resolvers_publish_one_whole_key_and_provision_once(self):
+        source = self.bundle()
+        provision = mock.Mock(return_value=source)
+        copying, release, contending = threading.Event(), threading.Event(), threading.Event()
+        original_copy, original_flock = bundles.shutil.copyfile, tic_artifact.fcntl.flock
+        def copy(src, dst):
+            if Path(dst).name == 'tic-broker' and not copying.is_set():
+                copying.set()
+                self.assertTrue(release.wait(5))
+            return original_copy(src, dst)
+        def flock(fd, mode):
+            if copying.is_set() and not release.is_set():
+                contending.set()
+            return original_flock(fd, mode)
+        with mock.patch.object(bundles.shutil, 'copyfile', side_effect=copy), mock.patch.object(
+                tic_artifact.fcntl, 'flock', side_effect=flock), ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(self.resolve, provision)
+            try:
+                self.assertTrue(copying.wait(5))
+                self.assertEqual([], [p for p in self.prefix.iterdir() if not p.name.startswith('.')])
+                second = pool.submit(self.resolve, provision)
+                self.assertTrue(contending.wait(5))
+                self.assertFalse(second.done())
+            finally:
+                release.set()
+            one, two = first.result(timeout=5), second.result(timeout=5)
+        self.assertEqual(one, two)
+        provision.assert_called_once()
+        self.assertEqual(1, len([p for p in self.prefix.iterdir() if not p.name.startswith('.')]))
+        _, manifest, binding = bundles.validate_bundle(one.parent)
+        bundles.verify_copy(one.parent, one.read_bytes(), manifest, binding)
+        self.assertEqual([], list(self.prefix.glob('.tic-key-*')))
+
+    def test_build_local_serializes_native_outputs_through_bundle_staging(self):
+        root = self.root / 'builder/tools/tic-proxy'
+        root.mkdir(parents=True)
+        (root / 'native-revision').write_text(bundles.PIN)
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode='w'):
+            pass
+        first_native, release, second_waiting = threading.Event(), threading.Event(), threading.Event()
+        original_flock, original_stage = build.fcntl.flock, build.stage_bundle
+        results = []
+        def flock(fd, mode):
+            if first_native.is_set() and not release.is_set():
+                second_waiting.set()
+            return original_flock(fd, mode)
+        def cargo(argv, *, env, check):
+            # Every native/proxy build uses the same lean dev profile, even if
+            # the caller's environment requested bulky debug information.
+            self.assertEqual('0', env['CARGO_PROFILE_DEV_DEBUG'])
+            output = Path(env['CARGO_TARGET_DIR']) / 'debug'
+            output.mkdir(parents=True, exist_ok=True)
+            name = threading.current_thread().name.encode()
+            if '-p' in argv:
+                (output / 'ti').write_bytes(name)
+                if not first_native.is_set():
+                    first_native.set()
+                    self.assertTrue(release.wait(5))
+            else:
+                (output / 'tic-broker').write_bytes(name)
+                (output / 'ti-proxy').write_bytes(elf())
+        def stage(*args):
+            path = original_stage(*args)
+            self.assertEqual((path / 'native/ti').read_bytes(), (path / 'host/tic-broker').read_bytes())
+            results.append(path)
+            return path
+        identity = bundles.build_identity(bundles.host_platform(), 'linux/amd64')
+        with mock.patch.dict(os.environ, {'CARGO_PROFILE_DEV_DEBUG': '2'}), mock.patch.object(
+                build, '__file__', str(root / 'build-local')), mock.patch.object(
+                build.sys, 'argv', ['build-local', str(self.root), 'build', '--bins']), mock.patch.object(
+                build, 'build_identity', return_value=identity), mock.patch.object(
+                build.subprocess, 'check_output', side_effect=lambda argv, **kw: bundles.PIN if 'rev-parse' in argv else archive.getvalue()), mock.patch.object(
+                build.subprocess, 'run', side_effect=cargo), mock.patch.object(build.fcntl, 'flock', side_effect=flock), mock.patch.object(
+                build, 'stage_bundle', side_effect=stage), mock.patch('builtins.print'), ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(build.main)
+            try:
+                self.assertTrue(first_native.wait(5))
+                second = pool.submit(build.main)
+                self.assertTrue(second_waiting.wait(5))
+                self.assertFalse(second.done())
+            finally:
+                release.set()
+            first.result(timeout=5)
+            second.result(timeout=5)
+        self.assertEqual(2, len(results))
+        self.assertNotEqual(results[0], results[1])
+
+    def test_optional_cli_uses_the_same_source_key_without_a_global_record(self):
+        source = self.bundle()
+        completed = subprocess.run([sys.executable, str(ROOT / 'install-bundle'), str(source),
+                                    '--prefix', str(self.prefix)], check=True, capture_output=True, text=True)
+        manifest = Path(completed.stdout.strip())
+        self.assertEqual(manifest, self.resolve(mock.Mock(side_effect=AssertionError('must reuse'))))
+        self.assertEqual([], list(self.prefix.rglob('installed.json')))
+
+    def test_copy_failure_or_changed_source_publishes_no_partial_key(self):
+        source = self.bundle()
+        original = bundles.shutil.copyfile
+        for failure in ('copy', 'binding'):
+            with self.subTest(failure=failure):
+                self.prefix = self.root / ('cache-' + failure)
+                def copy(src, dst):
+                    result = original(src, dst)
+                    if (failure == 'copy' and Path(dst).name == 'tic-broker'
+                            or failure == 'binding' and Path(dst).name == 'ti.tic-proxy.json'):
+                        Path(dst).write_bytes(b'changed during copy')
                     return result
+                with mock.patch.object(bundles.shutil, 'copyfile', side_effect=copy):
+                    with self.assertRaises((ValueError, json.JSONDecodeError)):
+                        self.resolve(mock.Mock(return_value=source))
+                self.assertEqual(['.resolve.lock'], [p.name for p in self.prefix.iterdir()])
 
-                with mock.patch.object(installer.shutil, 'copyfile', side_effect=corrupt):
-                    with self.assertRaises(ValueError):
-                        installer.install(bundle, prefix)
-                self.assertFalse(prefix.exists())
-                self.assertFalse(any(path.name.startswith('.tic-install-') for path in self.root.iterdir()))
+    def test_duplicate_manifest_fields_and_oversize_are_rejected(self):
+        for index, content in enumerate((b'{"version":2,"version":2}', b' ' * 65537)):
+            with self.subTest(index=index):
+                case = self.root / str(index)
+                case.mkdir()
+                source = self.bundle(case)
+                manifest = source / 'manifest.json'
+                manifest.chmod(0o600)
+                manifest.write_bytes(content)
+                with self.assertRaises(ValueError):
+                    self.resolve(mock.Mock(return_value=source))
+                self.assertEqual([], [p for p in self.prefix.iterdir() if p.name != '.resolve.lock'] if self.prefix.exists() else [])
 
-    def test_cli_only_installs_into_explicit_owned_fixture_prefix(self):
-        bundle = self.bundle()
-        result = subprocess.run([sys.executable, str(ROOT / 'install-bundle'), str(bundle),
-                                 '--prefix', str(self.prefix), '--guest-writable-root', str(self.root / 'workspace')],
-                                capture_output=True, text=True)
-        self.assertNotEqual(0, result.returncode)  # Exclusions must resolve; no guessed authority.
-        (self.root / 'workspace').mkdir()
-        result = subprocess.run([sys.executable, str(ROOT / 'install-bundle'), str(bundle),
-                                 '--prefix', str(self.prefix), '--guest-writable-root', str(self.root / 'workspace')],
-                                capture_output=True, text=True, check=True)
-        self.assertEqual(str(self.prefix / 'installed.json'), result.stdout.strip())
+    def test_build_failure_publishes_no_cache(self):
+        with self.assertRaisesRegex(ValueError, 'owned failure'):
+            self.resolve(mock.Mock(side_effect=ValueError('owned failure')))
+        self.assertEqual([], [p for p in self.prefix.iterdir() if p.name != '.resolve.lock'] if self.prefix.exists() else [])
 
 
 if __name__ == '__main__':

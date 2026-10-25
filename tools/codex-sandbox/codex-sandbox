@@ -1122,26 +1122,25 @@ def start_keychain(state: State) -> list[str]:
         return []
 
 
-def installed_tic_build(state: State) -> InstalledTicBuild:
-    # Installed host authority only: neither repository policy nor inherited
-    # environment selects executable paths or a different installed manifest.
-    manifest = state.home / '.local/share/tic-proxy/installed.json'
-    if manifest.resolve(strict=True) != manifest or not manifest.is_file():
-        raise LauncherError('TicGit installed manifest must be a canonical regular file')
-    build = InstalledTicBuild.load(manifest)
+def resolved_tic_build(state: State) -> InstalledTicBuild:
+    from tic_artifact import resolve_bundle, build_bundle, native_source
     writable = [workspace.host_root for workspace in state.workspaces]
-    skills = getattr(state, 'skills_source', None)
-    if skills is not None:
-        writable.append(skills)
-    for path in (manifest, build.broker_executable, build.native_executable,
-                 Path(str(build.native_executable) + '.tic-proxy.json'),
-                 build.guest_client_executable):
-        if (path.resolve(strict=True) != path or not path.is_file()
-                or path.stat().st_nlink != 1):
-            raise LauncherError('TicGit installed artifacts must be canonical regular files without hard links')
-        if any(path.is_relative_to(root) for root in writable):
-            raise LauncherError('TicGit installed artifacts must not be guest-writable workspace files')
-    return build
+    for name in ('skills_source', 'pi_agent_tmp'):
+        root = getattr(state, name, None)
+        if root is not None:
+            writable.append(root)
+
+    def provision(expected):
+        # The unpublished native fork has no default remote. Source selection is
+        # host authority, not a repository policy field or inherited guest input.
+        return build_bundle(native_source(state.home, writable), expected)
+
+    try:
+        manifest = resolve_bundle(state.home / '.cache/codex-sandbox/tic',
+                                  OUTER_RUNTIME.build_platform(), writable, provision)
+        return InstalledTicBuild.load(manifest)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        raise LauncherError(f'TicGit bundle resolution failed: {error}') from error
 
 
 def inspect_tic_context(build: InstalledTicBuild, workspace: WorkspaceLayout) -> dict[str, str]:
@@ -1264,24 +1263,17 @@ def stage_tic_client(build: InstalledTicBuild) -> Path:
     directory = Path(tempfile.mkdtemp(prefix='sandbox-tic-client-', dir=scratch_directory()))
     try:
         destination = directory / 'ti'
+        # The source is a published protected artifact; this invocation owns
+        # the private copy. Byte verification belongs to cache publication,
+        # not every launch's client mount preparation.
         shutil.copyfile(build.guest_client_executable, destination)
-        with destination.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if digest != build.guest_client_sha256:
-            raise LauncherError('TicGit staged guest client hash mismatch')
         destination.chmod(0o555)
         relay = directory / 'relay'
         relay.mkdir()
         for name in ('tic_relay.py', 'host_tcp_bridge.py'):
             source = Path(__file__).resolve().with_name(name)
-            with source.open('rb') as stream:
-                expected = hashlib.file_digest(stream, 'sha256').hexdigest()
             target = relay / name
             shutil.copyfile(source, target)
-            with target.open('rb') as stream:
-                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
-            if actual != expected:
-                raise LauncherError('TicGit staged relay source hash mismatch')
             target.chmod(0o444)
         relay.chmod(0o555)
         if any(character in str(destination) for character in ',\0\r\n'):
@@ -1305,27 +1297,49 @@ def remove_tic_stage(directory: Path) -> None:
 
 
 def start_tic(state: State) -> list[str]:
+    state.tic_environment = {}
     if 'tic' not in getattr(state, 'capabilities', ()):
         return []
+    # Accepted workspace and shared image authority are not optional TicGit
+    # startup work. Do not hide unrelated policy/provider rejection in a warning.
+    if not state.workspaces or state.workspaces[0].host_root != state.repository:
+        raise LauncherError('TicGit active workspace authority is missing or mismatched')
+    try:
+        OUTER_RUNTIME.verify_builder_image(state.image)
+        if state.sidecar_image:
+            OUTER_RUNTIME.verify_builder_image(state.sidecar_image)
+    except (RuntimeError, ValueError) as error:
+        raise LauncherError('TicGit requires images matching the admitted provider platform') from error
+    try:
+        return _start_tic(state)
+    except Exception as error:
+        # _start_tic revokes broker authority and attempts owned cleanup before
+        # raising. Keep its handle/registry for final cleanup and relay recovery.
+        state.tic_environment = {}
+        print(f'warning: TicGit unavailable for this session; continuing without it: {error}',
+              file=sys.stderr)
+        return []
+
+
+def _start_tic(state: State) -> list[str]:
     try:
         from tic_relay import PORT as tic_port
     except ImportError as error:
         raise LauncherError('TicGit installed relay is unavailable; no fallback') from error
-    if not state.workspaces or not state.sidecar_image:
-        raise LauncherError('TicGit requires accepted workspace authority and installed transport image')
+    if not state.workspaces:
+        raise LauncherError('TicGit requires accepted workspace authority')
     workspace = state.workspaces[0]
     if workspace.host_root != state.repository:
         raise LauncherError('TicGit active workspace binding mismatch')
-    build = installed_tic_build(state)
+    build = resolved_tic_build(state)
     context = inspect_tic_context(build, workspace)
     if set(context) != {'user_name', 'user_email', 'namespace'}:
         raise LauncherError('TicGit trusted context returned invalid authority')
-    # Both independently resolved images must agree with the admitted engine.
-    try:
-        OUTER_RUNTIME.verify_builder_image(state.image)
+    # A Tic-only transport image is optional too. Do not make its build part
+    # of required shared-service preparation when no other capability needs it.
+    if not state.sidecar_image:
+        state.sidecar_image = resolve_sidecar_image()
         OUTER_RUNTIME.verify_builder_image(state.sidecar_image)
-    except (RuntimeError, ValueError) as error:
-        raise LauncherError('TicGit requires images matching the admitted provider platform') from error
     handle = TicBrokerLaunch(build, workspace=workspace.host_root,
                              common_dir=workspace.common_dir, **context)
     state.tic_handle = handle
@@ -1400,7 +1414,13 @@ def start_tic(state: State) -> list[str]:
         return ['--network', resources.link_network, '--mount', mount]
     except BaseException:
         state.tic_environment = {}
-        handle.stop(1)
+        try:
+            handle.stop(1)
+        except Exception as error:
+            # Preserve the original startup exception, especially Ctrl-C/exit;
+            # the owning launch retains this handle for its final cleanup.
+            print(f'warning: TicGit startup cleanup failed; retaining owned resources: {error}',
+                  file=sys.stderr)
         raise
 
 
@@ -2040,6 +2060,48 @@ def agent_repository_mounts(state: State) -> list[str]:
 
 
 
+def tic_guard_arguments(state: State, command: list[str]) -> list[str]:
+    # Accepted images can predate the image-owned guard while retaining the same
+    # Pi revision. Stage independently of image selection and Tic availability.
+    directory = state.skills_tmp.resolve(strict=True)
+    metadata = directory.stat()
+    if metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
+        raise LauncherError('TicGit guard scratch directory has unsafe ownership or permissions')
+    guard = directory / 'tic-guard'
+    if any(character in str(guard) for character in ',\0\r\n'):
+        raise LauncherError('TicGit guard path contains a mount delimiter')
+    for index, argument in enumerate(command[:-1]):
+        if argument != '--mount':
+            continue
+        fields = command[index + 1].split(',')
+        options = dict(field.split('=', 1) for field in fields if '=' in field)
+        if (options.get('type') != 'bind' or 'readonly' in fields or 'ro' in fields
+                or options.get('readonly') == 'true'):
+            continue
+        source = options.get('src', options.get('source'))
+        if source is None:
+            raise LauncherError('guest-writable bind has no source')
+        if guard.is_relative_to(Path(source).resolve(strict=True)):
+            raise LauncherError('TicGit guard scratch overlaps a guest-writable mount')
+    encoded = Path(__file__).resolve().with_name('image').joinpath('ti').read_bytes()
+    if not guard.exists() and not guard.is_symlink():
+        with guard.open('xb') as stream:
+            stream.write(encoded)
+            os.fchmod(stream.fileno(), 0o555)
+    metadata = guard.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+            or metadata.st_nlink != 1 or stat.S_IMODE(metadata.st_mode) != 0o555
+            or guard.read_bytes() != encoded):
+        raise LauncherError('TicGit staged guard identity or permissions mismatch')
+    if isinstance(OUTER_RUNTIME, VMRuntime):
+        OUTER_RUNTIME.host.check_bind(str(guard))
+    arguments = ['--mount', f'type=bind,src={guard},dst=/libexec/sandbox-wrappers/ti,readonly']
+    if not getattr(state, 'tic_environment', {}):
+        # Also clear stale image-baked values, not just inherited host values.
+        arguments += ['--env', 'SANDBOX_TIC_ENDPOINT=', '--env', 'SANDBOX_TIC_TOKEN=']
+    return arguments
+
+
 def build_agent_command(
     state: State, arguments: list[str], *, timing: bool,
     resource_paths: dict[str, str], guest_working_directory: Path,
@@ -2107,6 +2169,11 @@ def build_agent_command(
         "--workdir", str(guest_working_directory),
         *arguments,
     ]
+    # This is a fixed unavailable/forwarding guard, not a live TicGit client or
+    # network projection. Bind it even for opt-out and failed startup, including
+    # when reusing accepted images that lack the current image-owned wrapper.
+    argument_index = len(command) - len(arguments)
+    command[argument_index:argument_index] = tic_guard_arguments(state, command)
     try:
         check_mount_destinations(command)
     except ValueError as error:
@@ -2397,7 +2464,7 @@ def execute(state: State) -> int:
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
     sidecar_selected = bool(
-        getattr(state, "capabilities", {"nested-containers"})
+        (getattr(state, "capabilities", {"nested-containers"}) - {'tic'})
         or _secure_codex_auth_directory(state)
     )
     def model_image() -> str:
@@ -2448,7 +2515,7 @@ def execute(state: State) -> int:
         if model_future is not None:
             state.image = model_future.result()
         keychain_arguments = keychain_future.result() if keychain_future is not None else []
-        tic_arguments = phase('TicGit required launch service', lambda: start_tic(state))
+        tic_arguments = phase('TicGit startup', lambda: start_tic(state))
         agent_command = ["node", "/opt/agent-tools/bin/tool-worker.mjs"]
         arguments = [*gateway_arguments, *keychain_arguments, *tic_arguments, state.image,
                      *agent_command]
@@ -2830,6 +2897,30 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
 
 def main(arguments: list[str]) -> int:
     """Public CLI/import entry; interactive callers must have no live threads."""
+    # This explicit first-use setting is host-only and consumed before Pi's
+    # arguments are forwarded or the detached owner starts services.
+    boundary = arguments.index('--') if '--' in arguments else len(arguments)
+    source_options = [index for index, value in enumerate(arguments[:boundary])
+                      if value == '--set-tic-native-source' or value.startswith('--set-tic-native-source=')]
+    if source_options:
+        try:
+            if len(source_options) != 1:
+                raise LauncherError('--set-tic-native-source may be supplied only once')
+            index = source_options[0]
+            if arguments[index] == '--set-tic-native-source':
+                if index + 1 >= boundary:
+                    raise LauncherError('--set-tic-native-source requires a native repository path')
+                source, count = arguments[index + 1], 2
+            else:
+                source, count = arguments[index].split('=', 1)[1], 1
+            if not source:
+                raise LauncherError('--set-tic-native-source requires a native repository path')
+            from tic_artifact import configure_native_source
+            configure_native_source(Path.home(), Path(source), replace=True)
+            arguments = arguments[:index] + arguments[index + count:]
+        except (LauncherError, OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f'error: {error}', file=sys.stderr)
+            return 1
     # Administrative and noninteractive interfaces retain their existing process
     # ownership. Interactive UI is separated before execute creates any resources.
     administrative = arguments[:1] in (["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"], ["auth"])

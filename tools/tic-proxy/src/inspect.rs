@@ -2,7 +2,7 @@
 //! Effective host configuration is queried separately by the launcher using Git.
 use crate::{
     broker::{NATIVE_REVISION, POLICY_VERSION},
-    protocol::VERSION,
+    protocol::INSPECT_CONTEXT_VERSION,
     repository,
 };
 use serde::Serialize;
@@ -76,7 +76,7 @@ pub fn inspect_context(workspace: &Path, common_dir: &Path) -> Result<Vec<u8>, I
         _ => return Err(InspectError::Context),
     }
     let metadata = RepositoryMetadata {
-        version: VERSION,
+        version: INSPECT_CONTEXT_VERSION,
         policy_version: POLICY_VERSION,
         native_revision: NATIVE_REVISION,
         workspace: context.workspace,

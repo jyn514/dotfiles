@@ -89,15 +89,75 @@ fn manifest(native: &Path) {
     )
     .unwrap();
 }
-fn native() -> PathBuf {
-    std::env::var_os("TIC_PROXY_TEST_NATIVE")
+fn native(repos: &Repos) -> PathBuf {
+    let source = std::env::var_os("TIC_PROXY_TEST_NATIVE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../target/tic-proxy-build/cargo/debug/ti")
         })
         .canonicalize()
-        .expect("build pinned native first with build-local")
+        .expect("build pinned native first with build-local");
+    // Cargo hardlinks its binary to deps/. Exercise the same single-link
+    // snapshot authority as publication, not that writable build output.
+    let native = repos._root.path().join("published-native");
+    fs::copy(&source, &native).unwrap();
+    fs::copy(
+        format!("{}.tic-proxy.json", source.display()),
+        format!("{}.tic-proxy.json", native.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&native, fs::Permissions::from_mode(0o555)).unwrap();
+    native
+}
+// Test-client I/O must not hang before the broker's execution deadline is
+// observable. Bound the whole frame write, not each partial write separately.
+fn write_request_frame(
+    stream: &mut TcpStream,
+    bytes: &[u8],
+    budget: Duration,
+) -> anyhow::Result<()> {
+    let mut frame = Vec::new();
+    write_frame(&mut frame, bytes, MAX_REQUEST)?;
+    let started = Instant::now();
+    let deadline = started + budget;
+    let mut written = 0;
+    while written < frame.len() {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "request frame write deadline: sent {written}/{} bytes after {:?}",
+                    frame.len(),
+                    started.elapsed()
+                )
+            })?;
+        stream.set_write_timeout(Some(remaining))?;
+        match stream.write(&frame[written..]) {
+            Ok(0) => anyhow::bail!(
+                "request frame write closed: sent {written}/{} bytes",
+                frame.len()
+            ),
+            Ok(count) => written += count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                return Err(anyhow::Error::new(error).context(format!(
+                    "request frame write failed: sent {written}/{} bytes after {:?}",
+                    frame.len(),
+                    started.elapsed()
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+fn request_phase(address: &str, phase: &str, bytes: usize, started: Instant) {
+    if std::env::var_os("TIC_PROXY_TEST_PHASE_TRACE").is_some() {
+        eprintln!(
+            "test-request address={address} phase={phase} bytes={bytes} elapsed={:?}",
+            started.elapsed()
+        );
+    }
 }
 struct Broker {
     child: Child,
@@ -140,7 +200,10 @@ impl Broker {
         (command, read, write)
     }
     fn start(repos: &Repos, workspace: &Path, native: &Path) -> Self {
-        let (mut command, read, write) = Self::command(repos, workspace, native);
+        let (command, read, write) = Self::command(repos, workspace, native);
+        Self::start_command(command, read, write)
+    }
+    fn start_command(mut command: Command, read: OwnedFd, write: OwnedFd) -> Self {
         let mut child = command.spawn().unwrap();
         drop(read);
         let mut out = child.stdout.take().unwrap();
@@ -174,17 +237,25 @@ impl Broker {
         this
     }
     fn raw(&self, bytes: &[u8]) -> Response {
-        let mut stream = TcpStream::connect(&self.address).unwrap();
+        let started = Instant::now();
+        request_phase(&self.address, "connect-start", bytes.len(), started);
+        let address = self.address.parse().expect("test broker socket address");
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(3))
+            .expect("test request connect failed or expired");
         stream
             .set_read_timeout(Some(Duration::from_secs(40)))
             .unwrap();
-        write_frame(&mut stream, bytes, MAX_REQUEST).unwrap();
-        stream.shutdown(Shutdown::Write).unwrap();
-        let body = read_frame(&mut stream, MAX_RESPONSE).unwrap();
+        request_phase(&self.address, "write-start", bytes.len(), started);
+        write_request_frame(&mut stream, bytes, ADMISSION_TIMEOUT)
+            .unwrap_or_else(|error| panic!("test request write phase: {error:#}"));
+        request_phase(&self.address, "read-start", bytes.len(), started);
+        let body = read_frame(&mut stream, MAX_RESPONSE)
+            .expect("test response frame/EOF read failed or expired after request write completed");
+        request_phase(&self.address, "response-complete", bytes.len(), started);
         serde_json::from_slice(&body).unwrap()
     }
     fn request(&self, argv: &[&str], stdin: &str) -> Response {
-        self.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":argv,"stdin":stdin}})).unwrap())
+        self.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":argv,"stdin":stdin}})).unwrap())
     }
     fn stop(&mut self) {
         self.lifetime.take();
@@ -222,9 +293,51 @@ fn success(response: Response) -> String {
 }
 
 #[test]
+fn test_client_frame_write_to_nonreading_peer_expires_in_write_phase() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut writer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (peer, _) = listener.accept().unwrap();
+    // Exercise the same helper as Broker::raw, but make backpressure decisive
+    // with owned socket buffers. The peer stays live and never reads a byte.
+    for (stream, option) in [
+        (&writer, nix::libc::SO_SNDBUF),
+        (&peer, nix::libc::SO_RCVBUF),
+    ] {
+        let size: nix::libc::c_int = 4096;
+        assert_eq!(
+            unsafe {
+                nix::libc::setsockopt(
+                    stream.as_raw_fd(),
+                    nix::libc::SOL_SOCKET,
+                    option,
+                    &size as *const _ as *const nix::libc::c_void,
+                    std::mem::size_of_val(&size) as nix::libc::socklen_t,
+                )
+            },
+            0
+        );
+    }
+    let budget = Duration::from_millis(250);
+    let started = Instant::now();
+    let error = write_request_frame(&mut writer, &vec![b'x'; 1024 * 1024], budget).unwrap_err();
+    assert!(started.elapsed() >= budget);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let message = format!("{error:#}");
+    assert!(message.contains("request frame write"), "{message}");
+    assert!(
+        message.contains("sent ") && message.contains("/1048580 bytes"),
+        "{message}"
+    );
+    eprintln!(
+        "nonreading-peer phase=write elapsed={:?} error={message}",
+        started.elapsed()
+    );
+}
+
+#[test]
 fn real_native_main_linked_human_share_store_and_readiness_never_creates_it() {
     let repos = Repos::new();
-    let native = native();
+    let native = native(&repos);
     let mut main = Broker::start(&repos, &repos.main, &native);
     let linked = Broker::start(&repos, &repos.linked, &native);
     assert!(
@@ -291,23 +404,11 @@ fn direct_auth_framing_and_policy_rejections_do_not_spawn() {
     ] {
         assert_eq!(broker.request(&argv, input).exit, 2);
     }
-    assert_eq!(broker.raw(br#"{"token":"wrong","request":{"version":1,"command":"tic","argv":[],"stdin":""}}"#).exit, 2);
-    assert_eq!(broker.raw(format!(r#"{{"token":"{TOKEN}","token":"{TOKEN}","request":{{"version":1,"command":"tic","argv":[],"stdin":""}}}}"#).as_bytes()).exit, 2);
+    assert_eq!(broker.raw(br#"{"token":"wrong","request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}"#).exit, 2);
+    assert_eq!(broker.raw(format!(r#"{{"token":"{TOKEN}","token":"{TOKEN}","request":{{"version":2,"command":"tic","argv":[],"stdin":""}}}}"#).as_bytes()).exit, 2);
     assert!(!repos.main.join("fixture-started").exists());
-    let mut stream = TcpStream::connect(&broker.address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(12)))
-        .unwrap();
-    let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":[],"stdin":""}}),
-    )
-    .unwrap();
-    write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-    stream.write_all(b"x").unwrap();
-    stream.shutdown(Shutdown::Write).unwrap();
-    let response: Response =
-        serde_json::from_slice(&read_frame(&mut stream, MAX_RESPONSE).unwrap()).unwrap();
-    assert_eq!(response.exit, 2);
+    // Version one used mandatory request EOF; it must never execute here.
+    assert_eq!(broker.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}})).unwrap()).exit, 2);
     assert!(!repos.main.join("fixture-started").exists());
 }
 
@@ -369,11 +470,10 @@ fn lifetime_eof_cancels_reaps_native_and_closes_listener_without_affecting_other
     let other = Broker::start(&repos, &repos.main, &native);
     let mut stream = TcpStream::connect(&broker.address).unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-    stream.shutdown(Shutdown::Write).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while !repos.main.join("fixture-started").exists() {
         assert!(Instant::now() < until);
@@ -396,7 +496,73 @@ fn lifetime_eof_cancels_reaps_native_and_closes_listener_without_affecting_other
 }
 
 #[test]
-fn readiness_rejects_wrong_build_hash_or_policy_binding_without_opening_store() {
+fn readiness_rejects_unsafe_native_and_binding_paths() {
+    for case in [
+        "native-symlink",
+        "native-hardlink",
+        "native-writable",
+        "native-not-executable",
+        "binding-symlink",
+        "binding-hardlink",
+        "binding-writable",
+        "binding-directory",
+    ] {
+        let repos = Repos::new();
+        let native = repos.fake("exit");
+        let (mut command, _read, _write) = Broker::command(&repos, &repos.main, &native);
+        let binding = PathBuf::from(format!("{}.tic-proxy.json", native.display()));
+        let target = if case.starts_with("native") {
+            &native
+        } else {
+            &binding
+        };
+        let alias = repos._root.path().join("unsafe-alias");
+        if case.ends_with("symlink") {
+            fs::rename(target, &alias).unwrap();
+            std::os::unix::fs::symlink(&alias, target).unwrap();
+        } else if case.ends_with("hardlink") {
+            fs::hard_link(target, &alias).unwrap();
+        } else if case.ends_with("writable") {
+            fs::set_permissions(target, fs::Permissions::from_mode(0o777)).unwrap();
+        } else if case.ends_with("not-executable") {
+            fs::set_permissions(target, fs::Permissions::from_mode(0o600)).unwrap();
+        } else {
+            fs::remove_file(target).unwrap();
+            fs::create_dir(target).unwrap();
+        }
+        let mut child = command.spawn().unwrap();
+        let until = Instant::now() + Duration::from_secs(3);
+        while child.try_wait().unwrap().is_none() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if child.try_wait().unwrap().is_none() {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("unsafe {case} reached readiness instead of rejecting");
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success(), "{case}");
+        assert!(output.stdout.is_empty(), "{case}");
+        assert!(!repos.main.join(".git/git-meta.sqlite").exists());
+    }
+}
+
+#[test]
+fn readiness_does_not_read_native_executable_contents() {
+    let repos = Repos::new();
+    let native = repos.fake("exit");
+    let (command, read, write) = Broker::command(&repos, &repos.main, &native);
+    // The trusted host owns publication. Runtime does not defend against that
+    // host rewriting bytes afterwards, and must not reread the executable.
+    fs::write(&native, b"host rewrote its own published artifact").unwrap();
+    fs::set_permissions(&native, fs::Permissions::from_mode(0o111)).unwrap();
+    let mut broker = Broker::start_command(command, read, write);
+    assert!(!repos.main.join(".git/git-meta.sqlite").exists());
+    broker.stop();
+}
+
+#[test]
+fn readiness_rejects_wrong_build_digest_metadata_or_policy_binding_without_opening_store() {
     for field in ["sha256", "native_revision", "policy_version"] {
         let repos = Repos::new();
         let native = repos.fake("exit");
@@ -471,7 +637,7 @@ fn lifetime_eof_during_incomplete_admission_never_spawns() {
 #[test]
 fn concurrent_real_native_brokers_and_human_retain_native_outcomes() {
     let repos = Repos::new();
-    let native = native();
+    let native = native(&repos);
     let main = Broker::start(&repos, &repos.main, &native);
     let linked = Broker::start(&repos, &repos.linked, &native);
     success(main.request(&["list", "--json"], ""));
@@ -536,17 +702,16 @@ fn concurrent_real_native_brokers_and_human_retain_native_outcomes() {
 }
 
 #[test]
-fn reset_disconnect_cancels_and_reaps_live_child() {
+fn graceful_fin_cancels_and_reaps_live_child() {
     let repos = Repos::new();
     let native = repos.fake("sleep");
     let broker = Broker::start(&repos, &repos.main, &native);
     let mut stream = TcpStream::connect(&broker.address).unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["new", "-F", "-"],"stdin":"x".repeat(1024 * 1024)}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-    stream.shutdown(Shutdown::Write).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while !repos.main.join("fixture-started").exists() {
         assert!(Instant::now() < until);
@@ -556,30 +721,19 @@ fn reset_disconnect_cancels_and_reaps_live_child() {
         .unwrap()
         .parse()
         .unwrap();
-    let linger = nix::libc::linger {
-        l_onoff: 1,
-        l_linger: 0,
-    };
-    // A reset is observable after request half-close; a second graceful FIN is
-    // not. Do not mislabel this as universal graceful-disconnect detection.
-    assert_eq!(
-        unsafe {
-            nix::libc::setsockopt(
-                stream.as_raw_fd(),
-                nix::libc::SOL_SOCKET,
-                nix::libc::SO_LINGER,
-                &linger as *const _ as *const nix::libc::c_void,
-                std::mem::size_of_val(&linger) as nix::libc::socklen_t,
-            )
-        },
-        0
-    );
-    drop(stream);
+    // No abortive linger: a normal FIN cancels while the response side stays open.
+    stream.shutdown(Shutdown::Write).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok() {
-        assert!(Instant::now() < until, "reset child was not reaped");
+        assert!(Instant::now() < until, "graceful FIN child was not reaped");
         thread::sleep(Duration::from_millis(10));
     }
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let response: Response =
+        serde_json::from_slice(&read_frame(&mut stream, MAX_RESPONSE).unwrap()).unwrap();
+    assert_eq!(response.exit, 125);
     fs::write(repos.main.join("fixture-mode"), "exit").unwrap();
     assert_eq!(broker.request(&["list"], "").exit, 17);
 }
@@ -608,9 +762,8 @@ fn blocked_response_delivery_expires_instead_of_retaining_worker() {
             },
             0
         );
-        let bytes = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
+        let bytes = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
         write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-        stream.shutdown(Shutdown::Write).unwrap();
         blocked.push(stream);
     }
     thread::sleep(Duration::from_secs(6));
@@ -620,11 +773,10 @@ fn blocked_response_delivery_expires_instead_of_retaining_worker() {
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-    stream.shutdown(Shutdown::Write).unwrap();
     let response: Response =
         serde_json::from_slice(&read_frame(&mut stream, MAX_RESPONSE).unwrap()).unwrap();
     assert_eq!(response.exit, 17);
@@ -638,13 +790,12 @@ fn saturated_workers_reject_new_requests_without_queueing_or_spawning() {
     let mut broker = Broker::start(&repos, &repos.main, &native);
     let mut active = Vec::new();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     for _ in 0..8 {
         let mut stream = TcpStream::connect(&broker.address).unwrap();
         write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
-        stream.shutdown(Shutdown::Write).unwrap();
         active.push(stream);
     }
     let until = Instant::now() + Duration::from_secs(5);
@@ -680,7 +831,7 @@ fn saturated_workers_reject_new_requests_without_queueing_or_spawning() {
 #[test]
 fn ordinary_subdirectory_startup_rejects_and_root_cwd_ignores_later_nested_repository() {
     let repos = Repos::new();
-    let native = native();
+    let native = native(&repos);
     let subdir = repos.main.join("ordinary-subdirectory");
     fs::create_dir(&subdir).unwrap();
     let (mut command, _read, _write) = Broker::command(&repos, &subdir, &native);
@@ -714,4 +865,118 @@ fn ordinary_subdirectory_startup_rejects_and_root_cwd_ignores_later_nested_repos
         !subdir.join(".git/git-meta.sqlite").exists(),
         "native cwd/store authority was redirected into descendant repository"
     );
+}
+
+#[test]
+fn incomplete_frame_eof_never_executes() {
+    let repos = Repos::new();
+    let native = repos.fake("exit");
+    let broker = Broker::start(&repos, &repos.main, &native);
+    for bytes in [vec![0, 0], vec![0, 0, 0, 10, b'{']] {
+        let mut stream = TcpStream::connect(&broker.address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream.write_all(&bytes).unwrap();
+        stream.shutdown(Shutdown::Write).unwrap();
+        let response: Response =
+            serde_json::from_slice(&read_frame(&mut stream, MAX_RESPONSE).unwrap()).unwrap();
+        assert_eq!(response.exit, 125);
+        assert!(!repos.main.join("fixture-started").exists());
+    }
+}
+
+#[test]
+fn trailing_input_before_or_after_spawn_is_terminal_never_a_second_execution() {
+    for after_spawn in [false, true] {
+        let repos = Repos::new();
+        let native = repos.fake("sleep");
+        let broker = Broker::start(&repos, &repos.main, &native);
+        let mut stream = TcpStream::connect(&broker.address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let body = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
+        let mut frame = Vec::new();
+        write_frame(&mut frame, &body, MAX_REQUEST).unwrap();
+        if after_spawn {
+            stream.write_all(&frame).unwrap();
+            let until = Instant::now() + Duration::from_secs(5);
+            while !repos.main.join("fixture-started").exists() {
+                assert!(Instant::now() < until);
+                thread::sleep(Duration::from_millis(10));
+            }
+        } else {
+            // Queue both frames in one write. Admission may race their arrival,
+            // so zero-or-one spawn is valid, never two.
+            frame.extend_from_within(..);
+        }
+        stream.write_all(&frame).unwrap();
+        // A reset caused by unread terminal input is also a transport failure.
+        if let Ok(body) = read_frame(&mut stream, MAX_RESPONSE) {
+            let response: Response = serde_json::from_slice(&body).unwrap();
+            assert_eq!(response.exit, 125);
+        }
+        let pids = fs::read_to_string(repos.main.join("fixture-pids")).unwrap_or_default();
+        assert!(pids.lines().count() <= 1, "{pids}");
+        if after_spawn {
+            assert_eq!(pids.lines().count(), 1);
+        }
+        for pid in pids.lines() {
+            assert!(
+                nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.parse().unwrap()), None)
+                    .is_err(),
+                "child not reaped"
+            );
+        }
+        // A fresh connection is separate authority; the trailing frame is gone.
+        fs::write(repos.main.join("fixture-mode"), "exit").unwrap();
+        assert_eq!(broker.request(&["list"], "").exit, 17);
+        assert!(
+            fs::read_to_string(repos.main.join("fixture-pids"))
+                .unwrap()
+                .lines()
+                .count()
+                <= 2
+        );
+    }
+}
+
+#[test]
+fn real_client_broker_and_native_preserve_store_and_exact_status_without_halfclose() {
+    let repos = Repos::new();
+    let native = native(&repos);
+    let broker = Broker::start(&repos, &repos.main, &native);
+    let run = |argv: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
+            .current_dir(&repos.linked)
+            .env_clear()
+            .env("SANDBOX_TIC_ENDPOINT", &broker.address)
+            .env("SANDBOX_TIC_TOKEN", TOKEN)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let created = run(&["new", "--title", "wire two native fixture", "--id-only"]);
+    assert!(created.status.success(), "{created:?}");
+    let listed = run(&["list", "--json"]);
+    assert!(listed.status.success(), "{listed:?}");
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("wire two native fixture"));
+    let db = repos.main.join(".git/git-meta.sqlite");
+    assert!(db.exists());
+    drop(broker);
+    assert!(db.exists(), "cleanup must not delete native state");
+
+    let native = repos.fake("exit");
+    let broker = Broker::start(&repos, &repos.main, &native);
+    let output = Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
+        .env_clear()
+        .env("SANDBOX_TIC_ENDPOINT", &broker.address)
+        .env("SANDBOX_TIC_TOKEN", TOKEN)
+        .arg("list")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(17));
+    assert_eq!(output.stdout, b"native stdout\n");
+    assert_eq!(output.stderr, b"native stderr\n");
 }

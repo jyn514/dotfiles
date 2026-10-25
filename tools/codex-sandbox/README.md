@@ -512,13 +512,16 @@ a join cannot rewrite shared metadata.
 ## Design and reference
 
 The authoritative [sandbox design specification](spec/main.typ) aggregates the sandbox contracts, including the trust model, proxy manifest, image resolution, and lifecycle.
-The selected [TicGit proxy design](spec/tic-proxy.typ) defines `capabilities.tic` as a default-off boolean in the version 2 sandbox manifest.
-When selected, it requires an installed host broker per owning launch.
+The selected [TicGit proxy design](spec/tic-proxy.typ) defines `capabilities.tic` as a default-on boolean in version 1 and version 2 source manifests.
+Explicit `false` opts out; existing accepted sessions retain their recorded choice.
+Each selected launch attempts its own host broker. Startup failure warns and allows Pi to start with TicGit unavailable, even when `true` was explicit.
+No failed startup projects its endpoint, token, client mount, or network attachment, and the guest `ti` entrypoint never searches PATH for a native fallback.
+Ready-broker request failures remain fail-closed without replacement or replay.
 Linked worktrees share ticket data, not broker authority.
 The native fork selects the common-directory store and removes automatic setup; guest file inputs are sent as bytes through stdin.
 The broker uses the exported native parser to enforce command and option policy, without a second argv grammar, OS confinement, a native server, or store aliases.
 Ordinary host `ti` uses the same fork and store without a broker.
-The capability remains default-off pending actual Linux and macOS provider acceptance.
+The user-selected default does not establish actual Linux or macOS provider acceptance; those checks remain unproven.
 Trusted host-settings capture and launcher integration pass local native round-trip tests.
 Builds, component tests, and local actual-native round-trip tests do not establish provider acceptance.
 The [pending Codex broker-removal proposal](host-pi-implementation-plan.md#pending-proposal-remove-the-unused-codex-model-broker) records an alternative to the selected authentication contract.

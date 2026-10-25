@@ -357,7 +357,8 @@ The owner-validated mode-`0600` metadata contains authenticated-egress session t
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
-The proposed #link("tic-proxy.typ")[TicGit capability] instead provides a restricted host-native broker with required `agent-launch` scope.
+The #link("tic-proxy.typ")[TicGit capability] instead provides a restricted host-native broker with best-effort startup and `agent-launch` scope.
+Startup failure warns and leaves TicGit unavailable without blocking Pi; it never selects privileged local execution or native guest fallback.
 Accepted workspace policy selects the capability; each launch owns a fresh endpoint and token, retained across its ordinary children and `/split` peers until final attachment release.
 The guest client reads guest file inputs and normalizes them to native stdin arguments; the host validates and forwards those arguments without opening guest paths.
 The TicGit contract owns that normalization, fixed command policy, repository support restrictions, and native outcome semantics.

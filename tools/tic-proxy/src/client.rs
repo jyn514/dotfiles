@@ -2,9 +2,8 @@
 use crate::policy;
 use crate::protocol::*;
 use clap::{ArgMatches, FromArgMatches};
-use nix::sys::socket::{setsockopt, sockopt::Linger};
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -135,7 +134,7 @@ fn exchange(
     let request = AuthenticatedRequest {
         token,
         request: Request {
-            version: VERSION,
+            version: WIRE_VERSION,
             command: COMMAND.into(),
             argv,
             stdin,
@@ -154,26 +153,9 @@ fn exchange(
         .ok_or((125, "endpoint has no address".into()))?;
     let mut stream = TcpStream::connect_timeout(&address, remaining(deadline)?)
         .map_err(|e| (125, format!("cannot connect to broker: {e}")))?;
-    // Framing still ends with write-half EOF, not a second wire message. A later
-    // client deadline/process exit must be distinguishable from that valid EOF
-    // even while no response is pending. Abortive full close sends TCP reset;
-    // every relay must explicitly preserve it. Fail before sending on inability
-    // to establish this cancellation behavior. On valid response EOF the full
-    // exchange is already complete, so its final close cannot cancel execution.
-    setsockopt(
-        &stream,
-        Linger,
-        &nix::libc::linger {
-            l_onoff: 1,
-            l_linger: 0,
-        },
-    )
-    .map_err(|e| {
-        (
-            125,
-            format!("cannot establish abortive transport close: {e}"),
-        )
-    })?;
+    // Keep the write side open while waiting. Ordinary readable EOF now means
+    // client disappearance to the broker; neither half-close nor reset is part
+    // of request framing. There is no retry after this single connection.
     stream
         .set_write_timeout(Some(remaining(deadline)?))
         .map_err(|e| (125, e.to_string()))?;
@@ -183,9 +165,6 @@ fn exchange(
             format!("request transport failed: {e}; inspect before retrying"),
         )
     })?;
-    stream
-        .shutdown(Shutdown::Write)
-        .map_err(|e| (125, e.to_string()))?;
     stream
         .set_read_timeout(Some(remaining(deadline)?))
         .map_err(|e| (125, e.to_string()))?;
@@ -198,7 +177,7 @@ fn exchange(
     remaining(deadline)?;
     let response: Response =
         serde_json::from_slice(&bytes).map_err(|e| (125, format!("invalid response: {e}")))?;
-    if response.version != VERSION
+    if response.version != WIRE_VERSION
         || response.stdout.len() > MAX_STDOUT
         || response.stderr.len() > MAX_STDERR
     {

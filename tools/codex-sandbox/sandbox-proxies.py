@@ -66,13 +66,10 @@ COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
 V2_COMMAND_FIELDS = {"image", "argv", "workdir", "network", "mounts"}
 CAPABILITY_DEFAULTS = {
     "zulip": True,
-    "nested-containers": False, "flower-r2": False, "tic": False,
+    "nested-containers": False, "flower-r2": False, "tic": True,
 }
 # Accept the retired declaration for existing project manifests; never publish it.
 CAPABILITIES = set(CAPABILITY_DEFAULTS) | {"host-editor"}
-# Raw v1 cannot opt into TicGit, even explicitly false. Trusted v1 snapshots
-# still retain the boolean accepted from v2 without selecting a shared service.
-V1_CAPABILITIES = CAPABILITIES - {"tic"}
 RECOVERY_COMMAND = (
     "run `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo <repository>` "
     "after all sandbox sessions exit; reset removes stopped matching agent containers"
@@ -232,13 +229,15 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
         # Accepted snapshots outlive the source capability catalog. Their command and
         # service records remain authoritative, so retain retired boolean selections.
         if (not isinstance(capabilities, dict) or
-                (not accepted and not set(capabilities) <= V1_CAPABILITIES) or
+                (not accepted and not set(capabilities) <= CAPABILITIES) or
                 (accepted and any(not isinstance(name, str) or not NAME_RE.fullmatch(name)
                                   for name in capabilities)) or
                 not all(isinstance(value, bool) for value in capabilities.values())):
             raise ConfigError("proxy manifest has invalid capabilities")
         if not accepted and capabilities.get("flower-r2", False):
             raise ConfigError("flower-r2 requires a version 2 repository declaration")
+        if not accepted:
+            capabilities = {"tic": CAPABILITY_DEFAULTS["tic"], **capabilities}
     elif version == 2:
         if not set(data) <= {"version", "capabilities", "images", "commands"}:
             raise ConfigError("version 2 proxy manifest has unknown fields")
@@ -246,7 +245,12 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
         if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
                 not all(isinstance(value, bool) for value in capabilities.values())):
             raise ConfigError("proxy manifest has invalid capabilities")
-        capabilities = {**CAPABILITY_DEFAULTS, **capabilities}
+        defaults = dict(CAPABILITY_DEFAULTS)
+        if accepted:
+            # Preserve v2's existing normalization for other capabilities, but
+            # never grant the new TicGit default to already accepted authority.
+            defaults.pop("tic")
+        capabilities = {**defaults, **capabilities}
         images = data.get("images")
         if default_bake and images is None:
             images = {
@@ -281,7 +285,13 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
     if not isinstance(raw_commands, dict):
         raise ConfigError("proxy manifest commands must be an object")
     if capabilities.get("tic", False) and "tic" in raw_commands:
-        raise ConfigError("selected tic capability conflicts with project command: tic")
+        if accepted or data.get("capabilities", {}).get("tic") is True:
+            raise ConfigError("selected tic capability conflicts with project command: tic")
+        # A new default must not take over an existing project command. Freeze
+        # this fallback in the snapshot; explicit true remains contradictory.
+        capabilities["tic"] = False
+        print("warning: TicGit disabled because its implicit default conflicts with project command: tic",
+              file=sys.stderr)
     commands: dict[str, Any] = {}
     targets: set[str] = set()
     for name, raw in raw_commands.items():

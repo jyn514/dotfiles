@@ -1,10 +1,14 @@
-//! Version-one typed command wire protocol. One frame per half-closed connection.
+//! Version-two typed command wire protocol. One request, one response, then close.
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::time::Duration;
 
-pub const VERSION: u32 = 1;
+pub const WIRE_VERSION: u32 = 2;
+// Local launcher interfaces are independent of the command transport.
+pub const CONFIG_VERSION: u32 = 1;
+pub const READINESS_VERSION: u32 = 1;
+pub const INSPECT_CONTEXT_VERSION: u32 = 1;
 pub const COMMAND: &str = "tic";
 pub const MAX_REQUEST: usize = 8 * 1024 * 1024;
 pub const MAX_RESPONSE: usize = 32 * 1024 * 1024;
@@ -44,7 +48,7 @@ pub struct Response {
 impl Response {
     pub fn error(exit: i32, message: impl Into<String>) -> Self {
         Self {
-            version: VERSION,
+            version: WIRE_VERSION,
             exit,
             stdout: String::new(),
             stderr: format!("tic proxy: {}\n", message.into()),
@@ -52,7 +56,7 @@ impl Response {
     }
 }
 pub fn validate_request(request: &Request) -> Result<()> {
-    if request.version != VERSION || request.command != COMMAND {
+    if request.version != WIRE_VERSION || request.command != COMMAND {
         bail!("unsupported request version or command");
     }
     validate_argv(&request.argv)?;
@@ -71,7 +75,7 @@ pub fn validate_argv(argv: &[String]) -> Result<()> {
     Ok(())
 }
 /// Caller owns the absolute deadline and cancellation of its stream.
-pub fn read_frame(reader: &mut impl Read, limit: usize) -> Result<Vec<u8>> {
+pub fn read_frame_body(reader: &mut impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut header = [0; 4];
     reader.read_exact(&mut header)?;
     let len = u32::from_be_bytes(header) as usize;
@@ -80,6 +84,11 @@ pub fn read_frame(reader: &mut impl Read, limit: usize) -> Result<Vec<u8>> {
     }
     let mut body = vec![0; len];
     reader.read_exact(&mut body)?;
+    Ok(body)
+}
+/// Response framing also requires EOF: the broker sends one response then closes.
+pub fn read_frame(reader: &mut impl Read, limit: usize) -> Result<Vec<u8>> {
+    let body = read_frame_body(reader, limit)?;
     let mut extra = [0];
     if reader.read(&mut extra)? != 0 {
         bail!("trailing frame bytes");

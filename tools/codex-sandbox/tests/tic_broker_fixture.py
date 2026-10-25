@@ -52,18 +52,20 @@ def main(mode="ready"):
                     else:
                         with listener.accept()[0] as connection:
                             connection.settimeout(2)
-                            data = bytearray()
-                            while True:
-                                chunk = connection.recv(65536)
-                                if not chunk:
-                                    break
-                                data.extend(chunk)
-                            if not data:  # FixedTcpBridge's reachability probe.
-                                continue
-                            size = struct.unpack("!I", data[:4])[0]
-                            request = json.loads(data[4:])
-                            assert size == len(data) - 4
+                            # Match wire 2: consume the bounded frame, not EOF.
+                            # An open client connection is required by the real
+                            # broker while native execution remains in flight.
+                            with connection.makefile('rb') as stream:
+                                header = stream.read(4)
+                                if not header:  # FixedTcpBridge's reachability probe.
+                                    continue
+                                assert len(header) == 4
+                                size = struct.unpack("!I", header)[0]
+                                assert size <= 8 * 1024 * 1024
+                                data = stream.read(size)
+                            assert len(data) == size
+                            request = json.loads(data)
                             assert request["token"] == config["token"]
-                            response = json.dumps({"version": 1, "exit": 0,
+                            response = json.dumps({"version": 2, "exit": 0,
                                                    "stdout": "fixture response", "stderr": ""}).encode()
                             connection.sendall(struct.pack("!I", len(response)) + response)

@@ -7,7 +7,6 @@ use nix::fcntl::{fcntl, FcntlArg, FdFlag, OFlag};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -82,21 +81,8 @@ pub fn load_config(path: &Path) -> Result<Config> {
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
-fn hash_file(path: &Path) -> Result<String> {
-    let mut file = File::open(path)?;
-    let mut hash = Sha256::new();
-    let mut buf = [0; 64 * 1024];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hash.update(&buf[..n]);
-    }
-    Ok(format!("{:x}", hash.finalize()))
-}
 fn validate(config: &Config) -> Result<()> {
-    if config.version != VERSION || config.token.len() < 32 || config.token.len() > 4096 {
+    if config.version != CONFIG_VERSION || config.token.len() < 32 || config.token.len() > 4096 {
         bail!("invalid configuration version or authentication token");
     }
     for value in [&config.user_name, &config.user_email, &config.namespace] {
@@ -111,17 +97,39 @@ fn validate(config: &Config) -> Result<()> {
         bail!("accepted paths must be absolute");
     }
     let native = fs::canonicalize(&config.native_executable)?;
-    if native != config.native_executable || !fs::metadata(&native)?.is_file() {
-        bail!("native executable must be a canonical regular file");
+    let metadata = fs::metadata(&native)?;
+    if native != config.native_executable
+        || !metadata.is_file()
+        || metadata.uid() != nix::unistd::geteuid().as_raw()
+        || metadata.nlink() != 1
+        || metadata.permissions().mode() & 0o022 != 0
+        || metadata.permissions().mode() & 0o111 == 0
+    {
+        bail!("native executable must be a canonical launcher-owned regular executable");
     }
     let mut manifest_path = native.as_os_str().to_os_string();
     manifest_path.push(".tic-proxy.json");
-    let manifest: NativeManifest =
-        serde_json::from_slice(&fs::read(PathBuf::from(manifest_path))?)?;
+    let manifest_path = PathBuf::from(manifest_path);
+    let metadata = fs::symlink_metadata(&manifest_path)?;
+    if !metadata.is_file()
+        || metadata.uid() != nix::unistd::geteuid().as_raw()
+        || metadata.nlink() != 1
+        || metadata.permissions().mode() & 0o022 != 0
+        || metadata.len() > 64 * 1024
+    {
+        bail!("native binding must be a bounded launcher-owned regular file");
+    }
+    let manifest: NativeManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    // Publication checked artifact bytes outside guest-writable mounts. Runtime
+    // checks retain path/pin/policy authority, not host-cache corruption checks.
     if manifest.native_revision != NATIVE_REVISION
         || manifest.policy_version != POLICY_VERSION
+        || config.native_sha256.len() != 64
+        || !config
+            .native_sha256
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         || manifest.sha256 != config.native_sha256
-        || hash_file(&native)? != config.native_sha256
     {
         bail!("installed native build/policy binding mismatch");
     }
@@ -187,18 +195,6 @@ fn receive(
     }
     let mut bytes = vec![0; size];
     read_piece(stream, &mut bytes, stop, deadline)?;
-    loop {
-        if cancelled(stop, deadline) {
-            bail!("admission cancelled or expired");
-        }
-        let mut byte = [0];
-        match stream.read(&mut byte) {
-            Ok(0) => break,
-            Ok(_) => return Err(AdmissionRejection("trailing request bytes").into()),
-            Err(e) if transient(&e) => thread::sleep(TICK),
-            Err(e) => return Err(e.into()),
-        }
-    }
     Ok(serde_json::from_slice(&bytes).context("invalid authenticated request")?)
 }
 fn authenticated(actual: &str, expected: &str) -> bool {
@@ -234,20 +230,16 @@ fn deliver(stream: &mut TcpStream, response: &Response, stop: &AtomicBool) -> Re
     }
     Ok(())
 }
-/// Read half-close is required before execution; a subsequent full close cancels
-/// the live child. MSG_PEEK is not used because EOF is already expected here:
-/// poll's HUP/ERR distinguish transport loss from the required write-half EOF.
-fn disconnected(stream: &TcpStream) -> bool {
-    use nix::poll::{poll, PollFd, PollFlags};
-    use std::os::fd::AsFd;
-    let mut fds = [PollFd::new(
-        stream.as_fd(),
-        PollFlags::POLLERR | PollFlags::POLLHUP,
-    )];
-    poll(&mut fds, 0u16).is_ok()
-        && fds[0]
-            .revents()
-            .is_some_and(|r| r.intersects(PollFlags::POLLERR | PollFlags::POLLHUP))
+/// A request is already complete: any further input is terminal, never another
+/// command. EOF (including a peer write-half-close), bytes, and socket errors
+/// cancel the exchange. A racing close/byte may arrive after the single spawn;
+/// cancellation cannot roll back native mutations.
+fn peer_cancelled(stream: &TcpStream) -> bool {
+    let mut byte = [0];
+    match stream.peek(&mut byte) {
+        Err(error) if transient(&error) => false,
+        _ => true,
+    }
 }
 struct OwnedChild(Child);
 impl OwnedChild {
@@ -326,7 +318,7 @@ fn execute(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if cancelled(stop, admission_deadline) || disconnected(stream) {
+    if cancelled(stop, admission_deadline) || peer_cancelled(stream) {
         bail!("cancelled before spawn");
     }
     let mut child = OwnedChild(command.spawn().context("native spawn failed")?);
@@ -344,7 +336,7 @@ fn execute(
     let mut error_done = false;
     let status;
     loop {
-        if stop.load(Ordering::Acquire) || disconnected(stream) {
+        if stop.load(Ordering::Acquire) || peer_cancelled(stream) {
             bail!("request cancelled; native outcome may be unknown");
         }
         if Instant::now() >= deadline {
@@ -387,7 +379,7 @@ fn execute(
     }
     use std::os::unix::process::ExitStatusExt;
     Ok(Response {
-        version: VERSION,
+        version: WIRE_VERSION,
         exit: status
             .code()
             .unwrap_or_else(|| 128 + status.signal().unwrap_or(0)),
@@ -418,7 +410,7 @@ fn serve(mut stream: TcpStream, config: &Config, stop: &AtomicBool, accepted: In
                 match policy::classify(&request.argv, &request.stdin) {
                     Err(error) => Response::error(2, error),
                     Ok(_) if cancelled(stop, admission_deadline) => Response::error(125, "cancelled before execution"),
-                    Ok(policy::Decision::Respond { exit, stdout, stderr }) => Response { version: VERSION, exit, stdout, stderr },
+                    Ok(policy::Decision::Respond { exit, stdout, stderr }) => Response { version: WIRE_VERSION, exit, stdout, stderr },
                     Ok(policy::Decision::Execute) => match execute(config, &request, &stream, stop, admission_deadline) {
                         Ok(response) => response,
                         Err(_) => Response::error(125, "native transport/output failure or cancellation; outcome may be unknown; inspect before retrying"),
@@ -454,7 +446,7 @@ pub unsafe fn run(config: Config, lifetime_fd: RawFd) -> Result<()> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
     listener.set_nonblocking(true)?;
     let ready = serde_json::to_vec(&Ready {
-        version: VERSION,
+        version: READINESS_VERSION,
         address: listener.local_addr()?.to_string(),
         native_revision: NATIVE_REVISION,
         policy_version: POLICY_VERSION,
