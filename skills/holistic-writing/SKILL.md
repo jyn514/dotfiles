@@ -61,6 +61,9 @@ Your judgment can be wrong; refusing to make it leaves the reader to decide, oft
 Develop a hypothesis as a hypothesis, explaining its proposed mechanism and uncertainty without claiming confirmation.
 For a nontrivial mechanism, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
 Introduce one conceptual layer at a time, with plain-language meaning before notation and a worked example before an algorithm when useful.
+Preserve deliberate concrete-to-general development.
+A reader may understand a particular case before learning the broader concept or its name.
+Before recommending an earlier definition, identify what the reader cannot understand at that point without it; needing the concept later does not establish that it belongs earlier.
 Explain why a schema or invariant exists before listing its fields.
 Do not force every artifact into a design-document progression or require a worked example of every application.
 
