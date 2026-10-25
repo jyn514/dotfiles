@@ -7,11 +7,21 @@ For trials based on a past session, directly resume or fork the original session
 Preserve its actual messages, tool calls, and tool results; do not replace them with a summary or a new user message quoting the history.
 Protect the original session and real user state from replayed actions.
 Use disposable resources for state those actions can modify.
+A conversation fork preserves messages, not filesystem or runtime state.
+Relevant inputs can include current source files, unsolicited messages, and automatic context injection.
 Neither history preservation nor mutation isolation by itself requires reconstructing the historical filesystem.
 Use current task state and report differences that could change the decision, or restore the relevant historical state.
 Choose according to the comparison question; these are alternatives, not sequential steps.
-Run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
+Control relevant differences or disclose their limits on the comparison.
+For a fresh paired comparison, run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
+A bounded revised-only replay may use recorded earlier outputs for comparison; report it as a quality observation, not a controlled experiment.
+Do not block that replay solely because a fresh baseline is unavailable.
 Inspect actual actions and outputs; investigate a failed check before expanding the replay.
+
+Verify that the updated instruction body successfully loaded before treating a continuation as evidence about its behavior.
+A reload, a read attempt, or a completed answer alone does not establish exposure to the updated instructions.
+Inspect the full relevant continuation, including earlier responses and actions at the tested decision.
+An interface that shows only the latest final response may hide those earlier outputs.
 
 Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
 A handoff trial does not establish how the original agent would continue or whether its decisions improve.
