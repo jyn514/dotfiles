@@ -312,11 +312,18 @@ class ContainerRuntime:
                 "sha256:" + raw["Image"].removeprefix("sha256:") == image.config)
 
     def network_address(self, container, network):
+        return self.network_addresses(container, (network,))[network]
+
+    def network_addresses(self, container, networks):
+        """Validate all requested memberships from one container snapshot."""
         raw = self.inspect_container(container)
-        entry = raw["NetworkSettings"]["Networks"].get(network)
-        if not entry or not entry.get("IPAddress"):
-            raise RuntimeError(f"container is not attached to {network}")
-        return str(ipaddress.IPv4Address(entry["IPAddress"]))
+        addresses = {}
+        for network in networks:
+            entry = raw["NetworkSettings"]["Networks"].get(network)
+            if not entry or not entry.get("IPAddress"):
+                raise RuntimeError(f"container is not attached to {network}")
+            addresses[network] = str(ipaddress.IPv4Address(entry["IPAddress"]))
+        return addresses
 
     def workload_argv(self, image, arguments, command=(), *, cwd=None, operation="run"):
         return self.argv([operation, "--pull=never", "--http-proxy=false", *arguments,
@@ -452,6 +459,9 @@ class VMRuntime(ContainerRuntime):
 
     def verify(self):
         self.host.verify_runtime(self.record)
+
+    def check_binds(self, sources):
+        return self.host.check_binds(sources)
 
     def guest(self, arguments, **kwargs):
         return self.host.guest(self.record, *arguments, **kwargs)
@@ -767,6 +777,11 @@ class Lima(VMRuntime):
         # Snapshot ancestry verifies actual filesystem identity, independent of
         # .Config.Image and names that may now point to a different image.
         return parent == image.rootfs
+
+    def network_addresses(self, container, networks):
+        # Native membership is CNI/IPAM authority, not Docker-shaped metadata.
+        # Preserve each live interface/allocation check; do not reuse a snapshot.
+        return {network: self.network_address(container, network) for network in networks}
 
     def network_address(self, container, network):
         if not NAME.fullmatch(network):

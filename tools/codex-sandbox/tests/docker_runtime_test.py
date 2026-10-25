@@ -42,6 +42,38 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    @patch('docker_runtime.inspect_docker')
+    def test_network_addresses_validate_one_snapshot_without_caching_across_calls(self, query):
+        runtime = backend()
+        query.return_value = {'NetworkSettings': {'Networks': {
+            'link': {'IPAddress': '10.23.0.2'}, 'egress': {'IPAddress': '10.24.0.2'}}}}
+        self.assertEqual({'link': '10.23.0.2', 'egress': '10.24.0.2'},
+                         runtime.network_addresses('relay', ('link', 'egress')))
+        query.assert_called_once_with('/owned/docker.sock', '/containers/relay/json',
+                                      ['docker', 'inspect', 'relay'])
+        query.return_value['NetworkSettings']['Networks']['link']['IPAddress'] = '10.23.0.3'
+        self.assertEqual('10.23.0.3', runtime.network_address('relay', 'link'))
+        self.assertEqual(2, query.call_count)
+
+    @patch('docker_runtime.inspect_docker')
+    def test_network_addresses_reject_either_missing_or_invalid_membership(self, query):
+        runtime = backend()
+        for name in ('link', 'egress'):
+            for entry in (None, {}, {'IPAddress': ''}, {'IPAddress': 'invalid'},
+                          {'IPAddress': '::1'}, {'IPAddress': '999.1.1.1'}):
+                with self.subTest(network=name, entry=entry):
+                    networks = {'link': {'IPAddress': '10.23.0.2'},
+                                'egress': {'IPAddress': '10.24.0.2'}}
+                    if entry is None:
+                        del networks[name]
+                    else:
+                        networks[name] = entry
+                    query.return_value = {'NetworkSettings': {'Networks': networks}}
+                    query.reset_mock()
+                    with self.assertRaises(ValueError):
+                        runtime.network_addresses('relay', ('link', 'egress'))
+                    query.assert_called_once()
+
     def test_upstream_image_returns_registry_digest_and_rejects_bad_output(self):
         runtime = backend()
         runtime.argv = lambda arguments: arguments
@@ -211,20 +243,12 @@ class DockerRuntimeTest(unittest.TestCase):
                               '--clear-groups'), host.bind_check_argv(record)[:5])
             self.assertEqual('python3', host.bind_check_argv({'vm_type': 'vz'})[0])
             host.runtime_epoch = Mock(return_value='a' * 32)
-            host.guest = Mock(side_effect=[Mock(stdout=value) for value in (
-                '100999:100999\n', '3661\n',
-                '0 1000 1\n1 100000 65536\n', '0 1000 1\n1 100000 65536\n')])
-            host.verify_runtime(record)
-            self.assertEqual(('sudo', 'stat', '-c', '%u:%g'), host.guest.call_args_list[0].args[1:5])
-            host.guest.side_effect = [Mock(stdout=value) for value in (
-                '100999:100999\n', '3661\n',
-                '0 1000 1\n1 200000 65536\n')]
-            with self.assertRaisesRegex(ValueError, 'Docker uid namespace'):
+            # Ownership/map failures are exercised by the standalone helper
+            # regressions in lima_bind_checks_test, not mocked command output.
+            with patch.object(host, 'verify_virtiofs') as mapping_check:
                 host.verify_runtime(record)
-            host.guest.side_effect = None
-            host.guest.return_value.stdout = '1000:1000\n'
-            with self.assertRaisesRegex(ValueError, 'UID map is inactive'):
-                host.verify_runtime(record)
+                host.runtime_epoch.assert_called_once_with(record)
+                mapping_check.assert_called_once_with(record)
 
     def test_linux_virtiofs_reports_the_missing_host_executable(self):
         host = object.__new__(DockerHost)

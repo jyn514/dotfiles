@@ -324,6 +324,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                     launcher["preflight_lima"](state)
             backend.host.check_bind.assert_not_called()
             backend.host.check_binds.assert_not_called()
+            backend.check_binds.assert_not_called()
 
     def test_lima_preflight_submits_all_mount_permissions_in_one_batch(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -340,8 +341,9 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                                  _secure_codex_auth_directory=lambda _: None):
                 launcher["preflight_lima"](state)
             backend.host.check_bind.assert_not_called()
-            backend.host.check_binds.assert_called_once()
-            sources = backend.host.check_binds.call_args.args[0]
+            backend.host.check_binds.assert_not_called()
+            backend.check_binds.assert_called_once()
+            sources = backend.check_binds.call_args.args[0]
             self.assertIn((repository, True), sources)
             self.assertIn((repository, False), sources)
             self.assertIn((home / ".codex/config.toml", False), sources)

@@ -27,7 +27,7 @@ from unittest import mock
 
 TOOL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOL))
-from sandbox_runtime import VMRuntime
+from sandbox_runtime import ContainerRuntime, VMRuntime
 NATIVE_REVISION = (TOOL.parent / 'tic-proxy/native-revision').read_text().strip()
 from trusted_services import LifecycleError, LifecycleState, ResourcePresence
 
@@ -81,7 +81,9 @@ class FakeProvider:
         self.platform = platform
         self.events = []
         self.present = set()
-        self.host = SimpleNamespace(state=root, check_bind=lambda path: self.events.append(('bind', path)))
+        self.host = SimpleNamespace(
+            state=root, check_binds=mock.Mock(side_effect=lambda sources:
+                                            self.events.append(('binds', sources))))
         (root / 'scratch').mkdir(parents=True, exist_ok=True)
         self.probe_status = 0
         self.listener_status = 0
@@ -95,6 +97,9 @@ class FakeProvider:
 
     def network_address(self, container, network):
         return '10.23.0.2' if '-link-' in network else '10.24.0.2'
+
+    def network_addresses(self, container, networks):
+        return {network: self.network_address(container, network) for network in networks}
 
     @contextmanager
     def environment_file(self, values):
@@ -474,7 +479,8 @@ class TicLauncherTest(unittest.TestCase):
                         self.assertEqual((TOOL / path.name).read_bytes(), path.read_bytes())
                     if mac:
                         self.assertTrue(staged.is_relative_to(runtime.host.state / 'scratch'))
-                        self.assertIn(('bind', str(staged)), runtime.events)
+                        runtime.host.check_binds.assert_called_once_with(
+                            [(str(staged), False), (str(relay_dir), False)])
                     self.assertEqual('10.23.0.2:2225', self.state.tic_environment['SANDBOX_TIC_ENDPOINT'])
                     probe_environment = next(item[1] for item in runtime.events if item[0] == 'environment')
                     self.assertEqual(handle.token, probe_environment['SANDBOX_TIC_TOKEN'])
@@ -855,6 +861,50 @@ class TicLauncherTest(unittest.TestCase):
                     self.assert_tic_unavailable('owned copy failure')
                     self.assertFalse(runtime.present)
                     self.assertEqual([], list((runtime.host.state / 'scratch').glob('sandbox-tic-client-*')))
+
+    def test_each_staged_bind_rejection_cleans_before_broker_or_relay_start(self):
+        self.write_build('linux/arm64')
+        for rejected in ('ti', 'relay'):
+            with self.subTest(rejected=rejected), self.provider(mac=True) as runtime:
+                def reject(sources):
+                    self.assertEqual(['ti', 'relay'], [Path(path).name for path, _ in sources])
+                    self.assertEqual([False, False], [writable for _, writable in sources])
+                    self.assertTrue(all(Path(path).exists() for path, _ in sources))
+                    raise ValueError(f'rejected staged {rejected}')
+                runtime.host.check_binds.side_effect = reject
+                with mock.patch.object(self.globals['TicBrokerLaunch'], 'start') as start, \
+                        mock.patch.object(self.globals['TicBrokerLaunch'], 'start_bridge') as bridge:
+                    self.assert_tic_unavailable(f'rejected staged {rejected}')
+                runtime.host.check_binds.assert_called_once()
+                start.assert_not_called()
+                bridge.assert_not_called()
+                self.assertFalse(runtime.present)
+                self.assertIsNone(self.state.tic_handle.process)
+                self.assertFalse(any(event[0] in ('network', 'container', 'probe', 'environment')
+                                     for event in runtime.events))
+                self.assertEqual([], list((runtime.host.state / 'scratch').glob('sandbox-tic-client-*')))
+
+    def test_snapshot_address_failures_never_publish_peers_environment_or_readiness(self):
+        for network in ('link', 'egress'):
+            for address in (None, '', '999.1.1.1'):
+                with self.subTest(network=network, address=address), self.provider() as runtime:
+                    networks = {'codex-tic-link-first': {'IPAddress': '10.23.0.2'},
+                                'codex-tic-egress-first': {'IPAddress': '10.24.0.2'}}
+                    name = f'codex-tic-{network}-first'
+                    if address is None:
+                        del networks[name]
+                    else:
+                        networks[name]['IPAddress'] = address
+                    runtime.inspect_container = mock.Mock(return_value={
+                        'NetworkSettings': {'Networks': networks}})
+                    runtime.network_addresses = lambda container, names: (
+                        ContainerRuntime.network_addresses(runtime, container, names))
+                    self.assert_tic_unavailable('not permitted' if address else 'not attached')
+                    runtime.inspect_container.assert_called_once_with('codex-tic-first')
+                    self.assertEqual(set(), runtime.host_bridge.allowed_peers)
+                    self.assertFalse(any(event[0] in ('probe', 'environment') for event in runtime.events))
+                    self.assertFalse(runtime.present)
+                    self.assertIsNone(self.state.tic_handle.process)
 
     def test_missing_endpoint_never_attaches_guest(self):
         with self.provider() as runtime:

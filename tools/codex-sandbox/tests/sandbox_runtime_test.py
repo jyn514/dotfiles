@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -505,6 +506,52 @@ class ImageIdentityTest(unittest.TestCase):
 
 
 class NetworkMembershipTest(unittest.TestCase):
+    def test_plural_native_lookup_keeps_each_cni_identity_and_allocation_check(self):
+        for wrong in (None, 'link', 'egress'):
+            with self.subTest(wrong_allocation=wrong):
+                backend = lima()
+                addresses = {'link': '10.23.0.2', 'egress': '10.24.0.2'}
+                def run(arguments, **kwargs):
+                    if arguments == ['inspect', '--mode=native', 'relay']:
+                        value = {'ID': 'a' * 64, 'Process': {'NetNS': {'Interfaces': [
+                            {'Name': 'eth7', 'Addrs': ['10.23.0.2/24', '10.24.0.2/24']}]}}}
+                    else:
+                        self.assertEqual(['network', 'inspect', '--mode=native'], arguments[:3])
+                        name = arguments[3]
+                        subnet = str(ipaddress.IPv4Interface(addresses[name] + '/24').network)
+                        value = {'CNI': {'name': name, 'plugins': [{
+                            'type': 'bridge', 'ipam': {'ranges': [[{'subnet': subnet}]]}}]}}
+                    return SimpleNamespace(stdout=json.dumps([value]))
+                backend.run = Mock(side_effect=run)
+                def guest(arguments, **kwargs):
+                    path = arguments[-1]
+                    name = path.split('/')[-2]
+                    self.assertEqual(f'/var/lib/cni/networks/{name}/{addresses[name]}', path)
+                    owner = 'b' * 64 if name == wrong else 'a' * 64
+                    return SimpleNamespace(stdout='default-' + owner + '\neth7\n')
+                backend.guest = Mock(side_effect=guest)
+                backend.inspect_container = Mock(side_effect=AssertionError('Docker snapshot used for native CNI'))
+                if wrong:
+                    with self.assertRaisesRegex(runtime.RuntimeError, 'membership'):
+                        backend.network_addresses('relay', ('link', 'egress'))
+                else:
+                    self.assertEqual(addresses, backend.network_addresses('relay', ('link', 'egress')))
+                expected = 1 if wrong == 'link' else 2
+                self.assertEqual(expected, backend.guest.call_count)
+                self.assertEqual(expected * 2, backend.run.call_count)
+                backend.inspect_container.assert_not_called()
+
+    def test_plural_native_lookup_preserves_network_name_and_ambiguity_rejections(self):
+        backend = lima()
+        backend.run = Mock()
+        with self.assertRaisesRegex(runtime.RuntimeError, 'invalid network name'):
+            backend.network_addresses('relay', ('invalid/name',))
+        backend.run.assert_not_called()
+        backend = self.backend(['10.254.254.130/24', '10.254.254.131/24'],
+                               'default-' + 'a' * 64 + '\neth7\n')
+        with self.assertRaisesRegex(runtime.RuntimeError, 'ambiguous'):
+            backend.network_addresses('relay', ('owned',))
+
     def backend(self, addresses, allocation):
         backend = lima()
         backend.run = Mock(side_effect=[

@@ -65,6 +65,14 @@ class Docker(VMRuntime):
         if not recovery:
             self.verify()
 
+    def check_binds(self, sources):
+        if self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        # Construction already checked engine identity, service policy readiness,
+        # and UID mapping. Like ordinary Docker commands, later bind checks use
+        # this admitted runtime, not another admission poll for every batch.
+        return self.host._check_bind_sources(self.record, sources)
+
     def verify_identity(self):
         """Recovery needs the same engine, even when its admission policy is broken."""
         machine = self.host.machine(self.record)

@@ -433,6 +433,16 @@ class Host:
 
     def check_binds(self, sources):
         record = self.record()
+        bindings = self._bind_sources(record, sources)
+        self.verify_runtime(record)
+        return self._check_guest_bind_sources(record, bindings)
+
+    def _check_bind_sources(self, record, sources):
+        # Internal source check for a caller that already admitted this record.
+        # Standalone host commands must go through check_binds above.
+        return self._check_guest_bind_sources(record, self._bind_sources(record, sources))
+
+    def _bind_sources(self, record, sources):
         if record["phase"] != "ready":
             raise ValueError("setup is incomplete")
         bindings = []
@@ -444,9 +454,11 @@ class Host:
                 with path.open("rb") as stream:
                     binding["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
             bindings.append(binding)
-        self.verify_runtime(record)
+        return bindings
+
+    def _check_guest_bind_sources(self, record, bindings):
         # This read-only client helper travels with the host launcher; installed
-        # VM policy remains pinned and is verified separately above.
+        # VM policy belongs to runtime admission, not each source batch.
         try:
             self.guest(record, *self.bind_check_argv(record),
                 input=json.dumps(bindings), text=True, capture_output=True)

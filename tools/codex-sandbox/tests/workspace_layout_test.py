@@ -192,7 +192,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
                 _secure_codex_auth_directory=lambda _: None,
                 proxy_module=lambda: SimpleNamespace(runtime_directory=lambda _: runtime_directory)):
             launcher["preflight_lima"](state)
-        binds = backend.host.check_binds.call_args.args[0]
+        binds = backend.check_binds.call_args.args[0]
         for workspace in workspaces:
             self.assertIn((workspace.host_root, True), binds)
             self.assertIn((workspace.lock_file, True), binds)

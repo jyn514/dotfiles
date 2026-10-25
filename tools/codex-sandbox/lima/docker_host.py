@@ -42,7 +42,7 @@ class DockerHost(Host):
         return mapping
 
     def bind_check_argv(self, record):
-        arguments = super().bind_check_argv(record)
+        arguments = (*super().bind_check_argv(record), '--defer-access')
         mapping = self.virtiofs_map(record)
         if mapping is None:
             return arguments
@@ -89,26 +89,18 @@ class DockerHost(Host):
         mapping = self.virtiofs_map(record)
         if mapping is None:
             return
-        scratch = self.state / 'scratch'
-        ownership = self.guest(record, 'sudo', 'stat', '-c', '%u:%g', str(scratch),
-                               capture_output=True, text=True).stdout.strip()
-        expected = f"{mapping['guest_uid']}:{mapping['guest_gid']}"
-        if ownership != expected:
-            raise ValueError(f'Linux virtiofs UID map is inactive ({ownership}; expected {expected}); restart through docker_host.py')
-        pids = self.guest(record, 'pgrep', '-x', 'dockerd',
-                          capture_output=True, text=True).stdout.split()
-        if len(pids) != 1 or not pids[0].isdigit():
-            raise ValueError('expected exactly one rootless Docker daemon')
-        for kind in ('uid', 'gid'):
-            lines = self.guest(record, 'cat', f'/proc/{pids[0]}/{kind}_map',
-                               capture_output=True, text=True).stdout.splitlines()
-            pairs = [tuple(map(int, line.split())) for line in lines]
-            container_id = mapping['host_' + kind]
-            guest_id = mapping['guest_' + kind]
-            if not any(start <= container_id < start + length and
-                       outer + container_id - start == guest_id
-                       for start, outer, length in pairs):
-                raise ValueError(f'Docker {kind} namespace does not map agent ID to virtiofs owner')
+        # One read-only guest invocation checks both ends of the ownership
+        # translation. Access alone cannot detect wrong-owner writes in a
+        # world-writable shared directory.
+        try:
+            self.guest(record, 'sudo', 'python3', '-c',
+                (SOURCE / 'check-virtiofs.py').read_text(),
+                input=json.dumps({'scratch': str(self.state / 'scratch'), 'mapping': mapping}),
+                capture_output=True, text=True)
+        except subprocess.CalledProcessError as error:
+            if error.stderr:
+                print(error.stderr, file=sys.stderr, end='')
+            raise
 
     def machine(self, record):
         """Runtime lookup checks identity; setup/doctor owns configuration drift."""

@@ -1322,8 +1322,7 @@ def stage_tic_client(build: InstalledTicBuild) -> Path:
         if any(character in str(destination) for character in ',\0\r\n'):
             raise LauncherError('TicGit staged client path contains a mount delimiter')
         if isinstance(OUTER_RUNTIME, VMRuntime):
-            OUTER_RUNTIME.host.check_bind(str(destination))
-            OUTER_RUNTIME.host.check_bind(str(relay))
+            OUTER_RUNTIME.check_binds([(str(destination), False), (str(relay), False)])
         return destination
     except BaseException:
         remove_tic_stage(directory)
@@ -1446,8 +1445,8 @@ def _start_tic(state: State) -> list[str]:
              sidecar_image, '/trusted/tic/tic_relay.py',
              '--target-host', OUTER_RUNTIME.host_address,
              '--target-port', str(bridge.port)], discard_stdout=True)
-        addresses = {name: OUTER_RUNTIME.network_address(resources.container, name)
-                     for name in (resources.link_network, resources.egress_network)}
+        addresses = OUTER_RUNTIME.network_addresses(
+            resources.container, (resources.link_network, resources.egress_network))
         if not all(addresses.values()):
             raise LauncherError('TicGit relay has incomplete network addresses')
         # Lima's host.lima.internal forwarding reaches host loopback listeners
@@ -2158,7 +2157,7 @@ def tic_guard_arguments(state: State, command: list[str]) -> list[str]:
             or guard.read_bytes() != encoded):
         raise LauncherError('TicGit staged guard identity or permissions mismatch')
     if isinstance(OUTER_RUNTIME, VMRuntime):
-        OUTER_RUNTIME.host.check_bind(str(guard))
+        OUTER_RUNTIME.check_binds([(str(guard), False)])
     arguments = ['--mount', f'type=bind,src={guard},dst=/libexec/sandbox-wrappers/ti,readonly']
     if not getattr(state, 'tic_environment', {}):
         # Also clear stale image-baked values, not just inherited host values.
@@ -2659,7 +2658,7 @@ def preflight_lima(state: State) -> None:
     for path in [*writable, *readable]:
         if home.is_relative_to(path.resolve(strict=True)):
             raise LauncherError(f"refusing to mount the whole home directory into a container: {path}")
-    OUTER_RUNTIME.host.check_binds([
+    OUTER_RUNTIME.check_binds([
         *((path, True) for path in writable), *((path, False) for path in readable)])
 
 

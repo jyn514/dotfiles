@@ -122,6 +122,17 @@ pass `--state DIRECTORY` before `setup` and `--instance sandbox-host-docker-NAME
 after it, then set `CODEX_SANDBOX_DOCKER_STATE=DIRECTORY` for launches and builders.
 Explicit `--share-read PATH` / `--share-write PATH` options replace home sharing;
 setup adds its private scratch share automatically.
+
+Each Docker runtime admits the recorded engine once, including service policy
+readiness and Linux VirtioFS UID/GID mapping. Later launcher bind batches reuse
+that admitted runtime; they do not poll service readiness again. Bind checks
+retain canonical-path/share containment, configured share write authority,
+source type, and guest/host file digest equality. They do not predict ordinary
+read/write access with `os.access`: strict `--mount` or the actual consumer reports
+permission failures, and failed workload creation follows normal cleanup. A
+directory check does not verify its contents against the host. Standalone host
+checks and the native nerdctl/Lima backend retain their runtime admission.
+
 Docker environment files are private host temporary files, read by the host
 client and deleted after use. They require no guest share or guest bind check.
 
