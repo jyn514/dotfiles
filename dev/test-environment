@@ -43,6 +43,21 @@ def cargo_home_error(path: Path, error: OSError) -> OSError:
     return OSError(message)
 
 
+def uv_cache_error(path: Path, error: OSError) -> OSError:
+    message = f"cannot prepare uv test cache {path}: {error}"
+    try:
+        mode_allows_access = mode_allows_write_and_search(path)
+    except OSError:
+        mode_allows_access = False
+    if mode_allows_access:
+        message += (
+            "\naccess is blocked beyond file modes; check ACLs or rerun outside "
+            "the execution sandbox"
+            "\nset DOTFILES_TEST_UV_CACHE_DIR to a writable persistent directory"
+        )
+    return OSError(message)
+
+
 def enable_child_subreaper() -> None:
     import ctypes
 
@@ -185,6 +200,19 @@ def main(arguments: list[str]) -> int:
         raise cargo_home_error(cargo_home, error) from error
     environment["DOTFILES_TEST_CARGO_HOME"] = str(cargo_home)
     environment["CARGO_HOME"] = str(cargo_home)
+
+    # uv's tool environments and package downloads are content-addressed.
+    # Reuse them without exposing the user's cache or disposable HOME state.
+    uv_cache = Path(environment.get("DOTFILES_TEST_UV_CACHE_DIR")
+        or Path(__file__).resolve().parent.parent / "target/test-environment/uv").resolve()
+    try:
+        uv_cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not os.access(uv_cache, os.W_OK | os.X_OK):
+            raise OSError("directory requires write and search access")
+    except OSError as error:
+        raise uv_cache_error(uv_cache, error) from error
+    environment["DOTFILES_TEST_UV_CACHE_DIR"] = str(uv_cache)
+    environment["UV_CACHE_DIR"] = str(uv_cache)
 
     with tempfile.TemporaryDirectory(prefix="dotfiles-test-home-") as directory:
         home = Path(directory)

@@ -57,6 +57,8 @@ class TestEnvironmentTest(unittest.TestCase):
         self.inherited["CARGO_HOME"] = str(user_cargo)
         self.cargo_home = self.root / "cargo-test-home"
         self.inherited["DOTFILES_TEST_CARGO_HOME"] = str(self.cargo_home)
+        self.uv_cache = self.root / "uv-test-cache"
+        self.inherited["DOTFILES_TEST_UV_CACHE_DIR"] = str(self.uv_cache)
 
     def snapshot(self, path: Path) -> dict:
         return {
@@ -415,6 +417,60 @@ class TestEnvironmentTest(unittest.TestCase):
 
         self.assertIn("check ACLs or rerun outside the execution sandbox", str(error))
         self.assertIn("set DOTFILES_TEST_CARGO_HOME", str(error))
+
+    def test_uv_cache_persists_without_reusing_user_cache(self) -> None:
+        user_cache = self.old_home / "uv-cache"
+        user_cache.mkdir()
+        (user_cache / "poison").write_text("user cache")
+        self.inherited["UV_CACHE_DIR"] = str(user_cache)
+        before = self.snapshot(self.old_home)
+        homes = []
+        for status in (0, 23):
+            result, report = self.run_probe("uv-cache", str(status))
+            self.assertEqual(status, result.returncode, result.stderr)
+            homes.append(self.assert_private_home(report))
+            self.assertEqual(str(self.uv_cache), report["environment"]["UV_CACHE_DIR"])
+            self.assertEqual(str(self.uv_cache),
+                             report["environment"]["DOTFILES_TEST_UV_CACHE_DIR"])
+            self.assertEqual(status == 23, report["uv_cache_existed"])
+        self.assertNotEqual(*homes)
+        self.assertTrue((self.uv_cache / "probe").is_file())
+        self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_default_uv_cache_belongs_to_the_wrapper_checkout(self) -> None:
+        wrapper = self.root / "checkout/dev/test-environment"
+        wrapper.parent.mkdir(parents=True)
+        for source in (WRAPPER, HOME_PRELOAD):
+            destination = wrapper.parent / source.name
+            subprocess.run(["cp", str(source), str(destination)], check=True)
+            subprocess.run(["cmp", str(source), str(destination)], check=True)
+        environment = dict(self.inherited)
+        environment.pop("DOTFILES_TEST_UV_CACHE_DIR")
+        result = subprocess.run([wrapper, sys.executable, PROBE, "write", "0"],
+            env=environment, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = json.loads(result.stdout)
+        self.assert_private_home(report)
+        expected = self.root / "checkout/target/test-environment/uv"
+        self.assertEqual(str(expected), report["environment"]["UV_CACHE_DIR"])
+        self.assertEqual(0o700, expected.stat().st_mode & 0o777)
+
+    def test_nested_use_keeps_the_same_uv_cache(self) -> None:
+        result, outer = self.run_probe("nested", str(WRAPPER))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, outer["nested_status"], outer["nested_stderr"])
+        for report in (outer, outer["nested"]):
+            self.assert_private_home(report)
+            self.assertEqual(str(self.uv_cache), report["environment"]["UV_CACHE_DIR"])
+
+    def test_invalid_uv_cache_prevents_child_start_without_falling_back(self) -> None:
+        self.uv_cache.write_text("not a directory")
+        result = subprocess.run([WRAPPER, sys.executable, PROBE, "write", "0"],
+            env=self.inherited, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertIn("cannot prepare uv test cache", result.stderr)
+        self.assertEqual("not a directory", self.uv_cache.read_text())
 
     @unittest.skipUnless(shutil.which("fish"), "Fish is required")
     def test_interactive_fish_loads_config_without_background_completion_generation(self) -> None:

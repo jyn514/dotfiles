@@ -73,6 +73,13 @@ def main():
         marker.write_bytes(b"persistent test-only Cargo cache")
         emit(value)
         return int(sys.argv[2])
+    if mode == "uv-cache":
+        cache = Path(os.environ["UV_CACHE_DIR"])
+        marker = cache / "probe"
+        value["uv_cache_existed"] = marker.is_file()
+        marker.write_bytes(b"persistent test-only uv cache")
+        emit(value)
+        return int(sys.argv[2])
     if mode == "native-signal":
         emit(value)
         os.kill(os.getpid(), int(sys.argv[2]))

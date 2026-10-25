@@ -47,6 +47,16 @@ Nested wrapper calls retain that path.
 An unusable cache directory fails before the child starts; the wrapper does not fall back to the user's Cargo home.
 Cargo's build-output location is unchanged.
 
+The wrapper also sets `UV_CACHE_DIR` to the stable test-only directory
+`target/test-environment/uv` in this checkout.
+This lets `uvx` reuse pinned tool environments and package downloads while the
+private HOME and other XDG state remain disposable.
+The wrapper does not reuse the user's uv cache.
+Anything a test writes to this cache persists until that directory is removed.
+Set `DOTFILES_TEST_UV_CACHE_DIR` to another owned disposable directory when a
+fresh cache is required; nested wrapper calls retain that path.
+An unusable cache directory fails before the child starts.
+
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides or resolves mise shims before changing HOME.
 `DOTFILES_TEST_<TOOL>_REAL` takes precedence over `<TOOL>_REAL`.
 The selected paths supply both the exported test overrides and temporary command symlinks under the private HOME.
