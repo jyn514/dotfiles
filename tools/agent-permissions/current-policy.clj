@@ -34,6 +34,8 @@
 
 (policy
   (deny ["sed"] :reason "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
+  (deny ["git" "push"] :reason "Only jyn may push.")
+  (deny ["jj" "git" "push"] :reason "Only jyn may push.")
 
   (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")])
   (allow ["jj" "file" (one-of "list" "show" "annotate")])
