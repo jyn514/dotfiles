@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lima.docker_api import hijack, inspect, request
+from lima.docker_api import hijack, inspect, request, stream
 
 
 class DockerApiTest(unittest.TestCase):
@@ -117,6 +117,32 @@ class DockerApiTest(unittest.TestCase):
                     server.shutdown()
                     thread.join()
         self.assertEqual(['/containers/owned/attach?stream=1&stdin=0'], observed)
+
+    def test_stream_retains_response_body_for_incremental_reads(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Length', '5')
+                self.end_headers()
+                self.wfile.write(b'ready')
+
+            def log_message(self, *_args):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / 'engine.sock')
+            with socketserver.UnixStreamServer(path, Handler) as server:
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
+                try:
+                    connection, response = stream(
+                        path, 'GET', '/containers/owned/logs', ['docker', 'logs', 'owned'])
+                    self.assertEqual(b'ready', response.read())
+                    response.close()
+                    connection.close()
+                finally:
+                    server.shutdown()
+                    thread.join()
 
 
 if __name__ == '__main__':

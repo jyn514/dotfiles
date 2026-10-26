@@ -467,7 +467,7 @@ class SharedProxyCleanupTest(unittest.TestCase):
                     mock.patch("subprocess.Popen") as start:
                 self.assertTrue(launcher["defer_proxy_cleanup"](state))
             command = start.call_args.args[0]
-            self.assertEqual(["idle-cleanup", "--repo", "/repo", "--delay", "30.0",
+            self.assertEqual(["idle-cleanup", "--repo", "/repo", "--delay", "300.0",
                               "--lease", "lease"], command[1:])
             self.assertEqual("lease", (runtime / "idle-cleanup.lease").read_text())
             self.assertTrue(start.call_args.kwargs["start_new_session"])
@@ -2662,10 +2662,12 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["register_tmux_pane"](state)
             launcher["unregister_tmux_pane"](state)
 
-        self.assertIn(
-            ["tmux", "set-option", "-p", "-t", "%3", "@codex_sandbox_command", "π"],
-            calls,
-        )
+        self.assertTrue(any(
+            call[:5] == ["tmux", "set-option", "-p", "-t", "%3"]
+            and call[-7:] == [";", "set-option", "-p", "-t", "%3",
+                              "@codex_sandbox_command", "π"]
+            for call in calls
+        ))
         self.assertIn(
             ["tmux", "set-option", "-p", "-u", "-t", "%3", "@codex_sandbox_command"],
             calls,
@@ -2987,6 +2989,8 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("Sandbox preparation:", result.stderr)
         self.assertIn("base image resolution=", result.stderr)
+        self.assertIn("tmux registration=", result.stderr)
+        self.assertIn("service orchestration=", result.stderr)
         self.assertNotIn("Sandbox startup:", result.stderr)
         containers = float(re.search(
             r"Sandbox cleanup: containers=([0-9.]+)s", result.stderr,

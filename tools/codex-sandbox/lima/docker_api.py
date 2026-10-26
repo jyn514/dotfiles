@@ -38,6 +38,29 @@ def inspect(socket_path, path, command):
     return request(socket_path, 'GET', path, command)
 
 
+def stream(socket_path, method, path, command, *, timeout=10):
+    """Open one ordinary Docker HTTP response without consuming its body."""
+    connection = http.client.HTTPConnection('localhost', timeout=timeout)
+    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.sock.settimeout(timeout)
+    try:
+        connection.sock.connect(socket_path)
+        connection.request(method, path)
+        response = connection.getresponse()
+        if response.status != 200:
+            raw = response.read()
+            try:
+                data = json.loads(raw) if raw else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                data = {}
+            message = data.get('message', str(response.status)) if isinstance(data, dict) else str(response.status)
+            raise APIError(response.status, command, message)
+        return connection, response
+    except BaseException:
+        connection.close()
+        raise
+
+
 def hijack(socket_path, path, command, *, query=None):
     """Open one Docker upgraded HTTP stream and retain its response reader."""
     target = path

@@ -203,7 +203,7 @@ estimate wall time. Cancellation closes the TicGit creation gate and joins all
 startup workers before resource cleanup.
 
 `Sandbox cleanup total:` includes final scratch removal. A successful final attachment
-leaves published shared proxies warm for 30 seconds and starts a detached idle cleanup;
+leaves published shared proxies warm for five minutes and starts a detached idle cleanup;
 the next exclusive launch validates the complete published identity before reuse and
 replaces mismatched services. Failed or unpublished launches still clean synchronously.
 TicGit admission and its

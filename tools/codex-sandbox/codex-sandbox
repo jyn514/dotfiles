@@ -81,7 +81,7 @@ GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 # Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
 PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
-PROXY_IDLE_SECONDS = 30.0
+PROXY_IDLE_SECONDS = 300.0
 
 
 STAGED_CONFIG = {
@@ -470,11 +470,8 @@ def register_tmux_pane(state: State) -> None:
     }, separators=(",", ":"), sort_keys=True).encode()).decode()
     run([
         "tmux", "set-option", "-p", "-t", pane,
-        "@codex_sandbox_restart", registration,
-    ], quiet=True)
-    run([
-        "tmux", "set-option", "-p", "-t", pane,
-        "@codex_sandbox_command", "π",
+        "@codex_sandbox_restart", registration, ";",
+        "set-option", "-p", "-t", pane, "@codex_sandbox_command", "π",
     ], quiet=True)
     state.tmux_pane = pane
     state.tmux_registration = registration
@@ -1056,8 +1053,7 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
     ))
     if handle.cancelled.is_set():
         raise LauncherError("gateway startup cancelled")
-    run([
-        "docker", "run", "--detach", "--name", state.gateway_container,
+    arguments = [
         "--label", f"dev.codex.service-owner={handle.owner}",
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.gateway_egress_network,
@@ -1065,11 +1061,19 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         *(["--mount", f"type=bind,src={tic_client},dst=/opt/agent-tools/bin/ti,readonly"]
           if tic_client is not None else []),
-        "--entrypoint", "/trusted/bin/sandbox-gateway", image or state.sidecar_image,
+        "--entrypoint", "/trusted/bin/sandbox-gateway",
+    ]
+    command = [
         "--host", OUTER_RUNTIME.host_address,
         *(["--build-port", build_port] if build_port is not None else []),
         *(["--tic-port", str(tic_port)] if tic_port is not None else []),
-    ], discard_stdout=True)
+    ]
+    if hasattr(OUTER_RUNTIME, 'start_detached'):
+        OUTER_RUNTIME.start_detached(image or state.sidecar_image, state.gateway_container,
+                                     arguments, command)
+    else:
+        run(["docker", "run", "--detach", "--name", state.gateway_container,
+             *arguments, image or state.sidecar_image, *command], discard_stdout=True)
     handle.created.add(container_resource)
     handle.started = True
     addresses = OUTER_RUNTIME.network_addresses(
@@ -1386,6 +1390,12 @@ def check_tic_cancelled(state: State) -> None:
 
 def wait_tic_gateway_ready(container: str) -> None:
     from gateway import TIC_READY_MESSAGE
+    if hasattr(OUTER_RUNTIME, 'wait_for_log'):
+        try:
+            OUTER_RUNTIME.wait_for_log(container, TIC_READY_MESSAGE, 7)
+        except subprocess.TimeoutExpired as error:
+            raise LauncherError('TicGit gateway readiness publication timed out; no fallback') from error
+        return
     deadline = time.monotonic() + 7
     while True:
         remaining = deadline - time.monotonic()
@@ -2640,7 +2650,7 @@ def execute(state: State) -> int:
     if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
-    register_tmux_pane(state)
+    phase("tmux registration", lambda: register_tmux_pane(state))
     sidecar_selected = bool(
         (getattr(state, "capabilities", {"nested-containers"}) - {'tic'})
         or _secure_codex_auth_directory(state)
@@ -2665,6 +2675,7 @@ def execute(state: State) -> int:
             print(f"warning: {name} failed: {error}", file=sys.stderr)
 
     # Keep these jobs owned until session exit so cleanup cannot race creation.
+    services_started = time.monotonic()
     with startup_workers(state, max_workers=6) as executor:
         model_future = (None if prepared or state.proxy_lock.shared else executor.submit(model_image))
         sidecar_future = (None if prepared or state.proxy_lock.shared or not sidecar_selected else
@@ -2704,6 +2715,7 @@ def execute(state: State) -> int:
                      *agent_command]
         arguments = [*sidecar_arguments, *arguments]
         if os.environ.get("CODEX_SANDBOX_TIMING"):
+            timings.append(("service orchestration", time.monotonic() - services_started))
             detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
             print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
         return run_agent(state, arguments)

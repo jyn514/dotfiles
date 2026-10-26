@@ -18,7 +18,8 @@ import time
 import uuid
 from urllib.parse import quote
 
-from lima.docker_api import APIError, hijack as docker_hijack, inspect as inspect_docker, request as docker_request
+from lima.docker_api import (APIError, hijack as docker_hijack, inspect as inspect_docker,
+                             request as docker_request, stream as docker_stream)
 from lima.docker_host import DockerHost
 from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
@@ -608,7 +609,7 @@ class Docker(VMRuntime):
         return container_port + '/' + protocol, {'HostIp': host_ip, 'HostPort': host_port}
 
     def _workload_config(self, image, arguments, command, *, interactive):
-        config = {'Image': image.config, 'AttachStdin': interactive,
+        config = {'Image': getattr(image, 'config', image), 'AttachStdin': interactive,
                   'AttachStdout': True, 'AttachStderr': True,
                   'OpenStdin': interactive, 'StdinOnce': interactive}
         if command:
@@ -688,6 +689,53 @@ class Docker(VMRuntime):
                 }
         config['HostConfig'] = host
         return config
+
+    def start_detached(self, image, name, arguments, command=()):
+        """Create and start a detached container without a Docker CLI process."""
+        if self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        config = self._workload_config(image, arguments, command, interactive=False)
+        encoded = quote(name, safe='')
+        result = docker_request(
+            self.record['socket'], 'POST', '/containers/create?name=' + encoded,
+            ['docker', 'create', '--name', name], payload=config, expected=(201,),
+        )
+        if not isinstance(result.get('Id'), str) or not result['Id']:
+            raise RuntimeError('Docker container creation returned no identity')
+        docker_request(
+            self.record['socket'], 'POST', '/containers/' + encoded + '/start',
+            ['docker', 'start', name], expected=(204,),
+        )
+
+    def wait_for_log(self, name, message, timeout):
+        """Follow one container log stream until its exact readiness line appears."""
+        encoded = quote(name, safe='')
+        connection, response = docker_stream(
+            self.record['socket'], 'GET',
+            '/containers/' + encoded + '/logs?follow=1&stdout=1&stderr=1&tail=20',
+            ['docker', 'logs', '--follow', '--tail', '20', name], timeout=timeout,
+        )
+        pending = b''
+        expected = message.encode()
+        try:
+            while True:
+                header = response.read(8)
+                if not header:
+                    raise RuntimeError('Docker log stream ended before readiness')
+                if len(header) != 8:
+                    raise RuntimeError('Docker log stream ended inside a frame header')
+                length = struct.unpack('>I', header[4:])[0]
+                data = response.read(length)
+                if len(data) != length:
+                    raise RuntimeError('Docker log stream ended inside a frame')
+                pending = (pending + data)[-65536:]
+                if expected in pending.splitlines():
+                    return
+        except socket.timeout as error:
+            raise subprocess.TimeoutExpired(['docker', 'logs', name], timeout) from error
+        finally:
+            response.close()
+            connection.close()
 
     @contextmanager
     def workload(self, image, name, arguments, command=(), *, before_start=None, **kwargs):

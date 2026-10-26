@@ -303,6 +303,38 @@ class DockerRuntimeTest(unittest.TestCase):
                           '/containers/owned/wait?condition=not-running'], events)
         runtime.terminate.assert_called_once_with('owned')
 
+    def test_engine_api_starts_detached_container_without_cli(self):
+        runtime = backend()
+        with patch('docker_runtime.docker_request', side_effect=[{'Id': 'container'}, {}]) as api:
+            runtime.start_detached(
+                'sha256:image', 'relay/name',
+                ['--network', 'link', '--label', 'owner=token'], ['relay', '--listen'],
+            )
+        create, start = api.call_args_list
+        self.assertEqual('/containers/create?name=relay%2Fname', create.args[2])
+        self.assertEqual('sha256:image', create.kwargs['payload']['Image'])
+        self.assertEqual(['relay', '--listen'], create.kwargs['payload']['Cmd'])
+        self.assertEqual({'link': {}},
+                         create.kwargs['payload']['NetworkingConfig']['EndpointsConfig'])
+        self.assertEqual('/containers/relay%2Fname/start', start.args[2])
+
+    def test_engine_api_waits_on_one_following_log_stream(self):
+        runtime = backend()
+        line = b'ready-v1\n'
+        frame = bytes([1, 0, 0, 0]) + struct.pack('>I', len(line))
+        response = Mock()
+        response.read.side_effect = [frame, line]
+        connection = Mock()
+        with patch('docker_runtime.docker_stream', return_value=(connection, response)) as stream:
+            runtime.wait_for_log('relay/name', 'ready-v1', 7)
+        stream.assert_called_once_with(
+            '/owned/docker.sock', 'GET',
+            '/containers/relay%2Fname/logs?follow=1&stdout=1&stderr=1&tail=20',
+            ['docker', 'logs', '--follow', '--tail', '20', 'relay/name'], timeout=7,
+        )
+        response.close.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
     def test_engine_api_start_failure_closes_attach_and_cleans_container(self):
         runtime = backend()
         runtime.terminate = Mock()
