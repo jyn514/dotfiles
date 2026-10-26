@@ -33,4 +33,10 @@
 
 - jyn is in Central Europe (UTC+2 during daylight-savings-time).
 - jyn does not have easy access to the container; if you need to show them a temporary file, put it in an ignored local folder (e.g. target/ or notes/) rather than /tmp.
-- You may use `sudo` to install user-wide tools. Missing tools likely indicate a deficiency in `.agents/sandbox`; install the ones you need and report the missing tool at the end of your turn.
+- When a tool needed for authorized work or validation is missing, install it in the disposable sandbox and retry the blocked command.
+  A guest-only tool installation is not a new host prerequisite and does not require separate approval.
+  You may use `sudo` for guest-only tool installation.
+  Keep installation out of host-backed mounts.
+  Do not install local substitutes for required host proxies or credentials.
+  If installation fails, report the attempted installation and actual failure—not merely that the tool is missing.
+  Missing tools likely indicate a deficiency in `.agents/sandbox`; report the missing tool at the end of your turn.
