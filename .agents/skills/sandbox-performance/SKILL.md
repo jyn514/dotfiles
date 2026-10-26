@@ -28,6 +28,13 @@ Read [startup terminal ownership](../../../tools/codex-sandbox/development.md#st
 Run `env CODEX_SANDBOX_TIMING=1 pi` for phase attribution.
 Use the repository's interactive startup probe for comparable first-frame measurements.
 Do not wrap that probe in `dev/test-environment`; it intentionally uses installed configuration, caches, authentication, and the host container runtime.
+Use `TMPDIR=/tmp` for the probe on Linux and `TMPDIR=/private/tmp` on macOS.
+Do not copy the macOS path to Linux; a nonexistent propagated temp path can make extensions fail before readiness.
+
+When comparing an uninstalled extension checkout, use Pi's explicit one-run loading contract:
+`pi --no-extensions -e /absolute/path/to/index.ts`.
+Explicit `-e` extensions still load with discovery disabled, so this does not require changing settings, editing an installed package checkout, or publishing the source revision.
+Use this isolated result only for the named extension; configured-startup claims still require the normal probe with the full extension set.
 
 Collect at least three sequential warm runs when variance could change the conclusion.
 Record the revision, runtime, warm or cold state, host and VM load, and retained raw-log path.
