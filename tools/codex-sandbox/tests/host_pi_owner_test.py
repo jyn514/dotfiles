@@ -249,6 +249,25 @@ class ControllerTest(unittest.TestCase):
         for stream in (first, second):
             self.assertEqual(receive(stream)["event"], "worker-loss")
 
+    def test_worker_exit_after_final_attachment_release_is_normal(self):
+        worker = mock.Mock()
+        worker.poll.return_value = 0
+        with self.owner.lock:
+            self.owner.stopping = True
+
+        self.owner.wait(worker)
+
+        self.assertIsNone(self.owner.failure)
+
+    def test_worker_exit_while_an_attachment_is_live_remains_fatal(self):
+        worker = mock.Mock()
+        worker.poll.return_value = 1
+
+        with self.assertRaisesRegex(RuntimeError, "guest tool worker stopped"):
+            self.owner.wait(worker)
+
+        self.assertEqual(self.owner.failure, "guest tool worker stopped")
+
 
 @unittest.skipUnless(shutil.which("tmux"), "tmux unavailable")
 class ProcessAndTmuxTest(unittest.TestCase):

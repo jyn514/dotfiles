@@ -301,8 +301,9 @@ class HostPiOwner:
     def wait(self, worker):
         while True:
             if worker.poll() is not None:
-                self.worker_lost()
-                raise RuntimeError("guest tool worker stopped while host Pi was running")
+                if self.worker_lost():
+                    raise RuntimeError("guest tool worker stopped while host Pi was running")
+                return
             with self.lock:
                 if self.stopping:
                     return
@@ -311,6 +312,8 @@ class HostPiOwner:
 
     def worker_lost(self):
         with self.lock:
+            if self.stopping:
+                return False
             self.failure = "guest tool worker stopped"
             self.stopping = True
             for item in self.attachments.values():
@@ -320,6 +323,7 @@ class HostPiOwner:
                     except OSError:
                         pass
             self.lock.notify_all()
+            return True
 
     def finish(self, succeeded):
         """Only call after workload contexts, relays and session locks are cleaned."""
