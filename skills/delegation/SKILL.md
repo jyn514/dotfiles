@@ -83,10 +83,11 @@ Wait when the remaining authorized work genuinely depends on the result; do not 
 ## Integrate and verify
 
 Inspect returned work against the governing requirement and agreed boundaries, not only the worker's local criteria.
-For implementation, inspect the actual diff and run the required acceptance checks through the intended interfaces.
+For implementation, inspect the actual diff and acceptance evidence from the required checks through the intended interfaces.
 For research and review, inspect the supporting sources or raw evidence and distinguish observation from inference.
-Choose acceptance evidence that can verify the result without repeating the entire investigation by default.
-A worker's summary or test count alone is not verification.
+Independent verification requires inspecting underlying evidence, not necessarily repeating execution.
+Reuse evidence after confirming that it covers the relevant artifacts, scope, and intended interfaces.
+Rerun checks that are missing or invalidated by changes; a worker’s summary or test count alone does not establish acceptance.
 Use independent review for consequential judgment.
 
 Apply [review evidence standards](../review/references/evidence.md) when reporting local-only, integrated, or blocked results; this does not automatically start its full audit.
