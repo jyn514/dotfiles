@@ -10,10 +10,11 @@ composition or macOS support.
 The native input is `native-revision`, an exact Git commit, not the checkout's
 working tree. `build-local /path/to/native-repository` captures it with
 `git archive` into a fresh private build context and passes a mandatory Cargo
-path override for `ticgit`. The unpublished fork has no assumed remote or release
-source. Do not substitute crates.io's unmodified package: it lacks the reviewed
-parser/native changes. Cargo.lock binds registry dependencies; builds/tests use
-`--locked` and fail rather than updating it.
+path override for `ticgit`. Normal Pi acquires the pinned source from the public
+`jyn514/ticgit` fork over HTTPS when needed; direct development builds can still
+use a local checkout. Do not substitute crates.io's unmodified package: it lacks
+the reviewed parser/native changes. Cargo.lock binds registry dependencies;
+builds/tests use `--locked` and fail rather than updating it.
 
 Run from the dotfiles root through `dev/test-environment`, selecting an owned
 Cargo cache/toolchain where needed. Set `DOTFILES_TEST_CARGO_HOME` and put the
@@ -97,12 +98,26 @@ has a different source key. There is no global current-build record,
 `installed.json`, absolute-path artifact record, or required manual installation.
 The launcher derives absolute executable paths from the relative manifest.
 
-Cold-cache source selection reads one host-owned file,
-`~/.config/codex-sandbox/tic-native-source`, containing the absolute local native
-repository path and an optional final newline. The regular single-link file must
-belong to the launcher user, have mode `0600`, and be outside guest-writable
-mounts. It is machine configuration, not a project capability option or artifact
-record. Configure the approved local checkout once while starting normal Pi:
+A normal cold-cache launch needs no source flag or manual build. If there is no
+explicit host source setting, it uses setup's existing exact-revision Git fetch
+and private-stage/atomic-install primitive to acquire the public native fork over
+HTTPS into `~/.cache/codex-sandbox/tic-native/<native-revision>/`. The existing
+bundle-resolution lock covers source acquisition as well as build/publication.
+Revision-specific source directories allow a pin update to acquire its new
+commit without mutating or accidentally reusing an older checkout. Failed
+fetches leave no accepted source checkout or bundle; an authored partial checkout
+is rejected rather than repaired. Source caches must be canonical, launcher-owned,
+not group/other writable, and outside guest-writable mounts. No credentials,
+project-selected URL, or new version pin are introduced. A cached source can
+serve later cold bundle builds offline, subject to Cargo/toolchain availability.
+
+An existing host-owned `~/.config/codex-sandbox/tic-native-source` remains an
+optional explicit local-source choice and is never rewritten by fetching. It
+contains the absolute local native repository path and an optional final newline.
+The regular single-link file must belong to the launcher user, have mode `0600`,
+and be outside guest-writable mounts. It is machine configuration, not a project
+capability option or artifact record. To deliberately select a local development
+checkout instead of automatic fetching:
 
 ```sh
 pi --set-tic-native-source /path/to/native-repository
@@ -111,15 +126,15 @@ pi --set-tic-native-source /path/to/native-repository
 Run that command on the host, not inside the agent container. The launcher checks
 that the local repository contains the pinned commit, atomically creates or
 updates only this known setting, removes the option from Pi's arguments, and
-continues ordinary startup. Later launches use plain `pi`; no per-launch source
-flag or global TicGit installation is needed. Configuration does not override a
-repository's explicit opt-out. No host setting is written by building or testing.
+continues ordinary startup. Plain `pi` works without ever using this option;
+no global TicGit installation is needed. Explicit local configuration does not
+override a repository's opt-out. Invalid or stale explicit settings report their
+error rather than silently selecting another source. No host setting is written
+by fetching, building, or testing.
 
-Without that setting, ordinary cold-cache Tic startup warns about the missing
-source and Pi starts with TicGit unavailable for that session, rather than
-scanning sibling repositories or downloading an unknown fork. Build, unsupported
-repository, inspection, and readiness failures use the same warn-and-disable
-behavior, even with explicit `tic: true`; unrelated metadata/provider rejection
+Fetch, build, unsupported repository, inspection, and readiness failures use
+the same warn-and-disable behavior, even with explicit `tic: true`; unrelated
+metadata/provider rejection
 remains fatal. No failed startup projects a TicGit endpoint, token, client mount,
 or network attachment. The fixed guest `ti` guard reports unavailable and
 never searches PATH for native TicGit. Every launch binds a private read-only
@@ -179,7 +194,7 @@ Check the roots again inside the guest with the admitted pure query `jj root`, b
 A nested Git-only fixture can make normal Pi select an ancestor JJ repository's workspace and accepted capability settings.
 Prepare a standalone co-located JJ root on the host before launching such a fixture, rather than changing global root selection or guest proxy policy.
 Check root authority before diagnosing an unavailable client or empty endpoint/token as a native build failure.
-Then use ordinary `pi`, with the one-time host source option above only if needed, not a custom runner.
+Then use ordinary `pi`, not a custom runner. The default source acquisition needs no source option.
 These fixture prerequisites do not require JJ or a separate Pi frontend for ordinary host-native Git-linked worktree checks.
 
 To attribute an actual provider run to a pinned build, inspect the selected protected cache manifest's build identity, platforms and client hash.

@@ -299,9 +299,11 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertIsNone(self.state.tic_handle)
                     self.assertFalse(runtime.present)
 
-    def test_missing_first_use_source_warns_without_accepting_bundle_or_starting_resources(self):
-        with self.provider() as runtime, mock.patch.dict(self.globals, resolved_tic_build=self.real_resolver):
-            self.assert_tic_unavailable('requires a trusted native repository path')
+    def test_first_use_fetch_failure_warns_without_accepting_bundle_or_starting_resources(self):
+        import tic_artifact
+        with self.provider() as runtime, mock.patch.dict(self.globals, resolved_tic_build=self.real_resolver), mock.patch.object(
+                tic_artifact, 'clone', side_effect=OSError('owned native fetch failure')):
+            self.assert_tic_unavailable('owned native fetch failure')
             self.assertIsNone(self.state.tic_handle)
             self.assertFalse(runtime.present)
         self.assertEqual(['.resolve.lock'], [path.name for path in
@@ -453,6 +455,22 @@ class TicLauncherTest(unittest.TestCase):
             build.reset_mock()
             self.assertEqual(resolved, self.real_resolver(self.state))
             build.assert_not_called()
+            # A fresh ordinary launch needs no source option or setting. Only
+            # the source acquisition effect is substituted here; its exact-pin
+            # Git behavior is exercised separately with a real local remote.
+            self.state.home = self.home / 'fresh-automatic-home'
+            self.state.home.mkdir()
+            with mock.patch.object(tic_artifact, 'fetched_native_source', return_value=source_repository) as fetch:
+                automatic = self.real_resolver(self.state)
+                fetch.assert_called_once_with(self.state.home, [self.state.repository])
+                build.assert_called_once_with(source_repository,
+                                               bundle.build_identity(bundle.host_platform(), 'linux/amd64'))
+                self.assertFalse((self.state.home / '.config').exists())
+                fetch.reset_mock()
+                build.reset_mock()
+                self.assertEqual(automatic, self.real_resolver(self.state))
+                fetch.assert_not_called()
+                build.assert_not_called()
         for directory, _, _ in os.walk(self.home, followlinks=False):
             Path(directory).chmod(0o700)
 
@@ -473,11 +491,18 @@ class TicLauncherTest(unittest.TestCase):
                 self.assertFalse(runtime.events)
         self.assertFalse((self.home / '.cache').exists())
 
-    def test_normal_cold_cache_reports_unsettled_native_source_without_creating_cache(self):
-        with self.provider(), self.assertRaisesRegex(self.launcher['LauncherError'], 'requires a trusted native repository path'):
-            self.real_resolver(self.state)
+    def test_normal_cold_cache_fetch_failure_publishes_no_bundle_or_source_setting(self):
+        import tic_artifact
+        failed_fetch = subprocess.CalledProcessError(1, ['git', 'fetch'])
+        with self.provider(), mock.patch.object(tic_artifact, 'clone', side_effect=failed_fetch) as fetch:
+            with self.assertRaisesRegex(self.launcher['LauncherError'], 'bundle resolution failed'):
+                self.real_resolver(self.state)
+        fetch.assert_called_once_with({'url': tic_artifact.NATIVE_REPOSITORY_URL,
+                                       'revision': NATIVE_REVISION},
+                                      self.home / '.cache/codex-sandbox/tic-native' / NATIVE_REVISION)
         cache = self.home / '.cache/codex-sandbox/tic'
         self.assertEqual(['.resolve.lock'], [p.name for p in cache.iterdir()])
+        self.assertFalse((self.home / '.config').exists())
 
     def test_linux_and_mac_fake_provider_compose_required_host_child_and_staged_client(self):
         for mac in (False, True):

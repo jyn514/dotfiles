@@ -18,6 +18,13 @@ if str(ROOT) not in sys.path:
 from bundle import (PIN, build_identity, host_platform, protected_bundle, stage_cache,
                     validate_bundle)
 
+# Reuse setup's exact-revision, privately staged Git acquisition. Cargo still
+# owns compilation; native-revision remains the only native version authority.
+sys.path.insert(0, str(ROOT.parents[1] / 'libexec/setup'))
+from install_bootstrap import clone
+
+NATIVE_REPOSITORY_URL = 'https://github.com/jyn514/ticgit.git'
+
 
 def _source_setting(home: Path, writable_roots):
     """Read the one host-only machine path; no project/environment override."""
@@ -50,10 +57,54 @@ def _source_setting(home: Path, writable_roots):
 
 
 def native_source(home: Path, writable_roots):
-    source = _source_setting(home, writable_roots)
-    if not source.is_dir():
-        raise ValueError('TicGit native-source setting must name an existing repository directory')
-    return source.resolve(strict=True)
+    setting = Path(home) / '.config/codex-sandbox/tic-native-source'
+    if setting.exists() or setting.is_symlink():
+        # Preserve explicit host choices, including errors, rather than silently
+        # replacing authored configuration with a different source.
+        source = _source_setting(home, writable_roots)
+        if not source.is_dir():
+            raise ValueError('TicGit native-source setting must name an existing repository directory')
+        return source.resolve(strict=True)
+    return fetched_native_source(home, writable_roots)
+
+
+def fetched_native_source(home: Path, writable_roots):
+    """Acquire a pinned checkout only inside the resolver's cold-cache callback.
+
+    The caller holds the existing bundle-resolution lock through acquisition,
+    build and publication. Revision-specific destinations avoid setup's ordinary
+    clone-if-missing behavior accidentally retaining an old native version.
+    """
+    cache = Path(home) / '.cache/codex-sandbox/tic-native'
+    if cache.resolve() != cache:
+        raise ValueError('TicGit native source cache must be canonical, not a symlink alias')
+    for root in writable_roots:
+        root = Path(root).resolve(strict=True)
+        if cache.is_relative_to(root) or root.is_relative_to(cache):
+            raise ValueError('TicGit native source cache overlaps a guest-writable mount')
+    # Check existing ancestors before creating anything beneath them. The cache
+    # is host-owned, just like the adjacent protected executable-bundle cache.
+    for path in (cache.parent, cache):
+        if path.exists():
+            metadata = path.lstat()
+            if not path.is_dir() or metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
+                raise ValueError('TicGit native source cache ownership/mode mismatch')
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    source = cache / PIN
+    if source.resolve() != source:
+        raise ValueError('TicGit native source checkout must not be a symlink alias')
+    if source.exists():
+        metadata = source.lstat()
+        if not source.is_dir() or metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
+            raise ValueError('TicGit native source checkout ownership/mode mismatch')
+    else:
+        print('TicGit: fetching pinned native source', file=sys.stderr)
+    clone({'url': NATIVE_REPOSITORY_URL, 'revision': PIN}, source)
+    actual = subprocess.run(['git', '-C', str(source), 'rev-parse', PIN + '^{commit}'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    if actual.stdout.strip() != PIN:
+        raise ValueError('TicGit fetched native commit identity mismatch')
+    return source
 
 
 def configure_native_source(home: Path, repository: Path, *, replace=False):

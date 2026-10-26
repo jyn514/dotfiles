@@ -135,13 +135,14 @@ Copy validated build output into a protected content-addressed cache outside all
 Verify artifact bytes and copied content at build/cache publication. Warm startup selects current bounded build inputs and checks protected paths, ownership, modes, link counts, fixed manifest fields, native/policy/wire versions, and platform without rehashing executables.
 The trusted host rewriting its own published immutable cache is unsupported; repeated runtime hashing is not part of the guest boundary. Preserve native binding metadata and repository preflight without reading native executable contents before readiness or requests.
 Do not require a global current-build record, flattened absolute-path artifact record, or human-managed TicGit installation.
-A cold cache uses the ordinary pinned builder and the approved local checkout recorded in one host-only native-source setting.
-The explicit first-use `--set-tic-native-source` option sets that path once during normal Pi startup; subsequent launches require no source flag.
-Do not infer the unpublished fork source from sibling paths or an unknown remote.
+A cold cache uses the ordinary pinned builder and, by default, acquires the exact pinned native revision from the fixed trusted public source over HTTPS.
+An existing host-only native-source setting remains an optional explicit local-checkout choice; invalid explicit settings fail rather than silently selecting another source.
+Normal Pi startup requires no source flag, and a matching warm bundle requires no source checkout or network access.
+Guests cannot select the source; do not infer it from sibling paths, machine-local path guesses, or an unknown remote.
 
 Use the #link("trusted-service-lifecycle.typ")[best-effort `agent-launch` lifecycle] with one launcher-owned host broker per launch.
 There is one startup policy for all selected TicGit launches; explicit `true` does not introduce a required-service mode.
-Missing source configuration, unsupported repository configuration, build, inspection, or readiness failure warns and allows Pi to start with TicGit unavailable for that session.
+Source selection, fetch, unsupported repository configuration, build, inspection, or readiness failure warns and allows Pi to start with TicGit unavailable for that session.
 Revoke broker authority and attempt cleanup of all partial launch-owned resources, retaining ownership for final cleanup and provider recovery.
 Project no endpoint, token, guest client mount, or TicGit network attachment on failure.
 The fixed `ti` guard reports unavailable instead of searching PATH for a native guest executable.
