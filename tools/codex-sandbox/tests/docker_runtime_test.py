@@ -174,6 +174,29 @@ class DockerRuntimeTest(unittest.TestCase):
                           'ReadOnly': True, 'BindOptions': {'NonRecursive': True}},
                          config['HostConfig']['Mounts'][0])
 
+    def test_workload_config_preserves_existing_publish_forms(self):
+        runtime = backend()
+        image = Image('reference', 'content', 'sha256:' + '1' * 64, 'rootfs')
+        config = runtime._workload_config(image, [
+            '--publish', '127.0.0.1::18765',
+            '--publish=8080:80/udp',
+            '--publish', '443',
+        ], [], interactive=False)
+        self.assertEqual({'18765/tcp': {}, '80/udp': {}, '443/tcp': {}},
+                         config['ExposedPorts'])
+        self.assertEqual({
+            '18765/tcp': [{'HostIp': '127.0.0.1', 'HostPort': ''}],
+            '80/udp': [{'HostIp': '', 'HostPort': '8080'}],
+            '443/tcp': [{'HostIp': '', 'HostPort': ''}],
+        }, config['HostConfig']['PortBindings'])
+
+    def test_workload_config_rejects_invalid_publish_without_partial_binding(self):
+        runtime = backend()
+        image = Image('reference', 'content', 'sha256:' + '1' * 64, 'rootfs')
+        for value in ('0', '70000', 'invalid:80', '8080:80/quic'):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                runtime._workload_config(image, ['--publish', value], [], interactive=False)
+
     def test_attach_process_demultiplexes_stdout_stderr_and_exit_status(self):
         runtime = backend()
         left, right = socket.socketpair()

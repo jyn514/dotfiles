@@ -584,6 +584,28 @@ class Docker(VMRuntime):
             mount['BindOptions'] = {'NonRecursive': True}
         return mount
 
+    @staticmethod
+    def _publish(value):
+        address, separator, protocol = value.rpartition('/')
+        if not separator:
+            address, protocol = value, 'tcp'
+        if protocol not in ('tcp', 'udp', 'sctp'):
+            raise RuntimeError('unsupported Docker publish protocol')
+        fields = address.rsplit(':', 2)
+        if len(fields) == 1:
+            host_ip, host_port, container_port = '', '', fields[0]
+        elif len(fields) == 2:
+            host_ip, host_port, container_port = '', fields[0], fields[1]
+        else:
+            host_ip, host_port, container_port = fields
+        if not container_port.isdecimal() or not 1 <= int(container_port) <= 65535:
+            raise RuntimeError('invalid Docker published container port')
+        if host_port and (not host_port.isdecimal() or not 1 <= int(host_port) <= 65535):
+            raise RuntimeError('invalid Docker published host port')
+        if host_ip.startswith('[') and host_ip.endswith(']'):
+            host_ip = host_ip[1:-1]
+        return container_port + '/' + protocol, {'HostIp': host_ip, 'HostPort': host_port}
+
     def _workload_config(self, image, arguments, command, *, interactive):
         config = {'Image': image.config, 'AttachStdin': interactive,
                   'AttachStdout': True, 'AttachStderr': True,
@@ -622,6 +644,10 @@ class Docker(VMRuntime):
                 host['Mounts'].append(self._mount(value(argument)))
             elif argument.startswith('--network'):
                 networks.append(value(argument))
+            elif argument.startswith('--publish'):
+                port, binding = self._publish(value(argument))
+                config.setdefault('ExposedPorts', {})[port] = {}
+                host.setdefault('PortBindings', {}).setdefault(port, []).append(binding)
             elif argument.startswith('--dns'):
                 host.setdefault('Dns', []).append(value(argument))
             elif argument.startswith('--add-host'):
