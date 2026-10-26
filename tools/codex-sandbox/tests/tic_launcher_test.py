@@ -236,6 +236,34 @@ class TicLauncherTest(unittest.TestCase):
         self.assertIn(message, warning.getvalue())
         self.assertEqual({}, self.state.tic_environment)
 
+    def test_opt_in_timings_cover_real_steps_without_replaying_guest_help(self):
+        expected = ['bundle', 'context-capture', 'client-staging-mounts',
+                    'broker-start-ready', 'link-network', 'egress-network',
+                    'host-bridge', 'relay-run', 'relay-addresses',
+                    'relay-listening', 'guest-help-once']
+        for status in (0, 1):
+            with self.subTest(status=status), \
+                    mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
+                    mock.patch('sys.stderr', new_callable=io.StringIO) as stderr, \
+                    mock.patch('sys.stdout', new_callable=io.StringIO) as stdout, \
+                    self.provider() as runtime:
+                runtime.probe_status = status
+                result = self.launcher['start_tic'](self.state)
+                self.assertEqual(bool(result), status == 0)
+                help_calls = [event for event in runtime.events
+                              if event[0] == 'probe' and event[1][-1] == '--help']
+                self.assertEqual(1, len(help_calls))
+                lines = [line for line in stderr.getvalue().splitlines()
+                         if line.startswith('Sandbox service: ')]
+                self.assertEqual(expected, [line.split('tic/')[1].split('=')[0] for line in lines])
+                self.assertEqual(lines[-1].endswith(' failed'), status != 0)
+                for line in lines:
+                    self.assertNotIn(str(self.root), line)
+                    for event in runtime.events:
+                        if event[0] == 'environment':
+                            self.assertNotIn(event[1]['SANDBOX_TIC_TOKEN'], line)
+                self.assertEqual('', stdout.getvalue())
+
     def test_explicit_opt_out_does_not_resolve_artifacts_or_start_resources(self):
         self.state.capabilities = set()
         self.manifest.unlink()
