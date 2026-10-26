@@ -15,7 +15,7 @@ import time
 import uuid
 from urllib.parse import quote
 
-from lima.docker_api import APIError, inspect as inspect_docker
+from lima.docker_api import APIError, inspect as inspect_docker, request as docker_request
 from lima.docker_host import DockerHost
 from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
@@ -416,16 +416,26 @@ class Docker(VMRuntime):
             self.guest(['python3', '/usr/local/share/codex-sandbox/docker-policy.py', 'check-bridges'])
 
     def create_relay_network(self, name, *, internal, owner=None):
+        self.create_relay_networks(((name, internal),), owner=owner)
+
+    def create_relay_networks(self, networks, *, owner=None):
         if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
             raise RuntimeError('invalid Docker relay owner')
-        bridge = ('csl' if internal else 'cse') + hashlib.sha256(name.encode()).hexdigest()[:10]
-        arguments = ['network', 'create', '--label', 'dev.codex.relay-owner=' + owner,
-                     '--opt', 'com.docker.network.bridge.name=' + bridge]
-        if internal:
-            arguments += ['--internal']
-        self.run([*arguments, name], stdout=subprocess.DEVNULL)
+        for name, internal in networks:
+            bridge = ('csl' if internal else 'cse') + hashlib.sha256(name.encode()).hexdigest()[:10]
+            command = ['docker', 'network', 'create', name]
+            result = docker_request(
+                self.record['socket'], 'POST', '/networks/create', command,
+                payload={'Name': name, 'CheckDuplicate': True, 'Driver': 'bridge',
+                         'Internal': internal,
+                         'Labels': {'dev.codex.relay-owner': owner},
+                         'Options': {'com.docker.network.bridge.name': bridge}},
+                expected=(201,),
+            )
+            if not isinstance(result.get('Id'), str) or not result['Id']:
+                raise RuntimeError('Docker relay network creation returned no identity')
         # New bridges change traversal after service activation; validate the
-        # topology created by this operation even in an admitted runtime.
+        # complete topology once after this owned batch.
         if self.record.get('firewall') == 'nftables':
             self.guest(['python3', '/usr/local/share/codex-sandbox/docker-policy.py', 'check-bridges'])
 

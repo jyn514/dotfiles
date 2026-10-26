@@ -95,6 +95,11 @@ class FakeProvider:
         self.events.append(('image', image))
         return image
 
+    def create_relay_networks(self, networks, *, owner=None):
+        for name, internal in networks:
+            self.events.append(('network', name, internal))
+            self.present.add(name)
+
     def network_address(self, container, network):
         return '10.23.0.2' if '-link-' in network else '10.24.0.2'
 

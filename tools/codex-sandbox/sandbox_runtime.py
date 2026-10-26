@@ -453,6 +453,10 @@ class ContainerRuntime:
         # never permission to adopt another launcher's existing network.
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
 
+    def create_relay_networks(self, networks, *, owner=None):
+        for name, internal in networks:
+            self.create_relay_network(name, internal=internal)
+
 
 class VMRuntime(ContainerRuntime):
     """Shared host mounts, boot credentials, and recorded VM ownership."""

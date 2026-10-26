@@ -264,6 +264,15 @@ def create_relay_network(state: State, name: str, *, internal: bool,
              "--opt", "isolate=true", name], discard_stdout=True)
 
 
+def create_relay_networks(state: State, networks: tuple[tuple[str, bool], ...],
+                          *, owner: str) -> None:
+    if isinstance(OUTER_RUNTIME, VMRuntime):
+        OUTER_RUNTIME.create_relay_networks(networks, owner=owner)
+    else:
+        for name, internal in networks:
+            create_relay_network(state, name, internal=internal, owner=owner)
+
+
 def parse_connection(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -997,8 +1006,9 @@ def prepare_gateway(state: State) -> list[str]:
                 handle.cleanup()
                 state.gateway_handle = None
                 return []
-    for name, internal in ((state.gateway_link_network, True),
-                           (state.gateway_egress_network, False)):
+    networks = ((state.gateway_link_network, True),
+                (state.gateway_egress_network, False))
+    for name, _internal in networks:
         identity = f"network:{name}"
         handle.registry.register(OwnedResource(
             identity, handle.owner,
@@ -1008,10 +1018,10 @@ def prepare_gateway(state: State) -> list[str]:
                 OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
                 authority=ResourceOwnerAuthority.RELAY),
         ))
-        if handle.cancelled.is_set():
-            raise LauncherError("gateway startup cancelled")
-        create_relay_network(state, name, internal=internal, owner=handle.owner)
-        handle.created.add(identity)
+    if handle.cancelled.is_set():
+        raise LauncherError("gateway startup cancelled")
+    create_relay_networks(state, networks, owner=handle.owner)
+    handle.created.update(f"network:{name}" for name, _internal in networks)
     if not nested or handle.build_bridge is None:
         return []
     values = state.agent_docker

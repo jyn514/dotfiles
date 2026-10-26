@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lima.docker_api import inspect
+from lima.docker_api import inspect, request
 
 
 class DockerApiTest(unittest.TestCase):
@@ -51,6 +51,38 @@ class DockerApiTest(unittest.TestCase):
                 finally:
                     server.shutdown()
                     thread.join()
+
+    def test_mutation_uses_json_on_selected_socket_and_accepts_created_status(self):
+        observed = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                observed['path'] = self.path
+                observed['type'] = self.headers.get('Content-Type')
+                observed['payload'] = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                data = json.dumps({'Id': 'created'}).encode()
+                self.send_response(201)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_args):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / 'engine.sock')
+            with socketserver.UnixStreamServer(path, Handler) as server:
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
+                try:
+                    result = request(path, 'POST', '/networks/create', ['docker', 'network', 'create'],
+                                     payload={'Name': 'owned'}, expected=(201,))
+                finally:
+                    server.shutdown()
+                    thread.join()
+        self.assertEqual({'Id': 'created'}, result)
+        self.assertEqual({'path': '/networks/create', 'type': 'application/json',
+                          'payload': {'Name': 'owned'}}, observed)
 
 
 if __name__ == '__main__':

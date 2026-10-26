@@ -366,11 +366,11 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.record['firewall'] = 'nftables'
         events = []
         runtime.verify = Mock(side_effect=lambda: events.append('ready'))
-        runtime.client_argv = lambda arguments: arguments
         runtime.guest = Mock(side_effect=lambda *a, **kw: events.append('bridge policy'))
-        with patch('subprocess.run', side_effect=lambda *a, **kw: events.append('create')) as run:
-            runtime.create_relay_network('owned', internal=True, owner='a' * 32)
-            self.assertEqual(events, ['create', 'bridge policy'])
+        with patch('docker_runtime.docker_request',
+                   side_effect=lambda *a, **kw: events.append('create') or {'Id': 'network'}):
+            runtime.create_relay_networks((('link', True), ('egress', False)), owner='a' * 32)
+            self.assertEqual(events, ['create', 'create', 'bridge policy'])
             runtime.verify.assert_not_called()
 
     def test_container_identity_uses_one_live_snapshot_for_labels_and_image(self):
