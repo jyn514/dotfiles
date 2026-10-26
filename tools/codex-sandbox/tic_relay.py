@@ -12,6 +12,7 @@ from host_tcp_bridge import FixedTcpBridge
 
 # Imported by the launcher: the relay has no request-selected listen address.
 PORT = 2225
+READY_MESSAGE = "tic-relay-ready-v1"
 
 
 def probe() -> int:
@@ -39,6 +40,7 @@ def serve(target: tuple[str, int]) -> int:
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous[signum] = signal.signal(signum, lambda _signum, _frame: stopped.set())
         bridge.start()
+        print(READY_MESSAGE, flush=True)
         while not stopped.wait(0.2):
             if bridge.thread is None or not bridge.thread.is_alive():
                 raise RuntimeError("listener stopped unexpectedly")

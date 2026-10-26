@@ -20,8 +20,10 @@ class TicRelayTest(unittest.TestCase):
         bridge = mock.Mock()
         before = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
         with mock.patch.object(tic_relay, 'FixedTcpBridge', return_value=bridge) as factory, mock.patch.object(
-                tic_relay.threading, 'Event', return_value=stopped):
+                tic_relay.threading, 'Event', return_value=stopped), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(0, tic_relay.main(['--target-host', '192.0.2.1', '--target-port', '4321']))
+        self.assertEqual(f'{tic_relay.READY_MESSAGE}\n', stdout.getvalue())
         factory.assert_called_once_with(('192.0.2.1', 4321), listen_address=('0.0.0.0', tic_relay.PORT),
                                         allow_all_peers=True, max_connections=16)
         bridge.start.assert_called_once_with()

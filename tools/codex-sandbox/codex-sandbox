@@ -1356,6 +1356,24 @@ def check_tic_cancelled(state: State) -> None:
         raise LauncherError('TicGit startup cancelled')
 
 
+def wait_tic_relay_ready(container: str) -> None:
+    from tic_relay import READY_MESSAGE
+    deadline = time.monotonic() + 7
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LauncherError('TicGit relay readiness publication timed out; no fallback')
+        result = OUTER_RUNTIME.run(
+            ['logs', '--tail', '20', container], capture_output=True,
+            timeout=min(2, remaining), check=False,
+        )
+        if result.returncode != 0:
+            raise LauncherError('TicGit relay readiness log is unavailable; no fallback')
+        if READY_MESSAGE in result.stdout.splitlines():
+            return
+        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+
+
 def start_tic(state: State) -> list[str]:
     state.tic_environment = {}
     if 'tic' not in getattr(state, 'capabilities', ()):
@@ -1476,15 +1494,11 @@ def _start_tic(state: State) -> list[str]:
         # as well as inspected relay IPs. Fresh broker authentication still applies.
         bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
         check_tic_cancelled(state)
-        with service_timing('tic', 'relay-listening'):
-            listener = OUTER_RUNTIME.run(
-                ['exec', resources.container, '/usr/local/bin/python3', '/trusted/tic/tic_relay.py', '--probe'],
-                capture_output=True, timeout=7, check=False)
-            if listener.returncode != 0:
-                raise LauncherError('TicGit relay listener readiness failed; no fallback')
-        # The local bounded listener probe is not an application request. Send
-        # exactly one authenticated help through the complete guest path, never
-        # replay it after transport failure. Help never opens SQLite.
+        with service_timing('tic', 'relay-readiness-log'):
+            wait_tic_relay_ready(resources.container)
+        # One authenticated help verifies the complete guest path, including
+        # relay listener readiness. Never replay it after transport failure.
+        # Help never opens SQLite.
         check_tic_cancelled(state)
         environment = handle.environment(f'127.0.0.1:{tic_port}')
         with service_timing('tic', 'guest-help-once'):

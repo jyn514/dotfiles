@@ -107,8 +107,14 @@ class FakeProvider:
         yield ['--env-file', '/private/disposable-env']
 
     def run(self, argv, **kwargs):
+        if argv[0] == 'logs':
+            self.events.append(('logs', argv))
+            return SimpleNamespace(
+                returncode=self.listener_status,
+                stdout='tic-relay-ready-v1\n' if self.listener_status == 0 else '',
+            )
         self.events.append(('probe', argv))
-        return SimpleNamespace(returncode=self.listener_status if argv[-1] == '--probe' else self.probe_status)
+        return SimpleNamespace(returncode=self.probe_status)
 
 
 class FakeMacProvider(FakeProvider, VMRuntime):
@@ -240,7 +246,7 @@ class TicLauncherTest(unittest.TestCase):
         expected = ['bundle', 'context-capture', 'client-staging-mounts',
                     'broker-start-ready', 'link-network', 'egress-network',
                     'host-bridge', 'relay-run', 'relay-addresses',
-                    'relay-listening', 'guest-help-once']
+                    'relay-readiness-log', 'guest-help-once']
         for status in (0, 1):
             with self.subTest(status=status), \
                     mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
@@ -544,7 +550,7 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertIn('PYTHONDONTWRITEBYTECODE=1', container)
                     self.assertIn(f'type=bind,src={relay_dir},dst=/trusted/tic,readonly', container)
                     self.assertIn(self.state.sidecar_image, container)
-                    self.assertEqual(['--probe', '--help'],
+                    self.assertEqual(['--help'],
                                      [event[1][-1] for event in runtime.events if event[0] == 'probe'])
                     self.assertNotIn(handle.token, ' '.join(container))
                     self.assertNotIn(handle.token, ' '.join(args))
@@ -558,7 +564,7 @@ class TicLauncherTest(unittest.TestCase):
             expected = {'10.23.0.2', '10.24.0.2', '127.0.0.1'}
             original_run = runtime.run
             def probe(argv, **kwargs):
-                if argv[-1] == '--probe':
+                if argv[-1] == '--help':
                     self.assertEqual(expected, runtime.host_bridge.allowed_peers)
                 return original_run(argv, **kwargs)
             runtime.run = probe
@@ -567,7 +573,7 @@ class TicLauncherTest(unittest.TestCase):
             response = self.exchange(self.state.tic_handle, f'127.0.0.1:{runtime.host_bridge.port}')
             self.assertEqual('fixture response', response['stdout'])
             probe_index = next(index for index, event in enumerate(runtime.events)
-                               if event[0] == 'probe' and event[1][-1] == '--probe')
+                               if event[0] == 'probe' and event[1][-1] == '--help')
             self.assertGreater(probe_index, next(index for index, event in enumerate(runtime.events)
                                                 if event[0] == 'container'))
 
@@ -884,7 +890,9 @@ class TicLauncherTest(unittest.TestCase):
                     runtime.listener_status = 125
                 else:
                     runtime.probe_status = 125
-                self.assert_tic_unavailable('readiness failed')
+                expected = ('readiness log is unavailable' if failure == 'listener'
+                            else 'readiness failed')
+                self.assert_tic_unavailable(expected)
                 self.assertFalse(runtime.present)
                 self.assertIsNone(self.state.tic_handle.process)
                 self.assertEqual({}, self.state.tic_environment)
@@ -892,7 +900,7 @@ class TicLauncherTest(unittest.TestCase):
                 staged = Path(mount[mount.index('--mount') + 1].split('src=')[1].split(',')[0])
                 self.assertFalse(staged.exists())
                 calls = [event[1][-1] for event in runtime.events if event[0] == 'probe']
-                self.assertEqual(['--probe'] if failure == 'listener' else ['--probe', '--help'], calls)
+                self.assertEqual([] if failure == 'listener' else ['--help'], calls)
 
     def test_image_platform_failure_is_required_before_child_or_relay_start(self):
         with self.provider() as runtime:
@@ -1192,8 +1200,9 @@ class TicLauncherTest(unittest.TestCase):
                         lock.close()
                     return result.result(timeout=15)
             runtime.environment_file = environment_file
-            runtime.run = lambda argv, **kwargs: (relay.probe() if argv[-1] == '--probe'
-                                                  else client(argv[-1:], runtime.probe_environment))
+            runtime.run = lambda argv, **kwargs: (
+                subprocess.CompletedProcess(argv, 0, stdout='tic-relay-ready-v1\n')
+                if argv[0] == 'logs' else client(argv[-1:], runtime.probe_environment))
             runtime.network_address = lambda container, network: '127.0.0.1'
             with mock.patch.dict(self.globals, {'run': launch_relay, 'remove_owned_resource': remove}):
                 try:
