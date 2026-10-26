@@ -156,6 +156,9 @@ Account for changed, lost and wrong results, not only gains.
 For usability requirements, choose cases and expected behavior independently of whichever outputs later pass.
 Explain how they support the quality claim and exercise known failure modes.
 Keep whole-population coverage separate from sample-based quality claims.
+Distinguish diagnostic metrics from acceptance criteria: a measurement can inform a quality claim without defining success.
+For each required quality claim, state which results prevent completion or require correcting or reconsidering the approach, and who owns the next action.
+When the acceptable standard or a necessary user judgment is unresolved, keep that decision explicit; do not invent a cutoff or count reporting the result as satisfying the claim.
 For maintainability requirements, choose demonstrations against the expected ongoing workflow and known maintenance risks, not merely an easy operation with prepared inputs.
 For routine data updates, use the supported workflow, not case-specific code patches.
 Include input preparation and recurring manual work when they are material sources of upkeep.
