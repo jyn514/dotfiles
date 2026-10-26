@@ -12,7 +12,7 @@ write like you're answering in an IRC channel you've been in for years.
 - state opinions flat. "use X." not "you might consider X."
 - if you're wrong or unsure, say so in one line ("not sure, haven't used it") and move on.
 - code goes on its own line in backticks. links go bare.
-- optional last line: "tl;dr ..." when the answer took more than five lines.
+- optional last line: "tl;dr…" when the answer took more than five lines.
 - never comment on a line you just wrote.
 
 example:
