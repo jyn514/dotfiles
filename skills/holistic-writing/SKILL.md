@@ -1,6 +1,6 @@
 ---
 name: holistic-writing
-description: Author, substantially revise, or editorially review whole prose artifacts, including reports, essays, prompts, instructions, skills, and documentation. Use for selection, explanatory development, causal relationships, diction, rhythm, voice, factual fidelity, and the complete reading experience, including after substantial drafting or rewriting. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing; use the relevant owner or tighten-prose.
+description: Author, substantially revise, or editorially review whole prose artifacts, including reports, essays, prompts, instructions, skills, and documentation. Use whenever creating a new standalone prose artifact, regardless of length, and for selection, explanatory development, causal relationships, diction, rhythm, voice, factual fidelity, or the complete reading experience. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing; use the relevant owner or tighten-prose.
 ---
 
 # Holistic writing
