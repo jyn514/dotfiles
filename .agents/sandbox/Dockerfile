@@ -17,6 +17,8 @@ RUN apk add --no-cache \
        tmux \
        xdg-utils \
        zsh
+# Use the official musl toolchain directly, independent of disposable HOME/CARGO_HOME.
+COPY --from=rust:1.90.0-alpine3.22 /usr/local/rustup/toolchains/*/ /usr/local/
 RUN python3 -m venv /opt/test-venv \
     && /opt/test-venv/bin/pip install --no-cache-dir \
        pytest==9.1.1 \
