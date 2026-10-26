@@ -168,8 +168,8 @@ Use these independently when their target is already selected:
 - [autonomous-work](autonomous-work/SKILL.md) — pursue explicitly authorized autonomous runs and active user-authorized goals.
   Covers implementation, research, writing, planning, and review while preserving activity, acceptance order, independent progress, and resumable state.
   Implementation testing, integration, audit, and commit procedures apply only when that activity and its effects are authorized.
-  Next-action selection delegates to `work-selection`; install that companion too when copying `autonomous-work` individually.
-  The former [autonomous-implementation](autonomous-implementation/SKILL.md) entry forwards existing callers to this owner.
+  Next-action selection delegates to `work-selection`; multi-outcome goals use `goal-to-issue-graph` for a current, minimal outcome graph.
+  Install those companions too when copying `autonomous-work` individually.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `review` — select design, conformance, or completion review by its comparison target; use a diff review and native check for localized edits.
 - [property-based-testing](property-based-testing/SKILL.md) — design generators and independent properties, review weak oracles, and diagnose counterexamples using the project's existing test framework.

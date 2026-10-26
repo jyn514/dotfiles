@@ -44,6 +44,21 @@ Record acceptance cases before substantive work and refine them only within the 
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
+## Keep a useful outcome graph for multi-outcome goals
+
+For an authorized autonomous goal with multiple independently verifiable outcomes or dependent workstreams, reuse an existing issue graph or create the smallest useful one with [goal-to-issue-graph](../goal-to-issue-graph/SKILL.md) before sustained execution.
+Check an existing graph against current authority, artifacts, and evidence before using it; do not blindly follow a stale task list.
+Cover root acceptance, remaining outcomes, genuine dependencies, and integration checks appropriate to the permitted activity.
+A single bounded task may use its existing acceptance criteria without a graph.
+Use permitted existing goal, plan, tracker, or session state; this requirement neither mandates a new tracking system nor authorizes tracker mutation or project-file edits for read-only work.
+
+Initial investigation may precede decomposition.
+Keep downstream work provisional where discovery or an unresolved choice can change it; do not require an exhaustive audit before the first consumer path.
+As evidence or the approach changes, update or supersede obsolete tasks and dependencies while preserving the governing outcomes.
+Working from the graph means advancing an unmet root outcome and closing work on evidence, not obeying abandoned mechanisms or treating revisable agent assumptions as user requirements.
+Graph work does not expand scope, change the authorized activity or effects, or resume an inactive goal.
+The graph skill owns decomposition; work-selection still owns the next action.
+
 ## Select work within the authorized run
 
 Use [work-selection](../work-selection/SKILL.md) to choose the next action, justify dependencies, and compare continuing with other authorized approaches.
