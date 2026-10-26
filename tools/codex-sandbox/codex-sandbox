@@ -1236,33 +1236,41 @@ def inspect_tic_context(build: InstalledTicBuild, workspace: WorkspaceLayout) ->
     deadline = time.monotonic() + 10
     collected = 0
 
-    def capture(argv):
+    def capture(argv, *, diagnostics=False):
         nonlocal collected
         if time.monotonic() >= deadline:
             raise LauncherError('TicGit trusted context capture timed out; no fallback')
         try:
             process = subprocess.Popen(
                 argv, cwd=workspace.host_root, env=environment, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True)
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE if diagnostics else subprocess.DEVNULL,
+                close_fds=True)
         except OSError:
             raise LauncherError('TicGit trusted context child could not start; no fallback') from None
         output = bytearray()
+        diagnostic = bytearray()
         try:
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
-                while True:
+                if process.stderr is not None:
+                    selector.register(process.stderr, selectors.EVENT_READ)
+                while selector.get_map():
                     remaining = deadline - time.monotonic()
-                    if remaining <= 0 or not selector.select(remaining):
+                    events = selector.select(max(0, remaining))
+                    if remaining <= 0 or not events:
                         raise TimeoutError
-                    chunk = os.read(process.stdout.fileno(), 65537 - collected)
-                    if not chunk:
-                        break
-                    collected += len(chunk)
-                    if collected > 65536:
-                        raise LauncherError('TicGit trusted context exceeds the output limit')
-                    output.extend(chunk)
+                    for key, _ in events:
+                        chunk = os.read(key.fileobj.fileno(), 65537 - collected)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        collected += len(chunk)
+                        if collected > 65536:
+                            raise LauncherError('TicGit trusted context exceeds the output limit')
+                        (output if key.fileobj is process.stdout else diagnostic).extend(chunk)
             status = process.wait(timeout=max(0, deadline - time.monotonic()))
-            return status, bytes(output)
+            return status, bytes(output), bytes(diagnostic)
         except (TimeoutError, subprocess.TimeoutExpired):
             raise LauncherError('TicGit trusted context capture timed out; no fallback') from None
         finally:
@@ -1272,12 +1280,22 @@ def inspect_tic_context(build: InstalledTicBuild, workspace: WorkspaceLayout) ->
                 process.wait(timeout=2)
             finally:
                 process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()
 
-    status, output = capture([
+    status, output, diagnostic = capture([
         str(build.broker_executable), 'inspect-context', '--workspace', str(workspace.host_root),
-        '--common-dir', str(workspace.common_dir)])
+        '--common-dir', str(workspace.common_dir)], diagnostics=True)
     if status != 0:
-        raise LauncherError('TicGit trusted context inspection failed; no fallback')
+        prefix = b'tic-broker: context inspection failed: '
+        accepted = {
+            b'unsupported repository context',
+            b'repository context does not match the explicit canonical roots',
+            b'context output is unrepresentable or exceeds 64 KiB',
+        }
+        detail = diagnostic.removeprefix(prefix).removesuffix(b'\n')
+        suffix = f': {detail.decode("ascii")}' if diagnostic.startswith(prefix) and detail in accepted else ''
+        raise LauncherError(f'TicGit trusted context inspection failed{suffix}; no fallback')
 
     def unique(pairs):
         result = {}
@@ -1313,7 +1331,8 @@ def inspect_tic_context(build: InstalledTicBuild, workspace: WorkspaceLayout) ->
     for field, key, fallback in (('user_name', 'user.name', 'unknown'),
                                  ('user_email', 'user.email', 'unknown'),
                                  ('namespace', 'meta.namespace', 'meta')):
-        status, output = capture(['git', f'--git-dir={invocation}', 'config', '--null', '--get', key])
+        status, output, _ = capture(
+            ['git', f'--git-dir={invocation}', 'config', '--null', '--get', key])
         if status == 1 and not output:
             context[field] = fallback
         elif status == 0 and output.endswith(b'\0') and b'\0' not in output[:-1]:

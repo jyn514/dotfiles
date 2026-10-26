@@ -670,6 +670,24 @@ class TicLauncherTest(unittest.TestCase):
         for key in routing:
             self.assertIsNone(captured['environment'][key], key)
 
+    def test_context_surfaces_fixed_scrubbed_inspection_diagnostic(self):
+        build = self.write_inspector(
+            'sys.stderr.write("tic-broker: context inspection failed: '
+            'unsupported repository context\\n")\nsys.exit(1)\n')
+        with self.assertRaisesRegex(
+                self.launcher['LauncherError'],
+                'inspection failed: unsupported repository context; no fallback'):
+            self.launcher['inspect_tic_context'](build, self.state.workspaces[0])
+
+    def test_context_does_not_surface_unrecognized_inspection_diagnostic(self):
+        build = self.write_inspector(
+            'sys.stderr.write("tic-broker: context inspection failed: '
+            'secret repository detail\\n")\nsys.exit(1)\n')
+        with self.assertRaises(self.launcher['LauncherError']) as raised:
+            self.launcher['inspect_tic_context'](build, self.state.workspaces[0])
+        self.assertEqual('TicGit trusted context inspection failed; no fallback',
+                         str(raised.exception))
+
     def test_context_real_host_git_system_xdg_global_includes_worktree_onbranch_and_overrides(self):
         build = self.write_inspector()
         environment = self.git_environment
