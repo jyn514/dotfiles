@@ -34,7 +34,7 @@ For a staged new-tool workflow, consume approved requirements and repository int
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Before selecting state, tracking, acknowledgment, or coordination mechanisms, state the minimum observable outcome.
 For each added mechanism, name the user requirement or pre-existing constraint that the direct solution cannot meet without it.
-Treat stronger guarantees introduced by the agent as alternatives to justify, not prerequisites to satisfy.
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when classifying proposed guarantees.
 Compare the smallest existing-primitive solution first; show the decisive requirement and trade-off in the recommendation, not a separate checklist.
 
 Check whether the design fulfills the practical purpose of the user's request, not just its literal wording or the terms of an earlier proposal.
@@ -100,8 +100,6 @@ Use history as evidence when useful, but do not equate churn with pain. Check wh
 ### 2. Challenge the hardest part and decide whether design is needed
 
 Name the hardest part of the proposed approach and the guarantee, distinction, or coordination that makes it hard.
-A positive response to a proposal does not by itself approve every detail.
-Distinguish the user’s requirements from assumptions and guarantees introduced by the proposal; keep the latter open to reconsideration.
 Ask whether the hard part can be made unnecessary before working out how to implement it.
 Construct the smallest complete caller-to-result path without it, keeping the required behavior, timing, and coverage fixed.
 Compare that alternative against the governing requirements: which required behavior fails, and where?

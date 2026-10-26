@@ -75,7 +75,9 @@ Put exact record identities, source excerpts, versions, traces, measurements, an
 
 Keep decision-changing uncertainty in the main explanation; an appendix must not hide an inferred premise, an untested alternative, or a narrow approval scope. Do not imply a tested example approves an entire system, dataset, class of cases, or method.
 
-A review answer alone selects only the stated decision; it does not expand implementation authority, waive checks, authorize publication, or imply approval of adjacent questions. Implementation requires existing authorization or a separate explicit instruction; do not ask again for work already authorized. Packet creation itself changes no approval status.
+State exactly what a review answer selects; keep publication, required checks, and later acceptance separate from that decision.
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) to determine existing authorization.
+Packet creation itself changes no approval status.
 
 ## 4. Check the reading experience
 

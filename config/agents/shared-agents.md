@@ -56,8 +56,11 @@ Check that you understand the user's intended outcome and the trade-offs that co
 Use available conversation and project records first.
 If material context is missing, state your best understanding and ask up to three focused questions to confirm or correct it.
 Pause only the dependent work; continue independent investigation.
-Do not treat a requested implementation, an existing design, or a previous agent's choice as evidence that the user prefers its costs over alternatives.
-Ask only about context that could change the approach; routine implementation does not require a discovery interview.
+New user workflow obligations, host prerequisites, maintenance burdens, and platform limits are consequential even in small patches.
+Before committing to such an agent-selected choice not already authorized, show its required outcome, mechanism, costs, and relevant alternatives;
+ask the user to settle the trade-off.
+An implementation request or positive response to a proposal does not approve every detail or cost; an agent choice in a spec is not new approval.
+Ask only about unresolved trade-offs or context that could change the approach; routine choices within the authorized task do not require a discovery interview.
 
 ### Before changing behavior or scope
 

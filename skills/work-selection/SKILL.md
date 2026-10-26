@@ -20,15 +20,13 @@ A chain of successful supporting tasks can still fail to advance the requested o
 For a diagnostic follow-up, name which possible findings would change the next action.
 Repair obvious mechanical failures directly; unrelated bugs and hypothetical failures do not establish prerequisites.
 
-Separate governing requirements from agent-authored assumptions, restrictions, and milestones; cite the source of consequential constraints.
-Revise agent-selected means when a smaller approach meets the same requirements.
-Ask before changing governing scope, acceptance, preservation obligations, permissions, or user-required or explicitly approved design choices.
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach);
+cite the source of consequential constraints before comparing actions.
 Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
 
 When a dependency follows from a chosen approach, name the choice that creates it.
 “Keeping X requires Y” is not the same as “the user’s goal requires Y.”
-Approval makes a choice binding, not intrinsic to the goal.
-If changing it removes the dependency, propose that alternative and ask before changing an approved choice.
+If changing the choice removes the dependency, include that alternative in the comparison.
 
 ## Get an independent recommendation
 

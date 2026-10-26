@@ -5,6 +5,7 @@ description: Review third-party dependencies and externally sourced tooling when
 
 # Dependency Review
 
+Apply shared [decision authority](~/.agents/shared.md#before-selecting-a-substantial-approach) when establishing dependency need.
 Add dependencies through the owning component's existing package manager. Obtain external tools and artifacts through the repository's existing installation or image mechanism. A task that reasonably requires one authorizes adding it when that mechanism is already in place.
 
 Do not introduce a package manager or installation mechanism solely for one dependency. Ask first when the owning component has none.

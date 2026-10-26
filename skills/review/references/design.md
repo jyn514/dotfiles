@@ -27,7 +27,8 @@ Review upstream/downstream consistency and identify dependent artifacts or evide
 
 ## Non-narrowing check
 
-For requirements and implementation specs, establish upstream permissions before evaluating downstream eligibility. Agreement between requirements and an implementation spec does not establish agreement with the brief.
+For requirements and implementation specs, establish upstream permissions before evaluating downstream eligibility.
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when tracing draft constraints to approval.
 
 1. Read the approved brief, incorporated policy, and explicitly approved product decisions first. Record a few otherwise-valid permitted cases, their source populations, and the minimum sufficient evidence for each source-permitted explanation mode. If eligibility differs by origin or scope, include otherwise-similar cases from both populations; checking only the more restricted population does not check the other's permission. Keep uncertainty visible; draft definitions and source labels cannot authorize themselves.
 2. Inspect eligibility, rejection conditions, and evidence burdens in definitions, examples, and acceptance criteria. Trace every stronger condition to an authoritative source and show why it is needed to enforce that source. Preserve the source's population, conditions, and phase: a restriction on new forms must not silently cover inherited forms, nor may a final-adoption condition become a pre-review condition.
@@ -55,9 +56,8 @@ are justified. Identify the concrete consumer or constraint behind each mechanis
 flag machinery supported only by hypothetical needs. Consider whether the same
 requirement can be met by an existing primitive or a narrower interface.
 
-Separate required outcomes from proposed mechanisms. Require justification for
-each mechanism; do not promote an implementation choice into a constraint when
-evaluating simplifications or alternatives.
+Trace each mechanism to the upstream outcome it is needed to satisfy;
+flag unsupported constraints before evaluating simplifications or alternatives.
 
 Before recommending parser or component reuse, apply the
 [supported-interface rule](../../references/change-with-evidence.md#distinguish-guarantees-from-details).
