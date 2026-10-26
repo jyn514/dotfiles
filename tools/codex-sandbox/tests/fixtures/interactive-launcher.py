@@ -80,7 +80,7 @@ def benchmark(state, arguments):
     return original(state, ['--env', 'PI_STARTUP_BENCHMARK=1',
         *profile,
         '--mount', f'type=bind,src={fixture},dst=/startup-probe,readonly',
-        '--entrypoint', '/bin/sh',
+        '--entrypoint', '/startup-probe/startup-entry.sh',
         '--env', 'NODE_OPTIONS=--require=/startup-probe/startup-node.cjs',
         *arguments[:image_index + 1], '/startup-probe/startup-entry.sh',
         *arguments[image_index + 1:]])

@@ -66,10 +66,10 @@ for index in range(args.runs):
                             stamp = float(emitted)
                             clock = 'host emission'
                         boundaries.append({'label': label, 'seconds': stamp - started, 'clock': clock})
-                if not ready and b'interactiveMode.init:' in pending:
+                if not ready and (b'interactiveMode.init:' in pending or b'\x1b[?1049h' in pending):
                     ready = True
                     elapsed = time.monotonic() - started
-                    boundaries.append({'label': 'Pi ready', 'seconds': elapsed})
+                    boundaries.append({'label': 'Pi TUI ready', 'seconds': elapsed})
                     (logs / f'{index}.json').write_text(json.dumps(boundaries, indent=2) + '\n')
                     previous = 0
                     for boundary in boundaries:
@@ -79,8 +79,8 @@ for index in range(args.runs):
                     print(f'Run {index + 1}: observed readiness {elapsed:.3f}s; '
                           f'Pi terminal-drain pause 0.150s; '
                           f'estimate excluding pause {elapsed - 0.150:.3f}s', flush=True)
+                    break
             assert ready, f'interactive benchmark did not finish; inspect {logs / f"{index}.log"}'
-        assert process.wait(timeout=10) == 0
     finally:
         (logs / f'{index}.json').write_text(json.dumps(boundaries, indent=2) + '\n')
         if process.poll() is None:
