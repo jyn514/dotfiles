@@ -1,5 +1,5 @@
 import { test, expect, mock } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,7 +56,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 }
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
-const { default: guestTools } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
+const { default: guestTools, waitForGuestToolReady } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
 
 async function eventually(predicate: () => boolean) {
   for (let i = 0; i < 100; i++) {
@@ -65,6 +65,27 @@ async function eventually(predicate: () => boolean) {
   }
   throw new Error("connector did not reach expected state");
 }
+
+test("guest startup waits for private worker readiness without polling", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guest-ready-"));
+  const ready = join(dir, "ready");
+  try {
+    const waiting = waitForGuestToolReady(ready);
+    await Bun.sleep(20);
+    writeFileSync(ready, "", { mode: 0o600 });
+    await waiting;
+
+    chmodSync(ready, 0o644);
+    await expect(waitForGuestToolReady(ready)).rejects.toThrow("invalid readiness");
+
+    rmSync(ready);
+    writeFileSync(join(dir, "target"), "", { mode: 0o600 });
+    symlinkSync(join(dir, "target"), ready);
+    await expect(waitForGuestToolReady(ready)).rejects.toThrow("invalid readiness");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("registered tools and human bash snapshot their own public invocation context", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-guest-metadata-"));

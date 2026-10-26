@@ -127,12 +127,16 @@ Preserve these boundaries when changing launcher output or process ownership:
 - During interactive provisioning, `host_pi_owner.detached_frontend` keeps the
   invoking terminal's original stdin, stdout, and stderr. Do not force progress
   with `BUILDKIT_PROGRESS` or plain-progress output.
-- Before bootstrap completes, `codex-sandbox.run_agent` starts the guest worker
-  with explicit `DEVNULL` stdin and `OWNER_LOG_FD` stdout/stderr; inheriting the
-  owner's stdio would retain the source pane's terminal.
-- `HostPiOwner.mark_bootstrapped()` redirects owner stdin to `DEVNULL` and
+- `codex-sandbox.run_agent` starts the guest worker with explicit `DEVNULL` stdin
+  and `OWNER_LOG_FD` stdout/stderr; inheriting the owner's stdio would retain the
+  source pane's terminal.
+- `HostPiOwner.release_frontend()` redirects owner stdin to `DEVNULL` and
   stdout/stderr to the private owner log before starting attachment service or
-  delivering the first Pi launch spec. Keep `OWNER_LOG_FD` open until owner exit.
+  delivering the first Pi launch spec. Pi remains in its startup input state
+  while guest worker creation and extension initialization finish. Keep
+  `OWNER_LOG_FD` open until owner exit.
+- The launcher enables that overlap only when the installed Pi bundle contains
+  the matching startup-input barrier. Older builds retain sequential startup.
 - Non-TTY startup retains the existing file-log relay. Startup failures remain
   visible without duplicate diagnostics; interactive output preserves carriage
   returns rather than passing through the text-file relay.
@@ -220,7 +224,8 @@ TMPDIR=/private/tmp python3 tools/codex-sandbox/tests/interactive_startup.py --r
 
 The probe uses the normal launcher and configured extensions in a 30×100 pseudo-terminal, with `--no-session` and Pi's `PI_STARTUP_BENCHMARK` mode.
 It makes no model request.
-Readiness is the arrival of `interactiveMode.init:` in Pi's timing output, emitted after TUI initialization and a deliberate 150ms terminal-drain pause.
+It reports the first visible TUI frame separately from readiness.
+Readiness is the arrival of `interactiveMode.init:` in Pi's timing output after awaited startup extension work and a deliberate 150ms terminal-drain pause.
 Output reports the observed elapsed time, that pause, and an estimate with the pause subtracted;
 process shutdown is excluded.
 

@@ -8,7 +8,7 @@ import fcntl
 import hashlib
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from functools import cache
 import importlib.util
 import json
@@ -2285,9 +2285,19 @@ def build_agent_command(
     return command
 
 
+def host_pi_blocks_startup_input(home: Path) -> bool:
+    bundle = home / ".local/share/pi/source/packages/coding-agent/dist/bundle/cli.js"
+    try:
+        with bundle.open("rb") as source:
+            return b"Startup is still in progress; waiting for extensions" in source.read()
+    except OSError:
+        return False
+
+
 def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
+    overlap_pi_startup = HOST_PI_BOOTSTRAP is not None and host_pi_blocks_startup_input(state.home)
     state.codex_container_created = True
     pi_agent = state.home / ".pi/agent"
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
@@ -2354,6 +2364,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "JJ_AGENT": "pi",
         "PI_MODEL_FILE": str(state.pi_model_file),
         "PI_MODEL_SESSION_ID": state.pi_model_session_id,
+        "CODEX_SANDBOX_TOOL_READY_HOST": str(state.pi_agent_tmp / "tool-worker-ready.validated"),
     })
     if timing:
         host_environment["PI_TIMING"] = "1"
@@ -2378,13 +2389,30 @@ def run_agent(state: State, arguments: list[str]) -> int:
                       and state.github_credential is not None
                       else ["/opt/agent-tools/bin/tool-worker.mjs"])
     with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
-        with OUTER_RUNTIME.workload(
-            OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
-            [*command[4:image_index], *environment], worker_command, **worker_io,
-        ) as worker:
+        if overlap_pi_startup:
+            from host_pi_owner import send
+            HOST_PI_OWNER.release_frontend()
+            HOST_PI_OWNER.start()
+            try:
+                send(HOST_PI_BOOTSTRAP, HOST_PI_OWNER.launch_spec(HOST_PI_OWNER.original))
+            except OSError:
+                HOST_PI_OWNER.drop(HOST_PI_OWNER.original)
+        with ExitStack() as resources:
+            try:
+                worker = resources.enter_context(OUTER_RUNTIME.workload(
+                    OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
+                    [*command[4:image_index], *environment], worker_command, **worker_io,
+                ))
+            except BaseException:
+                if HOST_PI_BOOTSTRAP is not None:
+                    HOST_PI_OWNER.worker_lost()
+                raise
             worker_ready = state.pi_agent_tmp / "tool-worker-ready"
+            validated_ready = state.pi_agent_tmp / "tool-worker-ready.validated"
             for _ in range(1000):
                 if worker.poll() is not None:
+                    if HOST_PI_BOOTSTRAP is not None:
+                        HOST_PI_OWNER.worker_lost()
                     raise LauncherError("guest tool worker exited during startup")
                 try:
                     ready_metadata = worker_ready.stat(follow_symlinks=False)
@@ -2394,19 +2422,25 @@ def run_agent(state: State, arguments: list[str]) -> int:
                     if (not stat.S_ISREG(ready_metadata.st_mode)
                             or ready_metadata.st_uid != state.uid
                             or stat.S_IMODE(ready_metadata.st_mode) != 0o600):
+                        if HOST_PI_BOOTSTRAP is not None:
+                            HOST_PI_OWNER.worker_lost()
                         raise LauncherError("guest tool worker published invalid readiness")
                     break
                 time.sleep(0.01)
             else:
+                if HOST_PI_BOOTSTRAP is not None:
+                    HOST_PI_OWNER.worker_lost()
                 raise LauncherError("guest tool worker did not become ready")
+            validated_ready.touch(mode=0o600, exist_ok=False)
             if HOST_PI_BOOTSTRAP is not None:
-                from host_pi_owner import send
-                HOST_PI_OWNER.mark_bootstrapped()
-                HOST_PI_OWNER.start()
-                try:
-                    send(HOST_PI_BOOTSTRAP, HOST_PI_OWNER.launch_spec(HOST_PI_OWNER.original))
-                except OSError:
-                    HOST_PI_OWNER.drop(HOST_PI_OWNER.original)
+                if not overlap_pi_startup:
+                    from host_pi_owner import send
+                    HOST_PI_OWNER.release_frontend()
+                    HOST_PI_OWNER.start()
+                    try:
+                        send(HOST_PI_BOOTSTRAP, HOST_PI_OWNER.launch_spec(HOST_PI_OWNER.original))
+                    except OSError:
+                        HOST_PI_OWNER.drop(HOST_PI_OWNER.original)
                 try:
                     HOST_PI_OWNER.wait(worker)
                 except RuntimeError as error:

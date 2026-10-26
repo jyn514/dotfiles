@@ -53,6 +53,17 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_host_pi_startup_overlap_requires_the_input_barrier(self):
+        blocks = runpy.run_path(str(LAUNCHER))["host_pi_blocks_startup_input"]
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            bundle = home / ".local/share/pi/source/packages/coding-agent/dist/bundle/cli.js"
+            bundle.parent.mkdir(parents=True)
+            bundle.write_text('showStatus("Startup is still in progress")')
+            self.assertFalse(blocks(home))
+            bundle.write_text('showStatus("Startup is still in progress; waiting for extensions")')
+            self.assertTrue(blocks(home))
+
     def test_missing_agent_docker_access_warns_without_blocking_startup(self):
         load = runpy.run_path(str(LAUNCHER))["load_agent_docker"]
         with tempfile.TemporaryDirectory() as directory:
@@ -128,9 +139,11 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 )
                 with mock.patch.object(host_pi_owner, "OWNER_LOG_FD", log.fileno()), \
                         mock.patch.object(host_pi_owner, "HostPiOwner") as owner, \
+                        mock.patch.object(host_pi_owner, "send"), \
                         mock.patch.dict(run_agent.__globals__, {
                             "HOST_PI_BOOTSTRAP": object(), "OUTER_RUNTIME": runtime,
                             "scratch_directory": lambda: root,
+                            "host_pi_blocks_startup_input": lambda _home: True,
                             "run": mock.Mock(return_value=SimpleNamespace(
                                 stdout=f"{git_directory}\n{git_directory}\n")),
                             "host_pi_resource_paths": lambda _state: {
@@ -141,7 +154,9 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                     with self.assertRaisesRegex(launcher["LauncherError"],
                                                 "guest tool worker exited during startup"):
                         run_agent(state, [])
-                    owner.return_value.start.assert_not_called()
+                    owner.return_value.release_frontend.assert_called_once_with()
+                    owner.return_value.start.assert_called_once_with()
+                    owner.return_value.worker_lost.assert_called_once_with()
                     environment = owner.call_args.args[3]
                     self.assertEqual("/src/repo", environment["CODEX_SANDBOX_GUEST_REPO"])
                     self.assertEqual("/src/repo/nested", environment["CODEX_SANDBOX_GUEST_CWD"])
@@ -1699,14 +1714,21 @@ class CodexSandboxTest(unittest.TestCase):
             if [ "$1" = create ]; then
                 container=
                 worker=0
+                agent_dir=
                 previous=
                 for argument do
                     [ "$previous" = --name ] && container=$argument
                     [ "$argument" = /opt/agent-tools/bin/tool-worker.mjs ] && worker=1
+                    case "$argument" in
+                        type=bind,src=*,dst=/home/codex/.pi/agent)
+                            agent_dir=${argument#type=bind,src=}
+                            agent_dir=${agent_dir%,dst=*}
+                            ;;
+                    esac
                     previous=$argument
                 done
                 if [ "$worker" = 1 ]; then
-                    : > "$FAKE_DOCKER_LOG.worker.$container"
+                    printf '%s\n' "$agent_dir" > "$FAKE_DOCKER_LOG.worker.$container"
                 fi
                 exit 0
             fi
@@ -1718,6 +1740,8 @@ class CodexSandboxTest(unittest.TestCase):
                     if [ "${FAKE_WORKER_EXIT+x}" = x ]; then
                         exit "$FAKE_WORKER_EXIT"
                     fi
+                    agent_dir=$(head -n 1 "$marker")
+                    if [ -n "$agent_dir" ]; then : > "$agent_dir/tool-worker-ready"; chmod 600 "$agent_dir/tool-worker-ready"; fi
                     if [ -n "$FAKE_AGENT_READY" ]; then : > "$FAKE_AGENT_READY"; fi
                     # Keep the worker alive until removal without adding a
                     # one-second shutdown delay to every launcher test.

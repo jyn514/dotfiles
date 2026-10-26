@@ -36,6 +36,7 @@ for index in range(args.runs):
     pending = b''
     lines = b''
     boundaries = []
+    visible = False
     ready = False
     try:
         with (logs / f'{index}.log').open('wb') as log, selectors.DefaultSelector() as selector:
@@ -66,10 +67,13 @@ for index in range(args.runs):
                             stamp = float(emitted)
                             clock = 'host emission'
                         boundaries.append({'label': label, 'seconds': stamp - started, 'clock': clock})
-                if not ready and (b'interactiveMode.init:' in pending or b'\x1b[?1049h' in pending):
+                if not visible and b'\x1b[?1049h' in pending:
+                    visible = True
+                    boundaries.append({'label': 'Pi TUI visible', 'seconds': time.monotonic() - started})
+                if not ready and b'interactiveMode.init:' in pending:
                     ready = True
                     elapsed = time.monotonic() - started
-                    boundaries.append({'label': 'Pi TUI ready', 'seconds': elapsed})
+                    boundaries.append({'label': 'Pi startup complete', 'seconds': elapsed})
                     (logs / f'{index}.json').write_text(json.dumps(boundaries, indent=2) + '\n')
                     previous = 0
                     for boundary in boundaries:

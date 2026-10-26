@@ -112,9 +112,9 @@ class HostPiOwner:
         return {"argv": [self.wrapper, "--sandbox-interactive", *(self.arguments if arguments is None else arguments)],
                 "cwd": self.cwd, "env": environment}
 
-    def mark_bootstrapped(self):
-        # Guest provisioning is not Pi UI startup. Arm the original reservation
-        # only when its launch spec can actually be delivered to the frontend.
+    def release_frontend(self):
+        # Arm the original reservation only when its launch spec can actually be
+        # delivered, then release the terminal while guest startup continues.
         # Side reservations still start before their tmux effect.
         with self.lock:
             self.original.deadline = time.monotonic() + self.timeout
@@ -495,7 +495,7 @@ def detached_frontend(arguments, owner_main):
         os.setsid()
         # Lima's build needs real stdin/stderr TTYs for SSH's guest PTY.
         # Retain only the original standard descriptors during provisioning;
-        # mark_bootstrapped drops them before delivering the first UI lease.
+        # release_frontend drops them before delivering the first UI lease.
         # Long-lived startup workers must explicitly use OWNER_LOG_FD/DEVNULL.
         if not interactive_startup:
             _redirect_owner_stdio()

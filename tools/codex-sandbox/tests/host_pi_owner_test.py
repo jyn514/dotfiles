@@ -124,7 +124,7 @@ class BootstrapReservationTest(unittest.TestCase):
                 # An accepted remote workload can take longer than Pi's entire
                 # startup budget before the frontend receives any launch spec.
                 clock.return_value = 175.0
-                owner.mark_bootstrapped()
+                owner.release_frontend()
                 owner.expire()
                 self.assertFalse(owner.stopping)
                 owner.start()

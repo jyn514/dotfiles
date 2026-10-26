@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { lstat, watch } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { expandInstructionFile } from "./pi-instruction-includes.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -47,6 +48,40 @@ type GuestFrame =
 type BoundaryCall = {
   onBoundary: (metadata: BoundaryMetadata | undefined) => void;
 };
+
+export async function waitForGuestToolReady(
+  path = process.env.CODEX_SANDBOX_TOOL_READY_HOST,
+): Promise<void> {
+  if (!path) return;
+  const inspect = async () => {
+    try {
+      const metadata = await lstat(path, { bigint: false });
+      if (!metadata.isFile() || metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600) {
+        throw new Error("guest tool worker published invalid readiness");
+      }
+      return true;
+    } catch (error: any) {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    }
+  };
+  if (await inspect()) return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const events = watch(dirname(path), { signal: controller.signal });
+    if (await inspect()) return;
+    for await (const event of events) {
+      if (event.filename === basename(path) && await inspect()) return;
+    }
+  } catch (error: any) {
+    if (error?.name === "AbortError") throw new Error("guest tool worker did not become ready");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  throw new Error("guest tool worker readiness watch ended");
+}
 
 function boundaryReply(metadata: BoundaryMetadata | undefined) {
   if (metadata === undefined) return undefined;
@@ -135,6 +170,7 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
   const cwd = process.env.CODEX_SANDBOX_GUEST_CWD;
   if (!cwd) throw new Error("guest working directory is unavailable");
+  pi.on("session_start", () => waitForGuestToolReady());
   const boundary = createBoundaryController(pi, (ctx, signal) =>
     callGuest("commit_boundary_checkpoint", {}, callContext(ctx), signal));
   const repository = process.env.CODEX_SANDBOX_GUEST_REPO;

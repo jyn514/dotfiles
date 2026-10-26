@@ -56,7 +56,7 @@ def owner_main(arguments, bootstrap):
             owner = HostPiOwner(ROOT / "sandbox-host-pi", config["arguments"],
                                 os.getcwd(), environment, timeout=15)
             owner.original.pane = environment["TMUX_PANE"]
-            owner.mark_bootstrapped()
+            owner.release_frontend()
             owner.start()
 
             def monitor():

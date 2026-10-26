@@ -84,7 +84,7 @@ def startup_main(arguments, bootstrap):
             os.write(2, b"error: startup failed\n")
             return 7
         owner = HostPiOwner(__file__, [], os.getcwd(), os.environ)
-        owner.mark_bootstrapped()
+        owner.release_frontend()
         evidence["after"] = [os.isatty(fd) for fd in (0, 1, 2)]
         subprocess.run([sys.executable, "-c", probe, probe_path], check=True)
         evidence["worker"] = json.loads(Path(probe_path).read_text())
@@ -117,7 +117,7 @@ def owner_main(arguments, bootstrap):
     owner = HostPiOwner(wrapper, ["--session-dir", str(Path(session).parent / "obsolete-directory"),
                                  "--session", session, "ORIGINAL_PROMPT"], os.getcwd(), environment, timeout=3)
     owner.original.pane = os.environ.get("TMUX_PANE")
-    owner.mark_bootstrapped()
+    owner.release_frontend()
     owner.start()
     send(bootstrap, owner.launch_spec(owner.original))
     result = 0
