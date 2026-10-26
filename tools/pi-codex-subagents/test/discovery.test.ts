@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { AgentManager, CHILD_BUILTIN_EXTENSION_NAMES, SUBAGENT_DIR, parseAgentDefinitionText, resolveChildExtensionPaths } from "../core.ts";
-import { jsonl, until } from "./source-runtime.ts";
+import { jsonl, sourceRpc, until } from "./source-runtime.ts";
 import { providerCallsFile } from "./held-tool-extension.ts";
 
 const sourceTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG);
@@ -43,12 +43,15 @@ for (const trusted of [true, false]) {
       const prefix = base === agentDir ? "global" : "project";
       writeFileSync(join(base, "skills", "native-skill", "SKILL.md"), `---\nname: ${prefix}-skill\ndescription: Native discovery test\n---\n${prefix} skill contents`);
       writeFileSync(join(base, "prompts", `${prefix}-prompt.md`), `${prefix} template expansion`);
-      writeFileSync(join(base, "SYSTEM.md"), "UNWANTED_SYSTEM");
-      writeFileSync(join(base, "APPEND_SYSTEM.md"), "UNWANTED_APPEND");
+      writeFileSync(join(base, "SYSTEM.md"), `${prefix.toUpperCase()}_BASE_MARKER`);
+      writeFileSync(join(base, "APPEND_SYSTEM.md"), `${prefix.toUpperCase()}_APPEND_MARKER`);
     }
-    writeFileSync(join(cwd, "AGENTS.md"), "UNWANTED_CONTEXT");
+    writeFileSync(join(cwd, "AGENTS.md"), "SHARED_CWD_CONTEXT_MARKER");
     writeFileSync(settingsFile, JSON.stringify({ packages: [packageRoot] }));
     writeFileSync(templateFile, `---\nname: ${templateName}\ndisabledExtensions: pi-codex-subagents\nextensions: ${deny}\n---\n`);
+    const roleFile = join(SUBAGENT_DIR, "SYSTEM.md");
+    const previousRole = existsSync(roleFile) ? readFileSync(roleFile) : undefined;
+    writeFileSync(roleFile, "EDITED_DISCOVERY_CHILD_ROLE_MARKER");
     const parentSessionId = randomUUID();
     const manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
     try {
@@ -83,8 +86,13 @@ for (const trusted of [true, false]) {
       expect(calls[0].tools).toContain("discovered_probe");
       expect(calls[0].tools).toContain("link_reply");
       expect(calls[0].tools).not.toContain("spawn_agent");
-      expect(calls[0].systemPrompt).toContain("You are a subagent");
-      expect(calls[0].systemPrompt).not.toContain("UNWANTED_");
+      expect(calls[0].systemPrompt).toContain("EDITED_DISCOVERY_CHILD_ROLE_MARKER");
+      expect(calls[0].systemPrompt).toContain("SHARED_CWD_CONTEXT_MARKER");
+      for (const suffix of ["BASE_MARKER", "APPEND_MARKER"]) {
+        expect(calls[0].systemPrompt).toContain(`${trusted ? "PROJECT" : "GLOBAL"}_${suffix}`);
+        expect(calls[0].systemPrompt).not.toContain(`${trusted ? "GLOBAL" : "PROJECT"}_${suffix}`);
+      }
+      expect(calls[0].systemPrompt).not.toContain("You are an expert coding assistant");
       // Existing workers keep their launch policy even if the template changes.
       writeFileSync(templateFile, `---\nname: ${templateName}\n---\n`);
       await manager.sendMessage(parentSessionId, "worker", "/global-prompt");
@@ -107,6 +115,7 @@ for (const trusted of [true, false]) {
       expect(jsonl(providerCallsFile(limited.sessionFile))[0].tools.sort()).toEqual(["link_reply", "read"]);
     } finally {
       await manager.shutdown();
+      if (previousRole === undefined) rmSync(roleFile, { force: true }); else writeFileSync(roleFile, previousRole);
       rmSync(templateFile, { force: true });
       rmSync(settingsFile, { force: true });
       for (const name of ["skills", "prompts", "SYSTEM.md", "APPEND_SYSTEM.md"]) rmSync(join(agentDir, name), { recursive: true, force: true });
@@ -166,4 +175,110 @@ for (const scenario of builtinCases) {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
+}
+
+// Both modes use native resource loading. The optional integration loads the actual
+// dotfiles hook, rather than a copy that could conceal ordering or ROOT regressions.
+for (const withIncludes of [false, true]) for (const configured of [false, true]) {
+  const compositionTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG || (withIncludes && !process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE));
+  compositionTest(`Native provider instruction composition: ${configured ? "configured base/append" : "default coding prompt"}, ${withIncludes ? "actual optional instruction-includes source" : "no custom include hook"}`, async () => {
+    const ancestor = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "instructions-"));
+    const cwd = join(ancestor, "project");
+    const agentDir = getAgentDir();
+    const roleFile = join(SUBAGENT_DIR, "SYSTEM.md");
+    const previousRole = existsSync(roleFile) ? readFileSync(roleFile) : undefined;
+    const settingsFile = join(agentDir, "settings.json");
+    const templateName = `instructions-${randomUUID()}`;
+    const templateFile = join(SUBAGENT_DIR, "agents", `${templateName}.md`);
+    const rootFile = join(cwd, "root.jsonl");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(SUBAGENT_DIR, "agents"), { recursive: true });
+    mkdirSync(join(agentDir, "skills", "composition-skill"), { recursive: true });
+    writeFileSync(join(agentDir, "skills", "composition-skill", "SKILL.md"), "---\nname: composition-skill\ndescription: COMPOSITION_SKILL_CATALOG_MARKER\n---\nSkill body");
+    writeFileSync(join(agentDir, "AGENTS.md"), `SHARED_GLOBAL_MARKER\n${withIncludes ? "@../../.agents/shared.md\n" : ""}`);
+    writeFileSync(join(ancestor, "AGENTS.md"), "SHARED_ANCESTOR_MARKER");
+    writeFileSync(join(cwd, "AGENTS.md"), "SHADOWED_CWD_MARKER");
+    writeFileSync(join(cwd, "AGENTS.override.md"), "SHARED_CWD_OVERRIDE_MARKER");
+    const editedRole = `EDITED_COMPOSITION_CHILD_ROLE_MARKER\n${withIncludes ? "@role-extra.md\n" : ""}`;
+    writeFileSync(roleFile, editedRole);
+    writeFileSync(templateFile, `---\nname: ${templateName}\ntools: read\n---\nCOMPOSITION_TEMPLATE_MARKER\n`);
+    if (configured) {
+      writeFileSync(join(agentDir, "SYSTEM.md"), "CONFIGURED_GLOBAL_BASE_MARKER");
+      writeFileSync(join(agentDir, "APPEND_SYSTEM.md"), "CONFIGURED_GLOBAL_APPEND_MARKER");
+    }
+    if (withIncludes) {
+      // Preserve the installed route shape, including a symlink and nested relative include.
+      const shared = join(ancestor, "shared-rules");
+      mkdirSync(join(shared, "nested"), { recursive: true });
+      writeFileSync(join(shared, "shared.md"), "SHARED_SYMLINK_INCLUDE_MARKER\n@nested/rules.md\n");
+      writeFileSync(join(shared, "nested", "rules.md"), "SHARED_NESTED_INCLUDE_MARKER");
+      symlinkSync(shared, join(process.env.HOME!, ".agents"));
+      writeFileSync(join(SUBAGENT_DIR, "role-extra.md"), "CHILD_ROLE_INCLUDE_MARKER");
+      writeFileSync(settingsFile, JSON.stringify({ extensions: [process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE] }));
+    }
+    const manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
+    const root = sourceRpc(cwd, rootFile, false, []);
+    const count = (text: string, marker: string) => text.split(marker).length - 1;
+    const checkShared = (prompt: string) => {
+      for (const marker of ["SHARED_GLOBAL_MARKER", "SHARED_ANCESTOR_MARKER", "SHARED_CWD_OVERRIDE_MARKER", "COMPOSITION_SKILL_CATALOG_MARKER"]) expect(count(prompt, marker), marker).toBe(1);
+      expect(prompt).not.toContain("SHADOWED_CWD_MARKER");
+      if (configured) {
+        expect(count(prompt, "CONFIGURED_GLOBAL_BASE_MARKER")).toBe(1);
+        expect(count(prompt, "CONFIGURED_GLOBAL_APPEND_MARKER")).toBe(1);
+        expect(prompt).not.toContain("You are an expert coding assistant");
+      } else {
+        expect(prompt).toContain("You are an expert coding assistant");
+        expect(prompt).toContain("Pi documentation");
+      }
+      if (withIncludes) for (const marker of ["SHARED_SYMLINK_INCLUDE_MARKER", "SHARED_NESTED_INCLUDE_MARKER"]) expect(count(prompt, marker), marker).toBe(1);
+    };
+    try {
+      await root.request({ type: "prompt", message: "root without ROOT file" });
+      await until(() => root.records.filter(record => record.type === "agent_settled").length === 1, "root without optional ROOT settles");
+      const firstRoot = jsonl(providerCallsFile(rootFile))[0];
+      checkShared(firstRoot.systemPrompt);
+      expect(firstRoot.systemPrompt).not.toContain("EDITED_COMPOSITION_CHILD_ROLE_MARKER");
+      expect(firstRoot.systemPrompt).not.toContain("ROOT_ONLY_COMPOSITION_MARKER");
+      if (withIncludes) {
+        writeFileSync(join(agentDir, "ROOT.md"), "ROOT_ONLY_COMPOSITION_MARKER");
+        await root.request({ type: "prompt", message: "root with ROOT file" });
+        await until(() => root.records.filter(record => record.type === "agent_settled").length === 2, "root with optional ROOT settles");
+        const currentRoot = jsonl(providerCallsFile(rootFile)).at(-1);
+        checkShared(currentRoot.systemPrompt);
+        expect(count(currentRoot.systemPrompt, "ROOT_ONLY_COMPOSITION_MARKER")).toBe(1);
+        // Native extension failures are reported but do not prevent provider work.
+        const nestedRules = join(ancestor, "shared-rules", "nested", "rules.md");
+        rmSync(nestedRules);
+        await root.request({ type: "prompt", message: "ROOT_INCLUDE_FAILURE_STILL_REACHES_PROVIDER" });
+        await until(() => root.records.filter(record => record.type === "agent_settled").length === 3, "root continues after include hook failure");
+        expect(root.records.some(record => record.type === "extension_error" && record.event === "before_agent_start" && record.error.includes(nestedRules))).toBe(true);
+        expect(jsonl(providerCallsFile(rootFile)).at(-1).text).toBe("ROOT_INCLUDE_FAILURE_STILL_REACHES_PROVIDER");
+        writeFileSync(nestedRules, "SHARED_NESTED_INCLUDE_MARKER");
+      }
+      const parentSessionId = randomUUID();
+      await manager.spawnAgent({ task_name: "composition", message: "COMPOSITION_ASSIGNED_TASK_MARKER", agent_type: templateName,
+        cwd, projectTrusted: false, parentSessionId, inheritedProvider: "faux", inheritedModelId: "faux-1", inheritedThinking: "off" });
+      await until(() => manager.getAgentInfo("composition", parentSessionId).status === "completed", "child instruction composition completes");
+      const info = manager.getAgentInfo("composition", parentSessionId);
+      const calls = jsonl(providerCallsFile(info.sessionFile));
+      expect(calls).toHaveLength(1);
+      checkShared(calls[0].systemPrompt);
+      expect(count(calls[0].systemPrompt, "EDITED_COMPOSITION_CHILD_ROLE_MARKER")).toBe(1);
+      expect(calls[0].systemPrompt).not.toContain("ROOT_ONLY_COMPOSITION_MARKER");
+      if (withIncludes) expect(count(calls[0].systemPrompt, "CHILD_ROLE_INCLUDE_MARKER")).toBe(1);
+      expect(count(calls[0].text, "COMPOSITION_TEMPLATE_MARKER")).toBe(1);
+      expect(count(calls[0].text, "COMPOSITION_ASSIGNED_TASK_MARKER")).toBe(1);
+      expect(calls[0].tools.sort()).toEqual(["link_reply", "read"]);
+      expect(readFileSync(roleFile, "utf8")).toBe(editedRole);
+    } finally {
+      await root.close();
+      await manager.shutdown();
+      if (previousRole === undefined) rmSync(roleFile, { force: true }); else writeFileSync(roleFile, previousRole);
+      rmSync(templateFile, { force: true });
+      rmSync(join(SUBAGENT_DIR, "role-extra.md"), { force: true });
+      for (const name of ["AGENTS.md", "ROOT.md", "SYSTEM.md", "APPEND_SYSTEM.md", "skills", "settings.json"]) rmSync(join(agentDir, name), { recursive: true, force: true });
+      if (withIncludes) rmSync(join(process.env.HOME!, ".agents"), { force: true });
+      rmSync(ancestor, { recursive: true, force: true });
+    }
+  }, 30000);
 }

@@ -73,7 +73,7 @@ Existing compaction still determines which earlier messages reach the model.
 Native labels and bookmarks use Pi's current-label behavior and can include labels changed after the selected cut.
 The source conversation and active parent remain in place; Pi may repair a missing trailing newline when reading the source file.
 
-A fork uses current child configuration for its dedicated system prompt, selected model and thinking level, template, skills and resources.
+A fork uses current child configuration for its additive role instructions, base and append prompts, selected model and thinking level, template, skills and resources.
 Pi restores the source's active tool selection when template `tools` are omitted; it does not reset that selection to current defaults.
 Only tools registered by current child configuration remain usable; a historical declaration cannot install or enable an unavailable tool.
 An explicit plain-name template `tools` list overrides the retained selection; `+name` and `-name` modifiers follow Pi's native rules.
@@ -149,10 +149,29 @@ Pi's built-in extensions also load by default, subject to native settings and te
 The manager keeps their names in one package-owned list; maintain that list when supported Pi CLI versions add or rename built-ins.
 Older Pi versions without built-in extension resources keep their existing package discovery.
 
-Context-file discovery remains disabled: children do not load `AGENTS.md` or `CLAUDE.md` files.
-Each child replaces Pi's coding prompt with `~/.pi/agent/pi-codex-subagents/SYSTEM.md` and supplies an empty append prompt.
-Pi's discovered `SYSTEM.md` and `APPEND_SYSTEM.md` files do not replace or append to it.
-The extension creates the dedicated file with a minimal subagent prompt when first loaded; edit it directly to change child instructions.
+Children load global and applicable project context files through Pi's normal discovery, including its context-file override selection.
+This follows native context semantics; the manager adds no new trust restriction to those files.
+Without a configured replacement, children keep Pi's built-in coding prompt, tool guidance, rules, and documentation.
+Native user/project `SYSTEM.md` selection can replace that base; `APPEND_SYSTEM.md` composition also remains enabled.
+
+The dedicated `~/.pi/agent/pi-codex-subagents/SYSTEM.md` supplies child-role context **in addition to** that base.
+The extension creates it with the existing minimal subagent instructions only when missing; existing files are never rewritten.
+The manager validates that it is readable and nonempty before task admission and on child restart.
+The always-loaded helper reads it at startup and adds it before configured prompt hooks run.
+New worker processes, including settled restarts and pause/reopen continuations, read its current contents.
+Template instructions and the assigned task remain in the child's input, not the shared context file.
+
+Include expansion is not built into the manager.
+A configured instruction-includes extension can expand `@file` directives from both normal context and the child-role file.
+Excluding that extension also excludes its custom include behavior.
+For the dotfiles ROOT split, keep portable working and skill-selection rules in shared `AGENTS.md` context.
+Keep root identity, delegation permission, and whole-task coordination in `ROOT.md`; the dotfiles extension loads it only without `PI_SUBAGENT_ID`.
+Install that root split before updating this package, so children cannot inherit the old root-only preamble from shared context.
+
+**Migration:** existing child-role SYSTEM files now add instructions rather than replace Pi's base prompt.
+Review edited role files for conflicts with shared rules or configured base/append text; this update does not rewrite them.
+After installing the root split and updating the package, reload Pi and inspect a fresh root and child prompt to confirm the loaded configuration.
+No worker-record migration is needed.
 An extension-registered provider must be discoverable or added through template `extensions`, and must not be excluded, for the child to resolve its model.
 
 ## Configuration

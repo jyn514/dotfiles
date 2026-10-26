@@ -19,13 +19,13 @@ import {
 } from "./link.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
-export const PACKAGE_BASENAME = "pi-codex-subagents";
+import { PACKAGE_BASENAME, SUBAGENT_DIR, ensureChildPromptFile, readChildPrompt } from "./child-prompt.js";
+export { PACKAGE_BASENAME, SUBAGENT_DIR } from "./child-prompt.js";
+
 // Pi's CLI owns the factories, but does not publicly export their names.
 // Keep this approved list aligned with supported Pi CLI releases.
 export const CHILD_BUILTIN_EXTENSION_NAMES = ["llama.cpp", "codemode", "tool-search", "mcp"] as const;
-export const SUBAGENT_DIR = path.join(getAgentDir(), PACKAGE_BASENAME);
 const CONFIG_PATH = path.join(SUBAGENT_DIR, "config.json");
-const SYSTEM_PROMPT_PATH = path.join(SUBAGENT_DIR, "SYSTEM.md");
 const AGENTS_DIR = path.join(SUBAGENT_DIR, "agents");
 const TEMP_ROOT = path.join(process.env.PI_SUBAGENT_TEMP_DIR || os.tmpdir(), PACKAGE_BASENAME, os.userInfo().username);
 const LEGACY_RUNS_DIR = path.join(TEMP_ROOT, "runs");
@@ -37,7 +37,6 @@ export const DEFAULT_MODEL_RESPONSE_TIMEOUT_MS = 10 * 60_000;
 const ACTIVITY_PERSIST_INTERVAL_MS = 5_000;
 export const DEFAULT_THINKING = "high";
 export const DEFAULT_TOOLS = "read,bash,grep,find,ls";
-const DEFAULT_SUBAGENT_SYSTEM_PROMPT = "You are a subagent working for a main agent. Work only on the assigned task and follow its scope precisely.";
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const FINAL_STATUSES = new Set<AgentRuntimeStatus>(["completed", "failed", "interrupted"]);
@@ -358,25 +357,9 @@ function ensurePrivateDir(directory: string, enforceMode = false): void {
   if (process.platform !== "win32" && (enforceMode || !existed)) fs.chmodSync(directory, 0o700);
 }
 
-function ensureSystemPromptFile(): void {
-  if (fs.existsSync(SYSTEM_PROMPT_PATH)) return;
-  try {
-    fs.writeFileSync(SYSTEM_PROMPT_PATH, DEFAULT_SUBAGENT_SYSTEM_PROMPT, { flag: "wx", mode: 0o600 });
-  } catch (error: any) {
-    if (error?.code !== "EEXIST") throw error;
-  }
-}
-
-function readSystemPrompt(): string {
-  ensureSystemPromptFile();
-  const prompt = fs.readFileSync(SYSTEM_PROMPT_PATH, "utf8");
-  if (!prompt.trim()) throw new Error(`Subagent system prompt is empty: ${SYSTEM_PROMPT_PATH}`);
-  return prompt;
-}
-
 function ensureBaseDirs(): void {
   fs.mkdirSync(AGENTS_DIR, { recursive: true });
-  ensureSystemPromptFile();
+  ensureChildPromptFile();
   ensurePrivateDir(getRunsDir(), !loadSubagentConfig().storageDir);
   ensurePrivateDir(SOCKET_DIR, true);
 }
@@ -1377,7 +1360,7 @@ export class AgentManager {
     const templateModel = definition?.provider && definition.model ? { provider: definition.provider, modelId: definition.model } : undefined;
     const { provider, modelId } = params.model ?? templateModel ?? { provider: params.inheritedProvider, modelId: params.inheritedModelId };
     const config = loadSubagentConfig();
-    readSystemPrompt();
+    readChildPrompt();
     const configuredSkills = definition?.skills ?? config.defaults?.skills;
     const skills = normalizeList([...(configuredSkills ?? []), ...(params.skills ?? [])]);
     const extensions = normalizeList(definition?.extensions ?? config.defaults?.extensions);
@@ -1499,7 +1482,7 @@ export class AgentManager {
   }
 
   private async startLiveAgent(info: AgentInfo, initialMessage?: string, displayMessage?: string, held = false): Promise<LiveAgent> {
-    readSystemPrompt();
+    readChildPrompt();
     if (info.status !== "starting" && info.status !== "running") {
       this.notifyStatusChange({ ...info, status: "starting", lastActivity: Date.now() });
     }
@@ -1512,9 +1495,6 @@ export class AgentManager {
       ...launch.prefixArgs,
       "--mode", "rpc",
       "--no-extensions",
-      "--no-context-files",
-      "--system-prompt", SYSTEM_PROMPT_PATH,
-      "--append-system-prompt", "",
       "--provider", info.provider,
       "--model", info.modelId,
       "--session", info.sessionFile,

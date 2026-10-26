@@ -205,7 +205,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, 
           });
         },
       } satisfies InlineExtension)),
-      systemPrompt: systemPrompt ? readFileSync(systemPrompt, "utf8") : "Deterministic source integration fixture.",
+      systemPrompt: systemPrompt === undefined ? undefined : readFileSync(systemPrompt, "utf8"),
       appendSystemPrompt: option("--append-system-prompt") === undefined ? undefined : [option("--append-system-prompt")!],
     },
   });

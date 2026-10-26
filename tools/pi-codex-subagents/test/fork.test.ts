@@ -45,6 +45,10 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
   const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);
   mkdirSync(join(SUBAGENT_DIR, "agents"), { recursive: true });
   writeFileSync(templateFile, `---\nname: ${template}\ntools: read\n---\ncurrent template task prefix\n`);
+  const roleFile = join(SUBAGENT_DIR, "SYSTEM.md");
+  const previousRole = existsSync(roleFile) ? readFileSync(roleFile) : undefined;
+  writeFileSync(roleFile, "EDITED_FORK_ROLE_INITIAL_MARKER");
+  writeFileSync(join(cwd, "AGENTS.md"), "FORK_SHARED_INITIAL_MARKER");
   const manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
   const previous = process.env.PI_TEST_CAPTURE_CONTEXT;
   process.env.PI_TEST_CAPTURE_CONTEXT = "1";
@@ -76,7 +80,9 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
     expect(request.messages.filter((message: any) => message.role === "user").at(-1).content)
       .toEqual([{ type: "text", text: "current template task prefix\n\nrequired new task" }]);
     expect(request.tools.sort()).toEqual(["link_reply", "read"]);
-    expect(request.systemPrompt).toContain("You are a subagent working for a main agent.");
+    expect(request.systemPrompt.split("EDITED_FORK_ROLE_INITIAL_MARKER")).toHaveLength(2);
+    expect(request.systemPrompt.split("FORK_SHARED_INITIAL_MARKER")).toHaveLength(2);
+    expect(request.systemPrompt).toContain("You are an expert coding assistant");
     expect(request.systemPrompt).not.toContain("historical prompt");
     expect(SessionManager.open(original.file).getEntries()).toEqual(original.before);
     expect(parent.getEntries()).toEqual(parentBefore);
@@ -85,15 +91,25 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
     const nativeId = child.getSessionId();
     // The origin is no longer available: continuation must use only the child.
     rmSync(original.file);
+    writeFileSync(roleFile, "EDITED_FORK_ROLE_CURRENT_MARKER");
+    writeFileSync(join(cwd, "AGENTS.md"), "FORK_SHARED_CURRENT_MARKER");
     await manager.sendMessage(parent.getSessionId(), "bounded", "continuation task");
     await until(() => manager.getAgentInfo("bounded", parent.getSessionId()).status === "completed", "recreated child completes");
     expect(SessionManager.open(info.sessionFile).getSessionId()).toBe(nativeId);
-    expect(jsonl(providerCallsFile(info.sessionFile))).toHaveLength(2);
+    const currentRequests = jsonl(providerCallsFile(info.sessionFile));
+    expect(currentRequests).toHaveLength(2);
+    expect(currentRequests[1].systemPrompt.split("EDITED_FORK_ROLE_CURRENT_MARKER")).toHaveLength(2);
+    expect(currentRequests[1].systemPrompt.split("FORK_SHARED_CURRENT_MARKER")).toHaveLength(2);
+    expect(currentRequests[1].systemPrompt).not.toContain("EDITED_FORK_ROLE_INITIAL_MARKER");
+    expect(currentRequests[1].systemPrompt).not.toContain("FORK_SHARED_INITIAL_MARKER");
+    expect(currentRequests[1].systemPrompt).not.toContain("historical prompt");
+    expect(currentRequests[1].text).toBe("continuation task");
     expect(jsonl(info.sessionFile).filter(entry => entry.message?.role === "user"
       && JSON.stringify(entry.message.content).includes("required new task"))).toHaveLength(1);
   } finally {
     await manager.shutdown();
     if (previous === undefined) delete process.env.PI_TEST_CAPTURE_CONTEXT; else process.env.PI_TEST_CAPTURE_CONTEXT = previous;
+    if (previousRole === undefined) rmSync(roleFile, { force: true }); else writeFileSync(roleFile, previousRole);
     rmSync(templateFile, { force: true });
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -248,6 +264,10 @@ sourceTest("fork pause/recreation keeps native identity and completed historical
   const marker = join(cwd, "new-effect");
   const files = heldToolFiles(marker);
   const snapshotFile = join(cwd, "saved.json");
+  const roleFile = join(SUBAGENT_DIR, "SYSTEM.md");
+  const previousRole = existsSync(roleFile) ? readFileSync(roleFile) : undefined;
+  writeFileSync(roleFile, "EDITED_PAUSE_ROLE_INITIAL_MARKER");
+  writeFileSync(join(cwd, "AGENTS.md"), "PAUSE_SHARED_INITIAL_MARKER");
   let manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
   let sourceClosed = false;
   try {
@@ -273,6 +293,9 @@ sourceTest("fork pause/recreation keeps native identity and completed historical
       parentSessionId: parentId, parentSessionFile: sourceFile,
       inheritedProvider: "faux", inheritedModelId: "faux-1", inheritedThinking: "off" });
     await until(() => existsSync(files.started), "fork's new task tool starts");
+    const initialPrompt = jsonl(providerCallsFile(manager.getAgentInfo("paused-fork", parentId).sessionFile))[0].systemPrompt;
+    expect(initialPrompt.split("EDITED_PAUSE_ROLE_INITIAL_MARKER")).toHaveLength(2);
+    expect(initialPrompt.split("PAUSE_SHARED_INITIAL_MARKER")).toHaveLength(2);
     const original = structuredClone(manager.getAgentInfo("paused-fork", parentId));
     const nativeId = SessionManager.open(original.sessionFile).getSessionId();
     const fullForkFile = SessionManager.open(original.sessionFile).getHeader()!.parentSession!;
@@ -303,6 +326,8 @@ sourceTest("fork pause/recreation keeps native identity and completed historical
     writeFileSync(original.infoFile, JSON.stringify(suspended));
     for (const file of [original.infoFile, original.logFile, original.sessionFile, fullForkFile, dirname(original.sessionFile)]) utimesSync(file, old, old);
     rmSync(sourceFile);
+    writeFileSync(roleFile, "EDITED_PAUSE_ROLE_CURRENT_MARKER");
+    writeFileSync(join(cwd, "AGENTS.md"), "PAUSE_SHARED_CURRENT_MARKER");
     manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
     await manager.ready();
     expect(existsSync(fullForkFile)).toBe(true);
@@ -327,6 +352,10 @@ sourceTest("fork pause/recreation keeps native identity and completed historical
     const requests = jsonl(providerCallsFile(original.sessionFile));
     expect(requests).toHaveLength(2);
     expect(requests.at(-1).text).toBe(CONTINUATION_MESSAGE);
+    expect(requests.at(-1).systemPrompt.split("EDITED_PAUSE_ROLE_CURRENT_MARKER")).toHaveLength(2);
+    expect(requests.at(-1).systemPrompt.split("PAUSE_SHARED_CURRENT_MARKER")).toHaveLength(2);
+    expect(requests.at(-1).systemPrompt).not.toContain("EDITED_PAUSE_ROLE_INITIAL_MARKER");
+    expect(requests.at(-1).systemPrompt).not.toContain("PAUSE_SHARED_INITIAL_MARKER");
     expect(jsonl(original.sessionFile).filter(entry => entry.message?.role === "toolResult"
       && entry.message.toolCallId === sourceToolResult.message.toolCallId)).toHaveLength(1);
     expect(jsonl(original.sessionFile).filter(entry => entry.message?.role === "user"
@@ -335,6 +364,7 @@ sourceTest("fork pause/recreation keeps native identity and completed historical
   } finally {
     if (!sourceClosed) await sourceRpcSession.close();
     await manager.shutdown();
+    if (previousRole === undefined) rmSync(roleFile, { force: true }); else writeFileSync(roleFile, previousRole);
     rmSync(templateFile, { force: true });
     rmSync(cwd, { recursive: true, force: true });
   }

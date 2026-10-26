@@ -18,6 +18,16 @@ To include the independently deployed pi-link source in the cross-package native
 PI_TEST_LINK_SOURCE=/src/dotfiles/tools/pi-link/index.ts bun run test:subagents
 ```
 
+To test the shared/root split with the independently deployed dotfiles instruction-includes extension:
+
+```sh
+PI_TEST_INSTRUCTION_INCLUDES_SOURCE=/src/dotfiles/config/pi-agent/pi-extensions/pi-instruction-includes.ts bun run test:subagents
+```
+
+The path selects the actual extension source, not a copied implementation.
+The discovery suite creates disposable global/project instructions, ROOT, a child-role file, and symlinked/nested includes.
+Without this variable, the include-specific composition cases report skips; the native no-include cases still run.
+
 To exercise the independently deployed commit-boundary controller and actual native/guest tools with local JJ:
 
 ```sh
@@ -101,6 +111,7 @@ production options or fixture-only APIs.
 It checks actual provider context and the registered `spawn_agent` schema, including required `message`, exact source/cut failures and fresh omission.
 Explicit-tool cases exercise settled continuation, native pause/recreation, retained source-tool effects and retention of both linked native child files.
 They remove the source before continuation to detect accidental re-extraction and check that expired child cleanup leaves the source and neighboring tasks intact.
+Edited role and shared-context markers verify current instruction loading on fork, settled recreation, and pause/reopen continuation.
 A separate selection case records a real source loadout with public `setActiveTools()`, then checks inherited `read`/`grep` selection and native template modifiers.
 Current default-active and default-inactive extension tools remain registered without automatically joining that restored selection.
 An actual attempted call verifies that an unavailable historical tool is neither registered nor executable; the explicit plain-list case separately checks template override behavior.
@@ -113,7 +124,11 @@ the denied manager never executes, even when explicitly added.
 The discovered tool is called despite being absent from the supplied parent tool names.
 Explicit task-tool lists still restrict it, while the helper's `link_reply` remains available.
 Fresh worker processes retain trust and exclusions after template edits, expand skills/templates normally,
-and use the dedicated child prompt without discovered system, append, or context files.
+and compose the dedicated child role with native base/append selection and shared context files.
+Composition cases compare root and child provider prompts with default and configured bases, ancestor/cwd overrides,
+one shared skill catalog, and role/template/task cardinality.
+With the actual include extension selected, they also check optional ROOT refresh and exclusion from children,
+symlinked shared rules, nested relative includes, and helper-before-include ordering.
 The SDK fixture supplies dummy built-in factories through public `InlineExtension` descriptors, using the manager's authoritative name list.
 They record factory/hook execution and register no-I/O tools instead of starting actual CLI services.
 Built-in cases cover default discovery, selective `builtin:name` exclusions, native settings exclusions,

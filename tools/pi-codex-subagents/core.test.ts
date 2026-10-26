@@ -415,20 +415,14 @@ describe("child process lifecycle", () => {
       const sessionRecords = fs.readFileSync(first.sessionFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
       const starts = sessionRecords.filter((entry) => entry.type === "started");
       expect(new Set(starts.map((entry) => entry.pid)).size).toBe(2);
-      const systemPromptIndex = starts[0].args.indexOf("--system-prompt");
-      const systemPromptPath = starts[0].args[systemPromptIndex + 1];
-      expect(path.isAbsolute(systemPromptPath)).toBe(true);
-      expect(fs.readFileSync(systemPromptPath, "utf8")).toBe("You are a subagent working for a main agent. Work only on the assigned task and follow its scope precisely.");
+      const rolePath = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "SYSTEM.md");
+      expect(fs.readFileSync(rolePath, "utf8").trim().length).toBeGreaterThan(0);
       for (const start of starts) {
-        expect(start.args).toContain("--no-context-files");
-        expect(start.args.slice(start.args.indexOf("--system-prompt"), start.args.indexOf("--system-prompt") + 2)).toEqual([
-          "--system-prompt",
-          systemPromptPath,
-        ]);
-        expect(start.args.slice(start.args.indexOf("--append-system-prompt"), start.args.indexOf("--append-system-prompt") + 2)).toEqual([
-          "--append-system-prompt",
-          "",
-        ]);
+        expect(start.args).not.toContain("--no-context-files");
+        expect(start.args).not.toContain("--system-prompt");
+        expect(start.args).not.toContain("--append-system-prompt");
+        const firstExtension = start.args.indexOf("--extension");
+        expect(start.args[firstExtension + 1]).toBe(path.join(import.meta.dir, "child-helper.ts"));
       }
     } finally {
       await manager.shutdown();
@@ -544,18 +538,22 @@ describe("child process lifecycle", () => {
     }
   });
 
-  test("rejects an empty configured system prompt instead of falling back to Pi's default", async () => {
-    const parentSessionId = "empty-system-prompt";
+  test.each(["empty", "unreadable"])("rejects an %s child-role file before task admission", async (failure) => {
+    const parentSessionId = `${failure}-system-prompt`;
     const systemPromptFile = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "SYSTEM.md");
     fs.mkdirSync(path.dirname(systemPromptFile), { recursive: true });
-    fs.writeFileSync(systemPromptFile, "\n");
+    fs.rmSync(systemPromptFile, { recursive: true, force: true });
+    if (failure === "empty") fs.writeFileSync(systemPromptFile, "\n");
+    else fs.mkdirSync(systemPromptFile);
     const manager = new AgentManager();
     try {
-      await expect(manager.spawnAgent(spawnParams(parentSessionId, "worker", "first"))).rejects.toThrow("Subagent system prompt is empty");
+      await expect(manager.spawnAgent(spawnParams(parentSessionId, "worker", "first")))
+        .rejects.toThrow(failure === "empty" ? "Subagent system prompt is empty" : "EISDIR");
+      expect(manager.listAgents(undefined, parentSessionId)).toEqual([]);
     } finally {
       await manager.shutdown();
       fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
-      fs.rmSync(systemPromptFile, { force: true });
+      fs.rmSync(systemPromptFile, { recursive: true, force: true });
     }
   });
 

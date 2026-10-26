@@ -55,6 +55,7 @@ try {
       PI_TEST_CORE_TSCONFIG: config,
       PI_TEST_BUN: process.execPath,
       PI_SUBAGENT_PI_BIN: join(here, "source-rpc-child.sh"),
+      ...(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE ? { PI_TEST_INSTRUCTION_INCLUDES_SOURCE: resolve(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE) } : {}),
       ...(process.env.PI_TEST_LINK_SOURCE ? { PI_TEST_LINK_SOURCE: resolve(process.env.PI_TEST_LINK_SOURCE) } : {}),
       ...(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE ? { PI_TEST_COMMIT_BOUNDARY_SOURCE: resolve(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE) } : {}),
       ...(process.env.DOTFILES_TEST_BB_REAL ? { DOTFILES_TEST_BB_REAL: process.env.DOTFILES_TEST_BB_REAL } : {}),

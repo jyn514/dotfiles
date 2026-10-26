@@ -45,6 +45,7 @@
     "core.ts",
     "handoff.ts",
     "child-helper.ts",
+    "child-prompt.ts",
     "child-link.ts",
     "link.ts",
     "suspension.ts",

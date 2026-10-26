@@ -5,8 +5,18 @@ import {
 } from "./handoff.js";
 
 import { registerChildLink } from "./child-link.js";
+import { readChildPrompt } from "./child-prompt.js";
 /** Explicitly loaded before template extensions; this helper owns no AgentInfo. */
 export default function childHelper(pi: ExtensionAPI): void {
+  // Read during loading, not a run hook: invalid role files must fail startup.
+  const role = readChildPrompt();
+  pi.on("before_agent_start", (event) => {
+    // Configured include hooks run later and can expand this context normally.
+    event.systemPromptOptions.contextFiles = [
+      ...event.systemPromptOptions.contextFiles.filter((file) => file.path !== role.path),
+      role,
+    ];
+  });
   registerChildLink(pi);
   const replay = new SessionReplay(pi);
   let generation: string | undefined;
