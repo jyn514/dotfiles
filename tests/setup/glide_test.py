@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -190,6 +191,48 @@ class GlideTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "expected a mailto URI"):
             open_fastmail.fastmail_compose("https://example.com")
+
+    @unittest.skipUnless(shutil.which("gio"), "gio is not installed")
+    def test_desktop_runtime_passes_mailto_to_fastmail_launcher(self):
+        with tempfile.TemporaryDirectory(prefix="glide-mail-") as temporary:
+            directory = Path(temporary)
+            data = directory / "data"
+            applications = data / "applications"
+            applications.mkdir(parents=True)
+            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
+                 mock.patch.object(mimetypes, "command_exists", return_value=False):
+                name = mimetypes.glide_mail_desktop(False)
+            binaries = directory / "bin"
+            binaries.mkdir()
+            recorder = ROOT / "tests/setup/fixtures/xdg-open-recorder.py"
+            xdg_open = binaries / "xdg-open"
+            xdg_open.symlink_to(recorder)
+            log = directory / "xdg-open.json"
+            mailto = "mailto:friend@example.com?subject=two%20words"
+            environment = dict(
+                os.environ,
+                PATH=f"{binaries}:{os.environ['PATH']}",
+                XDG_OPEN_TEST_LOG=str(log),
+            )
+            result = subprocess.run(
+                ["gio", "launch", str(applications / name), mailto],
+                env=environment,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            deadline = time.monotonic() + 2
+            while not log.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(log.exists(), "desktop launcher did not invoke xdg-open")
+            self.assertEqual(
+                [
+                    str(xdg_open),
+                    "https://app.fastmail.com/mail/compose?mailto="
+                    "mailto%3Afriend%40example.com%3Fsubject%3Dtwo%2520words",
+                ],
+                json.loads(log.read_text()),
+            )
 
     def test_browser_registration_restores_html_after_editor_defaults(self):
         calls = []
