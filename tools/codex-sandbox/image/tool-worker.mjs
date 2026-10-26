@@ -1,6 +1,7 @@
 import { createServer } from "node:net";
 import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operations.mjs";
 
+const startupStarted = performance.now();
 const toolModule = process.env.CODEX_SANDBOX_PI_TOOL_MODULE ??
   "/opt/agent-pi/src/packages/coding-agent/dist/index.js";
 const {
@@ -8,6 +9,10 @@ const {
   createWriteTool, createGrepTool, createFindTool, createLsTool, createLocalBashOperations,
   getAgentDir, loadSkills,
 } = await import(toolModule);
+if (process.env.CODEX_SANDBOX_TIMING) {
+  process.stderr.write(`Sandbox service: agent/tool-module-import=${
+    ((performance.now() - startupStarted) / 1000).toFixed(2)}s\n`);
+}
 const toolFactories = {
   read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
   edit: createEditTool, write: createWriteTool, grep: createGrepTool,
@@ -161,6 +166,11 @@ const server = createServer((socket) => {
 });
 
 server.maxConnections = 32;
-server.listen(socketPath);
+server.listen(socketPath, () => {
+  if (process.env.CODEX_SANDBOX_TIMING) {
+    process.stderr.write(`Sandbox service: agent/tool-worker-ready=${
+      ((performance.now() - startupStarted) / 1000).toFixed(2)}s\n`);
+  }
+});
 process.on("SIGTERM", () => server.close());
 process.on("SIGINT", () => server.close());

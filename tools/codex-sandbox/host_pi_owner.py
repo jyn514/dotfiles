@@ -13,6 +13,7 @@ import secrets
 import shlex
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -368,7 +369,13 @@ def run_interactive(command: list[str]) -> int:
     if fresh_pane is not None:
         os.environ["TMUX_PANE"] = fresh_pane
     os.chdir(answer["cwd"])
+    if os.environ.get("PI_STARTUP_BENCHMARK"):
+        print(f"Startup boundary: host Pi launch begin @ {time.monotonic()}",
+              file=sys.stderr, flush=True)
     child = subprocess.Popen(command, preexec_fn=_parent_death_signal())
+    if os.environ.get("PI_STARTUP_BENCHMARK"):
+        print(f"Startup boundary: host Pi launch end @ {time.monotonic()}",
+              file=sys.stderr, flush=True)
     lost = threading.Event()
     released = threading.Event()
     response = {}
@@ -424,10 +431,8 @@ def run_interactive(command: list[str]) -> int:
             released.wait()
         logs = response.get("logs", "")
         if logs:
-            import sys
             sys.stderr.write(logs)
         if lost.is_set() or not response.get("ok"):
-            import sys
             if not any(line.startswith("error:") for line in logs.splitlines()):
                 print("error: " + response.get("error", "sandbox owner connection lost"), file=sys.stderr)
             return 1

@@ -44,6 +44,7 @@ for name in ('image_runtime', 'new_state', 'execute'):
 
 def benchmark(state, arguments):
     mark('run_agent entered')
+    os.environ['PI_STARTUP_BENCHMARK'] = '1'
     runtime = namespace['OUTER_RUNTIME']
     if runtime.provider != 'lima-docker':
         return original(state, ['--env', 'PI_STARTUP_BENCHMARK=1', *arguments])
@@ -51,6 +52,14 @@ def benchmark(state, arguments):
     # attached process still belongs to the normal workload/cleanup machinery.
     for name in ('inspect_image', 'workload_argv', 'popen'):
         setattr(runtime, name, measured(name, getattr(runtime, name)))
+    original_run = runtime.run
+    def run(command, *args, **kwargs):
+        result = original_run(command, *args, **kwargs)
+        if (command[:3] == ['exec', state.codex_container, 'test']
+                and result.returncode == 0):
+            mark('tool worker ready')
+        return result
+    runtime.run = run
     original_environment = runtime.environment_file
     @contextmanager
     def environment_file(*args, **kwargs):

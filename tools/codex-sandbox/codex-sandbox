@@ -2205,7 +2205,7 @@ def build_agent_command(
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
-        *(["--env", "PI_TIMING=1"] if timing else []),
+        *(["--env", "PI_TIMING=1", "--env", "CODEX_SANDBOX_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
         # Main and subagent Pi write on the host; expose their session stores read-only.
         *[
@@ -2335,6 +2335,8 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "PI_MODEL_FILE": str(state.pi_model_file),
         "PI_MODEL_SESSION_ID": state.pi_model_session_id,
     })
+    if timing:
+        host_environment["PI_TIMING"] = "1"
     if state.cd_request is not None:
         host_environment["CODEX_SANDBOX_CD_REQUEST"] = str(state.cd_request)
     if state.handoff_origin is not None:
