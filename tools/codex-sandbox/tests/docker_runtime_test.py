@@ -21,7 +21,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'lima'))
-from docker_runtime import Docker
+from docker_runtime import APIError, Docker
 from image_resolver import ResolverError, prepare_launch_images
 from lima.docker_host import DockerHost
 from lima import docker_host
@@ -42,6 +42,42 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    @staticmethod
+    def external_image_snapshot(manifest):
+        return {
+            'Id': manifest, 'RepoDigests': ['caddy@' + manifest],
+            'RootFS': {'Layers': ['sha256:' + '3' * 64]},
+            'Os': 'linux', 'Architecture': 'amd64',
+        }
+
+    @patch('docker_runtime.inspect_docker')
+    def test_external_image_reuses_exact_local_manifest_without_pull(self, query):
+        runtime = backend()
+        manifest, configuration = 'sha256:' + '1' * 64, 'sha256:' + '2' * 64
+        query.return_value = self.external_image_snapshot(manifest)
+        runtime.run = Mock(side_effect=AssertionError('local immutable image was pulled'))
+
+        image = runtime.verify_external_image('caddy', manifest, configuration, 'linux/amd64')
+
+        self.assertEqual((manifest, configuration), (image.content, image.config))
+        query.assert_called_once()
+
+    @patch('docker_runtime.inspect_docker')
+    def test_external_image_pulls_only_when_exact_manifest_is_absent(self, query):
+        runtime = backend()
+        manifest, configuration = 'sha256:' + '1' * 64, 'sha256:' + '2' * 64
+        query.side_effect = [
+            APIError(404, ['docker', 'image', 'inspect'], 'missing'),
+            self.external_image_snapshot(manifest),
+        ]
+        runtime.run = Mock(return_value=subprocess.CompletedProcess([], 0))
+
+        runtime.verify_external_image('caddy', manifest, configuration, 'linux/amd64')
+
+        runtime.run.assert_called_once_with(
+            ['pull', '--quiet', 'caddy@' + manifest], stdout=subprocess.DEVNULL)
+        self.assertEqual(2, query.call_count)
+
     @patch('docker_runtime.inspect_docker')
     def test_network_addresses_validate_one_snapshot_without_caching_across_calls(self, query):
         runtime = backend()

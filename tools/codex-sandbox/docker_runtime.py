@@ -144,8 +144,13 @@ class Docker(VMRuntime):
         """
         digest(manifest); digest(configuration)
         reference = repository + '@' + manifest
-        self.run(['pull', '--quiet', reference], stdout=subprocess.DEVNULL)
-        raw = single_json(self.run(['image', 'inspect', reference], capture_output=True).stdout)
+        try:
+            raw = self.image_metadata(reference)
+        except APIError as error:
+            if error.status != 404:
+                raise
+            self.run(['pull', '--quiet', reference], stdout=subprocess.DEVNULL)
+            raw = self.image_metadata(reference)
         architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(raw.get('Architecture'), raw.get('Architecture'))
         if (raw.get('Os') + '/' + architecture != platform
                 or digest(raw['Id']) != manifest
