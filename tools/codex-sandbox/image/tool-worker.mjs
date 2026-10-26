@@ -4,20 +4,20 @@ import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operati
 const startupStarted = performance.now();
 const toolModule = process.env.CODEX_SANDBOX_PI_TOOL_MODULE ??
   "/opt/agent-pi/src/packages/coding-agent/dist/index.js";
-const {
-  createReadTool, createBashTool, createPowerShellTool, createEditTool,
-  createWriteTool, createGrepTool, createFindTool, createLsTool, createLocalBashOperations,
-  getAgentDir, loadSkills,
-} = await import(toolModule);
-if (process.env.CODEX_SANDBOX_TIMING) {
-  process.stderr.write(`Sandbox service: agent/tool-module-import=${
-    ((performance.now() - startupStarted) / 1000).toFixed(2)}s\n`);
+let toolModulePromise;
+function loadToolModule() {
+  if (!toolModulePromise) {
+    const started = performance.now();
+    toolModulePromise = import(toolModule).then((module) => {
+      if (process.env.CODEX_SANDBOX_TIMING) {
+        process.stderr.write(`Sandbox service: agent/tool-module-import=${
+          ((performance.now() - started) / 1000).toFixed(2)}s\n`);
+      }
+      return module;
+    });
+  }
+  return toolModulePromise;
 }
-const toolFactories = {
-  read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
-  edit: createEditTool, write: createWriteTool, grep: createGrepTool,
-  find: createFindTool, ls: createLsTool,
-};
 
 const socketPath = process.env.CODEX_SANDBOX_TOOL_SOCKET ?? "/tmp/codex-tool-worker.sock";
 const maxRequestBytes = 8 * 1024 * 1024;
@@ -115,6 +115,7 @@ const server = createServer((socket) => {
             signal: controller.signal, env: callEnv(process.env),
           });
         } else if (request.tool === "validate_skill") {
+          const { getAgentDir, loadSkills } = await loadToolModule();
           if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
               Object.keys(request.params).some(key => key !== "path")) {
             throw new Error("invalid skill path request");
@@ -127,6 +128,7 @@ const server = createServer((socket) => {
           });
           result = { loaded: skills.length > 0, name: skills[0]?.name, diagnostics };
         } else if (request.tool === "user_bash") {
+          const { createLocalBashOperations } = await loadToolModule();
           if (typeof request.params.command !== "string") throw new Error("invalid bash command");
           result = await createLocalBashOperations().exec(
             request.params.command, process.cwd(), {
@@ -137,6 +139,15 @@ const server = createServer((socket) => {
             },
           );
         } else {
+          const {
+            createReadTool, createBashTool, createPowerShellTool, createEditTool,
+            createWriteTool, createGrepTool, createFindTool, createLsTool,
+          } = await loadToolModule();
+          const toolFactories = {
+            read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
+            edit: createEditTool, write: createWriteTool, grep: createGrepTool,
+            find: createFindTool, ls: createLsTool,
+          };
           const spawnHook = context => ({
             ...context, env: callEnv(context.env),
           });

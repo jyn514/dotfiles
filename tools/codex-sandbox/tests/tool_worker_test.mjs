@@ -97,6 +97,27 @@ test("a guest read returns its result", async () => {
   ]);
 });
 
+test("startup listens before loading the Pi tool module", async () => {
+  const lazySocket = join(directory, "lazy.sock");
+  const lazyWorker = spawn(process.execPath, [resolve(here, "../image/tool-worker.mjs")], {
+    cwd: directory,
+    env: { ...process.env, HOME: directory, CODEX_SANDBOX_TOOL_SOCKET: lazySocket,
+      CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(join(directory, "missing.mjs")).href },
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  try {
+    await eventually(() => existsSync(lazySocket));
+    assert.equal(lazyWorker.exitCode, null);
+    const socket = await connect({ tool: "read", params: { path: "file.txt" } }, lazySocket);
+    const response = await frames(socket);
+    assert.equal(response[0].kind, "error");
+    assert.match(response[0].message, /missing\.mjs/);
+  } finally {
+    lazyWorker.kill();
+    await once(lazyWorker, "exit");
+  }
+});
+
 test("native skill validation accepts only a path and ignores default skills", async () => {
   const path = join(directory, "SKILL.md");
   await writeFile(path, "---\nname: worker-skill\ndescription: A worker fixture.\n---\n");
