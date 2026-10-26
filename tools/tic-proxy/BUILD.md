@@ -202,11 +202,76 @@ Expected fixture metadata or a source-equivalent local bundle does not attest th
 Use immutable bundle snapshots for exact-artifact replays: writable Cargo debug outputs can change independently and are not that bundle's authority.
 Preserve original smoke reports and ticket IDs; do not rerun creation to manufacture warm-launch evidence or blindly retry an uncertain outcome.
 
+### Repeatable Linux workflow
+
+This functional smoke test lives under `tests/`; it is not another Pi frontend
+or a lifecycle/concurrency proof.
+Default `dev/test` discovery runs their offline safety tests. For a retained
+local native/client/broker run, select an immutable pinned build bundle:
+
+```sh
+TIC_LINUX_COMPONENT_BUNDLE=/absolute/path/to/bundle-MANIFEST_HASH \
+  dev/pytest -q -s tools/tic-proxy/tests/linux_acceptance_test.py
+```
+
+That opt-in creates only test-owned local brokers and repositories under
+`target/tic-acceptance/components/`. It does **not** establish actual host Pi or
+provider acceptance. A skipped component case is not a pass.
+
+For Linux host/guest functional smoke, run the following **on the Linux host**, from the
+dotfiles checkout in an interactive terminal. This is an explicit exception to
+HOME isolation: ordinary Pi needs its installed configuration and credentials.
+Do not wrap this command in `dev/test-environment`, pipe its streams, or run it
+inside a guest. It makes live model requests and may incur model cost.
+The script uses the ordinary launcher's bundle resolver and runtime platform
+provider: a valid warm cache needs no source/network access, while a cold cache
+may fetch the pinned public source and build/publish the bundle normally. It
+announces selection before that work and retains the selected manifest in its
+receipt. No source setting or profile change is needed.
+
+```sh
+python3 tools/tic-proxy/tests/linux_acceptance.py --actual-linux-host
+```
+
+For an exact-artifact replay, optional `--bundle /absolute/path/to/bundle` bypasses
+automatic resolution but still requires an actual protected launcher-cache bundle;
+do not substitute writable builder output or a guessed source-equivalent bundle.
+
+The script creates a **new** standalone main JJ/Git repository and a genuine Git
+linked worktree, with fixture-local synthetic identity and namespace. It invokes
+this checkout's ordinary `bin/pi` twice, preserving the interactive terminal and
+using an `@prompt` file. In each **new TEST Pi**, let the ordinary guest bash tool
+run the supplied checker once; after it reports PASS, exit only that TEST Pi
+normally. No separate frontend is launched from the linked worktree.
+The first launch checks host creation → guest read and guest comment → host reads
+and history from both worktrees. A file handshake starts independent host and
+guest writer loops; every successful ticket must have distinct identity, content,
+and creation history in both worktrees and the shared SQLite store. After that
+TEST Pi exits, host native use must still work. The second launch uses a fresh
+fixture with an unsupported local Git include: the guest guard must report
+unavailable, ordinary tools must work, and no endpoint/token or store may appear.
+
+Receipts retain the selected protected manifest, actual guest client hash, CLI
+results, Pi exit status, and SQLite checks. Reports are kept on failure, too.
+There is no PID sampling or timing assertion: concurrent writer dispatch does
+**not** prove interleaving or simultaneous SQLite commits, and Pi exit does not
+prove broker/native cleanup or in-flight cancellation. Precise lifecycle edge
+cases remain in the existing automated lifetime suite.
+
+Results remain under `target/tic-acceptance/linux/run-…/`. On failure, stop and
+inspect the retained reports: mutations are never retried, a checker claim
+prevents replay, and no store or sidecar is reset or deleted. Start a new run only
+after inspecting an uncertain outcome. The workflow does not reset real
+profiles/stores, reuse old fixtures or user Pi sessions, or stop shared VMs.
+Retained test fixtures can be removed manually after their owning TEST Pi exits. VM-stopped
+host use, macOS composition, and other specification checks are not established
+by this bounded workflow, even when its receipt says PASS.
+
 ## Dependency scope
 
 Cargo remains this subsystem's package manager. The native parser dependency is
-the exact archived local fork; publication is not required. The implementation
-adds no dependency framework, OS confinement, SQLite broker, external runtime,
+the exact archived fork commit, fetched automatically or supplied locally.
+The implementation adds no dependency framework, OS confinement, SQLite broker, external runtime,
 or native Ticket API. The cache is an artifact snapshot, not a shared broker:
 per-launch Rust broker ownership, lifetime pipe, provider cleanup, relay, and
 Python TCP bridge are unchanged.
