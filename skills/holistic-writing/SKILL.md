@@ -42,6 +42,11 @@ For creation, inspect the material the new artifact must explain and any establi
 For an editorial pass, retain the destination unless relocation is requested.
 Before adding documentation, use the placement reference; do not force essays, reports, or instructions into documentation forms.
 
+Before interpreting craft, encounter the reading experience: what comes to matter, what you expect, and what stays with you afterward.
+Distinguish pleasure or friction in reading the prose from what it makes readers think or feel about its subject or themselves.
+Precise understanding, quiet satisfaction, curiosity, changed appreciation, and felt danger can all matter; neither positive affect nor a tidy mechanism or plot account substitutes for the effect.
+When a revision is merely smoother, or an explanation seems clear but its reading judgment feels thin, read the [contrasting readings and revisions](references/reading-examples.md) before choosing edits.
+
 Establish what is observed, selected, provisional, and unresolved.
 Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority.
 Preserve provenance for measurements and reconstructed decisions.
@@ -80,6 +85,7 @@ Revise connected passages when selection or arrangement causes the difficulty; r
 Preserve needed lookup paths, not necessarily existing headings or section boundaries.
 Judge diction, rhythm, emphasis, selection, and development, not words removed or paragraphs joined.
 Preserve effective voice, deliberate casing, fragments, idiom, and precise terms rather than normalizing them for consistency.
+Voice also lives in particular attention, selection, connections, and implications, not only verbal personality.
 Apply vocabulary bans by meaning rather than word matching.
 
 Preserve governing requirements, authority, priority, conditions, exceptions, commands, paths, defaults, and validation.
@@ -95,10 +101,6 @@ Keep rationale, rejected alternatives, and examples that guide a future choice o
 Explanations that merely praise a rule can go; code-owned detail need not remain unless readers need it to act or understand.
 Do not turn example-only behavior into a default or guarantee.
 Do not remove necessary detail merely to shorten a document; move it later, label it, or derive it from a clearer authority.
-
-When a revision is smoother but its explanation remains underdeveloped, read the [contrasting revisions](references/reading-examples.md).
-They contrast direct SQLite wording, hypothesis development without overclaiming, and a library's margin notes with mere sentence merging.
-Use them to guide judgment, not impose their style.
 
 ## 4. Read the complete result against the original
 
