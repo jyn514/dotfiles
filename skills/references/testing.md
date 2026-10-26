@@ -25,7 +25,18 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - When several conditions determine acceptance, selection, or a lifecycle transition, build a small decision table from the requirements. For each independently significant condition, include two feasible cases that differ only in that condition and produce the required difference in observable behavior. Record coupled or infeasible combinations. Add interaction cases justified by the contract or observed failures; independent-condition pairs do not establish interaction coverage. Derive expected results independently of the implementation. The table can live in parameterized test cases; no separate artifact is required. This checks the declared decision model, not instrumented code coverage.
 - Validate the test oracle against the consumer's actual behavior. A mock accepting generated Docker arguments does not establish that Docker can mount them. Check equivalence and cardinality when relevant: distinct occurrences, objects, refs, paths, or owners must not collapse because normalized text or fingerprints match. If no reliable oracle is available, record that validation limit rather than claiming the invariant is protected.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
-- Introduce each handoff with the smallest native producer-to-consumer regression through the intended interfaces. For example, test a CLI with a small valid input snapshot rather than replacing its snapshot consumer with a separate fixture-JSON API.
+- Start integration testing with one small workflow through the normal production entrypoint and a fresh disposable fixture.
+  Reuse automatic build and artifact selection when the entrypoint already provides it.
+  Do not ask the tester to reconstruct private cache paths or pass manual selection flags instead.
+  Introduce each handoff through its intended native producer-to-consumer interfaces;
+  for example, pass a CLI a small valid input snapshot rather than adding a fixture-JSON API.
+- Keep functional smoke tests separate from precise edge-case tests.
+  Check command success and resulting contents or history in the smoke test;
+  use separate controlled tests at the boundary required by the guarantee for in-flight cancellation, strict interleaving, or overlapping database commits.
+  Choose unit, component, or integration tests as appropriate; retain actual OS or provider acceptance tests where the guarantee requires them.
+  A sampler missing a short-lived process does not establish command failure.
+  Successful concurrent loops do not establish those precise ordering guarantees.
+  Do not compare monotonic timestamps from different kernels.
 - Allow temporary probes or fixture-specific adapters only to resolve a demonstrated uncertainty or prerequisite; a future integration TODO is insufficient. Preserve probes that establish acceptance as regression tests; one-off uncertainty probes need not persist. Do not promote temporary implementations into production interfaces.
 - Test both failure directions: accepting invalid results and losing required valid results. Include representative non-special-cased inputs where general behavior is required. For bounded algorithms, test forced work separately from branching work; small fixtures must not conceal the required input-population constraint. Preserve validation and publication constraints rather than relaxing them for a passing test.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
