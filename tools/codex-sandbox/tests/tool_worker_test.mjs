@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -99,15 +99,18 @@ test("a guest read returns its result", async () => {
 
 test("startup listens before loading the Pi tool module", async () => {
   const lazySocket = join(directory, "lazy.sock");
+  const lazyReady = join(directory, "lazy.ready");
   const lazyWorker = spawn(process.execPath, [resolve(here, "../image/tool-worker.mjs")], {
     cwd: directory,
     env: { ...process.env, HOME: directory, CODEX_SANDBOX_TOOL_SOCKET: lazySocket,
+      CODEX_SANDBOX_TOOL_READY: lazyReady,
       CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(join(directory, "missing.mjs")).href },
     stdio: ["ignore", "ignore", "ignore"],
   });
   try {
     await eventually(() => existsSync(lazySocket));
     assert.equal(lazyWorker.exitCode, null);
+    assert.equal((await stat(lazyReady)).mode & 0o777, 0o600);
     const socket = await connect({ tool: "read", params: { path: "file.txt" } }, lazySocket);
     const response = await frames(socket);
     assert.equal(response[0].kind, "error");

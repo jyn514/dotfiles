@@ -120,6 +120,8 @@ class AgentCommandTest(unittest.TestCase):
                 )
 
             self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", command)
+            self.assertIn(
+                "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready", command)
             session = next(item for item in command if item.startswith("PI_MODEL_SESSION_ID="))
             uuid.UUID(session.removeprefix("PI_MODEL_SESSION_ID="))
             self.assertIn(

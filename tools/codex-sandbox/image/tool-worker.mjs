@@ -1,4 +1,5 @@
 import { createServer } from "node:net";
+import { writeFileSync } from "node:fs";
 import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operations.mjs";
 
 const startupStarted = performance.now();
@@ -178,6 +179,8 @@ const server = createServer((socket) => {
 
 server.maxConnections = 32;
 server.listen(socketPath, () => {
+  const readyPath = process.env.CODEX_SANDBOX_TOOL_READY;
+  if (readyPath) writeFileSync(readyPath, "", { flag: "wx", mode: 0o600 });
   if (process.env.CODEX_SANDBOX_TIMING) {
     process.stderr.write(`Sandbox service: agent/tool-worker-ready=${
       ((performance.now() - startupStarted) / 1000).toFixed(2)}s\n`);

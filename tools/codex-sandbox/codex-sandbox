@@ -2202,6 +2202,7 @@ def build_agent_command(
                 if not isinstance(OUTER_RUNTIME, VMRuntime) else ["--entrypoint", "node"])),
         "--env", "JJ_AGENT=pi",
         "--env", "CODEX_SANDBOX_TOOL_WORKER=1",
+        "--env", "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready",
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
@@ -2362,16 +2363,21 @@ def run_agent(state: State, arguments: list[str]) -> int:
             OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
             [*command[4:image_index], *environment], worker_command, **worker_io,
         ) as worker:
-            for _ in range(100):
+            worker_ready = state.pi_agent_tmp / "tool-worker-ready"
+            for _ in range(1000):
                 if worker.poll() is not None:
                     raise LauncherError("guest tool worker exited during startup")
-                ready = OUTER_RUNTIME.run(
-                    ["exec", state.codex_container, "test", "-S", "/tmp/codex-tool-worker.sock"],
-                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-                if ready.returncode == 0:
+                try:
+                    ready_metadata = worker_ready.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    if (not stat.S_ISREG(ready_metadata.st_mode)
+                            or ready_metadata.st_uid != state.uid
+                            or stat.S_IMODE(ready_metadata.st_mode) != 0o600):
+                        raise LauncherError("guest tool worker published invalid readiness")
                     break
-                time.sleep(0.1)
+                time.sleep(0.01)
             else:
                 raise LauncherError("guest tool worker did not become ready")
             if HOST_PI_BOOTSTRAP is not None:
