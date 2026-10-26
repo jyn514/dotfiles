@@ -90,6 +90,15 @@ Otherwise prefer safe defaults rather than forcing the runtime user to make ever
 
 Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
 
+Before proposing a new process, container, network, daemon, cache, store, or lifecycle owner, inventory existing runtime resources.
+Include resources on the same trust, connectivity, and ownership path.
+Give each plausible resource one disposition: `reuse`, `extend`, `reuse when both features are selected`, or `reject`.
+For a rejection, name the concrete requirement the resource cannot meet.
+A conditionally created resource remains a reuse candidate.
+Absence in some modes does not justify a parallel resource in modes where both exist.
+For example, compare extending a gateway only when two capabilities overlap before assigning the second capability its own sidecar.
+Do not design the new resource until every closer existing owner has a supported rejection.
+
 For an existing subsystem, start with the affected specification, implementation, same-path tests, and callers.
 Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.
 For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.

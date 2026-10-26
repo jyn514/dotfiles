@@ -34,6 +34,12 @@ Provide the worker with:
 - Ownership and shared contracts, permitted effects, protected work, and explicit holds.
 - The expected result, required checks, remaining integration work, and useful evidence to return.
 
+When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the architecture owner's reuse dispositions.
+Cover nearby existing resources.
+Do not encode a new resource as settled implementation work when reuse was not compared first.
+If the packet lacks that comparison, assign a bounded inspection before implementation.
+The worker returns the existing candidates and what requirement, if any, rejects each one.
+
 For assignments requiring full-file coverage, specify separate, bounded read calls.
 Continue from the last line actually returned, not the requested end of a truncated range.
 Require workers to finish retrievable gaps before returning;

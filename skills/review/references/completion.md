@@ -31,6 +31,10 @@ before completion does not start this procedure.
    For added or changed tests, check isolation and top-level command reachability against [Testing](../../references/testing.md). Inspect effect destinations and verify suite dispatch, not only focused execution. Confirm tests leave authoritative source and live state unchanged unless explicitly authorized; distinguish prerequisites and skips from executed passing cases.
 1. Check that the implementation fixes the demonstrated failure rather than its symptom. For bugs that escaped passing tests, check the testing-gap diagnosis and test-model correction required by [Testing](../../references/testing.md), not only the added regression example. When in-scope test sensitivity remains uncertain beyond confirming the named regression, use [mutation-testing](../../mutation-testing/SKILL.md) for a bounded check under existing execution authority; no campaign is required for every audit. Reopen the selected design only for a reproduced acceptance failure; record optional alternatives without implementing them.
 1. Within the fixed scope, search for likely loose ends: stale names and paths, old representations, duplicate implementations, bypass paths, temporary probes, unhandled lifecycle states, and documentation that still describes the prior behavior.
+   When the change adds or retains runtime resources, compare resource counts and topology before and after.
+   Include every relevant capability combination and each process, container, network, daemon, cache, store, or lifecycle owner.
+   Check overlapping capabilities for duplicate resources with the same trust, connectivity, or lifecycle role.
+   Require a concrete unmet requirement for every rejected existing owner; a resource being conditional is not by itself a rejection.
 1. Challenge applicable boundaries with the cheapest realistic cases needed by the acceptance matrix, not every case in this list:
    - duplicate identical inputs and multiple selected objects or refs
    - equal, aliased, symlinked, ancestor, and descendant paths

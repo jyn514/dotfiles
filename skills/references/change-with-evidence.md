@@ -45,6 +45,10 @@ If reuse requires private-source integration, a downstream patch, or a fork, nam
 
 Require a current requirement, independent consumer, reproduced failure, or pre-existing hard constraint before adding machinery.
 Compare the existing path and the smallest direct solution first.
+Treat every added process, container, network, daemon, cache, store, or lifecycle owner as a design change, even when it is easy to express in code.
+Inventory nearby existing owners and record `reuse`, `extend`, `reuse when both features are selected`, or `reject` for each plausible candidate.
+Conditional creation does not make a candidate unavailable in the modes where both features are selected.
+Implement a new runtime resource only when concrete required behavior rejects the smaller reuse paths.
 When consumers or required variability remain unclear, use the detailed [complexity-justification checks](complexity-justification.md).
 Do not turn a proposed mechanism into its own requirement.
 
