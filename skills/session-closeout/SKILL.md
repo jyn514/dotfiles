@@ -100,7 +100,15 @@ Use the harness's supported current-session title mechanism; do not edit session
 codex-rename 'Fix sandbox skill paths'
 ```
 
-If the command is not on `PATH`, invoke the linked file from this checkout. It starts a temporary `codex app-server` over stdio, calls `thread/name/set`, verifies the name through `thread/read`, and stops the child process. A successful exit establishes the applied title. It inherits `CODEX_HOME` (default `~/.codex`) and may need sandbox approval to write Codex state. No running daemon is required. If it fails, report whether the rename was sent and whether read-back verified it. If no supported mechanism is available, skip title mutation without blocking closeout. For other mechanisms, verify the applied title when the harness exposes an independent read path.
+If the command is not on `PATH`, invoke the linked file from this checkout.
+It starts a temporary `codex app-server` over stdio, calls `thread/name/set`, verifies the name through `thread/read`, and stops the child process.
+A successful exit establishes the persisted title for later reads and resumes.
+It does not establish that an already-running standalone TUI refreshed its cached title; report that limitation instead of claiming a visible live update.
+It inherits `CODEX_HOME` (default `~/.codex`) and may need sandbox approval to write Codex state.
+No running daemon is required.
+If it fails, report whether the rename was sent and whether read-back verified it.
+If no supported mechanism is available, skip title mutation without blocking closeout.
+For other mechanisms, distinguish persisted state from live client refresh and verify only the guarantees that mechanism exposes.
 
 ## 7. Report and stop
 
@@ -115,4 +123,6 @@ Do not report commits or successful verification unless the user explicitly asks
 Report failed or unavailable verification only when it leaves unresolved work or
 changes what the user can rely on.
 
-Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected. When title tooling is supported, the title must also be applied. A commit blocker leaves closeout incomplete.
+Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected.
+When title tooling is supported, the title must be persisted and verified; unavailable live-client refresh does not block closeout when it is reported accurately.
+A commit blocker leaves closeout incomplete.
