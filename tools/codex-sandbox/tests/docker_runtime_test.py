@@ -202,7 +202,7 @@ class DockerRuntimeTest(unittest.TestCase):
         left, right = socket.socketpair()
         framed = (bytes([1, 0, 0, 0]) + struct.pack('>I', 3) + b'out' +
                   bytes([2, 0, 0, 0]) + struct.pack('>I', 3) + b'err')
-        with patch('docker_runtime.docker_request', return_value={'StatusCode': 7}):
+        with patch('docker_runtime.docker_request', return_value={'StatusCode': 7}) as api:
             process = DockerAttachProcess(runtime, 'owned', left, io.BytesIO(framed),
                                           tty=False, interactive=False,
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -212,6 +212,7 @@ class DockerRuntimeTest(unittest.TestCase):
             process.close()
         right.close()
         self.assertEqual((b'out', b'err', 7), (output, errors, process.returncode))
+        self.assertIsNone(api.call_args.kwargs['timeout'])
 
     def test_attach_process_preserves_raw_tty_bytes(self):
         runtime = backend()

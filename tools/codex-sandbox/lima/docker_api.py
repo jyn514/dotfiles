@@ -13,10 +13,10 @@ class APIError(subprocess.CalledProcessError):
         self.status = status
 
 
-def request(socket_path, method, path, command, *, payload=None, expected=(200,)):
-    connection = http.client.HTTPConnection('localhost', timeout=10)
+def request(socket_path, method, path, command, *, payload=None, expected=(200,), timeout=10):
+    connection = http.client.HTTPConnection('localhost', timeout=timeout)
     connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.sock.settimeout(10)
+    connection.sock.settimeout(timeout)
     try:
         connection.sock.connect(socket_path)
         body = None if payload is None else json.dumps(payload).encode()

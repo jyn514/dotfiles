@@ -169,6 +169,7 @@ class DockerAttachProcess:
                 self.runtime.record['socket'], 'POST',
                 '/containers/' + quote(self.name, safe='') + '/wait?condition=not-running',
                 ['docker', 'wait', self.name],
+                timeout=None,
             )
             status = result.get('StatusCode')
             if type(status) is not int or not 0 <= status <= 255:
