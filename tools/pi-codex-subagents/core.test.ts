@@ -11,6 +11,7 @@ const TEST_AGENT_DIR = process.env.PI_TEST_OWNED_ROOT
   ? path.join(process.env.PI_TEST_OWNED_ROOT, "a")
   : fs.mkdtempSync(path.join(os.tmpdir(), "pi-sa-"));
 fs.mkdirSync(TEST_AGENT_DIR, { recursive: true });
+process.env.PI_CODING_AGENT_DIR = TEST_AGENT_DIR;
 afterAll(() => fs.rmSync(TEST_AGENT_DIR, { recursive: true, force: true }));
 const FAKE_RPC_CHILD = path.join(import.meta.dir, "test", "fake-rpc-child.js");
 process.env.PI_SUBAGENT_TEMP_DIR = path.join(TEST_AGENT_DIR, "temp");
@@ -1075,9 +1076,14 @@ describe("extension completion delivery and TUI", () => {
     expect(spawnArgs().thinking).toBeUndefined();
 
     try {
-      // Session start is authoritative: allowlist entries filtered to what is available,
-      // unioned with pi's scoped models, and the schema must not wait for a first turn.
+      // Ordinary session startup keeps the manager implementation unloaded.
       await emit("session_start", { reason: "startup" });
+      expect(spawnArgs().model).toBeUndefined();
+      // The first run depends on the tools, so its pre-start boundary initializes the
+      // implementation before Pi snapshots the active tool loadout.
+      await emit("before_agent_start", { systemPromptOptions: { skills: [] } });
+      // Model allowlist entries are filtered to what is available and unioned with
+      // Pi's scoped models before the first provider request.
       expect(spawnArgs().model.enum).toEqual(["test/fake", "fireworks/accounts/fireworks/models/glm-5p2", "openai/gpt-5"]);
       expect(spawnArgs().thinking.enum).toContain("max");
       expect(notifications).toEqual(['spawn_agent models not available: typo/nope']);

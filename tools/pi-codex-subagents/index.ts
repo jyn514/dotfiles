@@ -1,759 +1,253 @@
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import type { ExtensionAPI, MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
-import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
-  truncateHead,
-} from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
-import { Text, matchesKey, truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
-import {
-  AgentManager,
-  getAgentDefinition,
-  getAgentDefinitionsDescription,
-  loadSubagentConfig,
-  THINKING_LEVELS,
-  type AgentCompletionEvent,
-  type AgentInfo,
-  type DirectSkillRoute,
-  type ThinkingLevel,
-  writeFullToolOutput,
-} from "./core.js";
-import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscovery, type LinkResult, type LinkWorkerReply } from "./link.js";
-import { SubagentPeekOverlay } from "./peek.js";
-import { SuspensionCoordinator } from "./suspension.js";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-function textResult(text: string, details?: any) {
-  return { content: [{ type: "text" as const, text }], details };
+type ExtensionModule = { default: ExtensionFactory };
+type Handler = (event: any, ctx: any) => unknown;
+
+const LINK_DISCOVER = "pi-link:workers:v1";
+const TOOL_NAMES = [
+  "spawn_agent",
+  "wait_agent",
+  "wait_all_agents",
+  "list_agents",
+  "read_agent_response",
+  "send_message",
+  "interrupt_agent",
+] as const;
+
+const COMMANDS = {
+  pause: "Save parent and subagents; --status, --discard, or --exit",
+  unpause: "Restore saved parent and subagent work",
+  subagents: "Browse subagents",
+} as const;
+
+function agentDirectory(): string {
+  const configured = process.env.PI_CODING_AGENT_DIR;
+  if (!configured) return join(homedir(), ".pi", "agent");
+  if (configured === "~") return homedir();
+  return configured.startsWith("~/") ? join(homedir(), configured.slice(2)) : configured;
 }
 
-interface BoundedText {
-  text: string;
-  fullOutputPath?: string;
-  truncated?: true;
+function packageConfig(): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(join(agentDirectory(), "pi-codex-subagents", "config.json"), "utf8"));
+  } catch {
+    return {};
+  }
 }
 
-function boundedText(text: string, maxBytes = DEFAULT_MAX_BYTES, maxLines = DEFAULT_MAX_LINES): BoundedText {
-  const truncation = truncateHead(text, { maxBytes, maxLines });
-  if (!truncation.truncated) return { text };
-  const fullOutputPath = writeFullToolOutput(text);
-  const notice = `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output saved to: ${fullOutputPath}]`;
-  return { text: truncation.content + notice, fullOutputPath, truncated: true };
+function runsDirectory(config = packageConfig()): string {
+  const packageDirectory = join(agentDirectory(), "pi-codex-subagents");
+  const configured = typeof config.storageDir === "string" ? config.storageDir.trim() : "";
+  if (!configured) return join(packageDirectory, "runs");
+  const expanded = configured === "~" || configured.startsWith("~/")
+    ? join(homedir(), configured.slice(2))
+    : configured;
+  return isAbsolute(expanded) ? expanded : resolve(packageDirectory, expanded);
 }
 
-function boundedTextResult(text: string, details?: any) {
-  const bounded = boundedText(text);
-  if (!bounded.truncated) return textResult(bounded.text, details);
-  return textResult(bounded.text, { ...details, fullOutputPath: bounded.fullOutputPath, truncated: true });
+function hasSuspendedGroup(ctx: any): boolean {
+  const sessionId = ctx?.sessionManager?.getSessionId?.();
+  if (!sessionId) return false;
+  const scope = createHash("sha256").update(String(sessionId)).digest("hex").slice(0, 24);
+  const file = join(runsDirectory(), scope, "group.json");
+  if (!existsSync(file)) return false;
+  try {
+    const phase = JSON.parse(readFileSync(file, "utf8"))?.phase;
+    return phase !== "consumed" && phase !== "discarded";
+  } catch {
+    // Malformed recovery state must still fail closed through the full coordinator.
+    return true;
+  }
 }
 
-function cleanTarget(target: string): string {
-  return target.trim().replace(/^\/+/, "");
+function objectSchema(properties: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "object", properties, additionalProperties: true };
 }
 
-function parseTargets(value: unknown): string[] | undefined {
-  return Array.isArray(value) ? value.map((target) => cleanTarget(String(target))).filter(Boolean) : undefined;
-}
+const PLACEHOLDER_SCHEMAS: Record<(typeof TOOL_NAMES)[number], Record<string, unknown>> = {
+  spawn_agent: objectSchema({
+    task_name: { type: "string" },
+    message: { type: "string" },
+    fork_from: { type: "object" },
+    agent_type: { type: "string" },
+    skills: { type: "array", items: { type: "string" } },
+  }),
+  wait_agent: objectSchema({ targets: { type: "array", items: { type: "string" } } }),
+  wait_all_agents: objectSchema({ targets: { type: "array", items: { type: "string" } } }),
+  list_agents: objectSchema({
+    path_prefix: { type: "string" }, include_all: { type: "boolean" },
+    limit: { type: "integer" }, offset: { type: "integer" },
+  }),
+  read_agent_response: objectSchema({ target: { type: "string" } }),
+  send_message: objectSchema({ target: { type: "string" }, message: { type: "string" } }),
+  interrupt_agent: objectSchema({ target: { type: "string" } }),
+};
 
-function parentSessionId(ctx: any): string {
-  const id = ctx?.sessionManager?.getSessionId?.();
-  if (!id) throw new Error("The parent Pi session has no session id.");
-  return String(id);
-}
+const TOOL_LABELS: Record<(typeof TOOL_NAMES)[number], string> = {
+  spawn_agent: "Spawn Agent",
+  wait_agent: "Wait Agent",
+  wait_all_agents: "Wait All Agents",
+  list_agents: "List Agents",
+  read_agent_response: "Read Agent Response",
+  send_message: "Send Message",
+  interrupt_agent: "Interrupt Agent",
+};
 
-function formatDuration(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
+export function createLazyExtension(
+  load: () => Promise<ExtensionModule> = () => import("./implementation.js"),
+): ExtensionFactory {
+  return (pi: ExtensionAPI) => {
+    const handlers = new Map<string, Handler[]>();
+    const eventHandlers = new Map<string, Handler[]>();
+    const tools = new Map<string, any>();
+    const commands = new Map<string, any>();
+    let start: { event: any; ctx: any } | undefined;
+    let ready = false;
+    let loading: Promise<void> | undefined;
 
-function formatColumn(text: string, width: number): string {
-  const clipped = truncateToWidth(text, width);
-  return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
-}
+    const remember = (map: Map<string, Handler[]>, name: string, handler: Handler) => {
+      const entries = map.get(name) ?? [];
+      entries.push(handler);
+      map.set(name, entries);
+    };
 
-function runtimeLabel(info: AgentInfo): string {
-  const start = info.startedAt || info.createdAt;
-  const final = ["completed", "failed", "interrupted"].includes(info.status);
-  const end = final ? (info.completedAt || info.updatedAt || Date.now()) : Date.now();
-  return formatDuration(end - start);
-}
-
-export default function (pi: ExtensionAPI) {
-  const widgetKey = "pi-codex-subagents";
-  const completionMessageType = "pi-codex-subagent-completion";
-  let cachedSkills: Array<{ name: string; description: string; filePath: string }> = [];
-  let cachedSkillsSignature = "";
-  let activeContext: any;
-  const activeAgents = new Set<string>();
-
-  type SpawnModel = { provider: string; modelId: string };
-
-  const exactPair = (pattern: string): SpawnModel | undefined => {
-    const colon = pattern.lastIndexOf(":");
-    const reference = colon > 0 && (THINKING_LEVELS as readonly string[]).includes(pattern.slice(colon + 1)) ? pattern.slice(0, colon) : pattern;
-    const slash = reference.indexOf("/");
-    if (slash <= 0 || /[*?[\]]/.test(reference)) return undefined;
-    return { provider: reference.slice(0, slash), modelId: reference.slice(slash + 1) };
-  };
-
-  let spawnModels = new Map<string, SpawnModel>();
-
-  const resolveSpawnModels = (ctx: any) => {
-    const config = loadSubagentConfig();
-    const models = new Map<string, SpawnModel>();
-    const available = new Set(ctx.modelRegistry.getAvailable().map((model: any) => `${model.provider}/${model.id}`));
-    const unavailable: string[] = [];
-    for (const entry of config.models ?? []) {
-      const pair = exactPair(entry);
-      if (pair && available.has(`${pair.provider}/${pair.modelId}`)) models.set(`${pair.provider}/${pair.modelId}`, pair);
-      else unavailable.push(entry);
-    }
-    if (config.modelsFromEnabledModels) {
-      for (const { model } of ctx.scopedModels ?? []) models.set(`${model.provider}/${model.id}`, { provider: model.provider, modelId: model.id });
-    }
-    if (unavailable.length) ctx.ui?.notify?.(`spawn_agent models not available: ${unavailable.join(", ")}`, "warning");
-    return models;
-  };
-
-  const isCurrentSession = (parentId: string) => {
-    try { return activeContext && parentSessionId(activeContext) === parentId; }
-    catch { return false; }
-  };
-
-  const refreshAgentWidget = () => {
-    if (!activeContext || activeContext.mode !== "tui") return;
-    const running = [...activeAgents];
-    if (!running.length) {
-      activeContext.ui.setWidget(widgetKey, undefined);
-      return;
-    }
-    const label = running.length === 1
-      ? `${running[0]} running`
-      : `${running.length} subagents running`;
-    activeContext.ui.setWidget(widgetKey, (_tui: any, theme: Theme) => ({
-      render(width: number) {
-        const marker = "◌ ";
-        const suffix = " · /subagents";
-        if (width <= visibleWidth(marker) + visibleWidth(suffix)) {
-          return [truncateToWidth(theme.fg("dim", "/subagents"), width, "")];
+    const events = new Proxy(pi.events, {
+      get(target, property) {
+        if (property === "on") {
+          return (name: string, handler: Handler) => {
+            remember(eventHandlers, name, handler);
+            return target.on(name, handler);
+          };
         }
-        const available = width - visibleWidth(marker) - visibleWidth(suffix);
-        const clippedLabel = truncateToWidth(label, available, "…");
-        return [
-          theme.fg("accent", marker) + theme.fg("text", clippedLabel) + theme.fg("dim", suffix),
-        ];
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
       },
-      invalidate() {},
-    }));
-  };
+    });
 
-  let suspension: SuspensionCoordinator;
-  const completionMessage = (event: AgentCompletionEvent) => {
-    const payload = JSON.stringify({
-      agent_name: event.agentName,
-      status: event.status,
-      ...(event.finalResponse !== undefined ? { final_response: event.finalResponse } : {}),
-      ...(event.error ? { error: event.error } : {}),
-    }, null, 2);
-    const bounded = boundedText(payload, DEFAULT_MAX_BYTES - 1024, DEFAULT_MAX_LINES - 4);
-    return {
-      customType: completionMessageType,
-      content: `<subagent_notification>\n${bounded.text}\n</subagent_notification>`,
-      display: true,
-      details: {
-        completionId: event.id,
-        agent_name: event.agentName,
-        status: event.status,
-        ...(bounded.fullOutputPath ? { fullOutputPath: bounded.fullOutputPath } : {}),
+    const deferredPi = new Proxy(pi, {
+      get(target, property) {
+        if (property === "events") return events;
+        if (property === "on") {
+          return (name: string, handler: Handler) => {
+            remember(handlers, name, handler);
+            return target.on(name as any, handler as any);
+          };
+        }
+        if (property === "registerTool") {
+          return (tool: any) => { tools.set(tool.name, tool); target.registerTool(tool); };
+        }
+        if (property === "registerCommand") {
+          return (name: string, command: any) => { commands.set(name, command); target.registerCommand(name, command); };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
       },
+    });
+
+    const invoke = async (map: Map<string, Handler[]>, name: string, event: any, ctx: any) => {
+      let result: unknown;
+      for (const handler of map.get(name) ?? []) result = await handler(event, ctx);
+      return result;
     };
-  };
-  const deliverCompletion = (event: AgentCompletionEvent) => {
-    if (!isCurrentSession(event.parentSessionId)) return;
-    if (suspension?.completion(event)) return;
-    // Legacy void delivery has no admission acknowledgment. Saved capture reconciles its ID.
-    pi.sendMessage(completionMessage(event), { deliverAs: "steer", triggerTurn: true });
-  };
 
-  const manager = new AgentManager({
-    onActivityChange: (event) => {
-      if (!isCurrentSession(event.parentSessionId)) return;
-      if (event.active) activeAgents.add(event.agentName);
-      else activeAgents.delete(event.agentName);
-      refreshAgentWidget();
-    },
-    onUnclaimedCompletion: deliverCompletion,
-    onLinkReply: async (event) => {
-      const ctx = activeContext;
-      if (!ctx || !isCurrentSession(event.ownerSessionId)) return linkFailure("skipped", "parent_session_not_active");
-      if (suspension?.isPaused(event.ownerSessionId)) return linkFailure("skipped", "parent_paused");
-      let response: Promise<LinkResult> | undefined;
-      const request: LinkWorkerReply = { version: LINK_VERSION, ...event, respond(result) {
-        if (!response) response = Promise.resolve(result);
-      } };
-      pi.events.emit(LINK_REPLY, request);
-      if (!response) return linkFailure("unsupported", "link_integration_unavailable");
-      if (activeContext !== ctx || !isCurrentSession(event.ownerSessionId)) return linkFailure("skipped", "parent_session_changed");
-      return response;
-    },
-  });
-
-  suspension = new SuspensionCoordinator(pi, manager, completionMessage);
-
-  pi.events.on(LINK_DISCOVER, (value: unknown) => {
-    const request = value as LinkDiscovery;
-    if (!request || request.version !== LINK_VERSION || typeof request.ownerSessionId !== "string"
-      || typeof request.provide !== "function" || !isCurrentSession(request.ownerSessionId)) return;
-    const ctx = activeContext;
-    const owner = request.ownerSessionId;
-    const current = () => activeContext === ctx && isCurrentSession(owner);
-    request.provide({
-      broadcast: message => current() ? manager.broadcastLink(owner, message) : Promise.resolve([]),
-      reply: (worker, message) => current() ? manager.replyLink(owner, worker, message)
-        : Promise.resolve({ status: "skipped", reason: "parent_session_changed" }),
-    });
-  });
-
-  pi.on("tool_call", (event: any, ctx: any) => {
-    const id = parentSessionId(ctx);
-    if (suspension.isPreparing(id)) manager.allowDrainingToolCall(id, event.toolCallId);
-  });
-
-  const renderCompletion: MessageRenderer<{ agent_name?: string; status?: string }> = (message, { expanded }, theme) => {
-    const status = message.details?.status;
-    const color = status === "completed" ? "success" : status === "failed" ? "error" : "warning";
-    let text = theme.fg(color, `${status === "completed" ? "✓" : "✗"} ${message.details?.agent_name || "subagent"} ${status || "finished"}`);
-    if (expanded && typeof message.content === "string") text += `\n${theme.fg("dim", message.content)}`;
-    return new Text(text, 0, 0);
-  };
-  pi.registerMessageRenderer(completionMessageType, renderCompletion, { renderHistorical: renderCompletion });
-
-  interface SpawnFromContextRequest {
-    taskName: string;
-    message: string;
-    agentType?: string;
-    skills?: string[];
-    loadedSkillPaths?: Record<string, string>;
-    modelReference?: string;
-    thinking?: ThinkingLevel;
-    templatePromptPosition?: "before" | "after";
-    forkFrom?: { session_id: string; through_entry_id: string };
-    admittedToolCallId?: string;
-  }
-
-  const spawnFromContext = async (ctx: any, request: SpawnFromContextRequest) => {
-    const currentModel = ctx.model;
-    if (!currentModel?.provider || !currentModel?.id) throw new Error("the parent has no active provider/model pair.");
-    const requestedSkills = request.skills ?? [];
-    const loadedSkillPaths = {
-      ...Object.fromEntries(cachedSkills.map((skill) => [skill.name, skill.filePath])),
-      ...request.loadedSkillPaths,
+    const initialize = () => {
+      if (loading) return loading;
+      loading = (async () => {
+        const extension = await load();
+        extension.default(deferredPi);
+        if (start) await invoke(handlers, "session_start", start.event, start.ctx);
+        ready = true;
+      })();
+      return loading;
     };
-    const unavailableSkills = requestedSkills.filter((skill) => !Object.hasOwn(loadedSkillPaths, skill));
-    if (unavailableSkills.length) throw new Error(`skills are not loaded in the parent session: ${unavailableSkills.join(", ")}`);
-    const model = request.modelReference ? spawnModels.get(request.modelReference) : undefined;
-    if (request.modelReference && !model) throw new Error(`model "${request.modelReference}" is not in the configured spawn models: ${[...spawnModels.keys()].join(", ") || "none"}`);
-    if (model && !ctx.modelRegistry.getAvailable().some((entry: any) => entry.provider === model.provider && entry.id === model.modelId)) {
-      throw new Error(`model "${request.modelReference}" is not currently available.`);
-    }
-    return manager.spawnAgent({
-      task_name: request.taskName,
-      message: request.message,
-      fork_from: request.forkFrom,
-      agent_type: request.agentType,
-      skills: requestedSkills,
-      loadedSkillPaths,
-      cwd: ctx.cwd,
-      parentSessionId: parentSessionId(ctx),
-      parentSessionFile: ctx.sessionManager.getSessionFile?.(),
-      inheritedProvider: currentModel.provider,
-      inheritedModelId: currentModel.id,
-      inheritedThinking: pi.getThinkingLevel() as ThinkingLevel,
-      projectTrusted: typeof ctx.isProjectTrusted === "function" ? ctx.isProjectTrusted() : false,
-      model,
-      thinking: request.thinking,
-      templatePromptPosition: request.templatePromptPosition,
-      admittedToolCallId: request.admittedToolCallId,
+
+    const initializeForEvent = async (name: string, event: any, ctx: any) => {
+      const wasReady = ready;
+      await initialize();
+      return wasReady ? undefined : invoke(handlers, name, event, ctx);
+    };
+
+    pi.on("session_start", async (event, ctx) => {
+      start = { event, ctx };
+      if (hasSuspendedGroup(ctx)) await initialize();
     });
-  };
+    pi.on("before_agent_start", (event, ctx) => initializeForEvent("before_agent_start", event, ctx));
+    pi.on("input", (event, ctx) => initializeForEvent("input", event, ctx) as any);
+    pi.on("session_shutdown", async (event, ctx) => {
+      if (!loading) return;
+      const wasReady = ready;
+      await loading;
+      // A handler registered during this event is absent from Pi's current snapshot.
+      return wasReady ? undefined : invoke(handlers, "session_shutdown", event, ctx);
+    });
 
-  const spawnAgentTool = {
-    name: "spawn_agent",
-    label: "Spawn Agent",
-    get description() {
-      return `Spawn a Pi subagent for a concrete task. Without fork_from it starts fresh; fork_from retains the named native session branch through the selected entry (inclusive), then appends the required message. Current child configuration still applies. Children discover built-in, configured, and local extensions, skills, and prompt templates using the parent's resolved project trust. Agent templates may configure a provider/model pair, thinking level, tools, skills, and extensions; template-only \`disabledExtensions\` excludes extension entrypoints (including \`builtin:name\`) before they execute. Omitted model and thinking settings inherit from the parent. With template tools omitted, fresh children use normal activation and forks retain native source-active selection among currently registered tools. Plain-name template tools override that selection; modifiers follow Pi's native rules.
-${spawnModels.size ? `
-A task may run on a model of its own, without a template: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort.
-` : ""}
-Returns after the child accepts its initial task. Continue with independent work instead of waiting; the child's final response will be delivered automatically when ready. Use \`wait_agent\` or \`wait_all_agents\` only when your next action depends on the subagent response and you have no useful work to do meanwhile.
-
-\`agent_type\` is optional. Omit it for a generic subagent. Use a template only when the task matches it.
-
-Available agent templates:
-${getAgentDefinitionsDescription()}
-
-Available parent skills that may be added by name:
-${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join("\n") : "No model-invocable skills are loaded in the parent session."}`;
-    },
-    get parameters() {
-      return Type.Object({
-        task_name: Type.String({ description: "Task name for the new agent. Use letters, digits, underscores, dashes, and optional slash path separators." }),
-        message: Type.String({ description: "Required initial task, appended after any retained fork context." }),
-        fork_from: Type.Optional(Type.Object({
-          session_id: Type.String({ minLength: 1, description: "Exact native source session ID." }),
-          through_entry_id: Type.String({ minLength: 1, description: "Inclusive final entry on the source branch." }),
-        }, { additionalProperties: false })),
-        agent_type: Type.Optional(Type.String({ description: "Optional agent template name from ~/.pi/agent/pi-codex-subagents/agents/." })),
-        skills: Type.Optional(Type.Array(Type.String(), { description: "Additional skill names from the loaded parent skills listed in this tool description." })),
-        ...(spawnModels.size
-          ? {
-              model: Type.Optional(StringEnum([...spawnModels.keys()], { description: "Optional model for this one task, for example an independent review by another vendor. Defaults to the template model, otherwise the parent model." })),
-              thinking: Type.Optional(StringEnum(THINKING_LEVELS, { description: "Optional thinking level. Defaults to the template level, otherwise the parent level." })),
-            }
-          : {}),
-      });
-    },
-    async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = await spawnFromContext(ctx, {
-          admittedToolCallId: _toolCallId,
-          taskName: params.task_name,
-          message: params.message,
-          forkFrom: params.fork_from,
-          agentType: params.agent_type,
-          skills: params.skills,
-          modelReference: params.model,
-          thinking: params.thinking,
-        });
-        const info = manager.getAgentInfo(result.task_name, parentSessionId(ctx));
-        return textResult(`Spawned ${result.task_name}.`, {
-          ...result,
-          session_id: info.sessionId,
-          ...(info.forkFrom ? { fork_from: info.forkFrom } : {}),
-          provider: info.provider,
-          modelId: info.modelId,
-          thinking: info.thinking,
-        });
-      } catch (error) {
-        throw new Error(`spawn_agent failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) {
-      return new Text(theme.fg("toolTitle", theme.bold("spawn_agent ")) + theme.fg("accent", args.task_name || "?") + theme.fg("dim", (args.agent_type ? ` [${args.agent_type}]` : "") + (args.model ? ` ${args.model}` : "")), 0, 0);
-    },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", `✗ ${result.content?.[0]?.text || "failed"}`), 0, 0);
-      const model = result.details?.provider && result.details?.modelId
-        ? ` · ${result.details.provider}/${result.details.modelId}`
-        : "";
-      const thinking = result.details?.thinking ? ` · ${result.details.thinking}` : "";
-      return new Text(theme.fg("success", `✓ ${result.details?.task_name || "spawned"}${model}${thinking}`), 0, 0);
-    },
-  };
-
-  const directSkillMessage = (text: string, route: DirectSkillRoute, ctx: any): string => {
-    if (!route.proposalOnly) return text;
-    const sessionId = parentSessionId(ctx);
-    const sessionFile = ctx.sessionManager.getSessionFile?.();
-    return [
-      text,
-      "",
-      "This is delegated analysis for a parent Pi session.",
-      `Parent session ID: ${sessionId}`,
-      `Parent session file: ${sessionFile || "(not saved)"}`,
-      "Operate in suggest mode only. Do not mutate the parent or child session.",
-      "Return the exact proposal and whether the original request authorized its application.",
-    ].join("\n");
-  };
-
-  pi.on("input", async (event: any, ctx: any) => {
-    if (event.source === "extension" || event.streamingBehavior || event.images?.length) return;
-    if (typeof ctx.resolveSkillCommand !== "function") return;
-    const invocation = ctx.resolveSkillCommand(event.text);
-    if (!invocation) return;
-
-    const route = loadSubagentConfig().directSkillRoutes?.[invocation.skill.name];
-    if (!route) return;
-    if (suspension.isPaused(parentSessionId(ctx))) {
-      ctx.ui?.notify?.("Direct skill delegation is blocked while the subagent group is paused.", "warning");
-      return; // No effect occurred; native admission must reject, not acknowledge consumption.
-    }
-    const definition = getAgentDefinition(route.agentType);
-    if (!definition) {
-      ctx.ui?.notify?.(`Direct skill route template not found: ${route.agentType}`, "warning");
-      return;
-    }
-    if (!ctx.model?.provider || !ctx.model?.id || !ctx.sessionManager.getSessionId?.()) {
-      ctx.ui?.notify?.("Direct skill delegation requires an active model and parent session identity", "warning");
-      return;
-    }
-    const parentSessionFile = ctx.sessionManager.getSessionFile?.();
-    if (route.proposalOnly && (!parentSessionFile || !existsSync(parentSessionFile))) {
-      ctx.ui?.notify?.("Proposal-only direct skill routing requires an existing parent session file", "warning");
-      return;
-    }
-
-    try {
-      const result = await spawnFromContext(ctx, {
-        taskName: `direct/${invocation.skill.name}/${randomUUID()}`,
-        message: directSkillMessage(event.text, route, ctx),
-        agentType: route.agentType,
-        skills: [invocation.skill.name],
-        loadedSkillPaths: { [invocation.skill.name]: invocation.skill.filePath },
-        templatePromptPosition: "after",
-      });
-      ctx.ui?.notify?.(`Delegated /skill:${invocation.skill.name} to ${result.task_name}`, "info");
-    } catch (error) {
-      ctx.ui?.notify?.(`Direct skill delegation failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-    }
-    return { action: "handled" as const };
-  });
-
-  pi.on("session_start", async (_event: any, ctx: any) => {
-    activeContext = ctx;
-    // Synchronous discovery fences admission before the first await/automatic startup work.
-    suspension.discover(ctx);
-    activeAgents.clear();
-    if (loadSubagentConfig().directSkillRoutes && typeof ctx.resolveSkillCommand !== "function") {
-      ctx.ui?.notify?.("Direct skill routes require Pi extension context resolveSkillCommand() support", "warning");
-    }
-    try { spawnModels = resolveSpawnModels(ctx); }
-    catch (error: any) { ctx.ui?.notify?.(`spawn_agent model resolution failed, keeping the previous list: ${error?.message || error}`, "warning"); }
-    pi.registerTool(spawnAgentTool);
-    await manager.ready();
-    if (activeContext !== ctx) return;
-    for (const entry of manager.listAgents(undefined, parentSessionId(ctx))) {
-      if (entry.agent_status === "starting" || entry.agent_status === "running") activeAgents.add(entry.agent_name);
-    }
-    refreshAgentWidget();
-  });
-
-  pi.on("before_agent_start", async (event: any) => {
-    const skills = event?.systemPromptOptions?.skills;
-    const nextSkills = Array.isArray(skills)
-      ? skills
-          .filter((skill: any) => !skill?.disableModelInvocation && typeof skill?.name === "string" && typeof skill?.filePath === "string")
-          .map((skill: any) => ({ name: skill.name, description: String(skill.description || ""), filePath: skill.filePath }))
-      : [];
-    const signature = JSON.stringify(nextSkills);
-    if (signature !== cachedSkillsSignature) {
-      cachedSkills = nextSkills;
-      cachedSkillsSignature = signature;
-      pi.registerTool(spawnAgentTool);
-    }
-  });
-
-  pi.on("session_shutdown", async (_event: any, ctx: any) => {
-    if (activeContext?.mode === "tui") activeContext.ui.setWidget(widgetKey, undefined);
-    activeContext = undefined;
-    activeAgents.clear();
-    try { await manager.shutdown(); } finally { suspension.shutdown(ctx); }
-  });
-
-  pi.registerTool(spawnAgentTool);
-
-  pi.registerTool({
-    name: "wait_agent",
-    label: "Wait Agent",
-    description: "Wait for one session-owned agent completion, or for the next completion if targets is omitted. Use only when your next action depends on that response; otherwise continue working and let completion arrive automatically. Returns one final response. Use wait_all_agents when every target must finish.",
-    parameters: Type.Object({
-      targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait on. Omit to wait for the next completion in this parent session." })),
-    }),
-    async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = await manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), signal);
-        return boundedTextResult(JSON.stringify(result, null, 2), { message: result.message });
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        throw new Error(`wait_agent failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) {
-      const targets = Array.isArray(args.targets) && args.targets.length ? args.targets.join(",") : "any";
-      return new Text(theme.fg("toolTitle", theme.bold("wait_agent ")) + theme.fg("accent", targets), 0, 0);
-    },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", "✗ wait failed"), 0, 0);
-      return new Text(theme.fg("success", result.details?.message || "done"), 0, 0);
-    },
-  });
-
-  pi.registerTool({
-    name: "wait_all_agents",
-    label: "Wait All Agents",
-    description: "Wait until all targeted session-owned agents reach a final status. Use only when your next action depends on every response; otherwise continue working and let completions arrive automatically. Returns their final text responses.",
-    parameters: Type.Object({
-      targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait for. Omit to wait for agents spawned by this extension instance." })),
-    }),
-    async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = await manager.waitAllAgents(parentSessionId(ctx), parseTargets(params.targets), signal);
-        return boundedTextResult(JSON.stringify(result, null, 2), { message: result.message });
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        throw new Error(`wait_all_agents failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) {
-      const targets = Array.isArray(args.targets) && args.targets.length ? args.targets.join(",") : "all";
-      return new Text(theme.fg("toolTitle", theme.bold("wait_all_agents ")) + theme.fg("accent", targets), 0, 0);
-    },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", "✗ wait failed"), 0, 0);
-      return new Text(theme.fg("success", result.details?.message || "done"), 0, 0);
-    },
-  });
-
-  pi.registerTool({
-    name: "list_agents",
-    label: "List Agents",
-    description: "List compact agent names and statuses for the current parent session, newest first with active agents prioritized. Returns 10 by default; use offset for another page or path_prefix to narrow the result. Set include_all only for an explicit read-only historical listing across parent sessions.",
-    parameters: Type.Object({
-      path_prefix: Type.Optional(Type.String({ description: "Task-path prefix filter without a trailing slash." })),
-      include_all: Type.Optional(Type.Boolean({ description: "Include agents from all parent sessions and show parent_session_id. Default false." })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "Maximum agents to return. Default 10; maximum 100." })),
-      offset: Type.Optional(Type.Integer({ minimum: 0, description: "Zero-based offset into the compact ordered result. Default 0." })),
-    }),
-    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      const listed = manager.listAgents(params.path_prefix, parentSessionId(ctx), params.include_all === true);
-      const ordered = [
-        ...listed.filter((agent) => agent.agent_status === "starting" || agent.agent_status === "running"),
-        ...listed.filter((agent) => agent.agent_status !== "starting" && agent.agent_status !== "running"),
-      ];
-      const limit = Number.isInteger(params.limit) ? Math.max(1, Math.min(100, params.limit)) : 10;
-      const offset = Number.isInteger(params.offset) ? Math.max(0, params.offset) : 0;
-      const agents = ordered.slice(offset, offset + limit).map(({ agent_name, agent_status, parent_session_id }) => ({
-        agent_name,
-        agent_status,
-        ...(parent_session_id ? { parent_session_id } : {}),
-      }));
-      const nextOffset = offset + agents.length < ordered.length ? offset + agents.length : null;
-      const result = { total: ordered.length, returned: agents.length, offset, limit, next_offset: nextOffset, agents };
-      return textResult(JSON.stringify(result, null, 2), result);
-    },
-    renderCall(_args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("list_agents")), 0, 0); },
-    renderResult(result: any, options: any, theme: Theme) {
-      const agents = result.details?.agents || [];
-      const total = result.details?.total ?? agents.length;
-      if (!options.expanded) return new Text(theme.fg("success", `✓ ${agents.length} of ${total} agents`), 0, 0);
-      return new Text(result.content?.[0]?.text || JSON.stringify(result.details, null, 2), 0, 0);
-    },
-  });
-
-  pi.registerTool({
-    name: "read_agent_response",
-    label: "Read Agent Response",
-    description: "Read one current-session agent's latest final raw text response. Tool calls and intermediate assistant text are excluded.",
-    parameters: Type.Object({ target: Type.String({ description: "Session-owned agent task name." }) }),
-    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = manager.readAgentResponse(cleanTarget(params.target), parentSessionId(ctx));
-        return boundedTextResult(JSON.stringify(result, null, 2), { agent_name: result.agent_name, status: result.status });
-      } catch (error) {
-        throw new Error(`read_agent_response failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) {
-      return new Text(theme.fg("toolTitle", theme.bold("read_agent_response ")) + theme.fg("accent", args.target || "?"), 0, 0);
-    },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", "✗ read failed"), 0, 0);
-      return new Text(theme.fg("success", `✓ ${result.details?.agent_name || "response"}`), 0, 0);
-    },
-  });
-
-  pi.registerTool({
-    name: "send_message",
-    label: "Send Message",
-    description: "Send a message to a session-owned agent. Steers the current run when active; otherwise starts a new turn.",
-    parameters: Type.Object({
-      target: Type.String({ description: "Session-owned agent task name." }),
-      message: Type.String({ description: "Message text to send." }),
-    }),
-    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = await manager.sendMessage(parentSessionId(ctx), cleanTarget(params.target), params.message, _id);
-        return textResult(result.delivery === "steer" ? "Message steered into the running agent." : "Message started a new agent turn.", { target: params.target, ...result });
-      } catch (error) {
-        throw new Error(`send_message failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("send_message ")) + theme.fg("accent", args.target || "?"), 0, 0); },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", "✗ send failed"), 0, 0);
-      return new Text(theme.fg("success", result.details?.delivery === "steer" ? "✓ steered" : "✓ started"), 0, 0);
-    },
-  });
-
-  pi.registerTool({
-    name: "interrupt_agent",
-    label: "Interrupt Agent",
-    description: "Abort a session-owned agent's current turn while keeping its session available for later send_message calls.",
-    parameters: Type.Object({ target: Type.String({ description: "Session-owned agent task name." }) }),
-    async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      try {
-        const result = await manager.interruptAgent(parentSessionId(ctx), cleanTarget(params.target));
-        return textResult("Interrupt request handled.", result);
-      } catch (error) {
-        throw new Error(`interrupt_agent failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    renderCall(args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("interrupt_agent ")) + theme.fg("accent", args.target || "?"), 0, 0); },
-    renderResult(result: any, _options: any, theme: Theme) {
-      if (result.isError) return new Text(theme.fg("error", "✗ interrupt failed"), 0, 0);
-      return new Text(theme.fg("warning", `↯ previous: ${result.details?.previous_status || "unknown"}`), 0, 0);
-    },
-  });
-
-  async function openAgentOverlay(ctx: any, task: string, scopeId = parentSessionId(ctx), includeAll = false) {
-    if (ctx.mode !== "tui") {
-      ctx.ui.notify("Subagent overlays require interactive TUI mode.", "warning");
-      return;
-    }
-    let info: AgentInfo;
-    try { info = manager.getAgentInfo(task, scopeId); }
-    catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); return; }
-
-    while (true) {
-      const navigation = await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: any) => new SubagentPeekOverlay(tui, theme, info, done), {
-        overlay: true,
-        overlayOptions: { anchor: "right-center", width: "45%", minWidth: 50, maxHeight: 60, margin: { right: 2, top: 2, bottom: 2 } },
-      });
-      if (navigation !== "previous" && navigation !== "next") return;
-
-      const currentSessionId = parentSessionId(ctx);
-      const entries = manager.listAgents(undefined, currentSessionId, includeAll);
-      if (entries.length < 2) return;
-      const currentIndex = entries.findIndex((entry) =>
-        entry.agent_name === info.canonicalName &&
-        (entry.parent_session_id || currentSessionId) === info.parentSessionId
-      );
-      if (currentIndex === -1) return;
-      const offset = navigation === "next" ? 1 : -1;
-      const next = entries[(currentIndex + offset + entries.length) % entries.length];
-      info = manager.getAgentInfo(next.agent_name, next.parent_session_id || currentSessionId);
-    }
-  }
-
-  async function pickAgent(ctx: any): Promise<{ task: string; parentSessionId: string; includeAll: boolean } | undefined> {
-    const currentSessionId = parentSessionId(ctx);
-    return await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: any) => {
-      let selected = 0;
-      let showAll = false;
-      let cached: string[] | undefined;
-      let cachedWidth: number | undefined;
-      const fg = theme.fg.bind(theme);
-      const pageSize = 10;
-      const refresh = () => { cached = undefined; tui.requestRender(); };
-      const agents = () => manager.listAgents(undefined, currentSessionId, showAll);
-      return {
-        render(width: number): string[] {
-          if (cached && cachedWidth === width) return cached;
-          const entries = agents();
-          if (selected >= entries.length) selected = Math.max(0, entries.length - 1);
-          const scopeLabel = showAll ? "all sessions" : "this session";
-          const lines = [fg("accent", "─".repeat(width)), fg("accent", theme.bold(" Subagents")) + fg("dim", ` (${entries.length}, ${scopeLabel})`), ""];
-          if (!entries.length) lines.push(fg("dim", showAll ? "No subagents found." : "No subagents for this session. Press tab to show all."));
-          const viewStart = entries.length > pageSize ? Math.max(0, Math.min(selected - Math.floor(pageSize / 2), entries.length - pageSize)) : 0;
-          const viewEnd = Math.min(viewStart + pageSize, entries.length);
-          const statusWidth = 11;
-          const durationWidth = 6;
-          const thinkingWidth = 7;
-          const fixedWidth = 2 + statusWidth + durationWidth + thinkingWidth + 4 + (showAll ? 9 : 0);
-          const nameWidth = Math.min(28, Math.max(8, width - fixedWidth - 8));
-          const modelWidth = Math.max(0, Math.min(28, width - fixedWidth - nameWidth));
-          if (viewStart > 0) lines.push(fg("dim", `  ↑ ${viewStart} more`));
-          for (let index = viewStart; index < viewEnd; index++) {
-            const entry = entries[index];
-            const info = manager.getAgentInfo(entry.agent_name, entry.parent_session_id || currentSessionId);
-            const pointer = index === selected ? fg("accent", "› ") : "  ";
-            const name = formatColumn(entry.agent_name, nameWidth);
-            const sessionId = entry.parent_session_id || "";
-            const parent = showAll ? ` ${sessionId.slice(-8)}` : "";
-            const details = [
-              formatColumn(runtimeLabel(info), durationWidth),
-              formatColumn(info.modelId || "unknown", modelWidth),
-              formatColumn(info.thinking || "off", thinkingWidth),
-            ].join(" ");
-            lines.push(pointer + fg(index === selected ? "accent" : "text", name) + " " + fg(entry.agent_status === "failed" ? "error" : entry.agent_status === "completed" ? "success" : "warning", entry.agent_status.padEnd(statusWidth)) + " " + fg("dim", details + parent));
-            if (entry.last_task_message) lines.push("  " + fg("dim", truncateToWidth(entry.last_task_message.replace(/\s+/g, " "), Math.max(0, width - 4))));
-          }
-          if (viewEnd < entries.length) lines.push(fg("dim", `  ↓ ${entries.length - viewEnd} more`));
-          lines.push("", fg("dim", "enter: open  tab: this/all sessions  r: refresh  q/esc: close"));
-          cached = lines.map((line) => truncateToWidth(line, width));
-          cachedWidth = width;
-          return cached;
+    pi.events.on(LINK_DISCOVER, (request: any) => {
+      if (ready || !request || typeof request.provide !== "function") return;
+      request.provide({
+        async broadcast(message: any) {
+          await initialize();
+          let integration: any;
+          const replay = { ...request, provide(value: any) { integration = value; } };
+          await invoke(eventHandlers, LINK_DISCOVER, replay, undefined);
+          return integration ? integration.broadcast(message) : [];
         },
-        handleInput(data: string) {
-          const entries = agents();
-          if (matchesKey(data, "escape") || data === "q") { done(undefined); return; }
-          if (matchesKey(data, "tab") || data === "\t") { showAll = !showAll; selected = 0; refresh(); return; }
-          if (data === "r") { refresh(); return; }
-          if (matchesKey(data, "down") || data === "j") { selected = Math.min(entries.length - 1, selected + 1); refresh(); return; }
-          if (matchesKey(data, "up") || data === "k") { selected = Math.max(0, selected - 1); refresh(); return; }
-          if (matchesKey(data, "return") && entries[selected]) {
-            done({ task: entries[selected].agent_name, parentSessionId: entries[selected].parent_session_id || currentSessionId, includeAll: showAll });
-          }
+        async reply(worker: any, message: any) {
+          await initialize();
+          let integration: any;
+          const replay = { ...request, provide(value: any) { integration = value; } };
+          await invoke(eventHandlers, LINK_DISCOVER, replay, undefined);
+          return integration
+            ? integration.reply(worker, message)
+            : { status: "unsupported", reason: "link_integration_unavailable" };
         },
-        invalidate() { cached = undefined; },
-      };
+      });
     });
-  }
 
-  const browseAgents = async (ctx: any) => {
-    if (ctx.mode !== "tui") {
-      ctx.ui.notify("Subagent overlays require interactive TUI mode.", "warning");
-      return;
+    for (const name of TOOL_NAMES) {
+      pi.registerTool({
+        name,
+        label: TOOL_LABELS[name],
+        description: `Load the subagent runtime and run ${name}.`,
+        parameters: PLACEHOLDER_SCHEMAS[name],
+        async execute(...args: any[]) {
+          await initialize();
+          const tool = tools.get(name);
+          if (!tool) throw new Error(`${name} is unavailable after subagent initialization.`);
+          return tool.execute(...args);
+        },
+      } as any);
     }
-    const selected = await pickAgent(ctx);
-    if (selected) await openAgentOverlay(ctx, selected.task, selected.parentSessionId, selected.includeAll);
+
+    for (const [name, description] of Object.entries(COMMANDS)) {
+      pi.registerCommand(name, {
+        description,
+        allowedWhilePaused: true,
+        async handler(args, ctx) {
+          await initialize();
+          const command = commands.get(name);
+          if (!command) throw new Error(`/${name} is unavailable after subagent initialization.`);
+          return command.handler(args, ctx);
+        },
+      });
+    }
+
+    const shortcut = packageConfig().shortcut;
+    if (typeof shortcut === "string" && shortcut.trim()) {
+      pi.registerShortcut(shortcut.trim() as any, {
+        description: "Browse subagents",
+        async handler(ctx) {
+          await initialize();
+          const command = commands.get("subagents");
+          if (!command) throw new Error("/subagents is unavailable after subagent initialization.");
+          return command.handler("", ctx);
+        },
+      });
+    }
   };
-
-  const shortcut = loadSubagentConfig().shortcut?.trim();
-  if (shortcut) {
-    pi.registerShortcut(shortcut as KeyId, {
-      description: "Browse subagents",
-      handler: browseAgents,
-    });
-  }
-
-  pi.registerCommand("pause", {
-    description: "Save parent and subagents; --status, --discard, or --exit",
-    allowedWhilePaused: true,
-    handler: async (args: string, ctx: any) => {
-      suspension.setCommandContext(ctx);
-      try {
-        const option = args.trim();
-        if (option === "--status") { ctx.ui?.notify?.(suspension.status(), "info"); return; }
-        if (option === "--discard") { await suspension.discard(ctx); ctx.ui?.notify?.(suspension.status(), "info"); return; }
-        if (option && option !== "--exit") throw new Error("Usage: /pause [--exit|--status|--discard]");
-        await suspension.pause(ctx, option === "--exit");
-      } catch (error) { ctx.ui?.notify?.(`Not saved: ${error instanceof Error ? error.message : String(error)}`, "error"); }
-    },
-  });
-  pi.registerCommand("unpause", {
-    description: "Restore saved parent and subagent work",
-    allowedWhilePaused: true,
-    handler: async (args: string, ctx: any) => {
-      suspension.setCommandContext(ctx);
-      try {
-        if (args.trim()) throw new Error("Usage: /unpause");
-        await suspension.unpause(ctx);
-      } catch (error) { ctx.ui?.notify?.(`Resume incomplete: ${error instanceof Error ? error.message : String(error)}`, "error"); }
-    },
-  });
-
-  pi.registerCommand("subagents", {
-    allowedWhilePaused: true,
-    description: "Browse subagents",
-    handler: async (_args, ctx) => { suspension.setCommandContext(ctx); await browseAgents(ctx); },
-  });
 }
+
+export default createLazyExtension();

@@ -41,6 +41,7 @@
   },
   "files": [
     "index.ts",
+    "implementation.ts",
     "core.ts",
     "handoff.ts",
     "child-helper.ts",

@@ -699,8 +699,12 @@ test("paused configured direct skill leaves input unhandled and never spawns bef
     assert.equal(JSON.parse(readFileSync(join(root, "runs/parent-scope/group.json"), "utf8")).phase, "saved");
     assert.equal(paused, true);
     const inputHandlers = handlers.get("input");
-    assert.equal(inputHandlers.length, 1);
-    const result = await inputHandlers[0]({ source: "interactive", text: "/skill:eligible concrete work" }, ctx);
+    assert.equal(inputHandlers.length, 2);
+    let result;
+    for (const handler of inputHandlers) {
+      const next = await handler({ source: "interactive", text: "/skill:eligible concrete work" }, ctx);
+      if (next !== undefined) result = next;
+    }
     assert.equal(result, undefined, "a pre-effect pause guard must not consume the request");
     assert.equal(spawns, 0);
     for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx);

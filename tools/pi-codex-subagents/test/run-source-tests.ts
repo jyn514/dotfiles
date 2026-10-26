@@ -15,7 +15,7 @@ const defaults = [
   "restore-startup-failure.test.ts", "manager-link.test.ts", "link-integration.test.ts",
   "boundary-integration.test.ts",
   "parent-child-roundtrip.test.ts", "pause-exit-rpc.test.ts",
-  "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../peek.test.ts",
+  "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../index.test.ts", "../peek.test.ts",
 ].map(file => join(here, file));
 try {
   // Rebase the core repository's authoritative workspace aliases, including
