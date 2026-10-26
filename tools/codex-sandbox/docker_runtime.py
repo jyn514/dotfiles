@@ -3,11 +3,14 @@
 import hashlib
 from contextlib import contextmanager
 import fcntl
+import io
 import os
 from pathlib import Path
 import re
 import selectors
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -15,7 +18,7 @@ import time
 import uuid
 from urllib.parse import quote
 
-from lima.docker_api import APIError, inspect as inspect_docker, request as docker_request
+from lima.docker_api import APIError, hijack as docker_hijack, inspect as inspect_docker, request as docker_request
 from lima.docker_host import DockerHost
 from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
@@ -26,6 +29,206 @@ class BuildError(subprocess.CalledProcessError):
 
     def __str__(self):
         return f'sandbox image build failed (exit {self.returncode}); see BuildKit output above'
+
+
+class DockerAttachProcess:
+    """Process-shaped ownership of an Engine API attach and wait pair."""
+
+    def __init__(self, runtime, name, transport, response, *, tty, interactive,
+                 stdin=None, stdout=None, stderr=None, text=False, encoding=None,
+                 errors=None, **unsupported):
+        if unsupported:
+            raise TypeError('unsupported workload transport options: ' + ', '.join(sorted(unsupported)))
+        self.runtime = runtime
+        self.name = name
+        self.transport = transport
+        self.response = response
+        self.tty = tty
+        self.text = text
+        self.encoding = encoding or 'utf-8'
+        self.errors = errors or 'strict'
+        self.returncode = None
+        self._done = threading.Event()
+        self._reader_done = threading.Event()
+        self._stdout, self.stdout, self._close_stdout = self._output(stdout, sys.stdout)
+        self._stderr, self.stderr, self._close_stderr = self._output(stderr, sys.stderr)
+        self._stdin, self.stdin, self._close_stdin = self._input(stdin, interactive)
+        self._reader = threading.Thread(target=self._read_attach, daemon=True)
+        self._waiter = threading.Thread(target=self._wait_container, daemon=True)
+        self._writer = None
+        if self._stdin is not None:
+            self._writer = threading.Thread(target=self._write_attach, daemon=True)
+        self._reader.start()
+        if self._writer is not None:
+            self._writer.start()
+        self._waiter.start()
+
+    @staticmethod
+    def _binary(stream):
+        return getattr(stream, 'buffer', stream)
+
+    def _output(self, setting, inherited):
+        if setting == subprocess.DEVNULL:
+            return None, None, None
+        if setting == subprocess.PIPE:
+            read_fd, write_fd = os.pipe()
+            exposed = os.fdopen(read_fd, 'rb', buffering=0)
+            if self.text:
+                exposed = io.TextIOWrapper(exposed, encoding=self.encoding, errors=self.errors)
+            return os.fdopen(write_fd, 'wb', buffering=0), exposed, True
+        if setting == subprocess.STDOUT:
+            return self._stdout, None, None
+        stream = inherited if setting is None else setting
+        return self._binary(stream), None, None
+
+    def _input(self, setting, interactive):
+        if not interactive or setting == subprocess.DEVNULL:
+            return None, None, None
+        if setting == subprocess.PIPE:
+            read_fd, write_fd = os.pipe()
+            exposed = os.fdopen(write_fd, 'wb', buffering=0)
+            if self.text:
+                exposed = io.TextIOWrapper(exposed, encoding=self.encoding, errors=self.errors,
+                                           write_through=True)
+            return os.fdopen(read_fd, 'rb', buffering=0), exposed, True
+        stream = sys.stdin if setting is None else setting
+        return self._binary(stream), None, None
+
+    @staticmethod
+    def _write(stream, data):
+        if stream is None:
+            return
+        if isinstance(stream, int):
+            os.write(stream, data)
+        else:
+            stream.write(data)
+            if hasattr(stream, 'flush'):
+                stream.flush()
+
+    def _read_exact(self, count):
+        chunks = []
+        remaining = count
+        while remaining:
+            chunk = self.response.read(remaining)
+            if not chunk:
+                return None
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b''.join(chunks)
+
+    def _read_attach(self):
+        try:
+            if self.tty:
+                while data := self.response.read(65536):
+                    self._write(self._stdout, data)
+            else:
+                while (header := self._read_exact(8)) is not None:
+                    stream, length = header[0], struct.unpack('>I', header[4:])[0]
+                    data = self._read_exact(length)
+                    if data is None:
+                        raise RuntimeError('Docker attach stream ended inside a frame')
+                    self._write(self._stderr if stream == 2 else self._stdout, data)
+        except (OSError, ValueError) as error:
+            self._reader_error = error
+        finally:
+            for stream, close in ((self._stdout, self._close_stdout),
+                                  (self._stderr, self._close_stderr)):
+                if close and stream is not None:
+                    stream.close()
+            self._reader_done.set()
+
+    def _write_attach(self):
+        try:
+            try:
+                descriptor = self._stdin.fileno()
+            except (AttributeError, io.UnsupportedOperation):
+                descriptor = None
+            if descriptor is None:
+                while not self._done.is_set() and (data := self._stdin.read(65536)):
+                    self.transport.sendall(data)
+            else:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(descriptor, selectors.EVENT_READ)
+                    while not self._done.is_set():
+                        if not selector.select(0.1):
+                            continue
+                        data = os.read(descriptor, 65536)
+                        if not data:
+                            break
+                        self.transport.sendall(data)
+            self.transport.shutdown(socket.SHUT_WR)
+        except (BrokenPipeError, ConnectionError, OSError):
+            pass
+        finally:
+            if self._close_stdin:
+                self._stdin.close()
+
+    def _wait_container(self):
+        try:
+            result = docker_request(
+                self.runtime.record['socket'], 'POST',
+                '/containers/' + quote(self.name, safe='') + '/wait?condition=not-running',
+                ['docker', 'wait', self.name],
+            )
+            status = result.get('StatusCode')
+            if type(status) is not int or not 0 <= status <= 255:
+                raise RuntimeError('runtime returned an invalid workload exit status')
+            self.returncode = status
+        except BaseException as error:
+            self._wait_error = error
+            self.returncode = 1
+        finally:
+            self._done.set()
+
+    def poll(self):
+        return self.returncode if self._done.is_set() else None
+
+    def wait(self, timeout=None):
+        if not self._done.wait(timeout):
+            raise subprocess.TimeoutExpired(['docker', 'wait', self.name], timeout)
+        if not self._reader_done.wait(timeout=30):
+            raise subprocess.TimeoutExpired(['docker', 'start', '--attach', self.name], 30)
+        if hasattr(self, '_wait_error'):
+            raise self._wait_error
+        if hasattr(self, '_reader_error'):
+            raise self._reader_error
+        return self.returncode
+
+    def kill(self):
+        docker_request(
+            self.runtime.record['socket'], 'DELETE',
+            '/containers/' + quote(self.name, safe='') + '?force=1',
+            ['docker', 'rm', '--force', self.name], expected=(204,),
+        )
+
+    def communicate(self, input=None, timeout=None):
+        if input is not None:
+            if self.stdin is None:
+                raise ValueError('stdin is not a pipe')
+            self.stdin.write(input)
+        if self.stdin is not None:
+            self.stdin.close()
+        captured = [None, None]
+        readers = []
+        for index, stream in enumerate((self.stdout, self.stderr)):
+            if stream is not None:
+                thread = threading.Thread(
+                    target=lambda slot=index, source=stream: captured.__setitem__(slot, source.read()),
+                    daemon=True,
+                )
+                thread.start()
+                readers.append(thread)
+        self.wait(timeout)
+        for thread in readers:
+            thread.join(timeout)
+        output, errors = captured
+        return output, errors
+
+    def close(self):
+        try:
+            self.response.close()
+        finally:
+            self.transport.close()
 
 
 def stop_build(process):
@@ -355,6 +558,173 @@ class Docker(VMRuntime):
 
     def workload_argv(self, image, arguments, command=(), *, cwd=None, operation='run'):
         return self.argv([operation, '--pull=never', *arguments, image.config, *command], cwd=cwd)
+
+    @staticmethod
+    def _mount(value):
+        fields = value.split(',')
+        options = {}
+        flags = set()
+        for field in fields:
+            if '=' in field:
+                key, item = field.split('=', 1)
+                options[key] = item
+            else:
+                flags.add(field)
+        kind = options.get('type')
+        source = options.get('src', options.get('source'))
+        target = options.get('dst', options.get('destination', options.get('target')))
+        if kind not in ('bind', 'volume') or not source or not target:
+            raise RuntimeError('unsupported Docker workload mount')
+        mount = {'Type': kind, 'Source': source, 'Target': target,
+                 'ReadOnly': bool({'readonly', 'ro'} & flags) or options.get('readonly') == 'true'}
+        recursive = options.get('bind-recursive')
+        if kind == 'bind' and recursive is not None:
+            if recursive != 'disabled':
+                raise RuntimeError('unsupported Docker bind recursion mode')
+            mount['BindOptions'] = {'NonRecursive': True}
+        return mount
+
+    def _workload_config(self, image, arguments, command, *, interactive):
+        config = {'Image': image.config, 'AttachStdin': interactive,
+                  'AttachStdout': True, 'AttachStderr': True,
+                  'OpenStdin': interactive, 'StdinOnce': interactive}
+        if command:
+            config['Cmd'] = list(command)
+        host = {'Mounts': []}
+        networks = []
+        environment = []
+        labels = {}
+        index = 0
+
+        def value(argument):
+            nonlocal index
+            if '=' in argument:
+                return argument.split('=', 1)[1]
+            index += 1
+            if index >= len(arguments):
+                raise RuntimeError('Docker workload option is missing its value')
+            return arguments[index]
+
+        while index < len(arguments):
+            argument = arguments[index]
+            if argument in ('--interactive', '-i'):
+                index += 1
+                continue
+            if argument in ('--tty', '-t'):
+                config['Tty'] = True
+            elif argument == '--read-only':
+                host['ReadonlyRootfs'] = True
+            elif argument.startswith('--cap-drop'):
+                host.setdefault('CapDrop', []).append(value(argument))
+            elif argument.startswith('--security-opt'):
+                host.setdefault('SecurityOpt', []).append(value(argument))
+            elif argument.startswith('--mount'):
+                host['Mounts'].append(self._mount(value(argument)))
+            elif argument.startswith('--network'):
+                networks.append(value(argument))
+            elif argument.startswith('--dns'):
+                host.setdefault('Dns', []).append(value(argument))
+            elif argument.startswith('--add-host'):
+                host.setdefault('ExtraHosts', []).append(value(argument))
+            elif argument.startswith('--env-file'):
+                path = Path(value(argument))
+                environment.extend(line.rstrip('\n') for line in path.read_text().splitlines()
+                                   if line and not line.startswith('#'))
+            elif argument.startswith('--env'):
+                environment.append(value(argument))
+            elif argument.startswith('--entrypoint'):
+                config['Entrypoint'] = [value(argument)]
+            elif argument.startswith('--workdir'):
+                config['WorkingDir'] = value(argument)
+            elif argument.startswith('--user'):
+                config['User'] = value(argument)
+            elif argument.startswith('--hostname'):
+                config['Hostname'] = value(argument)
+            elif argument.startswith('--label'):
+                label = value(argument)
+                key, separator, item = label.partition('=')
+                labels[key] = item if separator else ''
+            else:
+                raise RuntimeError('unsupported Docker workload option: ' + argument.split('=', 1)[0])
+            index += 1
+        if environment:
+            config['Env'] = environment
+        if labels:
+            config['Labels'] = labels
+        if not host['Mounts']:
+            del host['Mounts']
+        if networks:
+            host['NetworkMode'] = networks[0]
+            if networks != ['none']:
+                config['NetworkingConfig'] = {
+                    'EndpointsConfig': {network: {} for network in networks},
+                }
+        config['HostConfig'] = host
+        return config
+
+    @contextmanager
+    def workload(self, image, name, arguments, command=(), *, before_start=None, **kwargs):
+        """Create, attach, and start Docker workloads without a CLI process."""
+        if self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        interactive = '--interactive' in arguments or '-i' in arguments
+        tty = '--tty' in arguments or '-t' in arguments
+        config = self._workload_config(image, arguments, command, interactive=interactive)
+        encoded = quote(name, safe='')
+        created = False
+        process = None
+        transport = None
+        response = None
+        try:
+            result = docker_request(
+                self.record['socket'], 'POST', '/containers/create?name=' + encoded,
+                ['docker', 'create', '--name', name], payload=config, expected=(201,),
+            )
+            if not isinstance(result.get('Id'), str) or not result['Id']:
+                raise RuntimeError('Docker workload creation returned no identity')
+            created = True
+            transport, response = docker_hijack(
+                self.record['socket'], '/containers/' + encoded + '/attach',
+                ['docker', 'start', '--attach', name],
+                query={'stream': '1', 'stdin': '1' if interactive else '0',
+                       'stdout': '1', 'stderr': '1'},
+            )
+            if before_start is not None:
+                before_start()
+            docker_request(
+                self.record['socket'], 'POST', '/containers/' + encoded + '/start',
+                ['docker', 'start', name], expected=(204,),
+            )
+            process = DockerAttachProcess(
+                self, name, transport, response, tty=tty, interactive=interactive, **kwargs,
+            )
+            yield process
+        finally:
+            primary = sys.exc_info()[0] is not None
+            cleanup_error = None
+            if created:
+                try:
+                    self.terminate(name)
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    cleanup_error = error
+            if process is not None:
+                try:
+                    process.wait(timeout=30)
+                    process.close()
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    process.close()
+                    cleanup_error = error
+            elif transport is not None:
+                try:
+                    if response is not None:
+                        response.close()
+                    transport.close()
+                except OSError as error:
+                    cleanup_error = error
+            if cleanup_error is not None:
+                if not primary:
+                    raise cleanup_error
+                print(f'workload cleanup failed: {cleanup_error}', file=sys.stderr)
 
     def agent_command(self, image, arguments):
         config = self.image_metadata(image)['Config']

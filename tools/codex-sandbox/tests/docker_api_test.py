@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lima.docker_api import inspect, request
+from lima.docker_api import hijack, inspect, request
 
 
 class DockerApiTest(unittest.TestCase):
@@ -83,6 +83,40 @@ class DockerApiTest(unittest.TestCase):
         self.assertEqual({'Id': 'created'}, result)
         self.assertEqual({'path': '/networks/create', 'type': 'application/json',
                           'payload': {'Name': 'owned'}}, observed)
+
+    def test_hijack_retains_bytes_after_upgrade_headers(self):
+        observed = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                observed.append(self.path)
+                self.send_response(101)
+                self.send_header('Connection', 'Upgrade')
+                self.send_header('Upgrade', 'tcp')
+                self.end_headers()
+                self.wfile.write(b'raw\rterminal')
+                self.wfile.flush()
+
+            def log_message(self, *_args):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / 'engine.sock')
+            with socketserver.UnixStreamServer(path, Handler) as server:
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
+                try:
+                    transport, response = hijack(
+                        path, '/containers/owned/attach', ['docker', 'start', '--attach', 'owned'],
+                        query={'stream': '1', 'stdin': '0'},
+                    )
+                    self.assertEqual(b'raw\rterminal', response.read())
+                    response.close()
+                    transport.close()
+                finally:
+                    server.shutdown()
+                    thread.join()
+        self.assertEqual(['/containers/owned/attach?stream=1&stdin=0'], observed)
 
 
 if __name__ == '__main__':

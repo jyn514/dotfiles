@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import subprocess
 import signal
+import socket
+import struct
 import sys
 import tempfile
 import threading
@@ -21,7 +23,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'lima'))
-from docker_runtime import APIError, Docker
+from docker_runtime import APIError, Docker, DockerAttachProcess
 from image_resolver import ResolverError, prepare_launch_images
 from lima.docker_host import DockerHost
 from lima import docker_host
@@ -148,6 +150,150 @@ class DockerRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'cannot be represented'):
             with runtime.environment_file({'TOKEN': 'line\nbreak'}):
                 self.fail('invalid environment staged')
+
+    def test_workload_config_preserves_agent_isolation_and_mounts(self):
+        runtime = backend()
+        image = Image('reference', 'content', 'sha256:' + '1' * 64, 'rootfs')
+        with tempfile.NamedTemporaryFile(mode='w') as environment:
+            environment.write('TOKEN=owned\n')
+            environment.flush()
+            config = runtime._workload_config(image, [
+                '--cap-drop=NET_RAW', '--read-only', '--security-opt=no-new-privileges',
+                '--network', 'link', '--network', 'egress', '--dns', '10.0.0.1',
+                '--mount', 'type=bind,src=/host,dst=/guest,readonly,bind-recursive=disabled',
+                '--env-file', environment.name, '--env', 'TERM=xterm',
+                '--workdir', '/src', '--entrypoint', '/entry',
+            ], ['worker'], interactive=False)
+        self.assertEqual(image.config, config['Image'])
+        self.assertEqual(['/entry'], config['Entrypoint'])
+        self.assertEqual(['worker'], config['Cmd'])
+        self.assertEqual(['TOKEN=owned', 'TERM=xterm'], config['Env'])
+        self.assertEqual('link', config['HostConfig']['NetworkMode'])
+        self.assertEqual({'link', 'egress'}, set(config['NetworkingConfig']['EndpointsConfig']))
+        self.assertEqual({'Type': 'bind', 'Source': '/host', 'Target': '/guest',
+                          'ReadOnly': True, 'BindOptions': {'NonRecursive': True}},
+                         config['HostConfig']['Mounts'][0])
+
+    def test_attach_process_demultiplexes_stdout_stderr_and_exit_status(self):
+        runtime = backend()
+        left, right = socket.socketpair()
+        framed = (bytes([1, 0, 0, 0]) + struct.pack('>I', 3) + b'out' +
+                  bytes([2, 0, 0, 0]) + struct.pack('>I', 3) + b'err')
+        with patch('docker_runtime.docker_request', return_value={'StatusCode': 7}):
+            process = DockerAttachProcess(runtime, 'owned', left, io.BytesIO(framed),
+                                          tty=False, interactive=False,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output, errors = process.communicate(timeout=2)
+            process.stdout.close()
+            process.stderr.close()
+            process.close()
+        right.close()
+        self.assertEqual((b'out', b'err', 7), (output, errors, process.returncode))
+
+    def test_attach_process_preserves_raw_tty_bytes(self):
+        runtime = backend()
+        left, right = socket.socketpair()
+        with patch('docker_runtime.docker_request', return_value={'StatusCode': 0}):
+            process = DockerAttachProcess(runtime, 'owned', left, io.BytesIO(b'\x1b[?1049h\rframe'),
+                                          tty=True, interactive=False,
+                                          stdout=subprocess.PIPE)
+            output, _ = process.communicate(timeout=2)
+            process.stdout.close()
+            process.close()
+        right.close()
+        self.assertEqual(b'\x1b[?1049h\rframe', output)
+
+    def test_attach_process_reports_truncated_frame(self):
+        runtime = backend()
+        left, right = socket.socketpair()
+        truncated = bytes([1, 0, 0, 0]) + struct.pack('>I', 4) + b'bad'
+        with patch('docker_runtime.docker_request', return_value={'StatusCode': 0}):
+            process = DockerAttachProcess(runtime, 'owned', left, io.BytesIO(truncated),
+                                          tty=False, interactive=False)
+            with self.assertRaisesRegex(RuntimeError, 'inside a frame'):
+                process.wait(timeout=2)
+            process.close()
+        right.close()
+
+    def test_attach_process_text_pipe_matches_popen_surface(self):
+        runtime = backend()
+        left, right = socket.socketpair()
+        framed = bytes([1, 0, 0, 0]) + struct.pack('>I', 3) + b'out'
+        with patch('docker_runtime.docker_request', return_value={'StatusCode': 0}):
+            process = DockerAttachProcess(runtime, 'owned', left, io.BytesIO(framed),
+                                          tty=False, interactive=False,
+                                          stdout=subprocess.PIPE, text=True)
+            output, _ = process.communicate(timeout=2)
+            process.stdout.close()
+            process.close()
+        right.close()
+        self.assertEqual('out', output)
+
+    def test_attach_process_cancellation_targets_owned_container_through_api(self):
+        runtime = backend()
+        left, right = socket.socketpair()
+        release = threading.Event()
+
+        def request(*args, **kwargs):
+            if args[1] == 'DELETE':
+                release.set()
+                return {}
+            release.wait(2)
+            return {'StatusCode': 137}
+
+        with patch('docker_runtime.docker_request', side_effect=request) as api:
+            process = DockerAttachProcess(runtime, 'owned/name', left, io.BytesIO(b''),
+                                          tty=False, interactive=False)
+            process.kill()
+            self.assertEqual(137, process.wait(timeout=2))
+            process.close()
+        right.close()
+        self.assertIn(
+            ('/owned/docker.sock', 'DELETE', '/containers/owned%2Fname?force=1',
+             ['docker', 'rm', '--force', 'owned/name']),
+            [call.args for call in api.call_args_list],
+        )
+
+    def test_engine_api_workload_attaches_before_start_and_uses_no_cli(self):
+        runtime = backend()
+        runtime.terminate = Mock()
+        image = Image('reference', 'content', 'sha256:' + '1' * 64, 'rootfs')
+        transport, peer = socket.socketpair()
+        events = []
+        responses = iter([{'Id': 'container'}, {}, {'StatusCode': 0}])
+
+        def request(*args, **kwargs):
+            events.append(args[2])
+            return next(responses)
+
+        with patch('docker_runtime.docker_request', side_effect=request), \
+                patch('docker_runtime.docker_hijack',
+                      side_effect=lambda *a, **k: (events.append('attach') or
+                                                   (transport, io.BytesIO(b'')))):
+            with runtime.workload(image, 'owned', ['--network', 'none'], ['worker'],
+                                  before_start=lambda: events.append('supervised')) as process:
+                self.assertEqual(0, process.wait(timeout=2))
+        peer.close()
+        self.assertEqual(['/containers/create?name=owned', 'attach', 'supervised',
+                          '/containers/owned/start',
+                          '/containers/owned/wait?condition=not-running'], events)
+        runtime.terminate.assert_called_once_with('owned')
+
+    def test_engine_api_start_failure_closes_attach_and_cleans_container(self):
+        runtime = backend()
+        runtime.terminate = Mock()
+        image = Image('reference', 'content', 'sha256:' + '1' * 64, 'rootfs')
+        transport, peer = socket.socketpair()
+        response = Mock()
+        with patch('docker_runtime.docker_request', side_effect=[
+                {'Id': 'container'}, APIError(500, ['docker', 'start'], 'failed')]), \
+                patch('docker_runtime.docker_hijack', return_value=(transport, response)):
+            with self.assertRaises(APIError):
+                with runtime.workload(image, 'owned', [], ['worker']):
+                    self.fail('failed start reached workload')
+        peer.close()
+        runtime.terminate.assert_called_once_with('owned')
+        response.close.assert_called_once_with()
 
     def test_owned_helpers_use_installed_declaration_without_executable_builders(self):
         import owned_images
