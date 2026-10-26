@@ -196,7 +196,11 @@ Preparation phase durations are inclusive and can overlap, so do not add them to
 estimate wall time. Cancellation closes the TicGit creation gate and joins all
 startup workers before resource cleanup.
 
-`Sandbox cleanup total:` includes final scratch removal. TicGit admission and its
+`Sandbox cleanup total:` includes final scratch removal. A successful final attachment
+leaves published shared proxies warm for 30 seconds and starts a detached idle cleanup;
+the next exclusive launch validates the complete published identity before reuse and
+replaces mismatched services. Failed or unpublished launches still clean synchronously.
+TicGit admission and its
 lifetime pipe are revoked synchronously before independent teardown; `TicGit
 teardown=... (overlapped)` then runs alongside the existing gateway/shared-proxy
 cleanup path. The shared-session final-holder lock remains authoritative, and

@@ -1196,11 +1196,38 @@ class ManifestTest(unittest.TestCase):
         metadata = self.schema4({"example": self.command()})
         metadata_path.write_text(json.dumps(metadata))
         metadata_path.chmod(0o600)
+        lease = runtime / "idle-cleanup.lease"
+        lease.write_text("stale")
         args = SimpleNamespace(repo=str(self.repo))
         with mock.patch.object(sandbox_proxies, "stop_state") as stop:
             self.assertEqual(0, sandbox_proxies.reset_main(args))
         self.assertEqual(["example"], [p["name"] for p in stop.call_args.args[0]["proxies"]])
         self.assertFalse(metadata_path.exists())
+        self.assertFalse(lease.exists())
+
+    def test_idle_cleanup_only_removes_an_unclaimed_session(self) -> None:
+        runtime = self.repo / "idle-runtime"
+        runtime.mkdir()
+        args = SimpleNamespace(repo=str(self.repo), delay=0, lease="current")
+        coordination = (runtime / "coordination.lock").open("a+b")
+        fcntl.flock(coordination, fcntl.LOCK_EX)
+        try:
+            with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                    mock.patch.object(sandbox_proxies, "reset_session") as reset:
+                self.assertEqual(0, sandbox_proxies.idle_cleanup_main(args))
+            reset.assert_not_called()
+        finally:
+            coordination.close()
+        (runtime / "idle-cleanup.lease").write_text("newer")
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                mock.patch.object(sandbox_proxies, "reset_session") as reset:
+            self.assertEqual(0, sandbox_proxies.idle_cleanup_main(args))
+        reset.assert_not_called()
+        (runtime / "idle-cleanup.lease").write_text(args.lease)
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                mock.patch.object(sandbox_proxies, "reset_session") as reset:
+            self.assertEqual(0, sandbox_proxies.idle_cleanup_main(args))
+        reset.assert_called_once_with(runtime)
 
     def test_reset_stops_and_forgets_persistent_session(self) -> None:
         self.write()
@@ -1254,11 +1281,51 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
 
+        idle_state = self.repo / "idle-state"
+        idle_manifest = self.repo / "idle-manifest"
+        idle_manifest.write_text(json.dumps(shared_manifest))
+        idle_images = self.repo / "idle-images"
+        idle_images.write_text("prepared image selection")
+        idle_reused = self.repo / "idle-reused"
+        idle_args = type("Args", (), {
+            **{name: getattr(args, name) for name in (
+                "repo", "container_repo", "uid", "gid", "agent_image", "helper_image")},
+            "shared": False, "state": str(idle_state), "manifest": str(idle_manifest),
+            "images": str(idle_images), "reused": str(idle_reused), "source_present": True,
+        })
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
+                mock.patch.object(sandbox_proxies, "start_main") as start, \
+                mock.patch.object(sandbox_proxies, "resolve_images",
+                                  return_value=metadata["accepted"]["images"]["services"]), \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
+                mock.patch.object(sandbox_proxies, "containers_running", return_value=True):
+            self.assertEqual(0, sandbox_proxies.attach_main(idle_args))
+        start.assert_not_called()
+        self.assertEqual(shared_state, json.loads(idle_state.read_text(encoding="utf-8")))
+        self.assertEqual(shared_manifest, json.loads(idle_manifest.read_text(encoding="utf-8")))
+        self.assertEqual("idle", idle_reused.read_text(encoding="utf-8"))
+
+        changed_manifest = json.loads(json.dumps(shared_manifest))
+        changed_manifest["commands"]["example"]["network"] = not changed_manifest["commands"]["example"]["network"]
+        idle_manifest.write_text(json.dumps(changed_manifest))
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
+                mock.patch.object(sandbox_proxies, "resolve_images",
+                                  return_value=metadata["accepted"]["images"]["services"]), \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
+                mock.patch.object(sandbox_proxies, "containers_running", return_value=True), \
+                mock.patch.object(sandbox_proxies, "stop_state") as stop, \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            self.assertEqual(0, sandbox_proxies.attach_main(idle_args))
+        stop.assert_called_once()
+        start.assert_called_once_with(idle_args)
+
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
                 mock.patch.object(sandbox_proxies, "containers_running", return_value=False):
             with self.assertRaisesRegex(sandbox_proxies.ConfigError, "stopped proxy"):
-                sandbox_proxies.accepted_session(args, self.repo, json.loads((runtime / "session.json").read_text()))
+                sandbox_proxies.accepted_session(args, self.repo, metadata)
 
     def test_session_reader_rejects_symlink_and_reads_opened_inode_during_replacement(self) -> None:
         target = self.repo / "target"
@@ -1709,9 +1776,12 @@ class ManifestTest(unittest.TestCase):
         ), encoding="utf-8")
         args = SimpleNamespace(
             repo=str(self.repo), container_repo=str(self.container_repo), shared=False,
-            state=str(self.repo / "state"), manifest=str(manifest),
+            state=str(self.repo / "state"), manifest=str(manifest), uid=501, gid=20,
+            images=str(self.repo / "images"), source_present=False,
         )
-        with mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
+        with mock.patch.object(sandbox_proxies, "accepted_session",
+                               side_effect=sandbox_proxies.ConfigError("implementation changed")), \
+                mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
                 mock.patch.object(sandbox_proxies, "stop_state") as stop, \
                 mock.patch.object(sandbox_proxies, "start_main") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(args))

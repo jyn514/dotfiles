@@ -423,8 +423,11 @@ before publication.
 
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.
-Joiners print a notice when they reuse the accepted image and proxies; repository image changes
-take effect only after every attached session exits and a new session starts.
+Joiners print a notice when they reuse the accepted image and proxies.
+After the final successful attachment exits, those services remain available for 30 seconds.
+A new launch reuses them only after the complete accepted-policy, implementation, image, runtime,
+credential, mount, network, and live-resource checks pass; otherwise it removes and rebuilds them.
+An idle cleanup process removes them after the interval unless another launch has become active.
 Fresh sessions print a preparation notice and stream resolver and BuildKit diagnostics while
 retaining stdout for the resolver's machine-readable result.
 The launcher holds the session lock directly until cleanup.

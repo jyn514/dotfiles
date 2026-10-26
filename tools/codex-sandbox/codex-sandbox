@@ -81,6 +81,7 @@ GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 # Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
 PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
+PROXY_IDLE_SECONDS = 30.0
 
 
 STAGED_CONFIG = {
@@ -145,6 +146,8 @@ class State:
     proxy_lock: SessionLock | None = None
     proxy_state: Path | None = None
     proxy_args: Path | None = None
+    proxy_reused_marker: Path | None = None
+    proxy_reused: bool = False
     skills_tmp: Path | None = None
     skills_source: Path | None = None
     host_pi_package: Path | None = None
@@ -160,6 +163,7 @@ class State:
     tic_resources: RelayResourcePlan | None = None
     tic_environment: dict[str, str] = field(default_factory=dict)
     agent_process: subprocess.Popen[bytes] | None = None
+    completed_successfully: bool = False
     codex_container_created: bool = False
     cleaned: bool = False
     cleanup_succeeded: bool = False
@@ -710,6 +714,7 @@ def ensure_network() -> None:
 
 def acquire_lock(state: State) -> None:
     state.proxy_state = temporary_file()
+    state.proxy_reused_marker = temporary_file()
     state.proxy_lock = SessionLock(proxy_module().runtime_directory(state.repository))
 
 
@@ -742,6 +747,7 @@ def load_accepted_session(state: State) -> None:
 
 
 def attach_proxies(state: State) -> list[str]:
+    reused_marker = getattr(state, "proxy_reused_marker", None)
     arguments = [
         "attach", "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
@@ -749,6 +755,7 @@ def attach_proxies(state: State) -> list[str]:
         "--prefix", state.proxy_prefix,
         *(["--shared"] if state.proxy_lock.shared else []),
         "--state", str(state.proxy_state),
+        *(["--reused", str(reused_marker)] if reused_marker is not None else []),
         *(["--helper-image", state.sidecar_image] if state.sidecar_image else []),
         "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
         "--agent-image", state.image, "--uid", str(state.uid), "--gid", str(state.gid),
@@ -763,6 +770,8 @@ def attach_proxies(state: State) -> list[str]:
         arguments.append("--auth-enabled")
     with service_timing("proxies", "command-attach"):
         helper(*arguments)
+    if reused_marker is not None:
+        state.proxy_reused = reused_marker.read_text(encoding="utf-8") == "idle"
     with service_timing("auth", "attach"):
         sidecar_arguments = attach_codex_sidecar(state, auth_directory)
     with service_timing("proxies", "publication"):
@@ -1910,7 +1919,7 @@ def finalize_proxy_session(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     # A shared join validated an existing publication under its lifetime lock;
     # it must not rewrite that publication after releasing coordination.
-    operation = 'agent-args' if state.proxy_lock.shared else 'finalize'
+    operation = 'agent-args' if state.proxy_lock.shared or state.proxy_reused else 'finalize'
     helper(
         operation, "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
@@ -2695,6 +2704,32 @@ def cleanup_resource(label: str, arguments: list[str]) -> bool:
     return result is not None and result.returncode == 0
 
 
+def defer_proxy_cleanup(state: State) -> bool:
+    """Leave a valid published session warm; a detached janitor removes it after idle."""
+    if not getattr(state, "completed_successfully", False) or state.repository is None:
+        return False
+    runtime = proxy_module().runtime_directory(state.repository)
+    lease = secrets.token_hex(16)
+    lease_path = runtime / "idle-cleanup.lease"
+    proxy_module().write_atomic(lease_path, lease)
+    os.chmod(lease_path, 0o600)
+    try:
+        subprocess.Popen(
+            [str(PROXY_HELPER), "idle-cleanup", "--repo", str(state.repository),
+             "--delay", str(PROXY_IDLE_SECONDS), "--lease", lease],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True, start_new_session=True,
+        )
+    except OSError:
+        try:
+            if lease_path.read_text(encoding="utf-8") == lease:
+                lease_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
+
+
 def cleanup(state: State) -> bool:
     if state.cleaned:
         return state.cleanup_succeeded
@@ -2794,10 +2829,14 @@ def cleanup(state: State) -> bool:
             unpublished_state = (state.proxy_state
                                  if state.proxy_lock.coordination is not None else None)
             try:
-                state.proxy_lock.finish(lambda: proxy_module().reset_session(
+                remove_proxies = lambda: proxy_module().reset_session(
                     proxy_module().runtime_directory(state.repository),
                     unpublished_state=unpublished_state,
-                ))
+                )
+                if unpublished_state is None and getattr(state, "completed_successfully", False):
+                    state.proxy_lock.finish(remove_proxies, defer=lambda: defer_proxy_cleanup(state))
+                else:
+                    state.proxy_lock.finish(remove_proxies)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, proxy_module().ConfigError) as error:
                 proxy_cleanup_succeeded = False
                 print(f"warning: Shared proxy cleanup failed; recovery metadata retained: {error}",
@@ -2848,7 +2887,8 @@ def cleanup(state: State) -> bool:
     timing("Pi state")
     for path in (
         state.proxy_state, state.proxy_args, state.manifest,
-        state.prepared_images, getattr(state, "cd_request", None),
+        state.prepared_images, getattr(state, "proxy_reused_marker", None),
+        getattr(state, "cd_request", None),
         getattr(state, "workspaces_file", None),
     ):
         if path is not None and not keep_scratch:
@@ -3164,6 +3204,7 @@ def launch(arguments: list[str]) -> int:
             state = new_state(next_arguments)
             state.handoff_origin = handoff_origin
             result = execute(state)
+            state.completed_successfully = result == 0
             request = read_cd_request(state) if result == 0 and HOST_PI_BOOTSTRAP is None else None
             if request is None:
                 return result

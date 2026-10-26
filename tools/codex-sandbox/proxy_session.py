@@ -35,7 +35,7 @@ class SessionLock:
             self.coordination.close()
             self.coordination = None
 
-    def finish(self, cleanup):
+    def finish(self, cleanup, defer=None):
         """Remove shared services only with exclusive publication and lifetime ownership."""
         try:
             # Reset may hold coordination while waiting for lifetime holders.
@@ -51,7 +51,8 @@ class SessionLock:
                 fcntl.flock(self.session, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return
-            cleanup()
+            if defer is None or not defer():
+                cleanup()
         finally:
             self.close()
 

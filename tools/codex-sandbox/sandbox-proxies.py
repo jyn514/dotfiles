@@ -581,6 +581,28 @@ def reset_main(args: argparse.Namespace, *, wait: bool = False) -> int:
     return 0
 
 
+def idle_cleanup_main(args: argparse.Namespace) -> int:
+    """Remove retained services only when no launch became active during the idle window."""
+    time.sleep(args.delay)
+    runtime = runtime_directory(Path(args.repo))
+    coordination_path = runtime / "coordination.lock"
+    session_path = runtime / "session.lock"
+    with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
+        try:
+            fcntl.flock(coordination, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+        lease_path = runtime / "idle-cleanup.lease"
+        try:
+            if lease_path.read_text(encoding="utf-8") != args.lease:
+                return 0
+        except FileNotFoundError:
+            return 0
+        reset_session(runtime)
+    return 0
+
+
 def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> None:
     """Clean recovery authority while the caller owns both exclusive session locks."""
     metadata_path = runtime / "session.json"
@@ -617,6 +639,7 @@ def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> No
                 write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
             raise
     metadata_path.unlink(missing_ok=True)
+    (runtime / "idle-cleanup.lease").unlink(missing_ok=True)
 
 
 def workspace_records(value: Any) -> list[dict[str, str]]:
@@ -1173,6 +1196,26 @@ def attach_main(args: argparse.Namespace) -> int:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
         return 0
+    if (isinstance(metadata, dict) and metadata.get("version") == 4
+            and hasattr(args, "uid") and hasattr(args, "gid") and getattr(args, "images", None)):
+        try:
+            with service_timing("proxies", "idle-reuse-validation"):
+                state, accepted = accepted_session(args, repo, metadata)
+                current_manifest = load_accepted_manifest(Path(args.manifest))
+                current_images = resolve_images(repo, current_manifest, Path(args.images))
+                if (serializable_manifest(current_manifest) !=
+                        serializable_manifest(accepted["manifest"]) or
+                        getattr(args, "source_present", False) != accepted["source-present"] or
+                        current_images != accepted["images"]["proxies"]):
+                    raise ConfigError("idle proxy policy, source, or selected images changed")
+        except ConfigError:
+            pass
+        else:
+            write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
+            reused = getattr(args, "reused", None)
+            if reused is not None:
+                write_atomic(Path(reused), "idle")
+            return 0
     current_manifest = load_accepted_manifest(Path(args.manifest))
     with service_timing("proxies", "cache-reuse-validation"):
         state = cached_session_state(args, repo, metadata, current_manifest)
@@ -2873,6 +2916,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     attach.add_argument("--shared", action="store_true")
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
+    attach.add_argument("--reused")
     attach.add_argument("--helper-image")
     attach.add_argument("--auth-enabled", action="store_true")
     attach.add_argument("--network", required=True)
@@ -2889,6 +2933,11 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     reset.add_argument("--wait", action="store_true",
                        help="Wait up to 60 seconds for existing sandbox owners to finish cleanup")
     reset.set_defaults(function=lambda args: reset_main(args, wait=args.wait))
+    idle_cleanup = sub.add_parser("idle-cleanup")
+    idle_cleanup.add_argument("--repo", required=True)
+    idle_cleanup.add_argument("--delay", type=float, required=True)
+    idle_cleanup.add_argument("--lease", required=True)
+    idle_cleanup.set_defaults(function=idle_cleanup_main)
 
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)

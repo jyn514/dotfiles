@@ -247,14 +247,15 @@ class ContainerRepositoryPathTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = root / 'args'
-            state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), repository=root,
+            state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), proxy_reused=False, repository=root,
                                     container_repository=Path('/src/repo'),
                                     proxy_state=root / 'state', manifest=root / 'manifest')
             def helper(operation, *arguments):
                 output.write_text('--read-only\n')
-            for status, operation in (('shared', 'agent-args'), ('new', 'finalize')):
+            for status, operation in (('shared', 'agent-args'), ('idle', 'agent-args'), ('new', 'finalize')):
                 with self.subTest(status=status):
                     state.proxy_lock.shared = status == 'shared'
+                    state.proxy_reused = status == 'idle'
                     with mock.patch.dict(finalize.__globals__, {
                             'temporary_file': lambda: output,
                             'helper': mock.Mock(side_effect=helper)}) as scope:
@@ -400,7 +401,8 @@ class SharedProxyCleanupTest(unittest.TestCase):
             second = launcher["new_state"]([])
             second.repository = root
             second.proxy_lock = launcher["SessionLock"](runtime)
-            with mock.patch.object(proxies, "stop_state") as stop:
+            with mock.patch.object(proxies, "stop_state") as stop, \
+                    mock.patch.dict(launcher["cleanup"].__globals__, defer_proxy_cleanup=mock.Mock(return_value=False)):
                 self.assertTrue(launcher["cleanup"](first))
                 stop.assert_not_called()
                 self.assertTrue(metadata.exists())
@@ -410,6 +412,54 @@ class SharedProxyCleanupTest(unittest.TestCase):
                 # Cleanup is idempotent even when invoked again by finalization.
                 self.assertTrue(launcher["cleanup"](second))
                 self.assertEqual(1, stop.call_count)
+
+    def test_successful_final_attachment_retains_shared_services_for_idle_reuse(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        proxies = launcher["proxy_module"]()
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
+            root = self.repository(directory)
+            runtime = proxies.runtime_directory(root)
+            metadata = runtime / "session.json"
+            metadata.write_text(json.dumps({"version": 2, "state": {
+                "runtime": {"provider": "container"}, "proxies": [],
+            }}))
+            state = launcher["new_state"]([])
+            state.repository = root
+            state.completed_successfully = True
+            state.proxy_lock = launcher["SessionLock"](runtime)
+            state.proxy_lock.release_coordination()
+            defer = mock.Mock(return_value=True)
+            with mock.patch.object(proxies, "stop_state") as stop, \
+                    mock.patch.dict(launcher["cleanup"].__globals__, defer_proxy_cleanup=defer):
+                self.assertTrue(launcher["cleanup"](state))
+            defer.assert_called_once_with(state)
+            stop.assert_not_called()
+            self.assertTrue(metadata.exists())
+
+    def test_idle_cleanup_detaches_only_after_success(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            state = SimpleNamespace(completed_successfully=True, repository=Path("/repo"))
+            module = SimpleNamespace(
+                runtime_directory=lambda _repo: runtime,
+                write_atomic=lambda path, value: path.write_text(value),
+            )
+            with mock.patch.dict(launcher["defer_proxy_cleanup"].__globals__,
+                                 proxy_module=lambda: module), \
+                    mock.patch.object(launcher["defer_proxy_cleanup"].__globals__["secrets"],
+                                      "token_hex", return_value="lease"), \
+                    mock.patch("subprocess.Popen") as start:
+                self.assertTrue(launcher["defer_proxy_cleanup"](state))
+            command = start.call_args.args[0]
+            self.assertEqual(["idle-cleanup", "--repo", "/repo", "--delay", "30.0",
+                              "--lease", "lease"], command[1:])
+            self.assertEqual("lease", (runtime / "idle-cleanup.lease").read_text())
+            self.assertTrue(start.call_args.kwargs["start_new_session"])
+            state.completed_successfully = False
+            with mock.patch("subprocess.Popen") as start:
+                self.assertFalse(launcher["defer_proxy_cleanup"](state))
+            start.assert_not_called()
 
     def test_launcher_retains_unpublished_recovery_on_removal_failure(self):
         launcher = runpy.run_path(str(LAUNCHER))
