@@ -1,0 +1,4 @@
+interface:
+  display_name: "Typst Diagrams"
+  short_description: "Design clear diagrams in Typst specs"
+  default_prompt: "Use $typst-diagrams to add or revise a clear diagram in this Typst document."
