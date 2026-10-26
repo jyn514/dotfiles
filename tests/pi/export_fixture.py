@@ -11,6 +11,9 @@ def main() -> int:
         print("Native export refused", file=sys.stderr)
         return 7
     arguments = sys.argv[1:]
+    if arguments in (["--offline", "--version"], ["--offline", "-v"]):
+        print("fixture-version")
+        return 0
     if len(arguments) not in (2, 3) or arguments[0] != "--export":
         print(f"Unexpected native Pi arguments: {arguments!r}", file=sys.stderr)
         return 2

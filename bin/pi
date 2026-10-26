@@ -1,7 +1,13 @@
 #!/bin/sh
 
-case ${1:-} in
-	--export)
+case "$#:${1:-}" in
+	1:--version|1:-v)
+		# Informational output cannot execute tools or access the repository.
+		script=$(realpath -- "$0") || exit
+		root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
+		exec "$root/tools/codex-sandbox/sandbox-host-pi" "$@"
+		;;
+	*:--export)
 		# Standalone exports need no guest worker or sandbox startup.
 		script=$(realpath -- "$0") || exit
 		root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit

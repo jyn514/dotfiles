@@ -66,6 +66,12 @@ class HostPiWrapperTest(unittest.TestCase):
         self.assertNotIn("CODEX_SANDBOX_PI_OWNER", native["sandbox_environment"])
         self.assertNotIn("CODEX_SANDBOX_CD_REQUEST", native["sandbox_environment"])
 
+    def test_version_remains_native_and_offline(self) -> None:
+        result = self.run_wrapper("--version")
+        self.assertEqual(0, result.returncode, result.stderr)
+        native = json.loads(result.stdout)
+        self.assertEqual(["--offline", "--version"], native["arguments"])
+
     def test_native_child_exit_status_is_preserved(self) -> None:
         result = self.run_wrapper("--mode", "rpc", HOST_PI_FIXTURE_EXIT="17")
         self.assertEqual(17, result.returncode, result.stderr)

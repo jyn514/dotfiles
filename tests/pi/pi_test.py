@@ -44,6 +44,14 @@ class PiWrapperTests(unittest.TestCase):
     def test_normal_session_delegates_to_sandbox(self) -> None:
         self.assertEqual(["prompt"], self.run_wrapper("prompt"))
 
+    def test_version_uses_native_pi_without_starting_sandbox(self) -> None:
+        for argument in ("--version", "-v"):
+            with self.subTest(argument=argument):
+                self.assertEqual(["fixture-version"], self.run_wrapper(argument))
+
+    def test_version_with_other_arguments_still_uses_sandbox(self) -> None:
+        self.assertEqual(["--version", "prompt"], self.run_wrapper("--version", "prompt"))
+
     def test_export_writes_requested_file_without_starting_sandbox(self) -> None:
         source = self.root / "session with spaces.jsonl"
         source.write_text("Session content")
