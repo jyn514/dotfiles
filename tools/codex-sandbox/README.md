@@ -414,7 +414,8 @@ Pi runs on the host and uses its native external editor selection for prompt edi
 Guest tools have no host editor bridge. The launcher does not override Pi's
 `externalEditor` setting or expose an editor listener to the guest.
 
-A sandbox creates a gateway only when Agent Docker is selected.
+A sandbox creates one gateway when Agent Docker or TicGit is selected.
+When both are selected, their fixed listeners share that container and its two networks.
 It starts in the background after its private link and egress networks are created.
 Clients retry only connection establishment within a bounded interval and never
 replay a possibly accepted request.

@@ -162,7 +162,9 @@ Give each request private HOME/XDG and `TICGIT_STATE_FILE` locations so selectio
 Even `list --json` saves filters; inspection does not imply a read-only native process.
 Keep transport credentials, host credential agents, and reusable upstream credentials outside the native environment.
 
-Reuse provider transport and session authentication; reject unauthenticated access and never expose generic host execution.
+Reuse the per-launch sandbox gateway for provider transport and session authentication; reject unauthenticated access and never expose generic host execution.
+When Agent Docker is also selected, its fixed SSH listener and the fixed TicGit listener share the gateway container and its internal-link and egress networks.
+TicGit must not create a second provider relay container.
 The broker invokes the fixed native program directly, without a shell, and owns bounded output collection, cancellation, termination, and reaping.
 Trusted native code may invoke implementation-internal helpers; that does not authorize guest-selected host commands, executable paths, or unsafe environment/argument overrides.
 Do not carry forward Linux pidfd identity or waitid/WNOWAIT requirements merely because the archived implementation used them.
@@ -172,7 +174,7 @@ Normal launch shutdown or EOF on that pipe stops admission, closes the listener,
 An attachment ending does not end the broker while its owning launch remains active.
 Use live child ownership for normal termination; do not persist broker PIDs, adopt a previous broker, or kill recorded host PIDs during later recovery.
 If the broker itself dies, an in-flight native command may finish; report the unknown outcome rather than adding a descendant watchdog or replaying the request.
-Provider-owned relay resources still use the existing lifecycle cleanup rules.
+Provider-owned gateway resources still use the existing lifecycle cleanup rules.
 
 Readiness validates the installed build/policy, fixed authority, supported repository configuration, storage layout, and endpoint without opening or mutating SQLite.
 The broker must be ready before its execution attachment can use it; best-effort startup never publishes a partially ready TicGit endpoint.

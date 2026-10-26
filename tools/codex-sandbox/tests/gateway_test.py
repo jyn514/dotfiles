@@ -277,6 +277,19 @@ class GatewayLifecycleTest(unittest.TestCase):
                 create.assert_not_called()
                 self.assertIsNone(state.gateway_handle)
 
+    def test_tic_only_gateway_prepares_shared_networks_without_build_bridge(self):
+        state = self.state()
+        state.capabilities = frozenset({'tic'})
+        state.agent_docker = None
+        create = Mock()
+        prepare = self.launcher['prepare_gateway']
+        with patch.dict(prepare.__globals__, create_relay_network=create,
+                        FixedTcpBridge=Mock()):
+            self.assertEqual([], prepare(state))
+        self.assertIsNotNone(state.gateway_handle)
+        self.assertIsNone(state.gateway_handle.build_bridge)
+        self.assertEqual(2, create.call_count)
+
     def test_build_gateway_uses_selected_service_port_and_bridge(self):
         state = self.state()
         state.agent_docker["AGENT_DOCKER_SSH_PORT"] = "2345"
@@ -293,14 +306,16 @@ class GatewayLifecycleTest(unittest.TestCase):
         prepare = self.launcher["prepare_gateway"]
         start = self.launcher["start_gateway"]
         with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
-                        FixedTcpBridge=factory):
+                        FixedTcpBridge=factory), patch.object(
+                start.__globals__["OUTER_RUNTIME"], "network_addresses",
+                return_value={"gateway-link": "10.0.0.2", "gateway-egress": "10.0.0.3"}):
             arguments = prepare(state)
             start(state)
         factory.assert_called_once_with(("127.0.0.1", 2345))
         self.assertIn("DOCKER_HOST=ssh://worker@gateway:2222", arguments)
         gateway_run = commands[0]
         self.assertEqual("3456", gateway_run[gateway_run.index("--build-port") + 1])
-        bridge.allow_peers.assert_called_once_with({"10.0.0.2", "127.0.0.1"})
+        bridge.allow_peers.assert_called_once_with({"10.0.0.2", "10.0.0.3", "127.0.0.1"})
 
     def test_stopped_build_service_warns_and_creates_no_gateway(self):
         state = self.state()
@@ -485,6 +500,20 @@ class GatewayTest(unittest.TestCase):
     def test_empty_gateway_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'at least one listener'):
             gateway.serve('host.lima.internal')
+
+    def test_tic_listener_shares_gateway_and_publishes_readiness(self):
+        child = Mock(pid=12, returncode=None)
+        with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
+                patch.object(gateway, 'wait_listener') as ready, \
+                patch.object(gateway.os, 'wait', return_value=(12, 0)), \
+                patch.object(gateway.os, 'killpg'), \
+                patch('sys.stdout', new_callable=io.StringIO) as stdout:
+            self.assertEqual(1, gateway.serve('host.lima.internal', build_port=22, tic_port=4321))
+        commands = [call.args[0] for call in spawn.call_args_list]
+        self.assertTrue(any('TCP4-LISTEN:2222,fork,reuseaddr' in command for command in commands))
+        self.assertTrue(any('TCP4-LISTEN:2225,fork,reuseaddr' in command for command in commands))
+        ready.assert_called_once_with(2225, [child, child])
+        self.assertEqual(f'{gateway.TIC_READY_MESSAGE}\n', stdout.getvalue())
 
 
 if __name__ == '__main__':

@@ -142,6 +142,11 @@ class TicLauncherTest(unittest.TestCase):
             workspaces=[SimpleNamespace(host_root=workspace, common_dir=common)],
             capabilities={'tic'}, sidecar_image='sha256:helper', image='sha256:agent',
             suffix='first', tic_handle=None, tic_resources=None, tic_environment={})
+        self.state.gateway_link_network = 'codex-gateway-link-first'
+        self.state.gateway_egress_network = 'codex-gateway-egress-first'
+        self.state.gateway_container = 'codex-gateway-first'
+        self.state.gateway_handle = None
+        self.state.agent_docker = None
         self.native = self.install / 'native-ti'
         self.native.write_text('#!/bin/sh\nexit 99\n')
         self.native.chmod(0o700)
@@ -219,6 +224,9 @@ class TicLauncherTest(unittest.TestCase):
         with mock.patch.dict(self.globals, patches), mock.patch.object(
                 self.globals['TicBrokerLaunch'], 'start_bridge', start_bridge):
             try:
+                self.launcher['prepare_gateway'](self.state)
+                runtime.events.clear()
+                runtime.present.clear()
                 yield runtime
             finally:
                 self.stop()
@@ -244,9 +252,8 @@ class TicLauncherTest(unittest.TestCase):
 
     def test_opt_in_timings_cover_real_steps_without_replaying_guest_help(self):
         expected = ['bundle', 'context-capture', 'client-staging-mounts',
-                    'broker-start-ready', 'link-network', 'egress-network',
-                    'host-bridge', 'relay-run', 'relay-addresses',
-                    'relay-readiness-log', 'guest-help-once']
+                    'broker-start-ready', 'host-bridge', 'gateway-start',
+                    'gateway-readiness-log', 'guest-help-once']
         for status in (0, 1):
             with self.subTest(status=status), \
                     mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
@@ -346,11 +353,11 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertIsNone(self.state.tic_handle.process)
                     self.assertEqual({}, self.state.tic_environment)
 
-    def test_failed_startup_retains_cleanup_ownership_but_stops_broker_when_provider_cleanup_fails(self):
+    def test_failed_startup_retains_cleanup_ownership_but_stops_broker_when_stage_cleanup_fails(self):
         with self.provider() as runtime:
             runtime.probe_status = 125
-            remove = mock.Mock(side_effect=RuntimeError('owned provider removal failed'))
-            with mock.patch.dict(self.globals, remove_owned_resource=remove):
+            remove = mock.Mock(side_effect=RuntimeError('owned stage removal failed'))
+            with mock.patch.dict(self.globals, remove_tic_stage=remove):
                 self.assert_tic_unavailable('readiness failed')
                 handle = self.state.tic_handle
                 self.assertIsNone(handle.process)
@@ -362,7 +369,7 @@ class TicLauncherTest(unittest.TestCase):
                 self.assertEqual(handle.owner, handle.registry.owner)
             result = handle.stop()
             self.assertFalse(result.remaining)
-            self.assertFalse(runtime.present)
+            self.assertEqual({self.state.gateway_container}, runtime.present)
 
     def test_tic_only_transport_build_failure_does_not_block_new_session(self):
         self.state.deferred_signal = None
@@ -529,33 +536,24 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertEqual(self.client.read_bytes(), staged.read_bytes())
                     self.assertEqual(0o555, staged.stat().st_mode & 0o777)
                     self.assertEqual(0o700, staged.parent.stat().st_mode & 0o777)
-                    relay_dir = staged.parent / 'relay'
-                    self.assertEqual(0o555, relay_dir.stat().st_mode & 0o777)
-                    self.assertEqual({'tic_relay.py', 'host_tcp_bridge.py'},
-                                     {path.name for path in relay_dir.iterdir()})
-                    for path in relay_dir.iterdir():
-                        self.assertEqual(0o444, path.stat().st_mode & 0o777)
-                        self.assertEqual((TOOL / path.name).read_bytes(), path.read_bytes())
                     if mac:
                         self.assertTrue(staged.is_relative_to(runtime.host.state / 'scratch'))
-                        runtime.host.check_binds.assert_called_once_with(
-                            [(str(staged), False), (str(relay_dir), False)])
+                        runtime.host.check_binds.assert_called_once_with([(str(staged), False)])
                     self.assertEqual('10.23.0.2:2225', self.state.tic_environment['SANDBOX_TIC_ENDPOINT'])
                     probe_environment = next(item[1] for item in runtime.events if item[0] == 'environment')
                     self.assertEqual(handle.token, probe_environment['SANDBOX_TIC_TOKEN'])
                     self.assertEqual('127.0.0.1:2225', probe_environment['SANDBOX_TIC_ENDPOINT'])
                     container = next(item[1] for item in runtime.events if item[0] == 'container')
-                    self.assertIn('/usr/local/bin/python3', container)
-                    self.assertIn('/trusted/tic/tic_relay.py', container)
-                    self.assertIn('PYTHONDONTWRITEBYTECODE=1', container)
-                    self.assertIn(f'type=bind,src={relay_dir},dst=/trusted/tic,readonly', container)
+                    self.assertIn('/trusted/bin/sandbox-gateway', container)
+                    self.assertIn('--tic-port', container)
+                    self.assertNotIn('--build-port', container)
                     self.assertIn(self.state.sidecar_image, container)
                     self.assertEqual(['--help'],
                                      [event[1][-1] for event in runtime.events if event[0] == 'probe'])
                     self.assertNotIn(handle.token, ' '.join(container))
                     self.assertNotIn(handle.token, ' '.join(args))
                     handle.stop()
-                    self.assertFalse(runtime.present)
+                    self.assertEqual({self.state.gateway_container}, runtime.present)
                     self.assertFalse(staged.exists())
 
     def test_fake_vm_host_forwarder_loopback_peer_reaches_only_authenticated_launch_route(self):
@@ -576,6 +574,19 @@ class TicLauncherTest(unittest.TestCase):
                                if event[0] == 'probe' and event[1][-1] == '--help')
             self.assertGreater(probe_index, next(index for index, event in enumerate(runtime.events)
                                                 if event[0] == 'container'))
+
+    def test_agent_docker_and_tic_share_one_gateway_network_attachment(self):
+        with self.provider() as runtime:
+            build_bridge = mock.Mock(port=4321)
+            self.state.gateway_handle.build_bridge = build_bridge
+            self.state.gateway_handle._register_logical('bridge:build')
+            arguments = self.launcher['start_tic'](self.state)
+            self.assertNotIn('--network', arguments)
+            container = next(event[1] for event in runtime.events if event[0] == 'container')
+            self.assertEqual(1, container.count('--name'))
+            self.assertIn('--build-port', container)
+            self.assertIn('--tic-port', container)
+            build_bridge.allow_peers.assert_called_once()
 
     def test_selected_tic_inspection_failure_warns_without_resources_or_fallback(self):
         with self.provider(context=False) as runtime:
@@ -890,10 +901,10 @@ class TicLauncherTest(unittest.TestCase):
                     runtime.listener_status = 125
                 else:
                     runtime.probe_status = 125
-                expected = ('readiness log is unavailable' if failure == 'listener'
+                expected = ('gateway readiness log is unavailable' if failure == 'listener'
                             else 'readiness failed')
                 self.assert_tic_unavailable(expected)
-                self.assertFalse(runtime.present)
+                self.assertEqual({self.state.gateway_container}, runtime.present)
                 self.assertIsNone(self.state.tic_handle.process)
                 self.assertEqual({}, self.state.tic_environment)
                 mount = next(item[1] for item in runtime.events if item[0] == 'container')
@@ -912,7 +923,7 @@ class TicLauncherTest(unittest.TestCase):
 
     def test_staged_copy_failure_cleans_private_output(self):
         original = self.globals['shutil'].copyfile
-        for name in ('guest-ti', 'tic_relay.py', 'host_tcp_bridge.py'):
+        for name in ('guest-ti',):
             with self.subTest(source=name):
                 def fail(source, destination):
                     original(source, destination)
@@ -925,11 +936,11 @@ class TicLauncherTest(unittest.TestCase):
 
     def test_each_staged_bind_rejection_cleans_before_broker_or_relay_start(self):
         self.write_build('linux/arm64')
-        for rejected in ('ti', 'relay'):
+        for rejected in ('ti',):
             with self.subTest(rejected=rejected), self.provider(mac=True) as runtime:
                 def reject(sources):
-                    self.assertEqual(['ti', 'relay'], [Path(path).name for path, _ in sources])
-                    self.assertEqual([False, False], [writable for _, writable in sources])
+                    self.assertEqual(['ti'], [Path(path).name for path, _ in sources])
+                    self.assertEqual([False], [writable for _, writable in sources])
                     self.assertTrue(all(Path(path).exists() for path, _ in sources))
                     raise ValueError(f'rejected staged {rejected}')
                 runtime.host.check_binds.side_effect = reject
@@ -949,9 +960,9 @@ class TicLauncherTest(unittest.TestCase):
         for network in ('link', 'egress'):
             for address in (None, '', '999.1.1.1'):
                 with self.subTest(network=network, address=address), self.provider() as runtime:
-                    networks = {'codex-tic-link-first': {'IPAddress': '10.23.0.2'},
-                                'codex-tic-egress-first': {'IPAddress': '10.24.0.2'}}
-                    name = f'codex-tic-{network}-first'
+                    networks = {'codex-gateway-link-first': {'IPAddress': '10.23.0.2'},
+                                'codex-gateway-egress-first': {'IPAddress': '10.24.0.2'}}
+                    name = f'codex-gateway-{network}-first'
                     if address is None:
                         del networks[name]
                     else:
@@ -961,10 +972,10 @@ class TicLauncherTest(unittest.TestCase):
                     runtime.network_addresses = lambda container, names: (
                         ContainerRuntime.network_addresses(runtime, container, names))
                     self.assert_tic_unavailable('not permitted' if address else 'not attached')
-                    runtime.inspect_container.assert_called_once_with('codex-tic-first')
+                    runtime.inspect_container.assert_called_once_with('codex-gateway-first')
                     self.assertEqual(set(), runtime.host_bridge.allowed_peers)
                     self.assertFalse(any(event[0] in ('probe', 'environment') for event in runtime.events))
-                    self.assertFalse(runtime.present)
+                    self.assertEqual({self.state.gateway_container}, runtime.present)
                     self.assertIsNone(self.state.tic_handle.process)
 
     def test_missing_endpoint_never_attaches_guest(self):
@@ -972,7 +983,7 @@ class TicLauncherTest(unittest.TestCase):
             runtime.network_address = lambda container, network: ''
             self.assert_tic_unavailable('incomplete network')
             self.assertEqual({}, self.state.tic_environment)
-            self.assertFalse(runtime.present)
+            self.assertEqual({self.state.gateway_container}, runtime.present)
 
     def test_shared_join_runs_tic_without_resolvers_and_continues_without_failed_tic(self):
         self.state.deferred_signal = None
@@ -989,7 +1000,7 @@ class TicLauncherTest(unittest.TestCase):
             handle = self.state.tic_handle
             self.assertEqual(LifecycleState.ATTACHED, handle.lifecycle.state)
             arguments = agent.call_args.args[1]
-            self.assertIn('codex-tic-link-first', arguments)
+            self.assertIn('codex-gateway-link-first', arguments)
             self.assertIn('dst=/opt/agent-tools/bin/ti,readonly', ' '.join(arguments))
             handle.stop()
             agent.reset_mock()
@@ -1004,7 +1015,7 @@ class TicLauncherTest(unittest.TestCase):
             self.assertNotIn('dst=/opt/agent-tools/bin/ti', ' '.join(arguments))
             self.assertEqual({}, self.state.tic_environment)
             self.assertIsNone(self.state.tic_handle.process)
-            self.assertFalse(runtime.present)
+            self.assertEqual({self.state.gateway_container}, runtime.present)
         for resolver in forbidden.values():
             resolver.assert_not_called()
 
@@ -1137,9 +1148,8 @@ class TicLauncherTest(unittest.TestCase):
                 result = original_run(argv, **kwargs)
                 mounts = [argv[index + 1] for index, value in enumerate(argv) if value == '--mount']
                 client_mount = next(value for value in mounts if 'dst=/opt/agent-tools/bin/ti,' in value)
-                relay_mount = next(value for value in mounts if 'dst=/trusted/tic,' in value)
                 runtime.client = Path(client_mount.split('src=')[1].split(',')[0])
-                script = Path(relay_mount.split('src=')[1].split(',')[0]) / 'tic_relay.py'
+                script = TOOL / 'tic_relay.py'
                 self.assert_delayed_python_response(runtime.client, script)
                 relay = LocalPythonRelay(script, int(argv[argv.index('--target-port') + 1]))
                 return result
@@ -1387,7 +1397,7 @@ class TicLauncherTest(unittest.TestCase):
             self.assertEqual({}, self.state.tic_environment)
             self.assertIsNone(self.state.tic_handle.process)
             self.assertIsNone(self.state.tic_handle.lifetime_writer)
-            self.assertFalse(runtime.present)
+            self.assertEqual({self.state.gateway_container}, runtime.present)
             self.assertEqual(1, sum(event[0] == 'probe' and event[1][-1] == '--help'
                                     for event in runtime.events))
 
@@ -1397,6 +1407,14 @@ class TicLauncherTest(unittest.TestCase):
             first = self.state.tic_handle
             token, address = first.token, first.address
             self.state.suffix = 'second'
+            runtime = self.globals['OUTER_RUNTIME']
+            runtime.present.discard(self.state.gateway_container)
+            self.state.gateway_handle = self.launcher['GatewayHandle'](self.state)
+            for name in (self.state.gateway_link_network, self.state.gateway_egress_network):
+                identity = f'network:{name}'
+                self.state.gateway_handle.registry.register(self.launcher['OwnedResource'](
+                    identity, self.state.gateway_handle.owner,
+                    lambda: ResourcePresence.OWNED, lambda: None))
             self.launcher['start_tic'](self.state)
             second = self.state.tic_handle
             self.assertNotEqual(token, second.token)

@@ -792,6 +792,8 @@ class GatewayHandle:
         )
         self.cancelled = threading.Event()
         self.build_bridge: FixedTcpBridge | None = None
+        self.addresses: dict[str, str] = {}
+        self.started = False
         self._logical: set[str] = set()
         self.created: set[str] = set()
 
@@ -973,25 +975,28 @@ def recover_relays(state: State) -> None:
 def prepare_gateway(state: State) -> list[str]:
     capabilities = getattr(state, "capabilities", frozenset({"nested-containers"}))
     nested = "nested-containers" in capabilities and state.agent_docker is not None
-    if not nested:
+    tic = "tic" in capabilities
+    if not nested and not tic:
         return []
     handle = GatewayHandle(state)
     state.gateway_handle = handle
-    handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
-    handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
-    try:
-        handle.build_bridge.start()
-    except OSError as error:
-        handle.build_bridge.stop()
-        print(f"warning: nested Docker relay unavailable: {error}; "
-              "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
-              file=sys.stderr)
-        handle.build_bridge = None
-        state.agent_docker = None
-        handle._logical.discard("bridge:build")
-        handle.cleanup()
-        state.gateway_handle = None
-        return []
+    if nested:
+        handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
+        handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
+        try:
+            handle.build_bridge.start()
+        except OSError as error:
+            handle.build_bridge.stop()
+            print(f"warning: nested Docker relay unavailable: {error}; "
+                  "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
+                  file=sys.stderr)
+            handle.build_bridge = None
+            state.agent_docker = None
+            handle._logical.discard("bridge:build")
+            if not tic:
+                handle.cleanup()
+                state.gateway_handle = None
+                return []
     for name, internal in ((state.gateway_link_network, True),
                            (state.gateway_egress_network, False)):
         identity = f"network:{name}"
@@ -1007,6 +1012,8 @@ def prepare_gateway(state: State) -> list[str]:
             raise LauncherError("gateway startup cancelled")
         create_relay_network(state, name, internal=internal, owner=handle.owner)
         handle.created.add(identity)
+    if not nested or handle.build_bridge is None:
+        return []
     values = state.agent_docker
     return [
         "--network", state.gateway_link_network,
@@ -1018,13 +1025,16 @@ def prepare_gateway(state: State) -> list[str]:
     ]
 
 
-def start_gateway(state: State) -> None:
+def start_gateway(state: State, tic_port: int | None = None, image: str | None = None,
+                  tic_client: Path | None = None) -> None:
     handle = state.gateway_handle
     if handle is None:
         raise LauncherError("gateway was not prepared")
+    if handle.started:
+        raise LauncherError("gateway already started")
     build_port = (str(handle.build_bridge.port) if handle.build_bridge is not None else None)
-    if build_port is None:
-        raise LauncherError("gateway requires a build listener")
+    if build_port is None and tic_port is None:
+        raise LauncherError("gateway requires a listener")
     container_resource = f"container:{state.gateway_container}"
     handle.registry.register(OwnedResource(
         container_resource, handle.owner,
@@ -1043,21 +1053,23 @@ def start_gateway(state: State) -> None:
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
-        "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
+        *(["--mount", f"type=bind,src={tic_client},dst=/opt/agent-tools/bin/ti,readonly"]
+          if tic_client is not None else []),
+        "--entrypoint", "/trusted/bin/sandbox-gateway", image or state.sidecar_image,
         "--host", OUTER_RUNTIME.host_address,
-        "--build-port", build_port,
+        *(["--build-port", build_port] if build_port is not None else []),
+        *(["--tic-port", str(tic_port)] if tic_port is not None else []),
     ], discard_stdout=True)
     handle.created.add(container_resource)
-    def address(network):
-        if isinstance(OUTER_RUNTIME, VMRuntime):
-            return OUTER_RUNTIME.network_address(state.gateway_container, network)
-        return run(["docker", "inspect", "--format",
-            f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
-            state.gateway_container], capture=True).stdout.strip()
-    relay_ip = address(state.gateway_link_network)
-    egress_ip = address(state.gateway_egress_network)
+    handle.started = True
+    addresses = OUTER_RUNTIME.network_addresses(
+        state.gateway_container, (state.gateway_link_network, state.gateway_egress_network))
+    relay_ip = addresses[state.gateway_link_network]
+    egress_ip = addresses[state.gateway_egress_network]
     if not relay_ip or not egress_ip:
         raise LauncherError("gateway has incomplete network addresses")
+    handle.addresses = {state.gateway_link_network: relay_ip,
+                        state.gateway_egress_network: egress_ip}
     address_resources = []
     for kind, value in (("relay", relay_ip), ("egress", egress_ip)):
         identity = f"address:{kind}-{value.replace('.', '-').replace(':', '-')}"
@@ -1323,18 +1335,10 @@ def stage_tic_client(build: InstalledTicBuild) -> Path:
         # not every launch's client mount preparation.
         shutil.copyfile(build.guest_client_executable, destination)
         destination.chmod(0o555)
-        relay = directory / 'relay'
-        relay.mkdir()
-        for name in ('tic_relay.py', 'host_tcp_bridge.py'):
-            source = Path(__file__).resolve().with_name(name)
-            target = relay / name
-            shutil.copyfile(source, target)
-            target.chmod(0o444)
-        relay.chmod(0o555)
         if any(character in str(destination) for character in ',\0\r\n'):
             raise LauncherError('TicGit staged client path contains a mount delimiter')
         if isinstance(OUTER_RUNTIME, VMRuntime):
-            OUTER_RUNTIME.check_binds([(str(destination), False), (str(relay), False)])
+            OUTER_RUNTIME.check_binds([(str(destination), False)])
         return destination
     except BaseException:
         remove_tic_stage(directory)
@@ -1342,11 +1346,6 @@ def stage_tic_client(build: InstalledTicBuild) -> Path:
 
 
 def remove_tic_stage(directory: Path) -> None:
-    # Only the relay child is read-only. Its private parent remains mode 0700
-    # and never crosses the guest mount boundary.
-    relay = directory / 'relay'
-    if relay.is_dir():
-        relay.chmod(0o700)
     shutil.rmtree(directory)
 
 
@@ -1356,20 +1355,20 @@ def check_tic_cancelled(state: State) -> None:
         raise LauncherError('TicGit startup cancelled')
 
 
-def wait_tic_relay_ready(container: str) -> None:
-    from tic_relay import READY_MESSAGE
+def wait_tic_gateway_ready(container: str) -> None:
+    from gateway import TIC_READY_MESSAGE
     deadline = time.monotonic() + 7
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise LauncherError('TicGit relay readiness publication timed out; no fallback')
+            raise LauncherError('TicGit gateway readiness publication timed out; no fallback')
         result = OUTER_RUNTIME.run(
             ['logs', '--tail', '20', container], capture_output=True,
             timeout=min(2, remaining), check=False,
         )
         if result.returncode != 0:
-            raise LauncherError('TicGit relay readiness log is unavailable; no fallback')
-        if READY_MESSAGE in result.stdout.splitlines():
+            raise LauncherError('TicGit gateway readiness log is unavailable; no fallback')
+        if TIC_READY_MESSAGE in result.stdout.splitlines():
             return
         time.sleep(min(0.05, max(0, deadline - time.monotonic())))
 
@@ -1402,9 +1401,9 @@ def start_tic(state: State) -> list[str]:
 
 def _start_tic(state: State) -> list[str]:
     try:
-        from tic_relay import PORT as tic_port
+        from gateway import TIC_PORT as tic_port
     except ImportError as error:
-        raise LauncherError('TicGit installed relay is unavailable; no fallback') from error
+        raise LauncherError('TicGit installed gateway is unavailable; no fallback') from error
     if not state.workspaces:
         raise LauncherError('TicGit requires accepted workspace authority')
     workspace = state.workspaces[0]
@@ -1432,9 +1431,10 @@ def _start_tic(state: State) -> list[str]:
     handle = TicBrokerLaunch(build, workspace=workspace.host_root,
                              common_dir=workspace.common_dir, **context)
     state.tic_handle = handle
-    resources = RelayResourcePlan(f'codex-tic-link-{state.suffix}',
-                                  f'codex-tic-egress-{state.suffix}',
-                                  f'codex-tic-{state.suffix}')
+    gateway = state.gateway_handle
+    if gateway is None:
+        raise LauncherError('TicGit gateway was not prepared')
+    resources = gateway.resources
     state.tic_resources = resources
     try:
         with service_timing("tic", "client-staging-mounts"):
@@ -1446,56 +1446,24 @@ def _start_tic(state: State) -> list[str]:
         check_tic_cancelled(state)
         with service_timing("tic", "broker-start-ready"):
             handle.start()
-        for name, internal in ((resources.link_network, True), (resources.egress_network, False)):
-            handle.registry.register(OwnedResource(
-                f'network:{name}', handle.owner,
-                lambda name=name: _gateway_network_presence(name, handle.owner),
-                lambda name=name: remove_owned_resource(
-                    OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
-                    authority=ResourceOwnerAuthority.RELAY)))
-            check_tic_cancelled(state)
-            with service_timing("tic", "link-network" if internal else "egress-network"):
-                create_relay_network(state, name, internal=internal, owner=handle.owner)
         check_tic_cancelled(state)
         with service_timing("tic", "host-bridge"):
             bridge = handle.start_bridge(set())
-        container_resource = f'container:{resources.container}'
-        handle.registry.register(OwnedResource(
-            container_resource, handle.owner,
-            lambda: _gateway_container_presence(resources.container, handle.owner),
-            lambda: remove_owned_resource(OUTER_RUNTIME, ResourceKind.CONTAINER,
-                                         resources.container, handle.owner),
-            (*resources.bound_topology()[container_resource], handle.bridge_resource,
-             'temporary:tic-client')))
         mount = f'type=bind,src={client},dst=/opt/agent-tools/bin/ti,readonly'
-        relay_mount = f'type=bind,src={client.parent / "relay"},dst=/trusted/tic,readonly'
         check_tic_cancelled(state)
-        with service_timing('tic', 'relay-run'):
-            run(['docker', 'run', '--detach', '--name', resources.container,
-                 '--label', f'dev.codex.service-owner={handle.owner}',
-                 '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
-                 '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
-                 '--network', resources.egress_network, '--network', resources.link_network,
-                 *proxy_flags(), *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
-                                  ['--add-host', 'host.docker.internal:host-gateway']),
-                 '--mount', mount, '--mount', relay_mount,
-                 '--env', 'PYTHONDONTWRITEBYTECODE=1', '--entrypoint', '/usr/local/bin/python3',
-                 sidecar_image, '/trusted/tic/tic_relay.py',
-                 '--target-host', OUTER_RUNTIME.host_address,
-                 '--target-port', str(bridge.port)], discard_stdout=True)
-        with service_timing('tic', 'relay-addresses'):
-            addresses = OUTER_RUNTIME.network_addresses(
-                resources.container, (resources.link_network, resources.egress_network))
+        with service_timing('tic', 'gateway-start'):
+            start_gateway(state, tic_port=bridge.port, image=sidecar_image, tic_client=client)
+        addresses = gateway.addresses
         if not all(addresses.values()):
-            raise LauncherError('TicGit relay has incomplete network addresses')
+            raise LauncherError('TicGit gateway has incomplete network addresses')
         # Lima's host.lima.internal forwarding reaches host loopback listeners
         # (the network fixture serves one there); it need not preserve a relay's
         # container-namespace source IP. Admit that trusted host-forwarder peer
         # as well as inspected relay IPs. Fresh broker authentication still applies.
         bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
         check_tic_cancelled(state)
-        with service_timing('tic', 'relay-readiness-log'):
-            wait_tic_relay_ready(resources.container)
+        with service_timing('tic', 'gateway-readiness-log'):
+            wait_tic_gateway_ready(resources.container)
         # One authenticated help verifies the complete guest path, including
         # relay listener readiness. Never replay it after transport failure.
         # Help never opens SQLite.
@@ -1511,7 +1479,8 @@ def _start_tic(state: State) -> list[str]:
         check_tic_cancelled(state)
         state.tic_environment = handle.environment(f'{addresses[resources.link_network]}:{tic_port}')
         handle.attach()
-        return ['--network', resources.link_network, '--mount', mount]
+        network = [] if gateway.build_bridge is not None else ['--network', resources.link_network]
+        return [*network, '--mount', mount]
     except BaseException:
         state.tic_environment = {}
         try:
@@ -2647,8 +2616,6 @@ def execute(state: State) -> int:
             phase, "proxy startup", lambda: attach_proxies(state),
         )
         gateway_arguments = gateway_future.result()
-        if getattr(state, "gateway_handle", None) is not None:
-            executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         if model_future is not None:
             state.image = model_future.result()
         # Tic consumes accepted workspace/build authority, not proxy publication.
@@ -2657,6 +2624,10 @@ def execute(state: State) -> int:
         sidecar_arguments = proxy_future.result()
         keychain_arguments = keychain_future.result() if keychain_future is not None else []
         tic_arguments = tic_future.result()
+        gateway_handle = getattr(state, "gateway_handle", None)
+        if (gateway_handle is not None and not gateway_handle.started
+                and gateway_handle.build_bridge is not None):
+            executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         agent_command = ["node", "/opt/agent-tools/bin/tool-worker.mjs"]
         arguments = [*gateway_arguments, *keychain_arguments, *tic_arguments, state.image,
                      *agent_command]

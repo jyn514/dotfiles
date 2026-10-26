@@ -179,11 +179,11 @@ container run, forwarding publication, and readiness. Authentication attachment
 is separate from session publication; nested auth spans distinguish configuration
 publication, socket volume, networks, helper and Caddy container starts, the extra
 Caddy network attachment, and readiness. Tic spans separate bundle/context work,
-client staging and mount checks, broker startup through readiness, each network,
-host bridge, relay run/address lookup, readiness publication from the relay's
-startup logs, and the single guest help request. Readiness does not start a
-second process in the relay container. Timing never replays that application
-request. Cleanup separates runtime recovery query, stopped-holder discovery,
+client staging and mount checks, broker startup through readiness, the host
+bridge, shared gateway startup, readiness publication from gateway logs, and the
+single guest help request. TicGit does not start a separate relay container.
+Timing never replays that application request. Cleanup separates runtime recovery
+query, stopped-holder discovery,
 each command registry, and auth cleanup. Registry spans include owner inspection,
 removal, and retries.
 All spans are inclusive: command workers, Tic startup, and registry cleanup waves

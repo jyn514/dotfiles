@@ -4,7 +4,13 @@
 import argparse
 import os
 import signal
+import socket
 import subprocess
+import time
+
+
+TIC_PORT = 2225
+TIC_READY_MESSAGE = 'tic-relay-ready-v1'
 
 
 def port(value):
@@ -14,10 +20,25 @@ def port(value):
     return number
 
 
-def serve(host, build_port=None):
+def wait_listener(port, children):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if any(child.poll() is not None for child in children):
+            raise RuntimeError('listener stopped during startup')
+        try:
+            with socket.create_connection(('127.0.0.1', port), timeout=0.2):
+                return
+        except OSError:
+            time.sleep(0.02)
+    raise TimeoutError(f'listener {port} did not become ready')
+
+
+def serve(host, build_port=None, tic_port=None):
     listeners = []
     if build_port is not None:
         listeners.append((2222, build_port))
+    if tic_port is not None:
+        listeners.append((TIC_PORT, tic_port))
     if not listeners:
         raise ValueError('at least one listener is required')
     children = []
@@ -31,6 +52,9 @@ def serve(host, build_port=None):
             children.append(subprocess.Popen([
                 '/usr/bin/socat', '-d', '-d', f'TCP4-LISTEN:{local},fork,reuseaddr',
                 f'TCP4:{host}:{remote}'], start_new_session=True))
+        if tic_port is not None:
+            wait_listener(TIC_PORT, children)
+            print(TIC_READY_MESSAGE, flush=True)
         # A listener dying leaves an incomplete gateway. Upstream refusal only
         # ends socat's per-connection child; it must not kill the listener.
         pid, status = os.wait()
@@ -62,10 +86,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, choices=('host.lima.internal', 'host.docker.internal'))
     parser.add_argument('--build-port', type=port)
+    parser.add_argument('--tic-port', type=port)
     args = parser.parse_args()
-    if args.build_port is None:
+    if args.build_port is None and args.tic_port is None:
         parser.error('at least one listener is required')
-    return serve(args.host, args.build_port)
+    return serve(args.host, args.build_port, args.tic_port)
 
 
 if __name__ == '__main__':
