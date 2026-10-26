@@ -1,8 +1,9 @@
 approvals_reviewer = "auto_review"
 service_tier = "default"
-model = "gpt-6.1-sol"
+model = "gpt-daybreak-blue-latest"
 model_reasoning_effort = "low"
 default_permissions = "default_permission_rules"
+daybreak = true
 
 [permissions.default_permission_rules]
 extends = ":workspace"
