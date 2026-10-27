@@ -160,10 +160,11 @@ Restore only when continued work would endanger unrelated changes or the user as
 
 ## Documentation
 
-Before adding documentation or choosing its destination, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md), including for small additions during implementation.
+Use the canonical documentation owner.
+When the owner or destination is not already established, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md).
 
-Choose documentation skills by their catalog scopes. Placement-only decisions
-and routine additions use the placement reference, not a full authoring workflow.
+Choose documentation skills by their catalog scopes.
+Routine additions to an established section do not require a full authoring workflow.
 
 Use `holistic-writing` when authoring or substantially revising prose, including instructions, prompts, and skills.
 Read the complete resulting artifact, not only the changed passages.

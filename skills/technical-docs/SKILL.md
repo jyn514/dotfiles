@@ -1,6 +1,6 @@
 ---
 name: technical-docs
-description: Author or substantially revise documentation using documentation-specific decisions about reader tasks, tutorial/how-to/reference/explanation forms, prerequisites, authoritative owners, starting points, routes, and warnings at action. Use also for documentation usability or correctness reviews. Placement-only decisions and routine additions use references/placement.md without this workflow. Introductory README writing belongs to readme-writing; whole-artifact prose authoring and editorial review belong to holistic-writing; tree restructuring belongs to reorganize-docs. Do not select designs or author human-owned product briefs.
+description: Author or substantially revise documentation using documentation-specific decisions about reader tasks, tutorial/how-to/reference/explanation forms, prerequisites, authoritative owners, starting points, routes, and warnings at action. Use also for documentation usability or correctness reviews. Placement-only decisions use references/placement.md; routine additions do not require this workflow. Introductory README writing belongs to readme-writing; whole-artifact prose authoring and editorial review belong to holistic-writing; tree restructuring belongs to reorganize-docs. Do not select designs or author human-owned product briefs.
 ---
 
 # Technical documentation
@@ -10,7 +10,8 @@ This skill owns documentation-specific authoring decisions, not a mandatory pros
 
 ## Scope and routes
 
-For placement alone or a routine addition to an established section, use [Documentation placement](references/placement.md) and validate changed text and links.
+Use [Documentation placement](references/placement.md) when the documentation owner or destination is not already established.
+Routine additions to an established section need validation of changed text and links, not this workflow.
 Do not load this workflow merely because a new heading is needed.
 Use `readme-writing` for an introductory README; it is independently usable, not a required first stage of this workflow.
 Use `reorganize-docs` for restructuring existing pages or navigation, including consolidation, splits, renames, archives, and multi-page information architecture.
@@ -34,7 +35,7 @@ The permitted TODO comments in human-authored product briefs remain governed by 
 ## 1. Establish the reader, owner, and task
 
 Read the current page, nearest documentation entrypoint, authoritative inputs, and representative consumers.
-For new content, use the placement reference to establish the destination and canonical owner before drafting.
+For new content, establish the destination and canonical owner before drafting; use the placement reference if either is unresolved.
 For review, retain the destination unless relocation is requested.
 When the task or intended reader is unclear enough to change the document, ask rather than inventing a scope.
 

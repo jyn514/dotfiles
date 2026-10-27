@@ -41,7 +41,8 @@ If an owner is unavailable, preserve its boundaries, state the limitation, and d
 Read the complete current artifact, its relevant entry points, authoritative inputs, and representative uses.
 For creation, inspect the material the new artifact must explain and any established destination or form.
 For an editorial pass, retain the destination unless relocation is requested.
-Before adding documentation, use the placement reference; do not force essays, reports, or instructions into documentation forms.
+Use the placement reference when the documentation owner or destination is not already established.
+Do not force essays, reports, or instructions into documentation forms.
 
 Before interpreting craft, encounter the reading experience: what comes to matter, what you expect, and what stays with you afterward.
 Distinguish pleasure or friction in following the prose from what readers come to understand and how they feel about the subject or themselves.

@@ -1,9 +1,8 @@
 # Documentation placement
 
-Use this reference before adding documentation or choosing where new content
-belongs, including small additions during implementation. Placement alone does
-not require the `technical-docs` authoring workflow. Restructuring existing pages
-or navigation belongs to `reorganize-docs`.
+Use this reference when the documentation owner or destination is not already established.
+Placement alone does not require the `technical-docs` authoring workflow.
+Restructuring existing pages or navigation belongs to `reorganize-docs`.
 
 When making a user-facing change, update its canonical documentation in the same
 change.
@@ -36,8 +35,8 @@ reads and writes it; document the resulting replay limitation for operators. An
 internal capture timeout belongs in a README only if readers need it to diagnose
 or operate the system.
 
-For a small addition to an established section, apply this check and validate the
-changed text and links. A new heading alone does not require the authoring skill.
+For a small addition to an established section, validate the changed text and links without repeating placement selection.
+A new heading alone does not require the authoring skill.
 Use [technical-docs](../SKILL.md) for documentation-specific authoring decisions
 or an explicit documentation usability/correctness review.
 Use `readme-writing` for an introductory README without requiring the full

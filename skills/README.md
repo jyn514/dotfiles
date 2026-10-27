@@ -179,7 +179,8 @@ Use these independently when their target is already selected:
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
 `opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill.
-Use [Documentation placement](technical-docs/references/placement.md) for new-content destinations and routine additions, without loading an authoring skill.
+Use [Documentation placement](technical-docs/references/placement.md) when a documentation owner or destination is unresolved.
+Routine additions to established sections need validation, not a placement or authoring workflow.
 Choose the writing workflow by the task, not a mandatory chain:
 
 - [Holistic writing](holistic-writing/SKILL.md) owns whole-artifact authoring, substantial revision, and reader experience across reports, essays, prompts, instructions, skills, and documentation.
