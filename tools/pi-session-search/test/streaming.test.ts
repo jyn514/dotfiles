@@ -40,6 +40,7 @@ describe("streaming JSONL records", () => {
 	let root: string;
 	let sessionFile: string;
 	let originalRoot: string | undefined;
+	let originalCodexRoot: string | undefined;
 	let originalMax: string | undefined;
 	const header = JSON.stringify({
 		type: "session", id: "streaming-session", cwd: "/streaming", timestamp: timestamp(0),
@@ -47,18 +48,22 @@ describe("streaming JSONL records", () => {
 
 	beforeEach(() => {
 		originalRoot = process.env.PI_SESSION_SEARCH_ROOT;
+		originalCodexRoot = process.env.PI_SESSION_SEARCH_CODEX_ROOT;
 		originalMax = process.env.PI_SESSION_SEARCH_MAX_BYTES;
 		root = mkdtempSync(join(tmpdir(), "pi-session-streaming-"));
 		const dir = join(root, "--streaming--");
 		mkdirSync(dir);
 		sessionFile = join(dir, "2026-04-23T06-00-00-000Z_streaming.jsonl");
 		process.env.PI_SESSION_SEARCH_ROOT = root;
+		process.env.PI_SESSION_SEARCH_CODEX_ROOT = join(root, "no-codex-sessions");
 		delete process.env.PI_SESSION_SEARCH_MAX_BYTES;
 	});
 
 	afterEach(() => {
 		if (originalRoot === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = originalRoot;
+		if (originalCodexRoot === undefined) delete process.env.PI_SESSION_SEARCH_CODEX_ROOT;
+		else process.env.PI_SESSION_SEARCH_CODEX_ROOT = originalCodexRoot;
 		if (originalMax === undefined) delete process.env.PI_SESSION_SEARCH_MAX_BYTES;
 		else process.env.PI_SESSION_SEARCH_MAX_BYTES = originalMax;
 		rmSync(root, { recursive: true, force: true });

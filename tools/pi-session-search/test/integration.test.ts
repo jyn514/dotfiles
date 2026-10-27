@@ -71,17 +71,21 @@ function buildFixtureSessions(): { root: string; sessionFile: string; sessionId:
 
 describe("searchSessions (integration)", () => {
 	const original = process.env.PI_SESSION_SEARCH_ROOT;
+	const originalCodex = process.env.PI_SESSION_SEARCH_CODEX_ROOT;
 
 	let fixture: ReturnType<typeof buildFixtureSessions>;
 
 	beforeEach(() => {
 		fixture = buildFixtureSessions();
 		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+		process.env.PI_SESSION_SEARCH_CODEX_ROOT = join(fixture.root, "no-codex-sessions");
 	});
 
 	afterEach(() => {
 		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = original;
+		if (originalCodex === undefined) delete process.env.PI_SESSION_SEARCH_CODEX_ROOT;
+		else process.env.PI_SESSION_SEARCH_CODEX_ROOT = originalCodex;
 	});
 
 	it("finds substring matches in user messages", async () => {
@@ -225,17 +229,21 @@ describe("searchSessions (integration)", () => {
 
 describe("readSessionWindow (integration)", () => {
 	const original = process.env.PI_SESSION_SEARCH_ROOT;
+	const originalCodex = process.env.PI_SESSION_SEARCH_CODEX_ROOT;
 
 	let fixture: ReturnType<typeof buildFixtureSessions>;
 
 	beforeEach(() => {
 		fixture = buildFixtureSessions();
 		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+		process.env.PI_SESSION_SEARCH_CODEX_ROOT = join(fixture.root, "no-codex-sessions");
 	});
 
 	afterEach(() => {
 		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = original;
+		if (originalCodex === undefined) delete process.env.PI_SESSION_SEARCH_CODEX_ROOT;
+		else process.env.PI_SESSION_SEARCH_CODEX_ROOT = originalCodex;
 	});
 
 	it("returns a markdown-formatted window for an in-root path", async () => {
@@ -294,6 +302,7 @@ describe("readSessionWindow (integration)", () => {
 describe("automatic search filtering", () => {
 	let fixture: ReturnType<typeof buildFixtureSessions>;
 	let original: string | undefined;
+	let originalCodex: string | undefined;
 	const timestamp = "2026-04-23T06:48:10.000Z";
 	const envelope = '<pi_goal_continuation goal_id="goal-1">\nneedle update_goal\n</pi_goal_continuation>';
 	const record = (content: unknown, id: string | undefined = "record-1", role = "user") => ({
@@ -309,12 +318,16 @@ describe("automatic search filtering", () => {
 	}
 	beforeEach(() => {
 		original = process.env.PI_SESSION_SEARCH_ROOT;
+		originalCodex = process.env.PI_SESSION_SEARCH_CODEX_ROOT;
 		fixture = buildFixtureSessions();
 		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+		process.env.PI_SESSION_SEARCH_CODEX_ROOT = join(fixture.root, "no-codex-sessions");
 	});
 	afterEach(() => {
 		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = original;
+		if (originalCodex === undefined) delete process.env.PI_SESSION_SEARCH_CODEX_ROOT;
+		else process.env.PI_SESSION_SEARCH_CODEX_ROOT = originalCodex;
 		rmSync(fixture.root, { recursive: true, force: true });
 	});
 
@@ -521,15 +534,19 @@ describe("automatic search filtering", () => {
 });
 describe("session ID reads", () => {
 	const originalRoot = process.env.PI_SESSION_SEARCH_ROOT;
+	const originalCodex = process.env.PI_SESSION_SEARCH_CODEX_ROOT;
 	const originalBytes = process.env.PI_SESSION_SEARCH_MAX_BYTES;
 	let fixture: ReturnType<typeof buildFixtureSessions>;
 	beforeEach(() => {
 		fixture = buildFixtureSessions();
 		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+		process.env.PI_SESSION_SEARCH_CODEX_ROOT = join(fixture.root, "no-codex-sessions");
 	});
 	afterEach(() => {
 		if (originalRoot === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = originalRoot;
+		if (originalCodex === undefined) delete process.env.PI_SESSION_SEARCH_CODEX_ROOT;
+		else process.env.PI_SESSION_SEARCH_CODEX_ROOT = originalCodex;
 		if (originalBytes === undefined) delete process.env.PI_SESSION_SEARCH_MAX_BYTES;
 		else process.env.PI_SESSION_SEARCH_MAX_BYTES = originalBytes;
 		rmSync(fixture.root, { recursive: true, force: true });
