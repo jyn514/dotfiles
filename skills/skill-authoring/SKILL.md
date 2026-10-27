@@ -96,6 +96,10 @@ Add optional frontmatter only when it has operational meaning and every target h
 
 ## 5. Write an executable procedure
 
+State the intended action directly.
+Mention an alternative only when choosing or rejecting it is necessary to the task.
+Avoid framing an instruction as “before doing X” when X is not otherwise called for; that wording can introduce X as an expected later step.
+
 Use imperative steps in execution order. Every skill should define:
 
 - initial observations and prerequisites;
