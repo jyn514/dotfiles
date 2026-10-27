@@ -1042,7 +1042,6 @@ vim.keymap.set('n', 'gC', pickers.lsp_outgoing_calls, { desc = "Show outgoing ca
 
 -- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
 local lsp_document_highlight = vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
-local lsp_codelens = vim.api.nvim_create_augroup("lsp_codelens", { clear = true })
 local lsp_attach = vim.api.nvim_create_augroup("lsp_attach", { clear = true })
 vim.api.nvim_create_autocmd("LspAttach", {
 	group = lsp_attach,
@@ -1069,16 +1068,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 		end
 		if client.server_capabilities.codeLensProvider then
 			vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens", buffer = bufnr })
-			vim.lsp.codelens.refresh { bufnr = bufnr }
-			-- TODO: should be CursorHold, but that causes flickering
-			-- https://github.com/neovim/neovim/issues/34965
-			vim.api.nvim_clear_autocmds { buffer = bufnr, group = lsp_codelens }
-			vim.api.nvim_create_autocmd("BufEnter", {
-				callback = function() vim.lsp.codelens.refresh { bufnr = bufnr } end,
-				buffer = bufnr,
-				group = lsp_codelens,
-				desc = "Refresh codelens actions",
-			})
+			vim.lsp.codelens.enable(true, { bufnr = bufnr })
 		end
 	end
 })

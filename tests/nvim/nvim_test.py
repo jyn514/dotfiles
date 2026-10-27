@@ -138,6 +138,25 @@ assert(vim.lsp.is_enabled('rhombus'))
 """
         )
 
+    def test_lsp_attach_uses_current_codelens_api(self) -> None:
+        self.run_nvim(
+            """
+local enabled
+vim.lsp.codelens.refresh = function() error('deprecated codelens API called') end
+vim.lsp.codelens.enable = function(value, filter)
+  enabled = { value = value, filter = filter }
+end
+vim.lsp.get_client_by_id = function()
+  return { server_capabilities = { codeLensProvider = true } }
+end
+
+local bufnr = vim.api.nvim_get_current_buf()
+vim.api.nvim_exec_autocmds('LspAttach', { buffer = bufnr, data = { client_id = 1 } })
+assert(enabled.value == true)
+assert(enabled.filter.bufnr == bufnr)
+"""
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
