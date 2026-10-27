@@ -11,7 +11,7 @@ governing permissions and limitations under the License.
 */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { open, readdir, realpath, stat, type FileHandle } from "node:fs/promises";
@@ -570,6 +570,9 @@ type WindowEntry = ReadMessageOrigin & {
 	timestamp: string;
 	entryId?: string;
 	text: string;
+	candidate?: EditCandidate;
+	/** Center-only source record; excluded from ordinary cursor counts. */
+	inspection?: boolean;
 };
 
 function windowEntry(record: unknown, source: SessionSource = "pi"): WindowEntry | undefined {
@@ -777,7 +780,103 @@ async function openHistory(selected: SelectedSession, cap: number, signal?: Abor
 	}
 }
 
+// Bound the serialized candidate list, independently of the raw-record cap.
+// Never cut a record's targets or resume inside its nested-call array.
+const MAX_CANDIDATE_BYTES = 64 * 1024;
+const EditCandidateSchema = Type.Object({
+	source: Type.Object({ sessionFile: Type.String(), aroundEntryId: Type.String() }),
+	timestamp: Type.String(),
+	targets: Type.Array(Type.Object({
+		kind: Type.Union([Type.Literal("tool_call"), Type.Literal("nested_call"), Type.Literal("checkpoint")]),
+		path: Type.String(),
+		toolName: Type.Optional(Type.String()),
+		toolCallId: Type.Optional(Type.String()),
+	})),
+	incomplete: Type.Optional(Type.Boolean()),
+});
+export type EditCandidate = Static<typeof EditCandidateSchema>;
+const EditCandidatePageSchema = Type.Object({
+	view: Type.Literal("edit_candidates"),
+	sessionFile: Type.String(),
+	candidates: Type.Array(EditCandidateSchema),
+	nextCursor: Type.String(),
+	hasMore: Type.Boolean(),
+	skippedRecords: Type.Integer({ minimum: 0 }),
+	incomplete: Type.Boolean(),
+});
+
+/** undefined: no candidate; null: a candidate record omitted as a whole. */
+function editCandidate(record: unknown, file: string): EditCandidate | null | undefined {
+	const raw = object(record);
+	if (!raw) return;
+	const msg = raw.type === "message" ? object(raw.message) : undefined;
+	const targets: EditCandidate["targets"] = [];
+	let incomplete = false;
+	function call(value: unknown, kind: "tool_call" | "nested_call"): void {
+		const tool = object(value);
+		if (tool?.name !== "edit" && tool?.name !== "write") return;
+		const args = object(tool.arguments);
+		if (typeof args?.path !== "string" || !args.path) { incomplete = true; return; }
+		targets.push({ kind, path: args.path, toolName: tool.name,
+			...(typeof tool.id === "string" ? { toolCallId: tool.id } : {}) });
+	}
+	if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+		for (const block of msg.content) if (object(block)?.type === "toolCall") call(block, "tool_call");
+	}
+	if (msg?.role === "toolResult" && msg.nestedCalls !== undefined) {
+		const nested = object(msg.nestedCalls);
+		if (nested?.complete !== true) incomplete = true;
+		if (Array.isArray(nested?.calls)) {
+			for (const nestedCall of nested.calls) call(nestedCall, "nested_call");
+		} else incomplete = true;
+	}
+	if (raw.type === "compaction") {
+		const modified = object(raw.details)?.modifiedFiles;
+		if (Array.isArray(modified)) {
+			for (const target of modified) {
+				if (typeof target === "string" && target) targets.push({ kind: "checkpoint", path: target });
+				else incomplete = true;
+			}
+		}
+	}
+	if (!targets.length && !incomplete) return;
+	// Native Pi entries have IDs. Do not invent an exact reference for legacy
+	// records without one, or substitute a potentially ambiguous timestamp.
+	if (typeof raw.id !== "string" || !raw.id) return null;
+	const candidate: EditCandidate = { source: { sessionFile: file, aroundEntryId: raw.id },
+		timestamp: typeof raw.timestamp === "string" ? raw.timestamp : "", targets,
+		...(incomplete ? { incomplete: true } : {}) };
+	return Buffer.byteLength(JSON.stringify(candidate)) + 2 > MAX_CANDIDATE_BYTES ? null : candidate;
+}
+
+function candidateEntry(candidate: EditCandidate): WindowEntry {
+	return { role: "custom", customType: "edit_candidate", entryId: candidate.source.aroundEntryId,
+		ts: Date.parse(candidate.timestamp) || 0, timestamp: candidate.timestamp,
+		text: JSON.stringify(candidate), candidate };
+}
+
+/** Inspect only the explicitly requested result/checkpoint, not all such records. */
+function inspectionEntry(record: unknown, entryId: string | undefined): WindowEntry | undefined {
+	const raw = object(record);
+	if (!entryId || raw?.id !== entryId) return;
+	const msg = raw.type === "message" ? object(raw.message) : undefined;
+	let text: string;
+	let customType: string;
+	if (msg?.role === "toolResult") {
+		customType = "tool_result";
+		text = [JSON.stringify({ toolName: msg.toolName, toolCallId: msg.toolCallId, isError: msg.isError,
+			nestedCalls: msg.nestedCalls }), extractText(msg.content)].filter(Boolean).join("\n");
+	} else if (raw.type === "compaction") {
+		customType = "compaction";
+		text = [typeof raw.summary === "string" ? raw.summary : "",
+			JSON.stringify({ modifiedFiles: object(raw.details)?.modifiedFiles })].filter(Boolean).join("\n");
+	} else return;
+	const timestamp = typeof raw.timestamp === "string" ? raw.timestamp : "";
+	return { role: "custom", customType, entryId, timestamp, ts: Date.parse(timestamp) || 0, text, inspection: true };
+}
+
 export interface ReadSessionOptions {
+	view?: "transcript" | "edit_candidates";
 	sessionFile?: string;
 	sessionId?: string;
 	tail?: boolean;
@@ -798,6 +897,9 @@ export type ReadSessionMessage = ReadMessageOrigin & {
 
 export interface ReadSessionResult {
 	text: string;
+	view?: "edit_candidates";
+	candidates?: EditCandidate[];
+	incomplete?: boolean;
 	/** Resolved absolute realpath of the selected transcript; absent for version lists. */
 	sessionFile?: string;
 	messages: ReadSessionMessage[];
@@ -809,8 +911,8 @@ export interface ReadSessionResult {
 }
 
 interface ReadCursor {
-	/** v1 counted only user/assistant messages; v3 also counts Pi custom messages. */
-	v: 1 | 3;
+	/** v1: user/assistant; v3: also Pi custom messages; v4: edit-candidate records. */
+	v: 1 | 3 | 4;
 	file: string;
 	dev: string;
 	ino: string;
@@ -841,7 +943,7 @@ function decodeCursor(raw: string): SessionCursor {
 	catch { throw new Error("Invalid read_session cursor."); }
 	if (!value || typeof value !== "object") throw new Error("Invalid read_session cursor.");
 	const c = value as SessionCursor;
-	if ((c.v !== 1 && c.v !== 2 && c.v !== 3) || !cursorPath(c.file) || (c.v === 2 && !cursorPath(c.at)) ||
+	if ((c.v !== 1 && c.v !== 2 && c.v !== 3 && c.v !== 4) || !cursorPath(c.file) || (c.v === 2 && !cursorPath(c.at)) ||
 		typeof c.dev !== "string" || typeof c.ino !== "string" ||
 		!Number.isFinite(c.birth) || !Number.isSafeInteger(c.offset) || c.offset < 0 ||
 		!Number.isSafeInteger(c.index) || c.index < 0 || !Number.isSafeInteger(c.cap) || c.cap < 1 ||
@@ -889,6 +991,10 @@ async function historyPrefixHash(
 /** Read a bounded snapshot of the selected version's logical conversation. */
 export async function readSession(opts: ReadSessionOptions): Promise<ReadSessionResult> {
 	const maxRecordBytes = getMaxBytes();
+	if (opts.view !== undefined && opts.view !== "transcript" && opts.view !== "edit_candidates") {
+		throw new Error("view must be transcript or edit_candidates.");
+	}
+	const candidateView = opts.view === "edit_candidates";
 	const ctx = opts.contextMessages ?? 6;
 	const max = opts.maxMessages ?? 30;
 	if (!Number.isSafeInteger(ctx) || ctx < 0) throw new Error("contextMessages must be a non-negative safe integer.");
@@ -908,7 +1014,11 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 	}
 	const target = opts.aroundTimestamp === undefined ? NaN : parseDateOrThrow(opts.aroundTimestamp, "aroundTimestamp");
 	const previous = opts.after === undefined ? undefined : decodeCursor(opts.after);
+	if (previous && (previous.v === 4) !== candidateView) throw new Error("read_session cursor belongs to a different view.");
 	const selected = await resolveSession(opts, maxRecordBytes);
+	if (candidateView && (Array.isArray(selected) || selected.config.source !== "pi")) {
+		throw new Error("edit_candidates supports Pi sessions only; Codex edit candidates are not supported.");
+	}
 	if (Array.isArray(selected)) {
 		const lines = [`# Session ${opts.sessionId}: ${selected.length} versions`,
 			"Choose a sessionFile below and call read_session again; these histories are not concatenated.", ""];
@@ -919,6 +1029,12 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		return { text: lines.join("\n"), versions: selected, messages: [], hasMore: false, skippedRecords: 0 };
 	}
 	const source = selected.config.source;
+	const projectEntry = (record: unknown, segment: HistorySegment): WindowEntry | null | undefined => {
+		if (!candidateView) return historyEntry(record, source, segment)
+			?? (source === "pi" ? inspectionEntry(record, opts.aroundEntryId) : undefined);
+		const candidate = editCandidate(record, segment.file);
+		return candidate === null ? null : candidate ? candidateEntry(candidate) : undefined;
+	};
 	const segments = await openHistory(selected, maxRecordBytes, opts.signal);
 	try {
 		const last = segments[segments.length - 1];
@@ -940,6 +1056,9 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		let ordinaryTotal = 0;
 		let previousIndex = previous?.index ?? 0;
 		let skippedRecords = 0;
+		let incomplete = false;
+		let inspectionAt: number | undefined;
+		let inspectionOffset: number | undefined;
 		let nearest = 0;
 		let anchorFound = false;
 		let bestDiff = Infinity;
@@ -951,8 +1070,14 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 				if (item.line === null) skippedRecords += 1;
 				if (!item.terminated && (item.line === null || record === undefined)) break;
 				segment.safeEnd = item.end;
-				const entry = historyEntry(record, source, segment);
+				let entry = projectEntry(record, segment);
+				// Entry-ID lookup selects the first eligible occurrence, even if
+				// the transcript contains copies of a result or checkpoint.
+				if (entry?.inspection && anchorFound) entry = undefined;
+				if (candidateView && (entry === null || (record === undefined && item.line?.trim()))) skippedRecords += 1;
 				if (entry) {
+					if (entry.candidate?.incomplete) incomplete = true;
+					if (entry.inspection) { inspectionAt = total; inspectionOffset = item.start; }
 					const diff = Math.abs(entry.ts - target);
 					if (diff < bestDiff) { bestDiff = diff; nearest = total; }
 					if (opts.aroundEntryId !== undefined && entry.entryId === opts.aroundEntryId && !anchorFound) {
@@ -997,13 +1122,27 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		let cursorOffset = previous?.offset ?? 0;
 		let cursorIndex = previousIndex;
 		let cursorAt = previousAt;
+		let candidateBytes = 2; // JSON array brackets, plus whole entries below.
 		if (endIdx > startIdx) {
 			let index = 0;
 			window: for (const [segmentIndex, segment] of segments.entries()) {
 				for await (const item of positionedRecords(segment.file, segment.safeEnd, maxRecordBytes, opts.signal, segment.handle)) {
-					const entry = item.line === null ? undefined : historyEntry(parseRecord(item.line), source, segment);
-					if (!entry) continue;
+					const entry = item.line === null ? undefined : projectEntry(parseRecord(item.line), segment);
+					if (!entry || (entry.inspection && item.start !== inspectionOffset)) continue;
 					if (index >= startIdx) {
+						if (candidateView) {
+							let bytes = Buffer.byteLength(entry.text) + (entries.length ? 1 : 0);
+							// Prefer the end in tail mode, or keep the centered anchor
+							// before admitting any following context.
+							const preferLater = opts.tail || ((opts.aroundEntryId !== undefined || Number.isFinite(target)) && index <= nearest);
+							while (preferLater && entries.length && candidateBytes + bytes > MAX_CANDIDATE_BYTES) {
+								const removed = entries.shift()!;
+								candidateBytes -= Buffer.byteLength(removed.entry.text) + (entries.length ? 1 : 0);
+								bytes = Buffer.byteLength(entry.text) + (entries.length ? 1 : 0);
+							}
+							if (candidateBytes + bytes > MAX_CANDIDATE_BYTES) break window;
+							candidateBytes += bytes;
+						}
 						entries.push({ entry, index: index + 1 });
 						cursorAt = segmentIndex; cursorOffset = item.end; cursorIndex = index + 1;
 					}
@@ -1012,21 +1151,30 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 				}
 			}
 		}
-		if (opts.tail || (max > 0 && cursorIndex === total)) {
+		if ((opts.tail && (!candidateView || max === 0)) || (max > 0 && cursorIndex === total)) {
 			cursorAt = segments.length - 1; cursorOffset = last.safeEnd; cursorIndex = total;
 		}
-		const common = { file: last.relativeFile, ...last.identity, offset: cursorOffset, index: cursorIndex, cap: maxRecordBytes };
+		// A centered result/checkpoint is visible only for this inspection. Its
+		// receipt must use the ordinary message count so default reads can resume.
+		const committedIndex = cursorIndex - (inspectionAt !== undefined && cursorIndex > inspectionAt ? 1 : 0);
+		const common = { file: last.relativeFile, ...last.identity, offset: cursorOffset, index: committedIndex, cap: maxRecordBytes };
 		const cursor: SessionCursor = source === "pi"
-			? { v: 3, ...common, hash: await prefixHash(last.handle, cursorOffset, opts.signal) }
+			? { v: candidateView ? 4 : 3, ...common, hash: await prefixHash(last.handle, cursorOffset, opts.signal) }
 			: { v: 2, ...common, at: segments[cursorAt].relativeFile,
 				hash: await historyPrefixHash(segments, cursorAt, cursorOffset, opts.signal) };
 		const nextCursor = Buffer.from(JSON.stringify(cursor)).toString("base64url");
+		const hasMore = cursorIndex < total;
+		if (candidateView) {
+			const page: Static<typeof EditCandidatePageSchema> = { view: "edit_candidates", sessionFile: last.file,
+				candidates: entries.map(({ entry }) => entry.candidate!), nextCursor, hasMore, skippedRecords,
+				incomplete: incomplete || skippedRecords > 0 };
+			return { ...page, text: JSON.stringify(page), messages: [] };
+		}
 		const messages: ReadSessionMessage[] = entries.map(({ entry, index }) => {
 			const origin: ReadMessageOrigin = entry.role === "custom"
 				? { role: entry.role, customType: entry.customType } : { role: entry.role };
 			return { index, ...(entry.entryId === undefined ? {} : { entryId: entry.entryId }), ...origin, timestamp: entry.timestamp };
 		});
-		const hasMore = cursorIndex < total;
 		const out: string[] = [];
 		if (last.header) out.push(`# Session ${last.header.id} — cwd: ${last.header.cwd} — started: ${last.header.timestamp}`);
 		out.push(`# Showing messages ${startIdx + 1}–${endIdx} of ${total}`);
@@ -1237,12 +1385,16 @@ export default function (pi: ExtensionAPI) {
 		name: "read_session",
 		label: "Read a prior Pi or Codex session",
 		description:
-			"Read prior Pi or Codex session messages: start, tail, continuation, or centered context. A Codex file selects that version and reconstructs its inherited history. An ambiguous Codex sessionId returns an indexed version list with previews and sessionFile paths, not full transcripts or a tool error. Read-only.",
+			"Read prior Pi or Codex session messages: start, tail, continuation, or centered context. Use view: edit_candidates for recorded Pi edit/write targets and inspectable source references, not an ownership or completion inventory. A Codex file selects that version and reconstructs its inherited history. An ambiguous Codex sessionId returns an indexed version list with previews and sessionFile paths, not full transcripts or a tool error. Read-only.",
 		promptSnippet: "Read prior Pi or Codex history by file or session ID; list versions when a Codex ID is ambiguous.",
 		promptGuidelines: [
 			"Use read_session with the returned sessionFile unchanged and a modest maxMessages.",
 		],
+		outputSchema: Type.Union([Type.String(), EditCandidatePageSchema]),
 		parameters: Type.Object({
+			view: Type.Optional(Type.Union([Type.Literal("transcript"), Type.Literal("edit_candidates")], {
+				description: "Default transcript returns text. edit_candidates returns a structured Pi-only shortlist with recorded tool_call, nested_call or checkpoint paths and source references; use source in a transcript read for inspection. incomplete marks skipped or missing evidence, not exhaustive coverage. maxMessages counts whole source records; targets are never split. Cursors cannot cross views.",
+			})),
 			sessionFile: Type.Optional(Type.String({
 				description: "Path to any readable session .jsonl file, including exports and subagent transcripts. Relative paths resolve from the Pi root. Search and version-list paths can be passed unchanged. Provide exactly one of sessionFile or sessionId.",
 			})),
@@ -1253,10 +1405,10 @@ export default function (pi: ExtensionAPI) {
 				description: "Return the last maxMessages eligible messages in file order. With maxMessages=0, select the safe EOF cursor. Default false.",
 			})),
 			after: Type.Optional(Type.String({
-				description: "Opaque nextCursor from an earlier transcript read. Continue the same file/version after its committed boundary; safe across appends, errors if consumed history changed or a file was replaced. Transcript reads return cursors even when empty; version lists do not. hasMore covers only the initial snapshot. Mutually exclusive with tail=true and centered modes.",
+				description: "Opaque nextCursor from an earlier read in the same view. Continue the same file/version after its committed boundary; safe across appends, errors if consumed history changed or a file was replaced. Reads return cursors even when empty; version lists do not. hasMore covers only the initial snapshot. Mutually exclusive with tail=true and centered modes.",
 			})),
 			aroundEntryId: Type.Optional(Type.String({
-				description: "Exact entry ID, including Pi custom-message IDs; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
+				description: "Exact entry ID, including Pi custom-message IDs and candidate source tool-result/checkpoint IDs; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
 			})),
 			aroundTimestamp: Type.Optional(
 				Type.String({ description: "Center on the nearest message to a search hit's timestamp (ISO date/time; invalid dates rejected). Ties prefer the first message in file order. Mutually exclusive with other selection modes." }),
@@ -1265,12 +1417,13 @@ export default function (pi: ExtensionAPI) {
 				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum context radius on each side of a centered target. Default 6. maxMessages shrinks symmetrically, always retaining the anchor when positive; extra context prefers preceding messages." }),
 			),
 			maxMessages: Type.Optional(
-				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum returned eligible messages. Default 30. Zero returns none and does not advance the cursor, except tail=true selects safe EOF." }),
+				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum returned eligible messages, or whole source records in edit_candidates. Default 30. Zero returns none and does not advance the cursor, except tail=true selects safe EOF." }),
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
 			try {
 				const result = await readSession({
+					view: params.view,
 					sessionFile: params.sessionFile,
 					sessionId: params.sessionId,
 					tail: params.tail as boolean | undefined,
@@ -1282,7 +1435,13 @@ export default function (pi: ExtensionAPI) {
 					signal,
 				});
 				const { text, ...details } = result;
-				return { content: [{ type: "text", text }], details };
+				// Codemode keeps its existing string result for ordinary reads.
+				const structuredContent = result.view === "edit_candidates" ? {
+					view: result.view, sessionFile: result.sessionFile!, candidates: result.candidates!,
+					nextCursor: result.nextCursor!, hasMore: result.hasMore, skippedRecords: result.skippedRecords,
+					incomplete: result.incomplete!,
+				} : text;
+				return { content: [{ type: "text", text }], details, structuredContent };
 			} catch (e) {
 				return {
 					content: [{ type: "text", text: `read_session failed: ${(e as Error).message}` }],

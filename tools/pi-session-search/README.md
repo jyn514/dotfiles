@@ -208,9 +208,56 @@ Custom messages participate in every read mode, including when Pi hides them in 
 Their headers and structured message metadata preserve `role: "custom"` and the original `customType`.
 `aroundEntryId` accepts a custom message's entry ID just like a user or assistant entry ID.
 Search still matches only user/assistant messages.
-Reads omit tool results, thinking-only messages, images, custom state entries (`type: "custom"`), and custom-message `details`.
+Ordinary reads omit tool results, thinking-only messages, images, custom state entries (`type: "custom"`), and custom-message `details`.
+An explicit Pi tool-result or compaction `aroundEntryId` read also makes that source record inspectable.
+It shows tool-result text and persisted nested calls, or the checkpoint summary and modified-file list, as a centered custom entry.
+These records do not enter ordinary message pagination; the inspection cursor resumes with ordinary messages.
 Tool-call summaries mark truncated arguments with an ellipsis.
 Positions count only eligible messages, including readable custom messages, and exclude oversized records.
+
+### Find earlier edit candidates with codemode
+
+Use `view: "edit_candidates"` to find recorded Pi edit/write paths before inspecting earlier work.
+Unlike ordinary reads, which still return a string to codemode, this view returns a structured page:
+
+```js
+const page = await tools.read_session({
+  sessionId: "<session ID>",
+  view: "edit_candidates"
+});
+const candidates = page.candidates.filter(candidate =>
+  candidate.targets.some(target => target.path.includes("skills/autonomous-work/"))
+);
+const inspections = await Promise.all(candidates.map(candidate =>
+  tools.read_session({ ...candidate.source, maxMessages: 1 })
+));
+return {
+  candidates,
+  inspections,
+  nextCursor: page.nextCursor,
+  hasMore: page.hasMore,
+  incomplete: page.incomplete
+};
+```
+
+Each candidate represents one source record and has `source: { sessionFile, aroundEntryId }`, `timestamp`, and `targets`.
+Targets retain their recorded paths and distinguish `kind: "tool_call"`, `"nested_call"`, and `"checkpoint"`.
+Direct and nested targets come from `edit`/`write` arguments and include the tool name and call ID when recorded.
+Checkpoint paths come only from `compaction.details.modifiedFiles`; they do not establish a new edit at that checkpoint.
+No shell commands, script text, prose, tool outcomes, or current working-copy state are interpreted.
+A failed edit is still a candidate, not evidence of successful work, authorship, ownership, or completion.
+
+`maxMessages` counts whole candidate records, not targets; one record's nested-call targets stay together.
+The serialized candidate list is limited to 64 KiB, plus navigation metadata.
+A record that cannot fit intact, or lacks an exact entry ID for inspection, is omitted and counted in `skippedRecords`.
+Oversized raw records and malformed complete JSON records also count as skips.
+`incomplete` is true when the snapshot has skips or incomplete nested-call evidence, including omitted edit/write arguments.
+An affected candidate also has `incomplete: true`; missing arguments never produce invented paths.
+False does not certify an exhaustive edit inventory, especially for older transcripts without persisted nested calls.
+
+When `hasMore` is true, request the same file/session and view with `after: page.nextCursor`.
+Cursors cannot cross views; ordinary append, stale-prefix, tail, and centered-selection behavior still applies.
+Candidate reads support Pi transcripts only; Codex candidate reads fail explicitly rather than returning an empty shortlist.
 
 ### Codex versions and inherited history
 
