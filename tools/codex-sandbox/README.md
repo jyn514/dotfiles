@@ -59,6 +59,9 @@ sent to the model, including goal-triggered turns and resumed sessions. Request-
 projection also advertises the guest working directory; stored messages retain
 their host paths.
 `link_list` cwd lines use the same guest mappings in model requests, without changing terminal identities or host UI metadata.
+`search_sessions` and `read_session` project mapped path metadata to guest paths in model requests.
+Absolute file selectors and cwd filters translate back to host paths before those tools execute.
+Historical transcript text, snippets, version previews, opaque cursors, and stored results remain unchanged.
 Unmapped directories remain unchanged rather than implying a guest mount.
 Reload existing host Pi sessions with `/reload` to apply this extension change.
 `/system-prompt` shows the prepared host prompt before this request-time projection.

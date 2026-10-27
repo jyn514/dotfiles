@@ -258,6 +258,16 @@ Do not remove unrelated sessions to manufacture a cold run.
 
 ## Tests
 
+The guest-tools suite checks session-tool path projection and reverse argument translation through the installed Pi hooks.
+Set `PI_SESSION_SEARCH_PACKAGE_DIR` to a reader checkout or installation for native reader, search-to-read, and cursor tests:
+
+```sh
+PI_SESSION_SEARCH_PACKAGE_DIR=/path/to/pi-session-search dev/test-environment bun test tools/codex-sandbox/tests/guest_tools_test.ts
+```
+
+This optional integration creates private transcripts and filesystem aliases; it does not read user history or establish live container-mount acceptance.
+Without the variable, the suite still checks hook registration, projection, and unchanged historical content with synthetic results.
+
 Run the Python unit tests together in one process from the repository root:
 
 ```sh

@@ -10,7 +10,10 @@ import {
   createLsTool, createReadTool, createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { parsePiResourcePaths, rewritePiResourcePaths } from "./guest-tools-core.ts";
+import {
+  parsePiResourcePaths, rewritePiResourcePaths, sessionToolInputToHost,
+  sessionToolMetadataToGuest, sessionToolTextToGuest,
+} from "./guest-tools-core.ts";
 import { createBoundaryController, type BoundaryMetadata } from "./commit-boundary.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
@@ -179,6 +182,9 @@ export default function guestTools(pi: ExtensionAPI) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
   const resourcePaths = guestResourcePaths();
+  // The session tools run on the host. Accept paths advertised by the guest
+  // view without changing transcript contents or decoding their cursors.
+  pi.on("tool_call", (event) => sessionToolInputToHost(event.toolName, event.input, resourcePaths));
   const hostRepository = Object.entries(resourcePaths)
     .find(([, guestPath]) => guestPath === repository)?.[0];
   const instructionFiles = [
@@ -295,6 +301,16 @@ export default function guestTools(pi: ExtensionAPI) {
               ? rewriteSystem(message.content)
               : message.content.map((block) => ({ ...block, text: rewriteSystem(block.text) })),
             ...(sections ? { sections } : {}),
+          };
+        }
+        if (message.role === "toolResult" &&
+          (message.toolName === "search_sessions" || message.toolName === "read_session")) {
+          return {
+            ...message,
+            details: sessionToolMetadataToGuest(message.details, resourcePaths),
+            content: message.content.map((block) => block.type === "text"
+              ? { ...block, text: sessionToolTextToGuest(message.toolName, block.text, message.details, resourcePaths) }
+              : block),
           };
         }
         // Link identities can contain paths; project only cwd lines, not names or host UI metadata.

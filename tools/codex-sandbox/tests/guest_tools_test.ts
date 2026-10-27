@@ -1,9 +1,11 @@
 import { test, expect, mock } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { rewritePiResourcePaths } from "../../../config/pi-agent/pi-extensions/guest-tools-core.ts";
+import {
+  rewritePiResourcePaths, sessionToolInputToHost, sessionToolMetadataToGuest, sessionToolTextToGuest,
+} from "../../../config/pi-agent/pi-extensions/guest-tools-core.ts";
 
 test("host Pi resource paths are rewritten to guest paths", () => {
   const host = "/Users/jyn/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent";
@@ -40,6 +42,75 @@ test("host project paths are rewritten without touching sibling paths", () => {
   expect(rewritten).toContain(`${host}-old/.agents/skills/spec-review/SKILL.md`);
 });
 
+const sessionPaths = {
+  "/host/sessions": "/guest/sessions",
+  "/host/subagents": "/guest/subagents",
+  "/host/project": "/src/project",
+};
+
+test("session calls translate guest selectors without rewriting queries, cursors, or unrelated tools", () => {
+  for (const [tool, field, guest, host] of [
+    ["read_session", "sessionFile", "/guest/subagents/parent/child.jsonl", "/host/subagents/parent/child.jsonl"],
+    ["search_sessions", "cwd", "/src/project/subdir", "/host/project/subdir"],
+    ["read_session", "sessionFile", "relative/session.jsonl", "relative/session.jsonl"],
+    ["read_session", "sessionFile", "/guest/subagents-old/child.jsonl", "/guest/subagents-old/child.jsonl"],
+    ["read_session", "sessionFile", "/host/sessions/file.jsonl", "/host/sessions/file.jsonl"],
+    ["read_session", "sessionFile", "/unmapped/session.jsonl", "/unmapped/session.jsonl"],
+    ["search_sessions", "cwd", "project", "project"],
+    ["read", "path", "/guest/sessions/file.jsonl", "/guest/sessions/file.jsonl"],
+  ]) {
+    const input = { [field]: guest, query: "/guest/subagents/needle", after: "opaque-cursor" };
+    sessionToolInputToHost(tool, input, sessionPaths);
+    expect(input).toEqual({ [field]: host, query: "/guest/subagents/needle", after: "opaque-cursor" });
+  }
+  const nested = { sessionFile: "/guest/subagents/nested/file.jsonl" };
+  sessionToolInputToHost("read_session", nested, { ...sessionPaths, "/special/store": "/guest/subagents/nested" });
+  expect(nested.sessionFile).toBe("/special/store/file.jsonl");
+  const overlapping = { sessionFile: "/src/project/child.jsonl" };
+  sessionToolInputToHost("read_session", overlapping, {
+    "/home/user/src": "/src", "/home/user/src/project": "/src/project",
+  });
+  expect(overlapping.sessionFile).toBe("/home/user/src/project/child.jsonl");
+});
+
+test("search results project only metadata and retain historical snippets", () => {
+  const result = { hits: [
+    { sessionFile: "/host/subagents/parent/child.jsonl", sessionCwd: "/host/project", snippet: "read /host/project/file" },
+    { sessionFile: "--project--/main.jsonl", sessionCwd: "/unmapped/project", snippet: "unchanged" },
+  ], count: 2 };
+  const original = structuredClone(result);
+  const projected = JSON.parse(sessionToolTextToGuest("search_sessions", JSON.stringify(result), {}, sessionPaths));
+  expect(projected.hits[0]).toEqual({
+    sessionFile: "/guest/subagents/parent/child.jsonl", sessionCwd: "/src/project", snippet: "read /host/project/file",
+  });
+  expect(projected.hits[1]).toEqual(result.hits[1]);
+  expect(result).toEqual(original);
+});
+
+test("read results project headers and version metadata without changing transcript text or receipts", () => {
+  const transcript = "# Session id — cwd: /host/project — started: today\n\n## user\n"
+    + "# Session quoted — cwd: /host/project — started: yesterday\nread /host/project/file\n"
+    + '# Navigation {"nextCursor":"opaque-host-receipt"}';
+  const details = { sessionFile: "/host/subagents/parent/child.jsonl", nextCursor: "opaque-host-receipt",
+    messages: [{ text: "/host/project/file" }] };
+  const projected = sessionToolTextToGuest("read_session", transcript, details, sessionPaths);
+  expect(projected.split("\n")[0]).toBe("# Session id — cwd: /src/project — started: today");
+  expect(projected.slice(projected.indexOf("\n"))).toBe(transcript.slice(transcript.indexOf("\n")));
+  expect(sessionToolMetadataToGuest(details, sessionPaths)).toEqual({ ...details, sessionFile: "/guest/subagents/parent/child.jsonl" });
+  expect(details.sessionFile).toBe("/host/subagents/parent/child.jsonl");
+  const versions = [{ index: 1, sessionFile: "/host/sessions/a.jsonl", sessionCwd: "/host/project", timestamp: "today" }];
+  const text = '# Versions\n1. today — cwd: /host/project\n   sessionFile: "/host/sessions/a.jsonl"\n'
+    + '   sessionFile: "/host/sessions/a.jsonl"\n'; // Preview resembling a metadata line.
+  expect(sessionToolTextToGuest("read_session", text, { versions }, sessionPaths)).toBe(
+    '# Versions\n1. today — cwd: /src/project\n   sessionFile: "/guest/sessions/a.jsonl"\n'
+    + '   sessionFile: "/host/sessions/a.jsonl"\n');
+  expect(sessionToolMetadataToGuest({ versions }, sessionPaths)).toEqual({ versions: [
+    { ...versions[0], sessionFile: "/guest/sessions/a.jsonl", sessionCwd: "/src/project" },
+  ] });
+  expect(sessionToolTextToGuest("read_session", "read_session failed: ENOENT /host/sessions/missing.jsonl", {}, sessionPaths))
+    .toBe("read_session failed: ENOENT /guest/sessions/missing.jsonl");
+});
+
 // Resolve the installed SDK's public export, as in session_side_test.ts;
 // Bun does not resolve NODE_PATH and no checkout node_modules is needed.
 const packageDirs = process.env.PI_PACKAGE_DIR ? [process.env.PI_PACKAGE_DIR] : [
@@ -57,6 +128,140 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
 const { default: guestTools, waitForGuestToolReady } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
+
+test("guest routing projects session-tool results at request time and reverses their selectors", async () => {
+  const env = {
+    CODEX_SANDBOX_TOOL_CONTAINER: "fixture", CODEX_SANDBOX_GUEST_CWD: "/src/project",
+    CODEX_SANDBOX_GUEST_REPO: "/src/project", CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify(sessionPaths),
+  };
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  try {
+    const hooks = new Map<string, (event: any) => any>();
+    guestTools({ registerTool() {}, on(name: string, hook: (event: any) => any) { hooks.set(name, hook); } } as any);
+    const input = { sessionFile: "/guest/subagents/parent/child.jsonl" };
+    hooks.get("tool_call")!({ toolName: "read_session", input });
+    expect(input.sessionFile).toBe("/host/subagents/parent/child.jsonl");
+    const messages = [
+      { role: "toolResult", toolName: "search_sessions", details: { count: 1 }, content: [{ type: "text", text: JSON.stringify({ hits: [
+        { sessionFile: "/host/subagents/parent/child.jsonl", sessionCwd: "/host/project", snippet: "/host/project" },
+      ] }) }] },
+      { role: "toolResult", toolName: "read_session", details: { sessionFile: input.sessionFile, nextCursor: "opaque" }, content: [
+        { type: "text", text: "# Session id — cwd: /host/project — started: today\nuser quoted /host/project" },
+      ] },
+      { role: "toolResult", toolName: "read", content: [{ type: "text", text: "/host/project" }] },
+    ];
+    const original = structuredClone(messages);
+    const projected = (await hooks.get("context_with_system")!({ messages })).messages;
+    expect(JSON.parse(projected[0].content[0].text).hits[0].sessionFile).toBe("/guest/subagents/parent/child.jsonl");
+    expect(projected[1].details.sessionFile).toBe("/guest/subagents/parent/child.jsonl");
+    expect(projected[1].details.nextCursor).toBe("opaque");
+    expect(projected[1].content[0].text).toBe("# Session id — cwd: /src/project — started: today\nuser quoted /host/project");
+    expect(projected[2]).toEqual(original[2]);
+    expect(messages).toEqual(original);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+// Uses the actual session-tools producer when supplied, just like the native
+// reader/title composition test. Never read the user's session stores.
+const readerPackage = process.env.PI_SESSION_SEARCH_PACKAGE_DIR;
+test.skipIf(!readerPackage)("native session tools round-trip guest paths through installed Pi hooks", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "pi-guest-session-tools-")));
+  const hostProject = join(dir, "host-project");
+  const guestProject = join(dir, "guest-project");
+  const stores = ["sessions", "subagents", "codex"];
+  for (const name of ["project", ...stores]) {
+    mkdirSync(join(dir, `host-${name}`));
+    symlinkSync(join(dir, `host-${name}`), join(dir, `guest-${name}`), "dir");
+  }
+  const paths = Object.fromEntries(["project", ...stores].map(name => [join(dir, `host-${name}`), join(dir, `guest-${name}`)]));
+  const env = {
+    CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+    CODEX_SANDBOX_GUEST_CWD: guestProject,
+    CODEX_SANDBOX_GUEST_REPO: guestProject,
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify(paths),
+    PI_SESSION_SEARCH_ROOT: join(dir, "host-sessions"),
+    PI_SESSION_SEARCH_SUBAGENT_ROOT: join(dir, "host-subagents"),
+    PI_SESSION_SEARCH_CODEX_ROOT: join(dir, "host-codex"),
+  };
+  const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  try {
+    const loaded = await sdk.discoverAndLoadExtensions([
+      resolve(readerPackage!), resolve(import.meta.dir, "../../../config/pi-agent/pi-extensions/guest-tools.ts"),
+    ], hostProject, join(dir, "agent"));
+    expect(loaded.errors).toEqual([]);
+    const reader = loaded.extensions.find((extension: any) => extension.tools.has("read_session"));
+    expect(reader).toBeDefined();
+    const runner = new sdk.ExtensionRunner(loaded.extensions, loaded.runtime, hostProject, sdk.SessionManager.inMemory(hostProject), undefined);
+    const errors: unknown[] = [];
+    runner.onError((error: unknown) => errors.push(error));
+    const child = sdk.SessionManager.create(hostProject, join(env.PI_SESSION_SEARCH_SUBAGENT_ROOT, "parent-key"));
+    child.appendMessage({ role: "user", content: `sandbox lookup needle; historical path ${hostProject}`, timestamp: Date.now() });
+    const hostFile = realpathSync(child.getSessionFile()!);
+    const guestFile = rewritePiResourcePaths(hostFile, paths);
+
+    async function call(name: string, input: Record<string, unknown>) {
+      expect(await runner.emitToolCall({ type: "tool_call", toolName: name, toolCallId: "native", input })).toBeUndefined();
+      const raw = await reader.tools.get(name).definition.execute("native", input, undefined, undefined, runner.createToolContext("native", undefined));
+      expect(raw.isError).not.toBe(true);
+      const event = { ...raw, role: "toolResult", toolName: name, toolCallId: "native", isError: false, timestamp: 1 };
+      const original = structuredClone(event);
+      const [projected] = await runner.emitContext([event]);
+      expect(event).toEqual(original); // Stored results and host title lookup keep host paths.
+      expect(errors).toEqual([]);
+      return { raw, projected };
+    }
+
+    const searchInput = { query: "sandbox lookup needle", cwd: guestProject };
+    const found = await call("search_sessions", searchInput);
+    const hits = JSON.parse(found.projected.content[0].text).hits;
+    expect(hits).toHaveLength(1);
+    expect(hits[0].sessionFile).toBe(guestFile);
+    expect(hits[0].sessionCwd).toBe(guestProject);
+    expect(hits[0].snippet).toContain(hostProject);
+    // The advertised path must also work with a filesystem reader in the guest
+    // view, not only after reversing it for another host tool.
+    const filesystemRead = await sdk.createReadTool(guestProject).execute("guest-read", { path: guestFile });
+    expect(filesystemRead.content[0].text).toContain("sandbox lookup needle");
+    const readInput = { sessionFile: hits[0].sessionFile, maxMessages: 1 };
+    const read = await call("read_session", readInput);
+    expect(read.projected.details.sessionFile).toBe(guestFile);
+    expect(read.projected.content[0].text).toContain(`— cwd: ${guestProject} — started:`);
+    expect(read.projected.content[0].text).toContain(`historical path ${hostProject}`);
+    expect(read.projected.details.nextCursor).toBe(read.raw.details.nextCursor);
+    child.appendMessage({ role: "user", content: "later child message", timestamp: Date.now() });
+    const continued = await call("read_session", { sessionFile: guestFile, after: read.projected.details.nextCursor });
+    expect(continued.projected.content[0].text).toContain("later child message");
+    expect(continued.projected.content[0].text).not.toContain("sandbox lookup needle");
+
+    for (const name of ["a", "b"]) {
+      writeFileSync(join(env.PI_SESSION_SEARCH_CODEX_ROOT, `${name}.jsonl`), [
+        { type: "session_meta", payload: { id: "versioned-thread", cwd: hostProject, timestamp: "2026-10-27T10:00:00Z" } },
+        { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: `preview ${hostProject}` }] } },
+      ].map(row => JSON.stringify(row)).join("\n") + "\n");
+    }
+    const versions = await call("read_session", { sessionId: "versioned-thread" });
+    expect(versions.projected.details.versions).toHaveLength(2);
+    for (const version of versions.projected.details.versions) {
+      expect(version.sessionFile).toStartWith(join(dir, "guest-codex"));
+      expect(version.sessionCwd).toBe(guestProject);
+      expect(versions.projected.content[0].text).toContain(`sessionFile: ${JSON.stringify(version.sessionFile)}`);
+    }
+    expect(versions.projected.content[0].text).toContain(`preview ${hostProject}`);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 async function eventually(predicate: () => boolean) {
   for (let i = 0; i < 100; i++) {
