@@ -35,8 +35,7 @@ The transport does not replay calls after a possible write.
    persistent tool worker. The JSON-line transport carries progress, images,
    completion, and errors. A disconnect aborts the active call; no call is replayed.
 3. **Start host Pi with built-in guest tools.** Keep sessions on the host and
-   bind reads, writes, and shell operations to the guest backend. Route model
-   requests through admitted brokers. Successful reload restores guest routing.
+   bind reads, writes, and shell operations to the guest backend. Use host Pi's native model providers and authentication. Successful reload restores guest routing.
 4. **Route subagents and session forks.** Use `PI_SUBAGENT_PI_BIN` and the existing
    child manager with inherited guest routing during normal operation. Admit host
    handlers under proxy-design's authority contract; model-selected templates
@@ -70,32 +69,36 @@ The transport does not replay calls after a possible write.
   same guest extension through their existing process manager.
 - **Decided:** host-local tool fallback after failed reload is outside the
   guest-routing guarantee. Proxy and credential failures still fail closed.
-- **Implementation gap:** direct host provider credentials do not satisfy
-  proxy-design's selected broker contract.
+- **Decided (2026-10-27):** use native host-Pi providers and authentication; remove
+  the unused guest Codex model broker.
 
 Security acceptance remains open for host handler admission, protected host code
-sources, guest-view resource reads, and brokered model requests.
+sources and guest-view resource reads.
 Model-requested session forks remain selected, not implemented. Operational
 acceptance remains open for worker loss. The direct `/skill:` delegation warning
 is a separate unresolved issue.
 
-## Pending proposal: remove the unused Codex model broker
+## Codex model broker removal
 
-**Status:** retained for a future decision; not selected for implementation.
-The model-authentication contract and selected broker requirement remain unchanged.
+**Selected:** native host-Pi authentication and providers (ticket
+`fbbdc0fe-09ed-42d4-89b0-ba647acafdba`). The guest is a tool worker, not the Pi
+model client. Its former Codex Caddy/profile-helper pair did not broker host
+requests, so reconnecting host Pi through that pair is not the selected design.
 
-Host Pi currently uses its native providers and credentials.
-The launcher still prepares the Codex Caddy/profile-helper pair and supplies its provider overrides to the guest tool worker.
-`sandbox-host-pi` omits that guest-only provider, so these resources do not broker the current host model requests.
+Current launches no longer start the Codex pair, acquire its images, project a
+session token, or mount a provider override. The shared helper image remains for
+Zulip and the gateway/Keychain relays, without the Codex OAuth profile. Model
+credentials remain in the host Pi configuration and never enter worker mounts or
+environment.
 
-The proposal is to use native host authentication deliberately and remove the unused Codex-specific startup,
-image acquisition, provider overrides, token projection, and persisted live-session fields.
-Remove Codex-only helper/profile/provider code after confirming it has no retained consumer.
-Retain only the recovery support needed to drain already-created resources and older session records.
-Preserve the Zulip typed broker and its Caddy/helper pair, the R2 Keychain relay, and guest tool execution.
-Keep host model credentials out of guest worker mounts and environment.
+Persisted Codex service records are cleanup-only. Joins reject them; existing
+attachments must drain before reset or coordinated restart removes recorded
+resources through the existing owner-validated recovery path. Failed removal
+retains recovery authority. The launcher neither deletes old dedicated OAuth
+files nor migrates them into Pi authentication.
 
-Acceptance would cover fresh launches, joins, ordinary subagents, `/split`, restart, and final cleanup:
-none creates Codex broker resources or guest provider overrides, and retained relays and guest tools still work.
-The operator guide, authentication/setup references, and specifications would need to adopt the changed model-authentication contract together.
-Protected host code and guest-view instruction reads remain separate isolation work; broker removal would not resolve them.
+Fresh launches, joins, ordinary subagents, `/split`, restart and final cleanup
+must create no Codex broker resources or guest provider overrides. Guest tools,
+Zulip and R2 retain their existing contracts. Protected host code and guest-view
+instruction reads remain separate isolation work; removal does not establish
+conformance to those requirements.

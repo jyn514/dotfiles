@@ -28,7 +28,7 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   On failure, completed page repairs may remain; retry `codex-import`.
   It uses `CODEX_HOME` (default `~/.codex`) and requires `codex` and `python3`.
   The scan-and-repair behavior was verified with Codex 0.162.1; it depends on Codex's implementation of `thread/list`.
-- [`codex-sandbox`](codex-sandbox/) launches Pi or Codex in an isolated container with trusted Git, Jujutsu, authentication, editor, and optional Zulip or nested Docker bridges. Its internal Codex profile helper keeps reusable OAuth credentials outside agent containers; generic authenticated HTTP broker machinery has been deleted. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
+- [`codex-sandbox`](codex-sandbox/) runs host Pi with a guest tool worker and trusted Git/Jujutsu proxies, optional Zulip authenticated egress, and nested Docker or R2 relays. Model providers and authentication stay native to host Pi; no Codex model broker is started. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
 - [`jj-proxy`](jj-proxy/) exposes restricted Jujutsu operations to untrusted containers without writable repository metadata. Start with the [operator guide](jj-proxy/README.md); the [design](jj-proxy/design.typ) covers its policy and threat model.
 - [`pi-link`](pi-link/) is a local fork of alvivar's live-session messaging extension, with message IDs and optional reply references in the transcript.
   Pi settings load the fork and its skill on startup; new sessions connect automatically.

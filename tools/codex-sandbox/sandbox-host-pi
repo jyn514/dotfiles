@@ -36,7 +36,8 @@ def main() -> int:
     while index < len(arguments):
         if (arguments[index] in ("--extension", "-e") and index + 1 < len(arguments)
                 and Path(arguments[index + 1]).expanduser() in (old_sidecar, installed_index)):
-            # Drop the guest-only provider and replace the index with its source.
+            # Old saved child arguments may name the retired provider. Drop it
+            # without loading code; replace the installed index with its source.
             index += 2
             continue
         args.append(arguments[index])

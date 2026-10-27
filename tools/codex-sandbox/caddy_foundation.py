@@ -128,7 +128,7 @@ def _nonempty_headers(names: list[str]) -> dict[str, Any]:
     return {"not": [{"vars": {f"{{http.reverse_proxy.header.{name}}}": [""]}} for name in names]}
 
 def _gate(profile: str, helper_socket: str, operation: str) -> dict[str, Any]:
-    names = ["Authorization"] + (["Chatgpt-Account-Id"] if profile == "codex" else [])
+    names = ["Authorization"]
     mutations = []
     for name in names:
         mutations.append({"handler": "headers", "request": {"delete": [name]}})
@@ -160,11 +160,6 @@ def _application_proxy(profile: str, upstream: str) -> dict[str, Any]:
     # Auth fields were installed on the original request by the gate. Preserve
     # those exact values while suppressing Caddy's automatic forwarding fields.
     set_headers = {"Host": [upstream]}
-    if profile == "codex":
-        # These are profile-owned values, not caller-controlled metadata.  Pi's
-        # other safe end-to-end headers continue through unchanged.
-        set_headers.update({"User-Agent": ["codex-sandbox-sidecar"],
-                            "Originator": ["pi"]})
     return {"handler": "reverse_proxy", "upstreams": [{"dial": upstream + ":443"}],
             "headers": {"request": {"delete": delete, "set": set_headers}},
             "transport": {"protocol": "http", "tls": {}, "dial_timeout": 10_000_000_000,
@@ -172,17 +167,12 @@ def _application_proxy(profile: str, upstream: str) -> dict[str, Any]:
 
 def generate_caddy_config(profile: str, upstream: str, helper_socket: str = "/run/profile-helper/socket",
                           token: str = "unconfigured") -> bytes:
-    if (profile not in {"codex", "zulip"} or not upstream or any(c in upstream for c in "/\r\n")
+    if (profile != "zulip" or not upstream or any(c in upstream for c in "/\r\n")
             or not token or any(c in token for c in "\r\n") or len(("Bearer " + token).encode()) > 4096):
         raise ValueError("invalid Caddy profile, upstream, or helper token")
     proxy = _application_proxy(profile, upstream)
-    if profile == "codex":
-        matcher = {"expression": "method('POST') && path('/codex/responses') && {http.request.uri.query} == ''"}
-        handlers = [{"handler": "request_body", "max_size": 32 * 1024 * 1024}, _gate(profile, helper_socket, "/admit"),
-                    {"handler": "rewrite", "uri": "/backend-api/codex/responses"}, proxy]
-    else:
-        matcher = {"expression": "method('GET') && (path('/api/v1/messages') || path('/api/v1/streams') || path_regexp('^/api/v1/users/me/[0-9]+/topics$'))"}
-        handlers = [_gate(profile, helper_socket, "/admit"), proxy]
+    matcher = {"expression": "method('GET') && (path('/api/v1/messages') || path('/api/v1/streams') || path_regexp('^/api/v1/users/me/[0-9]+/topics$'))"}
+    handlers = [_gate(profile, helper_socket, "/admit"), proxy]
     ready_match = {"expression": "method('GET') && path('/ready') && {http.request.uri.query} == ''"}
     routes = [{"match": [ready_match], "handle": [_gate(profile, helper_socket, "/ready"), _static(204)]},
               {"match": [matcher], "handle": handlers}, {"handle": [_static(404)]}]

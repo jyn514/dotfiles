@@ -399,34 +399,6 @@ class ManifestTest(unittest.TestCase):
             sandbox_proxies._accepted_schema4(
                 envelope, expected_parameters={"uid": 501, "gid": 20})
 
-    def test_credential_identity_allows_refresh_but_not_source_replacement(self):
-        root = Path(self.temporary.name)
-        directory = root / "auth"
-        directory.mkdir(mode=0o700)
-        directory.chmod(0o700)
-        auth = directory / "auth.json"
-        auth.write_text('{"tokens": {}}')
-        auth.chmod(0o600)
-        identity = sandbox_proxies.credential_source_identity(directory)
-
-        replacement = directory / "replacement"
-        replacement.write_text('{"tokens": {"access_token": "refreshed"}}')
-        replacement.chmod(0o600)
-        replacement.replace(auth)
-        self.assertEqual(identity, sandbox_proxies.credential_source_identity(directory))
-
-        auth.chmod(0o644)
-        with self.assertRaisesRegex(ValueError, "mode-0600"):
-            sandbox_proxies.credential_source_identity(directory)
-        auth.chmod(0o600)
-
-        directory.rename(root / "old-auth")
-        directory.mkdir(mode=0o700)
-        directory.chmod(0o700)
-        auth = directory / "auth.json"
-        auth.write_text('{"tokens": {}}')
-        auth.chmod(0o600)
-        self.assertNotEqual(identity, sandbox_proxies.credential_source_identity(directory))
 
     def test_accepted_v1_images_still_validate_resolver_shape(self):
         for images in ({"resolver": {"kind": "command", "argv": []}, "base": "base"},
@@ -1394,6 +1366,44 @@ class ManifestTest(unittest.TestCase):
         reconstruct.assert_called_once_with("lima", Path(identity["state"]))
         cleanup.assert_called_once_with(state, owner)
 
+    def test_retired_codex_schema4_is_recoverable_but_never_joined(self) -> None:
+        auth = self.pair_auth()
+        auth["lifecycle-state"] = "published"
+        # Historical envelope, not a current publication producer.
+        service = {
+            "family": "authenticated-egress",
+            "implementation-identity": auth["implementation-identity"], "state-schema": 1,
+            "container": {"name": auth["container"], "image": auth["image"],
+                          "owner": auth["service-owner"]},
+            "endpoints": [auth["endpoint"]], "runtime-owner": auth["runtime-owner"],
+            "recovery-identity": auth["service-owner"], "recovery": auth,
+            "broker-session-token": auth["key"],
+        }
+        metadata = self.schema4({}, services={"codex-broker": service}, helper="old-helper")
+        self.assertEqual(auth, sandbox_proxies.session_state(metadata)["auth"])
+        args = SimpleNamespace(uid=501, gid=20, container_repo=str(self.container_repo))
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME") as runtime:
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "retired Codex broker"):
+                sandbox_proxies.accepted_session(args, self.repo, metadata)
+        runtime.assert_not_called()
+        self.assertFalse(runtime.method_calls)
+
+    def test_retired_codex_cannot_be_republished(self) -> None:
+        state = self.repo / "old-state"
+        state.write_text(json.dumps({"runtime": {"provider": "container"}, "proxies": [],
+            "auth": self.pair_auth(), "accepted": {"source-present": True,
+                "agent-image": "agent", "helper-image": "old-helper",
+                "parameters": {"uid": 501, "gid": 20}, "proxy-images": {}}}))
+        manifest = self.repo / "empty-manifest"
+        manifest.write_text('{"version":1,"commands":{}}')
+        args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
+                               container_repo=str(self.container_repo))
+        with mock.patch.object(sandbox_proxies, "validate_live_proxies"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "cleanup-only"):
+                sandbox_proxies.publish_main(args)
+        self.assertFalse((self.repo / "session.json").exists())
+        self.assertIn("auth", json.loads(state.read_text()))
+
     def test_schema4_strictly_parses_policy_and_broker_selection(self) -> None:
         args = SimpleNamespace(uid=501, gid=20)
         malformed = self.schema4({"example": self.command()})
@@ -1948,66 +1958,6 @@ class ManifestTest(unittest.TestCase):
             images = sandbox_proxies.resolve_images(self.repo, manifest)
         self.assertEqual("sha256:" + digest, images["example"])
 
-    def test_codex_published_pair_authenticates_both_join_readiness_paths(self):
-        from caddy_foundation import CaddyImageIdentity, IMAGE, INDEX, PLATFORMS
-        launcher = runpy.run_path(str(MODULE_PATH.with_name("codex-sandbox")))
-        image = CaddyImageIdentity(IMAGE, INDEX, "linux/amd64", *PLATFORMS["linux/amd64"],
-                                  PLATFORMS["linux/amd64"][1])
-        credentials = self.repo / "codex-auth"
-        credentials.mkdir(mode=0o700)
-        auth_file = credentials / "auth.json"
-        auth_file.write_text('{"tokens":{"access_token":"dummy","refresh_token":"dummy"}}')
-        auth_file.chmod(0o600)
-        state = SimpleNamespace(uid=501, gid=20, sidecar_image="sha256:" + "1" * 64,
-                                codex_sidecar_container="codex-caddy", proxy_state=self.repo / "state")
-        state.proxy_state.write_text('{"proxies":[]}')
-        runtime = mock.Mock(provider="container")
-        runtime.container_matches_image.return_value = True
-        runtime.container_networks.side_effect = lambda snapshot: snapshot["NetworkSettings"]["Networks"]
-        token = []
-        probes = []
-        record = {}
-
-        def run(arguments, **_kwargs):
-            if "/trusted/bin/profile-helper" in arguments:
-                token.extend(item.removeprefix("CADDY_PROFILE_TOKEN=") for item in arguments
-                             if item.startswith("CADDY_PROFILE_TOKEN="))
-            if arguments[-1:] == ["http://127.0.0.1:8787/ready"]:
-                self.assertEqual(1, len(token))
-                self.assertIn("--header=Authorization: Bearer " + token[0], arguments)
-                probes.append(arguments)
-            if arguments[:2] == ["network", "inspect"]:
-                role = next(role for role, name in record["networks"].items() if name == arguments[2])
-                labels = {"dev.codex.service-owner": record["service-owner"],
-                          "dev.codex.credential-domain": "codex", "dev.codex.network-role": role}
-                return subprocess.CompletedProcess(arguments, 0, json.dumps([{"Labels": labels}]), "")
-            return subprocess.CompletedProcess(arguments, 0, "", "")
-
-        runtime.run.side_effect = run
-        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, OUTER_RUNTIME=runtime,
-                             resolve_caddy_image=lambda _runtime: image):
-            handle, _ = launcher["start_codex_sidecar"](state, credentials)
-        record.update(handle.schema3_record())
-        labels = {"dev.codex.service-owner": record["service-owner"], "dev.codex.credential-domain": "codex"}
-        socket = {"Destination": "/run/profile-helper", "Name": record["socket-volume"]}
-        caddy_snapshot = {"Config": {"Labels": labels},
-            "NetworkSettings": {"Networks": {record["networks"][role]: {} for role in ("agent-link", "application")}},
-            "Mounts": [{**socket, "RW": False}, {"Type": "bind", "Destination": "/etc/caddy/caddy.json",
-                        "Source": record["configuration"]["path"], "RW": False}]}
-        helper_snapshot = {"Config": {"Labels": labels},
-            "NetworkSettings": {"Networks": {record["networks"]["refresh"]: {}}},
-            "Mounts": [{**socket, "RW": True}, {"Destination": "/var/lib/codex-auth",
-                        "Source": str(credentials), "RW": True}]}
-        runtime.inspect_container.side_effect = lambda name: caddy_snapshot if name == record["container"] else helper_snapshot
-        with mock.patch.object(sandbox_proxies, "accepted_caddy_image", return_value=image):
-            sandbox_proxies._validate_codex_broker(runtime, record, state.sidecar_image, state.uid, state.gid)
-        with mock.patch.dict(launcher["attach_codex_sidecar"].__globals__, OUTER_RUNTIME=runtime,
-                             accepted_caddy_image=lambda _chain, _runtime: image,
-                             codex_sidecar_has_sandbox_network=lambda _container: True,
-                             run=lambda arguments, **kwargs: run(arguments[1:], **kwargs)):
-            arguments = launcher["attach_codex_sidecar"](state, credentials)
-        self.assertIn("CODEX_SIDECAR_KEY=" + token[0], arguments)
-        self.assertEqual(3, len(probes))
 
     def test_zulip_startup_readiness_uses_the_persisted_pair_token(self):
         from caddy_foundation import CaddyImageIdentity, IMAGE, INDEX, PLATFORMS
@@ -2370,19 +2320,6 @@ class ManifestTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "pair"):
                 sandbox_proxies.parse_auth_record(aliased, managed_required=True)
 
-    def test_codex_pair_rejects_substituted_network_role_labels(self) -> None:
-        record = self.pair_auth()
-        labels = {
-            role: {"dev.codex.service-owner": record["service-owner"],
-                   "dev.codex.credential-domain": "codex",
-                   "dev.codex.network-role": role}
-            for role in ("application", "refresh")
-        }
-        sandbox_proxies._validate_codex_network_labels(record, labels)
-        substituted = json.loads(json.dumps(labels))
-        substituted["application"]["dev.codex.network-role"] = "refresh"
-        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "ownership"):
-            sandbox_proxies._validate_codex_network_labels(record, substituted)
 
     def test_managed_auth_record_cannot_downgrade_by_dropping_owner(self) -> None:
         record = {
@@ -2501,6 +2438,64 @@ class ManifestTest(unittest.TestCase):
             }.items() for name in names],
             removed,
         )
+
+    def test_retired_codex_failed_reset_retains_authority_and_retries_without_creation(self) -> None:
+        for version in (2, 3, 4):
+            with self.subTest(version=version):
+                auth = self.pair_auth()
+                configuration = self.repo / f"old-caddy-{version}.json"
+                configuration.write_bytes(b"{}\n")
+                configuration.chmod(0o444)
+                auth["configuration"] = {"path": str(configuration),
+                    "digest": sandbox_proxies.caddy_configuration_digest(configuration.read_bytes())}
+                state = {"runtime": {"provider": "container"}, "proxies": [],
+                         "auth": auth, "trusted-services": sandbox_proxies.SESSION_LIFECYCLE_SCHEMA}
+                if version == 4:
+                    # Preserve the exact historical envelope through failed recovery.
+                    service = {
+                        "family": "authenticated-egress",
+                        "implementation-identity": auth["implementation-identity"], "state-schema": 1,
+                        "container": {"name": auth["container"], "image": auth["image"],
+                                      "owner": auth["service-owner"]},
+                        "endpoints": [auth["endpoint"]], "runtime-owner": auth["runtime-owner"],
+                        "recovery-identity": auth["service-owner"], "recovery": auth,
+                        "broker-session-token": auth["key"],
+                    }
+                    metadata = self.schema4({}, services={"codex-broker": service}, helper="old-helper")
+                else:
+                    metadata = {"version": version, "state": state}
+                session = self.repo / "session.json"
+                session.write_text(json.dumps(metadata))
+                remaining = {auth["container"], auth["helper-container"], auth["socket-volume"],
+                             auth["networks"]["application"], auth["networks"]["refresh"]}
+                fail = True
+                def presence(_runtime, _kind, name, owner):
+                    self.assertEqual(owner, auth["service-owner"])
+                    return (sandbox_proxies.ResourcePresence.OWNED if name in remaining
+                            else sandbox_proxies.ResourcePresence.ABSENT)
+                def remove(_runtime, _kind, name, owner):
+                    self.assertEqual(owner, auth["service-owner"])
+                    if fail and name == auth["container"]:
+                        raise OSError("disposable removal failure")
+                    remaining.remove(name)
+                runtime = mock.Mock(provider="container")
+                with mock.patch.object(sandbox_proxies, "state_runtime", return_value=runtime), \
+                        mock.patch.object(sandbox_proxies, "resource_presence", side_effect=presence), \
+                        mock.patch.object(sandbox_proxies, "remove_owned_resource", side_effect=remove), \
+                        mock.patch.object(sandbox_proxies, "remove_stopped_sandbox_holders", return_value=[]), \
+                        mock.patch.object(sandbox_proxies.ResourceRegistry, "RETRY_DELAYS", ()):
+                    with self.assertRaisesRegex(sandbox_proxies.ConfigError, "resources remain"):
+                        sandbox_proxies.reset_session(self.repo)
+                    saved = sandbox_proxies.session_state(json.loads(session.read_text()))
+                    self.assertEqual("cleanup-failed", saved["auth"]["lifecycle-state"])
+                    self.assertEqual(auth["service-owner"], saved["auth"]["service-owner"])
+                    self.assertTrue(configuration.exists())
+                    fail = False
+                    sandbox_proxies.reset_session(self.repo)
+                self.assertFalse(remaining)
+                self.assertFalse(session.exists())
+                self.assertFalse(configuration.exists())
+                self.assertFalse(runtime.method_calls, "recovery must not pull images or start containers")
 
     def test_zulip_recovery_removes_caddy_before_its_application_network(self) -> None:
         owner = "a" * 32

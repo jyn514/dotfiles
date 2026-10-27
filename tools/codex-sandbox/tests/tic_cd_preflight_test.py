@@ -62,7 +62,6 @@ class TicCdPreflightTest(unittest.TestCase):
             'image_runtime': lambda: self.runtime,
             'load_repository_policy': self.load_policy,
             'discover_launch_workspaces': mock.Mock(return_value=[self.workspace]),
-            '_secure_codex_auth_directory': lambda _: None,
             'prepare_declared_images': lambda *_: SimpleNamespace(base='target-base'),
             'resolve_agent': lambda *_: 'target-image',
             'resolve_sidecar_image': lambda: self.events.append('transport image') or 'transport-image',

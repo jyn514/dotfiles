@@ -27,7 +27,7 @@ Each retrieval must therefore be an explicit host-mediated operation that shows 
 
 - Prevent approved sandbox code from observing credentials after the host returns them. Woodpecker runs in the sandbox, so this cannot be guaranteed without moving Woodpecker or the upload itself to the host.
 - Provide arbitrary Keychain lookup, generic host command execution, secret enumeration, secret creation, or secret mutation.
-- Share runtime capabilities with the Codex authentication sidecar, Agent Podman relay, or repository metadata proxies.
+- Share runtime capabilities with the retired Codex authentication sidecar, Agent Podman relay, or repository metadata proxies.
 - Change hosted Woodpecker secret handling.
 
 == Threat and trust model
@@ -222,7 +222,7 @@ Forbidden everywhere:
 
 / Generic `security` command proxy: rejected because arbitrary selectors and output modes expand the capability beyond Flower R2.
 
-/ Reusing the Codex authentication sidecar: rejected because model-provider OAuth ownership and R2 publication have different principals, consumers, rotation, and failure policy.
+/ Reusing the retired Codex authentication sidecar: rejected because model-provider OAuth ownership and R2 publication have different principals, consumers, rotation, and failure policy.
 
 / Returning preapproved credentials from a long-lived cache: rejected because it weakens every-request consent. The relay may not cache successful values across requests.
 

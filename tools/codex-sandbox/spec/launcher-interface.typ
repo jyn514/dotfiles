@@ -207,7 +207,7 @@ environment, repository, mount, credential source, or attachment.
 Copied messages, paths, and tool results remain untrusted context. Do not copy
 live child handles, pending tool calls, or executable extension state. A fork
 loads only admitted host code and guest-view resources, retains the parent's
-accepted capability set, and uses the same authenticated provider routes.
+accepted capability set, and uses the same native host-Pi provider configuration.
 A fork request cannot invoke `/cd` or reauthorize sandbox policy.
 
 Return the new session identity after guest-tool extension loading, attachment
@@ -237,8 +237,9 @@ Required acceptance checks are:
 - Cross-directory resume forks the conversation under a fresh session ID.
 - Unclassified model-executable host handlers are rejected. Guest-modified code
   cannot become host executable code through `/reload` or fork startup.
-- Authenticated model requests use admitted broker routes; no reusable provider
-  credentials enter guest processes, and failures never select direct fallback.
+- Model requests use host Pi's native providers and authentication; no reusable provider
+  credentials enter guest processes. The launcher supplies no model broker endpoint,
+  token, or provider override. Zulip and R2 retain their separate relay contracts.
 
 == Writable workspace authority <workspace-authority>
 

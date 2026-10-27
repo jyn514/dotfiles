@@ -13,7 +13,7 @@ Choose the section for your task:
 
 ## Execution model and workspace access
 
-`codex-sandbox` runs Pi on the host with its normal credentials by default,
+`codex-sandbox` runs Pi on the host with its native providers and authentication,
 while its built-in tools and human `!` shell commands run in the guest container.
 `pi` requires an existing Git working tree and rejects other directories before
 accessing Lima or Docker. In a Git repository without Jujutsu, it runs
@@ -48,7 +48,7 @@ A successful `/reload` restores the guest tool extension. Failed reload may
 restore host-local built-in tools and `!` commands; guest routing is a
 normal-operation guarantee, not a malicious-code security boundary.
 The [host extension authority contract](spec/proxy-design.typ) still requires
-admitted host handlers and brokered model requests; conformance remains unverified.
+admitted host handlers and protected host code; conformance remains unverified.
 **Known gap:** host extensions load from this guest-writable checkout, so the contract's host-code isolation requirement remains unmet.
 The approved whole-checkout writable-dotfiles scope proceeds with this limitation; metadata and policy overlays do not isolate host executable sources.
 Proxy and credential failures still fail closed.
@@ -238,13 +238,11 @@ Restart the sandbox after provisioning so the launcher installs the SSH relay an
   `pi` normally delegates agent sessions to `codex-sandbox`.
   `pi --export SESSION.jsonl [OUTPUT.html]` must put `--export` first and runs native Pi on the host,
   without a Git checkout, VM, or guest worker. Relative paths use the caller's current directory.
-- Provide `~/.codex/config.toml`.
-  The [Lima credential helper](lima/credentials.md) can import an existing Podman secret `codex-github-token` into Keychain for migration to `GH_TOKEN`;
+- The [Lima credential helper](lima/credentials.md) can import an existing Podman secret `codex-github-token` into Keychain for migration to `GH_TOKEN`;
   exporting a host `GH_TOKEN` does not provision it.
-  guest caching lasts one VM boot.
+  Guest caching lasts one VM boot.
 - Run inside tmux to use tmux session restart support.
-- Optional: create dedicated model credentials with `codex-sandbox auth login`.
-  The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
+- Authenticate models through host Pi's normal provider setup. The guest worker receives no model credentials or provider overrides.
 - Optional: configure Agent Docker separately under `~/.agent-docker-access` or set `AGENT_DOCKER_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
@@ -297,11 +295,6 @@ a failed pull aborts startup.
 Pi runs from the installed host package; the sandbox image supplies only the
 guest tool worker.
 
-The agent image provides a `codex` wrapper that routes a base image's Codex CLI through the
-session authentication proxy. It does not install Codex; invoking it reports how to repair the
-base image when no later `codex` executable is present on `PATH`, or when proxy setup is missing.
-
-The [generated-shell PATH limitation](../../config/README.md#agent-instructions) applies when a Codex CLI replaces wrapper precedence after shell startup.
 The agent's `rg` wrapper disables ripgrep configuration and rejects executable
 `--pre`, `--pre-glob`, and `--hostname-bin` options. Those strings remain valid
 as `-e`/`--regexp` values or after `--`. Unknown option shapes fail closed for
@@ -327,7 +320,6 @@ Its Git distribution loads TypeScript, making cache misses more expensive.
 pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
 pi --export session.jsonl out.html  # export HTML locally without sandbox startup
-codex-sandbox auth login        # authenticate the Codex sidecar used by guest tools
 codex-sandbox restart --repo "$PWD"  # restart this repo's Pi attachments; run inside tmux
 codex-sandbox restart-all       # restart all sandboxed Pi attachments; run inside tmux
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
@@ -424,7 +416,7 @@ When both are selected, their fixed listeners share that container and its two n
 It starts in the background after its private link and egress networks are created.
 Clients retry only connection establishment within a bounded interval and never
 replay a possibly accepted request.
-The separately supervised Zulip and Codex Caddy/helper services and repository-command proxies must be ready
+The separately supervised Zulip Caddy/helper services and repository-command proxies must be ready
 before publication.
 
 Shared proxy identity checks run two at a time during attach and publication.
@@ -472,8 +464,9 @@ For interactive startup profiling, use
   a read-only mount does not make hostile policy safe.
 - Networking blocks private and special-use IPv4 ranges.
   A manifest must explicitly enable network access for a proxy.
-- The Codex sidecar keeps reusable OAuth tokens outside the agent, but the agent can submit model requests, disclose their contents, consume quota, and incur charges.
-- Codex and Zulip credentials are mounted only into their respective profile-helper containers; Caddy and the agent receive no credential mount.
+- Host Pi uses native model credentials; model requests do not pass through a sandbox broker.
+  The guest worker receives no model credential mounts or environment variables.
+- Zulip credentials are mounted only into its profile-helper container; Caddy and the agent receive no Zulip credential mount.
   Agent Docker, when configured, is exposed through a separate SSH relay rather than the outer daemon.
 - The supported outer runtimes are Lima-Docker and opt-in nerdctl/Lima; both run the
   sandbox workload in a VM.
@@ -504,14 +497,21 @@ a join cannot rewrite shared metadata.
 
 - If startup reports invalid repository metadata or sandbox policy, repair the named path;
   do not bypass the validation.
-- If authentication is disabled, run `codex-sandbox auth login`, then start a new sandbox.
 - If startup warns that the nested Docker relay is unavailable, or an existing
   relay reports a refused SSH connection, run `python3 tools/agent-docker/vm.py start`
   on the host, then restart the sandbox to load its current SSH port.
   See [Agent Docker recovery](../agent-docker/README.md#recovery-and-lifecycle).
-- If cached proxy/auth state changed or belongs to another network, run `codex-sandbox restart-all` from tmux.
+- If cached proxy state changed or belongs to another network, run `codex-sandbox restart-all` from tmux.
   It terminates registered launcher processes, resets shared session metadata after cleanup, then resumes their sessions.
   Inherited `remain-on-exit` settings need no pane-local override.
+- Sessions containing the retired Codex model broker are cleanup-only: new joins reject them.
+  Let their attachments exit, then start a fresh sandbox; from tmux, `codex-sandbox restart-all`
+  performs the existing coordinated restart and cleanup. Do not remove live resources by hand.
+  Recovery retains the recorded owner checks for old containers, networks, socket volumes,
+  and immutable Caddy configuration; failed removal retains the session record for retry.
+  Old dedicated `~/.codex-sandbox-auth` credentials (or a former `CODEX_SANDBOX_AUTH_DIR`)
+  are no longer read or changed. They are not host Pi's login; remove them manually only after
+  old broker attachments have drained, if no other application uses them.
 - If automatic cleanup warns about a named resource, reset removes stopped `codex-sandbox-*` agent containers that hold the recorded proxy volumes, then retries cleanup.
   For surviving containers and volumes, the diagnostic includes each resource name and its removal error.
   The shared lifecycle treats a resource confirmed absent after a removal error as successfully removed;
@@ -537,7 +537,7 @@ Ordinary host `ti` uses the same fork and store without a broker.
 The user-selected default does not establish actual Linux or macOS provider acceptance; those checks remain unproven.
 Trusted host-settings capture and launcher integration pass local native round-trip tests.
 Builds, component tests, and local actual-native round-trip tests do not establish provider acceptance.
-The [pending Codex broker-removal proposal](host-pi-implementation-plan.md#pending-proposal-remove-the-unused-codex-model-broker) records an alternative to the selected authentication contract.
-It is not selected; the model-authentication contract remains unchanged.
+The [Codex broker-removal decision](host-pi-implementation-plan.md#codex-model-broker-removal) selects native host-Pi authentication.
+It does not resolve host-code isolation or guest-view instruction-include reads.
 Read the relevant contracts before changing a security boundary.
 See the [tools overview](../README.md).

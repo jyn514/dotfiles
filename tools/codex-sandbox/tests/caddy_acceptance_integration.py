@@ -52,7 +52,7 @@ class LiveCaddy(unittest.TestCase):
  def tearDownClass(cls): cls.cleanup()
  @classmethod
  def config(cls,helper="fixture:8081",timeout=2_000_000_000):
-  value=json.loads(caddy.generate_caddy_config("codex","fixture",token="acceptance-session-token"))
+  value=json.loads(caddy.generate_caddy_config("zulip","fixture",token="acceptance-session-token"))
   server=value["apps"]["http"]["servers"]["egress"]
   for route in server["routes"][:2]:
    for handler in route["handle"]:
@@ -111,8 +111,8 @@ class LiveCaddy(unittest.TestCase):
   self.assertEqual(len(result["application"]),1); self.assert_logs_clean()
  def test_helper_results_are_normalized_and_logs_exclude_secrets(self):
   for mode,status in (("malformed",503),("unauthorized",401)):
-   self.control("reset"); self.control("mode/"+mode); self.request({"body":"body-secret","path":"/codex/responses","authorization":"Bearer acceptance-session-token","headers":{"Cookie":"cookie-secret=1","X-Full-Url":"https://user:full-url-secret@example.invalid/","Chatgpt-Account-Id":"account-secret"}}); result=self.wait_client(); self.assert_normalized(result,status); self.assertEqual(result["application"],[]); self.assert_logs_clean()
-  self.control("reset"); self.request({"path":"/codex/responses?token=query-secret","body":"body-secret","headers":{"Cookie":"cookie-secret=1"}}); result=self.wait_client(); self.assert_normalized(result,404); self.assertEqual(result["helper"],[]); self.assertEqual(result["application"],[]); self.assert_logs_clean()
+   self.control("reset"); self.control("mode/"+mode); self.request({"body":"body-secret","path":"/api/v1/messages","authorization":"Bearer acceptance-session-token","headers":{"Cookie":"cookie-secret=1","X-Full-Url":"https://user:full-url-secret@example.invalid/","Chatgpt-Account-Id":"account-secret"}}); result=self.wait_client(); self.assert_normalized(result,status); self.assertEqual(result["application"],[]); self.assert_logs_clean()
+  self.control("reset"); self.request({"method":"POST","path":"/api/v1/messages?token=query-secret","body":"body-secret","headers":{"Cookie":"cookie-secret=1"}}); result=self.wait_client(); self.assert_normalized(result,404); self.assertEqual(result["helper"],[]); self.assertEqual(result["application"],[]); self.assert_logs_clean()
   self.control("reset"); self.control("mode/upstream-close"); self.request({"body":"body-secret","authorization":"Bearer acceptance-session-token","headers":{"Cookie":"cookie-secret=1","X-Full-Url":"https://user:full-url-secret@example.invalid/","Chatgpt-Account-Id":"account-secret"}}); result=self.wait_client()
   self.assertIn(result["clients"][0]["status"],(0,503)); self.assertEqual(len(result["application"]),1); self.assert_logs_clean()
   self.start_proxy("fixture:65530",ready_status=503); self.control("reset"); self.request(); self.assert_normalized(self.wait_client(),503); self.assert_logs_clean()
@@ -131,16 +131,14 @@ class LiveCaddy(unittest.TestCase):
   socket_volume=self.identity+"-actual-socket"; credential_volume=self.identity+"-actual-credentials"; config_volume=self.identity+"-actual-config"
   self.extra_containers.extend((helper_name,proxy_name)); self.extra_volumes.extend((socket_volume,credential_volume,config_volume))
   for volume in (socket_volume,credential_volume,config_volume): subprocess.run([DOCKER,"volume","create",volume],check=True,stdout=subprocess.DEVNULL)
-  token="actual-pair-token-secret"; account="actual-account-secret"; refresh="actual-refresh-secret"
-  payload=base64.urlsafe_b64encode(json.dumps({"exp":time.time()-5,"https://api.openai.com/auth":{"chatgpt_account_id":account}},separators=(",",":")).encode()).rstrip(b"=").decode()
-  access="header."+payload+".signature"; auth=json.dumps({"tokens":{"access_token":access,"refresh_token":refresh,"account_id":account}},separators=(",",":"))+"\n"
-  subprocess.run([DOCKER,"create","--pull=never","--name",helper_name,"--network","none","-e","CADDY_PROFILE_TOKEN="+token,"-v",socket_volume+":/run/profile-helper","-v",credential_volume+":/var/lib/codex-auth","--entrypoint","python3","python:3.12-alpine","/profile_helper.py","--profile","codex"],check=True,stdout=subprocess.DEVNULL)
+  token="actual-pair-token-secret"; email="fixture@example.invalid"; key="actual-key-secret"
+  auth="[api]\nemail="+email+"\nkey="+key+"\n"
+  subprocess.run([DOCKER,"create","--pull=never","--name",helper_name,"--network","none","-e","CADDY_PROFILE_TOKEN="+token,"-v",socket_volume+":/run/profile-helper","-v",credential_volume+":/var/lib/zulip","--entrypoint","python3","python:3.12-alpine","/profile_helper.py","--profile","zulip"],check=True,stdout=subprocess.DEVNULL)
   subprocess.run([DOCKER,"cp",str(ROOT/"auth-proxy/profile_helper.py"),helper_name+":/profile_helper.py"],check=True)
-  subprocess.run([DOCKER,"cp",str(ROOT/"auth-proxy/codex_profile.py"),helper_name+":/codex_profile.py"],check=True)
-  subprocess.run([DOCKER,"cp","-",helper_name+":/var/lib/codex-auth"],input=self.tar_entry("auth.json",auth.encode(),0o600),check=True)
+  subprocess.run([DOCKER,"cp","-",helper_name+":/var/lib/zulip"],input=self.tar_entry("zuliprc",auth.encode(),0o600),check=True)
   subprocess.run([DOCKER,"start",helper_name],check=True,stdout=subprocess.DEVNULL)
-  before=subprocess.check_output([DOCKER,"exec",helper_name,"sh","-c","sha256sum /var/lib/codex-auth/auth.json; stat -c '%a %Y' /var/lib/codex-auth/auth.json"],text=True)
-  value=json.loads(caddy.generate_caddy_config("codex","fixture",token=token)); app=value["apps"]["http"]["servers"]["egress"]["routes"][1]["handle"][-1]; app["upstreams"]=[{"dial":"fixture:8082"}]; app["transport"]={"protocol":"http"}
+  before=subprocess.check_output([DOCKER,"exec",helper_name,"sh","-c","sha256sum /var/lib/zulip/zuliprc; stat -c '%a %Y' /var/lib/zulip/zuliprc"],text=True)
+  value=json.loads(caddy.generate_caddy_config("zulip","fixture",token=token)); app=value["apps"]["http"]["servers"]["egress"]["routes"][1]["handle"][-1]; app["upstreams"]=[{"dial":"fixture:8082"}]; app["transport"]={"protocol":"http"}
   config=(json.dumps(value,separators=(",",":")).encode()+b"\n")
   image=self.image
   subprocess.run([DOCKER,"run","--pull=never","--rm","-i","-v",config_volume+":/config",image,"sh","-c","cat > /config/caddy.json"],input=config,check=True)
@@ -151,38 +149,33 @@ class LiveCaddy(unittest.TestCase):
    if ready.returncode==0: break
    if time.monotonic()>deadline: self.fail(ready.stderr.decode(errors="replace"))
    time.sleep(.1)
-  after=subprocess.check_output([DOCKER,"exec",helper_name,"sh","-c","sha256sum /var/lib/codex-auth/auth.json; stat -c '%a %Y' /var/lib/codex-auth/auth.json"],text=True)
+  after=subprocess.check_output([DOCKER,"exec",helper_name,"sh","-c","sha256sum /var/lib/zulip/zuliprc; stat -c '%a %Y' /var/lib/zulip/zuliprc"],text=True)
   self.assertEqual(after,before); self.assertIn("600 ",after); self.assertEqual(self.state()["application"],[])
   helper_inspect,proxy_inspect=(json.loads(subprocess.check_output([DOCKER,"inspect",name]))[0] for name in (helper_name,proxy_name))
   self.assertEqual(set(helper_inspect["NetworkSettings"]["Networks"]),{"none"})
-  self.assertEqual({m["Destination"] for m in helper_inspect["Mounts"]},{"/run/profile-helper","/var/lib/codex-auth"})
+  self.assertEqual({m["Destination"] for m in helper_inspect["Mounts"]},{"/run/profile-helper","/var/lib/zulip"})
   self.assertEqual({m["Destination"] for m in proxy_inspect["Mounts"]},{"/run/profile-helper","/config"})
   proxy_env="\n".join(proxy_inspect["Config"]["Env"]); self.assertNotIn(token,proxy_env)
   for credential_name in ("CADDY_PROFILE_TOKEN","OPENAI_API_KEY","CODEX_AUTH_JSON"): self.assertNotIn(credential_name+"=",proxy_env)
   self.assertFalse(any("codex-auth" in json.dumps(m) for m in proxy_inspect["Mounts"]))
   self.assertEqual([e for e in helper_inspect["Config"]["Env"] if e.startswith("CADDY_PROFILE_TOKEN=")],["CADDY_PROFILE_TOKEN="+token])
-  self.assertEqual(helper_inspect["Config"]["Cmd"],["/profile_helper.py","--profile","codex"])
+  self.assertEqual(helper_inspect["Config"]["Cmd"],["/profile_helper.py","--profile","zulip"])
   logs=subprocess.check_output([DOCKER,"logs",helper_name],stderr=subprocess.STDOUT,text=True)
-  for secret in (token,account,refresh,access): self.assertNotIn(secret,logs)
+  for secret in (token,email,key): self.assertNotIn(secret,logs)
   # Admission is tested against the actual Unix helper, not a fixture that
   # blindly accepts whatever Authorization Caddy sends it.
-  for path,method in (("/codex/responses","POST"),("/ready","GET")):
+  for path,method in (("/api/v1/messages","GET"),("/ready","GET")):
    for authorization in (None,"Bearer wrong","Bearer "+"x"*4090):
     with self.subTest(path=path,authorization_class="missing" if authorization is None else "invalid"):
      self.control("reset"); self.request({"target":"actual-caddy","method":method,"path":path,"body":"" if method=="GET" else "fixture-request-secret","authorization":authorization})
      result=self.wait_client(); self.assert_normalized(result,401); self.assertEqual(result["application"],[])
   self.control("reset"); self.request({"target":"actual-caddy","method":"GET","path":"/ready","body":"","authorization":"Bearer "+token})
   result=self.wait_client(); self.assert_normalized(result,204); self.assertEqual(result["application"],[])
-  # Readiness above admits an expired token without refresh. Install fresh
-  # disposable credentials before testing application admission without egress.
-  payload=base64.urlsafe_b64encode(json.dumps({"exp":time.time()+3600,"https://api.openai.com/auth":{"chatgpt_account_id":account}},separators=(",",":")).encode()).rstrip(b"=").decode()
-  access="header."+payload+".signature"; auth=json.dumps({"tokens":{"access_token":access,"refresh_token":refresh,"account_id":account}},separators=(",",":"))+"\n"
-  subprocess.run([DOCKER,"cp","-",helper_name+":/var/lib/codex-auth"],input=self.tar_entry("auth.json",auth.encode(),0o600),check=True)
   self.control("reset"); self.request({"target":"actual-caddy","authorization":"Bearer "+token})
   result=self.wait_client(); self.assertEqual(result["clients"][0]["status"],200); self.assertEqual(len(result["application"]),1)
-  self.assertEqual(result["application"][0]["authorization"],"Bearer "+access); self.assertEqual(result["application"][0]["account"],account)
+  self.assertEqual(result["application"][0]["authorization"],"Basic "+base64.b64encode((email+":"+key).encode()).decode()); self.assertEqual(result["application"][0]["account"],"")
   logs=subprocess.check_output([DOCKER,"logs",helper_name],stderr=subprocess.STDOUT,text=True)
-  for secret in (token,account,refresh,access): self.assertNotIn(secret,logs)
+  for secret in (token,email,key): self.assertNotIn(secret,logs)
 
  @staticmethod
  def tar_entry(name,data,mode):

@@ -166,16 +166,11 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
         (home / ".agents/skills").mkdir(parents=True)
         (home / ".codex").mkdir()
         (home / ".codex/config.toml").write_text("")
-        auth = home / "sandbox-auth"
-        auth.mkdir(mode=0o700)
-        (auth / "auth.json").write_text('{"OPENAI_API_KEY":"owned-dummy-codex-token"}')
-        (auth / "auth.json").chmod(0o600)
         (home / "runtime").mkdir(mode=0o700)
         environment = {**os.environ, "HOME": str(home), "XDG_RUNTIME_DIR": str(home / "runtime"),
             "LIMA_HOME": os.environ.get("LIMA_HOME", str(Path.home() / ".lima")),
             "CODEX_SANDBOX_RUNTIME": provider, "CODEX_SANDBOX_LIMA_STATE": str(state),
             "CODEX_SANDBOX_DOCKER_STATE": str(state),
-            "CODEX_SANDBOX_AUTH_DIR": str(auth),
             "AGENT_DOCKER_ACCESS_DIR": str(home / "no-worker"), "CODEX_SANDBOX_TIMING": "1"}
         for name in ("TMUX", "TMUX_PANE", "GH_TOKEN", "GITHUB_TOKEN"):
             environment.pop(name, None)
@@ -242,14 +237,8 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                     AssertionError("session exit discarded the boot cache"))) == cache
                 metadata_path, = (home / ".cache/codex-sandbox-proxies").glob("*/session.json")
                 metadata = json.loads(metadata_path.read_text())
-                sidecar = metadata["state"]["auth"]
-                with runtime.workload(runtime.inspect_image(agent), "auth-probe-" + secrets.token_hex(6), [
-                        "--network", "codex-public-only", "--dns", "10.0.2.3",
-                        "--env", f"CODEX_SIDECAR_URL=http://{sidecar['container']}:8787",
-                        "--env", f"CODEX_SIDECAR_KEY={sidecar['key']}",
-                        "--mount", f"type=bind,src={ROOT / 'tests/lima_auth_probe.py'},dst=/probe.py,readonly",
-                        "--entrypoint", "python3"], ["/probe.py"]) as process:
-                    assert process.wait(timeout=30) == 0
+                assert "codex-broker" not in metadata.get("services", {})
+                assert "auth" not in metadata.get("state", {})
                 request = json.dumps({"version": 1, "cwd": "nested", "argv": ["status"],
                                       "user": "fixture", "email": "fixture@example.test"}).encode()
                 with metadata_path.with_name("session.lock").open("a+b") as lock:

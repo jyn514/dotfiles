@@ -189,7 +189,6 @@ class WorkspaceLayoutTest(unittest.TestCase):
                          resources[str(self.home / ".pi/agent/AGENTS.md")])
         backend = mock.Mock()
         with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
-                _secure_codex_auth_directory=lambda _: None,
                 proxy_module=lambda: SimpleNamespace(runtime_directory=lambda _: runtime_directory)):
             launcher["preflight_lima"](state)
         binds = backend.check_binds.call_args.args[0]
@@ -216,8 +215,8 @@ class WorkspaceLayoutTest(unittest.TestCase):
 
         function_globals = launcher["attach_proxies"].__globals__
         with mock.patch.dict(function_globals, helper=helper,
-                _secure_codex_auth_directory=lambda _: None, check_agent_pi_revision=lambda *_: None,
-                attach_codex_sidecar=lambda *_: [], finalize_proxy_session=lambda *_: []):
+                check_agent_pi_revision=lambda *_: None,
+                finalize_proxy_session=lambda *_: []):
             launcher["load_accepted_session"](state)
             launcher["attach_proxies"](state)
         for arguments in seen:

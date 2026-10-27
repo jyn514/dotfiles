@@ -56,7 +56,7 @@ acquire = launcher['acquire_lock']
 
 def acquire_lock(state):
     acquire(state)
-    # The sidecar fixtures supply an existing publication through FAKE_PROXY_STATE.
+    # Shared-session fixtures supply accepted authority through the fake helper.
     if os.environ.get('FAKE_SESSION') == 'shared':
         state.proxy_lock.shared = True
         state.proxy_lock.release_coordination()

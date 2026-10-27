@@ -86,7 +86,7 @@ class ServiceTimingTest(unittest.TestCase):
         for line in writes:
             self.assertRegex(line, r'^Sandbox service: jj/readiness=\d+\.\d{2}s\n$')
 
-    def test_launcher_separates_command_auth_and_publication_in_order(self):
+    def test_launcher_separates_commands_and_publication_in_order(self):
         launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
         state = SimpleNamespace(repository=Path('/repo'), container_repository=Path('/src/repo'),
                                 proxy_prefix='prefix', proxy_lock=SimpleNamespace(shared=False,
@@ -95,16 +95,14 @@ class ServiceTimingTest(unittest.TestCase):
                                 image='image', uid=1, gid=2, policy_source_present=True,
                                 zuliprc=None, prepared_images=None)
         events = []
-        patches = {'_secure_codex_auth_directory': lambda _: None,
-                   'helper': lambda *args: events.append('commands'),
-                   'attach_codex_sidecar': lambda *args: (events.append('auth') or ['auth']),
+        patches = {'helper': lambda *args: events.append('commands'),
                    'finalize_proxy_session': lambda *args: (events.append('publication') or ['proxy'])}
         with mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
                 mock.patch('sys.stderr', new_callable=io.StringIO) as stderr, \
                 mock.patch.dict(launcher['attach_proxies'].__globals__, patches):
-            self.assertEqual(['auth', 'proxy'], launcher['attach_proxies'](state))
-        self.assertEqual(['commands', 'auth', 'publication', 'unlock'], events)
-        self.assertEqual(['proxies/command-attach', 'auth/attach', 'proxies/publication'],
+            self.assertEqual(['proxy'], launcher['attach_proxies'](state))
+        self.assertEqual(['commands', 'publication', 'unlock'], events)
+        self.assertEqual(['proxies/command-attach', 'proxies/publication'],
                          [line.split(': ')[1].split('=')[0] for line in stderr.getvalue().splitlines()])
 
     def test_command_startup_measures_engine_and_readiness_without_stdout(self):

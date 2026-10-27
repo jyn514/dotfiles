@@ -22,7 +22,6 @@ class ImageInputsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ('auth-proxy/Dockerfile', 'auth-proxy/profile_helper.py',
-                         'auth-proxy/codex_profile.py',
                          'auth-proxy/typed_broker.py', 'gateway.py'):
                 path = root / 'tools/codex-sandbox' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +34,7 @@ class ImageInputsTest(unittest.TestCase):
     def test_installed_profile_changes_auth_image_identity(self):
         owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
         paths = owned['source_paths'](['auth'])['auth']
-        self.assertIn('tools/codex-sandbox/auth-proxy/codex_profile.py', paths)
+        self.assertIn('tools/codex-sandbox/auth-proxy/profile_helper.py', paths)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for source in paths:
@@ -43,7 +42,7 @@ class ImageInputsTest(unittest.TestCase):
                 shutil.copyfile(ROOT / source, destination)
             with patch.dict(owned['declaration'].__globals__, ROOT=root):
                 before = owned['declaration'](['auth'])['target']['auth']['tags']
-                (root / 'tools/codex-sandbox/auth-proxy/codex_profile.py').write_text('changed profile')
+                (root / 'tools/codex-sandbox/auth-proxy/profile_helper.py').write_text('changed profile')
                 self.assertNotEqual(before, owned['declaration'](['auth'])['target']['auth']['tags'])
 
     def test_agent_packages_runtime_sources_without_tests_or_bytecode(self):
@@ -56,7 +55,6 @@ class ImageInputsTest(unittest.TestCase):
             runtime = ['tools/codex-sandbox/image/ti',
                        'tools/codex-sandbox/image/agent-entrypoint',
                        'tools/codex-sandbox/image/stage-pi-runtime.mjs',
-                       'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',
                        'libexec/chat-history.clj',
                        'bin/codex-to-pi',

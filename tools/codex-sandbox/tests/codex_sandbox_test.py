@@ -164,15 +164,6 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 self.assertEqual({"[false, false, false]", "worker stderr"},
                                  set(log.read().splitlines()))
 
-    def test_codex_pair_uses_mapped_virtiofs_identity_only_on_linux(self):
-        identity = runpy.run_path(str(LAUNCHER))["codex_pair_identity"]
-        state = SimpleNamespace(uid=1000, gid=1000)
-        with mock.patch.dict(identity.__globals__, OUTER_RUNTIME=SimpleNamespace(
-                provider="lima-docker", record={"virtiofs_map": {"uid": 1000}})):
-            self.assertEqual((1000, 1000), identity(state))
-        with mock.patch.dict(identity.__globals__, OUTER_RUNTIME=SimpleNamespace(
-                provider="lima-docker", record={})):
-            self.assertEqual((0, 0), identity(state))
 
     def test_prepares_nested_agent_bind_mountpoints(self):
         launcher = runpy.run_path(str(LAUNCHER))
@@ -198,7 +189,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 self.assertTrue(target.exists())
             self.assertTrue((state.pi_agent_tmp / "pi-extensions").is_dir())
             self.assertTrue((state.pi_agent_tmp / "pi-link").is_dir())
-            self.assertTrue((state.pi_agent_tmp / "extensions/codex-sidecar").is_dir())
+            self.assertFalse((state.pi_agent_tmp / "extensions/codex-sidecar").exists())
             self.assertTrue((state.pi_agent_tmp / "pi-codex-subagents/runs").is_dir())
 
     def test_policy_opt_out_drops_host_credentials(self):
@@ -249,8 +240,6 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             policy_source_present=True, manifest=Path('/manifest'), zuliprc=None,
             prepared_images=None)
         with mock.patch.dict(attach.__globals__, helper=mock.Mock(),
-                _secure_codex_auth_directory=mock.Mock(return_value=None),
-                attach_codex_sidecar=mock.Mock(return_value=[]),
                 finalize_proxy_session=mock.Mock(side_effect=ValueError('publication failed'))):
             with self.assertRaisesRegex(ValueError, 'publication failed'):
                 attach(state)
@@ -334,8 +323,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             state = SimpleNamespace(home=home, repository=repository, skills_source=alias,
                 metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_docker=None)
             backend = mock.Mock()
-            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
-                                 _secure_codex_auth_directory=lambda _: None):
+            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend):
                 with self.assertRaisesRegex(launcher["LauncherError"], "whole home"):
                     launcher["preflight_lima"](state)
             backend.host.check_bind.assert_not_called()
@@ -353,8 +341,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             state = SimpleNamespace(home=home, repository=repository, skills_source=repository,
                 metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_docker=None)
             backend = mock.Mock()
-            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
-                                 _secure_codex_auth_directory=lambda _: None):
+            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend):
                 launcher["preflight_lima"](state)
             backend.host.check_bind.assert_not_called()
             backend.host.check_binds.assert_not_called()
@@ -362,7 +349,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             sources = backend.check_binds.call_args.args[0]
             self.assertIn((repository, True), sources)
             self.assertIn((repository, False), sources)
-            self.assertIn((home / ".codex/config.toml", False), sources)
+            self.assertNotIn((home / ".codex/config.toml", False), sources)
             for name in ("sessions", "npm", "git"):
                 self.assertIn((home / ".pi/agent" / name, True), sources)
 
@@ -862,8 +849,7 @@ class DirectoryHandoffTest(unittest.TestCase):
                 replacements = {**forbidden, "image_runtime": lambda: runtime,
                                 "new_state": lambda _args: state,
                                 "validate_repository": mock.Mock(),
-                                "load_repository_policy": load_policy, "resolve_agent": compose,
-                                "_secure_codex_auth_directory": lambda _state: None}
+                                "load_repository_policy": load_policy, "resolve_agent": compose}
                 request = root / "request.json"
                 output = io.StringIO()
                 errors = io.StringIO()
@@ -906,7 +892,6 @@ class DirectoryHandoffTest(unittest.TestCase):
             with mock.patch.dict(prepare.__globals__, {
                 "OUTER_RUNTIME": runtime,
                 "load_repository_policy": load_policy,
-                "_secure_codex_auth_directory": lambda _state: None,
                 "resolve_agent": compose,
             }):
                 with self.assertRaisesRegex(ValueError, "build failed"):
@@ -932,7 +917,6 @@ class DirectoryHandoffTest(unittest.TestCase):
             model = mock.Mock(return_value="agent-image")
             with mock.patch.dict(prepare.__globals__, {
                 "OUTER_RUNTIME": runtime, "load_repository_policy": load_policy,
-                "_secure_codex_auth_directory": lambda _state: None,
                 "resolve_model_image": model, "proxy_module": lambda: module,
             }), mock.patch.object(module, "OUTER_RUNTIME", runtime):
                 with self.assertRaisesRegex(launcher["LauncherError"], "image-command for broken"):
@@ -1089,7 +1073,7 @@ class BackgroundRelayTest(unittest.TestCase):
                         "validate_repository", "recover_relays", "load_repository_policy", "stage_skills",
                         "register_tmux_pane", "prepare_gateway", "attach_proxies", "preflight_lima", "boot_credential")}
                     replacements.update(OUTER_RUNTIME=runtime, ensure_network=network, run_agent=agent,
-                                        resolve_agent=compose, _secure_codex_auth_directory=lambda _state: None,
+                                        resolve_agent=compose,
                                         temporary_file=lambda: repository / "prepared-images.json",
                                         acquire_lock=lambda value: setattr(value, "proxy_lock", SimpleNamespace(shared=False)))
                     receipt = repository / "request.json"
@@ -1557,10 +1541,6 @@ class AgentSandboxImageTest(unittest.TestCase):
         config = SANDBOX_GITCONFIG.read_text(encoding="utf-8")
         self.assertNotIn("[user]", config)
         self.assertNotIn("[credential]", config)
-
-
-
-
 
 
 class CodexSandboxTest(unittest.TestCase):
@@ -2702,16 +2682,6 @@ class CodexSandboxTest(unittest.TestCase):
                 removals = [call for call in calls if call[:4] == ["tmux", "set-option", "-p", "-u"]]
                 self.assertEqual(0 if replaced else 2, len(removals))
 
-    def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
-        path = os.pathsep.join((str(ROOT / "bin"), str(self.fake_bin), os.environ["PATH"]))
-        result = self.run_launcher("auth", "login", PATH=path)
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            f"{self.home / '.codex-sandbox-auth'}\t{self.home / '.codex/developer-instructions.md'}\tlogin\n",
-            self.codex_log.read_text(encoding="utf-8"),
-        )
-        self.assertEqual(0o700, (self.home / ".codex-sandbox-auth").stat().st_mode & 0o777)
-        self.assertEqual([], read_calls(self.docker_log))
 
     def test_preserves_initial_working_directory_beneath_repository(self) -> None:
         playground = self.repo / "playground"
@@ -2741,21 +2711,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
         self.assertEqual(1, sum(argument.startswith("type=bind,") and "dst=/src,readonly" in argument for argument in run))
         self.assertEqual("/src/repository", run[run.index("--workdir") + 1])
-        self.assertIn(
-            f"type=bind,src={ROOT / 'config/agents/codex/codex.toml'},"
-            "dst=/home/codex/.codex/dotfiles.config.toml,readonly",
-            run,
-        )
-        self.assertIn(
-            f"type=bind,src={ROOT / 'config/agents/codex/codex-developer-instructions.md'},"
-            "dst=/home/codex/.codex/developer-instructions.md,readonly",
-            run,
-        )
-        self.assertIn(
-            f"type=bind,src={ROOT / 'config/agents/breq.md'},"
-            "dst=/home/codex/.codex/breq.md,readonly",
-            run,
-        )
+        self.assertFalse(any("dst=/home/codex/.codex/" in argument for argument in run))
         self.assertNotIn(
             f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
             run,
@@ -2821,104 +2777,37 @@ class CodexSandboxTest(unittest.TestCase):
         attaches = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "attach"]
         self.assertEqual(str(zuliprc), attaches[0][attaches[0].index("--zuliprc") + 1])
 
-    def test_cancelled_codex_broker_persists_then_recovers_without_creation(self) -> None:
-        launcher = runpy.run_path(str(LAUNCHER))
-        auth = self.home / ".codex-sandbox-auth"
-        auth.mkdir(mode=0o700)
-        (auth / "auth.json").write_text('{"tokens":{}}\n', encoding="utf-8")
-        (auth / "auth.json").chmod(0o600)
-        proxy_state = self.root / "broker-state.json"
-        proxy_state.write_text('{"proxies":[]}', encoding="utf-8")
-        state = SimpleNamespace(
-            codex_sidecar_container="cancelled-auth", sidecar_image="sha256:" + "0" * 64,
-            uid=os.getuid(), gid=os.getgid(), proxy_state=proxy_state,
-        )
-        cancelled = threading.Event()
-        cancelled.set()
-        calls = []
 
-        def fake_run(arguments, **kwargs):
-            calls.append(arguments)
-            if arguments[:3] == ["docker", "container", "ls"]:
-                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
-            return subprocess.CompletedProcess(arguments, 1, stdout="", stderr="unexpected command")
+    def test_retired_codex_login_reports_native_host_auth_without_launching(self) -> None:
+        result = self.run_launcher("auth", "login")
+        self.assertEqual(2, result.returncode)
+        self.assertIn("use host Pi provider authentication", result.stderr)
+        self.assertEqual([], read_calls(self.docker_log))
+        self.assertFalse((self.home / ".codex-sandbox-auth").exists())
 
-        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, run=fake_run), \
-                mock.patch.dict(launcher["start_codex_sidecar"].__globals__,
-                                resolve_caddy_image=mock.Mock()) as patched:
-            with self.assertRaisesRegex(launcher["LauncherError"], "cancelled"):
-                launcher["start_codex_sidecar"](state, auth.resolve(), cancelled=cancelled)
-            patched["resolve_caddy_image"].assert_not_called()
-        self.assertFalse(any(call[:2] == ["docker", "run"] for call in calls))
-        self.assertNotIn("auth", json.loads(proxy_state.read_text(encoding="utf-8")))
-
-    def test_codex_startup_readiness_uses_the_helper_and_agent_instance_token(self):
+    def test_old_codex_credentials_never_create_or_enter_guest_broker(self) -> None:
         auth = self.home / ".codex-sandbox-auth"
         auth.mkdir(mode=0o700)
         credential = auth / "auth.json"
-        credential.write_text('{"tokens":{"access_token":"dummy","refresh_token":"dummy"}}')
+        credential.write_text('{"tokens":{"access_token":"old-model-secret"}}')
         credential.chmod(0o600)
-        result = self.run_launcher()
-        self.assertEqual(0, result.returncode, result.stderr)
-        calls = read_calls(self.docker_log)
-        helper = next(call for call in calls if "/trusted/bin/profile-helper" in call)
-        tokens = [item.removeprefix("CADDY_PROFILE_TOKEN=") for item in helper
-                  if item.startswith("CADDY_PROFILE_TOKEN=")]
-        self.assertEqual(1, len(tokens))
-        readiness = [call for call in calls if call[-1:] == ["http://127.0.0.1:8787/ready"]]
-        self.assertEqual(1, len(readiness))
-        self.assertIn("--header=Authorization: Bearer " + tokens[0], readiness[0])
-        self.assertIn("CODEX_SIDECAR_KEY=" + tokens[0], self.final_run())
-
-    def test_starts_codex_auth_sidecar_without_mounting_auth_in_agent(self) -> None:
-        auth = self.home / ".codex-sandbox-auth"
-        auth.mkdir(mode=0o700)
-        (auth / "auth.json").write_text(
-            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
-        )
-        (auth / "auth.json").chmod(0o600)
-
-        result = self.run_launcher()
-        self.assertEqual(0, result.returncode, result.stderr)
-        calls = read_calls(self.docker_log)
-        sidecars = [
-            call for call in calls
-            if call[:2] == ["run", "--detach"] and any("codex-auth-proxy-" in item for item in call)
-        ]
-        self.assertEqual(2, len(sidecars))
-        helper = next(call for call in sidecars if "/trusted/bin/profile-helper" in call)
-        caddy = next(call for call in sidecars if "/trusted/bin/profile-helper" not in call)
-        credential_mount = f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth"
-        self.assertIn(credential_mount, helper)
-        self.assertNotIn(credential_mount, caddy)
-        self.assertIn("--read-only", helper)
-        self.assertIn("--read-only", caddy)
-        self.assertEqual("0:0", helper[helper.index("--user") + 1])
-        self.assertEqual("0:0", caddy[caddy.index("--user") + 1])
-        socket_mounts = [item for call in (helper, caddy) for item in call
-                         if item.startswith("type=volume,") and "dst=/run/profile-helper" in item]
-        self.assertEqual(2, len(socket_mounts))
-        self.assertEqual(socket_mounts[0], socket_mounts[1].removesuffix(",readonly"))
-        self.assertIn("--entrypoint", helper)
-        self.assertEqual("sha256:" + "0" * 64, helper[helper.index("--entrypoint") + 2])
-        self.assertTrue(any(item.startswith("caddy@sha256:") for item in caddy))
-        self.assertEqual("run", caddy[-3])
-        self.assertEqual("/etc/caddy/caddy.json", caddy[-1])
-        labels = [helper[index + 1] for index, value in enumerate(helper) if value == "--label"]
-        self.assertIn("dev.codex.credential-domain=codex", labels)
-        self.assertTrue(any(value.startswith("dev.codex.service-owner=") for value in labels))
-        caddy_name = caddy[caddy.index("--name") + 1]
-        readiness = [call for call in calls if call[:2] == ["exec", caddy_name]
-                     and call[-1] == "http://127.0.0.1:8787/ready"]
-        self.assertEqual(1, len(readiness))
-        agent = self.final_run()
-        self.assertFalse(any(str(auth) in item for item in agent))
-        self.assertTrue(any(item.startswith("CODEX_SIDECAR_URL=http://codex-auth-proxy-") for item in agent))
-        self.assertIn(
-            f"type=bind,src={ROOT / 'tools/codex-sandbox/auth-proxy/pi-extension'},"
-            "dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
-            agent,
-        )
+        for session in ("fresh", "shared"):
+            with self.subTest(session=session):
+                self.docker_log.unlink(missing_ok=True)
+                self.python_log.unlink(missing_ok=True)
+                result = self.run_launcher(FAKE_SESSION=session,
+                    CODEX_SANDBOX_AUTH_DIR=str(auth), OPENAI_API_KEY="host-model-secret",
+                    CODEX_SIDECAR_KEY="stale-model-session-token")
+                self.assertEqual(0, result.returncode, result.stderr)
+                calls = read_calls(self.docker_log)
+                worker = self.final_run()
+                for forbidden in ("CODEX_SIDECAR", "codex-sidecar", "codex-auth-proxy",
+                                  "/var/lib/codex-auth", str(auth), "host-model-secret",
+                                  "stale-model-session-token"):
+                    self.assertNotIn(forbidden, "\n".join(worker))
+                self.assertFalse(any("codex-auth-proxy" in item for call in calls for item in call))
+                self.assertNotIn("--auth-enabled", self.python_log.read_text())
+                self.assertEqual('{"tokens":{"access_token":"old-model-secret"}}', credential.read_text())
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")
@@ -3166,7 +3055,6 @@ class CodexSandboxTest(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
             process.wait()
-
 
 
     def test_agent_docker_relay_is_isolated_and_injected(self) -> None:

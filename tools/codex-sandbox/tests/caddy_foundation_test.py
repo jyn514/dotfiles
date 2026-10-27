@@ -37,7 +37,7 @@ class ImmutableConfigurationTest(unittest.TestCase):
 class IdentityTest(unittest.TestCase):
  def test_exact_chain_and_configuration_binding(self):
   identity=caddy.resolve_caddy_image(RuntimeContract()); self.assertEqual(identity.configuration_digest,"sha256:af555904a0961945f16bb323a501457b13a4f7e9bde969b145b97da80b38ecbe")
-  digest=caddy.configuration_digest(caddy.generate_caddy_config("codex","chatgpt.com")); self.assertRegex(identity.implementation_identity(digest),r"^sha256:[0-9a-f]{64}$")
+  digest=caddy.configuration_digest(caddy.generate_caddy_config("zulip","chat.example.com")); self.assertRegex(identity.implementation_identity(digest),r"^sha256:[0-9a-f]{64}$")
  def test_resolves_both_admitted_platforms_without_foreign_execution(self):
   for platform in ("linux/amd64","linux/arm64"):
    with self.subTest(platform=platform):
@@ -61,7 +61,7 @@ class NativeImageTest(unittest.TestCase):
  def test_present_engine_validation_failure_is_not_skipped(self):
   with patch(__name__+".native_caddy_image",return_value=("linux/amd64","caddy@"+caddy.PLATFORMS["linux/amd64"][0])),patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],1,b"",b"exec format error")):
    with self.assertRaisesRegex(AssertionError,"exec format error"):
-    ConfigTest("test_real_pinned_native_caddy_validates_both_profiles").test_real_pinned_native_caddy_validates_both_profiles()
+    ConfigTest("test_real_pinned_native_caddy_validates_zulip_profile").test_real_pinned_native_caddy_validates_zulip_profile()
  def test_native_validation_does_not_require_a_cached_image(self):
   image="caddy@"+caddy.PLATFORMS["linux/amd64"][0]
   def runtime(arguments,**keywords):
@@ -69,10 +69,10 @@ class NativeImageTest(unittest.TestCase):
     return subprocess.CompletedProcess(arguments,1,b"",b"No such image")
    return subprocess.CompletedProcess(arguments,0,b"",b"")
   with patch(__name__+".native_caddy_image",return_value=("linux/amd64",image)),patch.object(subprocess,"run",side_effect=runtime) as commands:
-   try: ConfigTest("test_real_pinned_native_caddy_validates_both_profiles").test_real_pinned_native_caddy_validates_both_profiles()
+   try: ConfigTest("test_real_pinned_native_caddy_validates_zulip_profile").test_real_pinned_native_caddy_validates_zulip_profile()
    except unittest.SkipTest as error: self.fail("Native validation skipped instead of allowing an image pull: "+str(error))
   runs=[call.args[0] for call in commands.call_args_list if call.args[0][1]=="run"]
-  self.assertEqual(len(runs),2)
+  self.assertEqual(len(runs),1)
   for arguments in runs:
    self.assertIn(image,arguments); self.assertNotIn("--pull=never",arguments)
 
@@ -81,19 +81,22 @@ class NativeImageTest(unittest.TestCase):
    with self.assertRaisesRegex(AssertionError,"Unsupported Docker engine platform"): native_caddy_image()
 
 class ConfigTest(unittest.TestCase):
- def test_real_pinned_native_caddy_validates_both_profiles(self):
+ def test_real_pinned_native_caddy_validates_zulip_profile(self):
   platform,image=native_caddy_image()
-  for profile,upstream in (("codex","chatgpt.com"),("zulip","chat.example.com")):
+  for profile,upstream in (("zulip","chat.example.com"),):
    with self.subTest(platform=platform,profile=profile):
     config=caddy.generate_caddy_config(profile,upstream)
     result=subprocess.run([DOCKER,"run","--rm","-i","--platform",platform,image,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
     self.assertEqual(result.returncode,0,result.stderr.decode())
+ def test_retired_codex_profile_cannot_generate_a_configuration(self):
+  with self.assertRaisesRegex(ValueError,"invalid Caddy profile"):
+   caddy.generate_caddy_config("codex","chatgpt.com")
  def test_security_semantics_are_in_generated_json(self):
-  config=json.loads(caddy.generate_caddy_config("codex","chatgpt.com")); server=config["apps"]["http"]["servers"]["egress"]
+  config=json.loads(caddy.generate_caddy_config("zulip","chat.example.com")); server=config["apps"]["http"]["servers"]["egress"]
   self.assertNotIn("read_body_timeout",server); self.assertNotIn("logs",server); self.assertEqual(server["idle_timeout"],300_000_000_000)
   self.assertEqual(config["logging"]["logs"]["default"]["exclude"],["http.handlers.reverse_proxy"])
-  route=server["routes"][1]; self.assertEqual(route["handle"][0]["handler"],"request_body")
-  gate=route["handle"][1]; self.assertEqual(gate["rewrite"],{"method":"GET","uri":"/admit?"})
+  route=server["routes"][1]; self.assertEqual(route["handle"][0]["handler"],"reverse_proxy")
+  gate=route["handle"][0]; self.assertEqual(gate["rewrite"],{"method":"GET","uri":"/admit?"})
   self.assertEqual(gate["headers"]["request"]["set"]["X-Original-Method"],["{http.request.method}"])
   self.assertEqual(gate["headers"]["request"]["set"]["X-Original-Uri"],["{http.request.uri}"])
   success=gate["handle_response"][0]["routes"][0]["match"][0]
@@ -107,9 +110,9 @@ class ConfigTest(unittest.TestCase):
   self.assertEqual(server["errors"]["routes"][0]["handle"][0]["status_code"],503)
  def test_live_gate_mutates_original_request_and_strips_forwarding(self):
   platform,image=native_caddy_image()
-  config=json.loads(caddy.generate_caddy_config("codex","localhost","/tmp/helper.sock")); servers=config["apps"]["http"]["servers"]
+  config=json.loads(caddy.generate_caddy_config("zulip","localhost","/tmp/helper.sock")); servers=config["apps"]["http"]["servers"]
   app=servers["egress"]; proxy=app["routes"][1]["handle"][-1]; proxy["upstreams"]=[{"dial":"localhost:9999"}]; proxy["transport"]={"protocol":"http"}
-  servers["helper"]={"listen":["unix//tmp/helper.sock"],"routes":[{"handle":[{"handler":"static_response","status_code":204,"headers":{"Authorization":["Bearer trusted"],"Chatgpt-Account-Id":["acct"]}}]}]}
+  servers["helper"]={"listen":["unix//tmp/helper.sock"],"routes":[{"handle":[{"handler":"static_response","status_code":204,"headers":{"Authorization":["Basic trusted"]}}]}]}
   body='auth={{.Req.Header.Get "Authorization"}} acct={{.Req.Header.Get "Chatgpt-Account-Id"}} xff={{.Req.Header.Get "X-Forwarded-For"}} safe={{.Req.Header.Get "X-Safe"}} path={{.Req.URL.Path}}'
   servers["upstream"]={"listen":[":9999"],"routes":[{"handle":[{"handler":"templates"},{"handler":"static_response","body":body}]}]}
   container=subprocess.check_output([DOCKER,"create","--platform",platform,image,"sh","-c","sleep 3600"],text=True).strip()
@@ -124,8 +127,8 @@ class ConfigTest(unittest.TestCase):
     if ready.returncode == 0: break
     if time.monotonic() >= deadline: self.fail("Caddy did not become ready within 10 seconds")
     time.sleep(.1)
-   output=subprocess.check_output([DOCKER,"exec",container,"wget","-qO-","--header=Authorization: Bearer session","--header=X-Forwarded-For: evil","--header=X-Safe: yes","--post-data={}","http://127.0.0.1:8787/codex/responses"],text=True)
-   self.assertEqual(output,"auth=Bearer trusted acct=acct xff= safe=yes path=/backend-api/codex/responses")
+   output=subprocess.check_output([DOCKER,"exec",container,"wget","-qO-","--header=Authorization: Bearer session","--header=X-Forwarded-For: evil","--header=X-Safe: yes","http://127.0.0.1:8787/api/v1/messages"],text=True)
+   self.assertEqual(output,"auth=Basic trusted acct= xff= safe=yes path=/api/v1/messages")
   finally: subprocess.run([DOCKER,"rm","-f",container],stdout=subprocess.DEVNULL)
 
 class UnixConnection(http.client.HTTPConnection):
@@ -160,13 +163,13 @@ class HelperTest(unittest.TestCase):
   self.assertIn('decision=deny method="GET" path="/api/v1/streams" result=rejected reason=helper-query-not-allowed helper_path="/admit"',output)
   for sensitive in ("secret","include_can_access_content","anchor=private","token=hidden","retained=yes"):
    self.assertNotIn(sensitive,output)
- def test_generated_precheck_preserves_caller_admission_for_both_profiles(self):
+ def test_generated_precheck_preserves_caller_admission_for_zulip_profile(self):
   # Deterministic producer-to-helper check, not an emulation of Caddy routing.
   # LiveCaddyAcceptanceTest below verifies the same matrix in the real engine.
-  for profile,token in (("codex","secret"),("zulip","other-instance-token")):
+  for profile,token in (("zulip","other-instance-token"),):
    self.server.session_token=token
    calls=[]
-   trusted=(("Authorization","Bearer trusted"),("Chatgpt-Account-Id","account")) if profile=="codex" else (("Authorization","Basic trusted"),)
+   trusted=(("Authorization","Basic trusted"),)
    def credentials(deadline): calls.append("application"); return trusted
    def readiness(deadline): calls.append("ready"); return trusted
    self.server.credentials=credentials; self.server.readiness=readiness

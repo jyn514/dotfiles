@@ -168,11 +168,6 @@ Do not wrap live `dev/replay-compaction` requests.
 Those use installed configuration, caches, or authentication, so isolated runs do not measure that setup.
 For replay prerequisites and usage, see [replay a compaction](#replay-a-compaction).
 
-### Broker-backed live provider probe
-
-This probe makes a live model request through the sandbox broker and may incur model cost.
-See the [sandbox development guide](../tools/codex-sandbox/development.md#broker-backed-live-provider-probe) for the procedure.
-
 ## Bootstrap maintenance
 
 Run `dev/update-bootstrap-lock --dry-run` to preview newer plugin revisions,

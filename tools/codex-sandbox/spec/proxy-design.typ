@@ -2,8 +2,8 @@
 
 *Status:* Proxy isolation, transports, capability selection, image resolution, and
 request-failure isolation are implemented. Caddy 2.11.4-alpine with private profile
-helpers is the selected authenticated-egress architecture; Codex and Zulip remain
-separate trust domains. Host Pi with guest tools is implemented as an execution
+helpers is the selected Zulip authenticated-egress architecture. Model requests
+use host Pi's native authentication and providers, not a sandbox broker. Host Pi with guest tools is implemented as an execution
 path, but conformance to the host extension authority contract remains unverified;
 the `git` built-in mount is implemented in the launcher, not yet consumed by the
 `bug` proxy. Manifest examples use the temporary version 1 format.
@@ -80,8 +80,8 @@ hooks can consume model-writable data and must retain that data's authority.
   [Date, notification, direct-skill and subagent routing],
   [Host hooks. Fixed date/notification effects and validated model/template selection
    do not authorize a new execution environment.],
-  [Compaction, provider web search, Codex provider registration],
-  [Host model integration. Use admitted broker routes for authenticated traffic;
+  [Compaction, provider web search, native provider selection],
+  [Host model integration. Use host Pi's native authentication and providers;
    provider-side search does not imply arbitrary host URL fetching.],
   [Goal tracking],
   [Host session state through Pi APIs, including model-invoked goal tools and
@@ -122,9 +122,11 @@ unclassified model-executable handlers. Replacing only Bash is insufficient.
 The approved whole-checkout writable-dotfiles scope proceeds with this limitation; its metadata and policy overlays do not enforce host-code isolation.
 This approval does not remove the requirement or establish conformance.
 
-The host can route selected authenticated model requests through validated broker
-endpoints without exposing credentials to guest tools. Moving Pi to the host does
-not authorize direct credential fallback or bypass required broker routes.
+Host Pi intentionally owns model authentication through its native providers.
+Model credentials remain outside guest worker mounts and environment; the launcher
+does not register a sandbox model provider or project a model session token.
+This decision removes an unused guest broker, not the host-code or instruction-read
+isolation requirements above.
 
 == Protected sandbox configuration
 
@@ -439,9 +441,9 @@ It does not expose a general-purpose shell, `docker exec`, alternate entrypoint,
 
 === Selected topology and boundary
 
-Each credential trust domain uses two launcher-owned containers: an unmodified, digest-pinned Caddy 2.11.4-alpine container and a minimal profile-helper container. They share only a private Unix-socket volume. The helper binds its socket there; it has no agent-facing listener. Only the helper receives the credential mount and any mutable refresh state. Caddy receives no credential files. Codex and Zulip have separate Caddy/helper pairs, networks, socket volumes, session tokens, mutable state, lifecycle identities, and failure domains. The Zulip typed adapter remains a further separate application-boundary container in the Zulip trust domain.
+Zulip uses two launcher-owned containers: an unmodified, digest-pinned Caddy 2.11.4-alpine container and a minimal profile-helper container. They share only a private Unix-socket volume. The helper binds its socket there; it has no agent-facing listener. Only the helper receives the credential mount and any mutable refresh state. Caddy receives no credential files. The Zulip typed adapter remains a further separate application-boundary container in the Zulip trust domain.
 
-Caddy owns HTTP parsing and framing, standard hop-by-hop handling, TLS verification, DNS dialing, fixed reverse proxying, streaming, method/path matching, request-size enforcement, request-header limits, and configured transport/server timeouts. It is not a forward proxy and never accepts a caller-selected origin. The helper owns session-token admission, credential read/refresh, and generation of trusted authentication and account headers; it does not proxy HTTP application bodies.
+Caddy owns HTTP parsing and framing, standard hop-by-hop handling, TLS verification, DNS dialing, fixed reverse proxying, streaming, method/path matching, request-size enforcement, request-header limits, and configured transport/server timeouts. It is not a forward proxy and never accepts a caller-selected origin. The helper owns session-token admission, credential reading, and generation of trusted authentication headers; it does not proxy HTTP application bodies.
 
 For every application request, Caddy performs the normative helper exchange below. It never forwards the application body to the helper.
 
@@ -457,7 +459,6 @@ For every application request, Caddy performs the normative helper exchange belo
   The helper consumes only the token and method/URI context and ignores other headers without logging them.
   Logging of method/path context follows Readiness and observability below, not raw header or complete URI logging.
   Parser-level failures remain internal because Caddy normalizes every helper failure.],
-  [Codex success], [`204` with exactly `Authorization: Bearer <access-token>` and `Chatgpt-Account-Id: <account-id>` as custom response headers. Both values must be nonempty.],
   [Zulip success], [`204` with exactly `Authorization: Basic <value>` as a custom response header. The value must be nonempty.],
   [Wrong token], [`401`, `Content-Length: 0`, no body, and no custom response headers.],
   [Credential failure], [`503` for credential read, validation, or refresh failure, with `Content-Length: 0`, no body, and no custom response headers.],
@@ -470,8 +471,6 @@ The Caddy configuration expands the authentication precheck rather than relying 
 Flower R2 is excluded. AWS Signature Version 4 binds request material and must preserve per-use Keychain consent. R2 remains its dedicated per-launch relay until a separately reviewed signer preserves those semantics without disclosing credentials.
 
 === Fixed routes
-
-The Codex Caddy configuration fixes upstream host `chatgpt.com`, method `POST`, downstream path `/codex/responses`, upstream path `/backend-api/codex/responses`, and an empty query. A matcher rejects every query, any other method or path, and non-origin-form targets. A final catch-all returns an error locally and cannot invoke `reverse_proxy`. Pi receives only this listener URL and its compatibility placeholder key.
 
 The Zulip typed adapter remains the only agent/host application interface.
 It accepts transcript, topic-list, and available-channel-list framed operations, constructs requests, paginates, serializes access,
@@ -501,11 +500,12 @@ Caddy performs normal protocol hop-by-hop removal. Duplicate, malformed, connect
 
 === Timeouts, bounds, and completion
 
-The immutable Caddy configuration sets a 64 KiB request-header maximum, 10-second header-read timeout, 300-second idle timeout, 10-second application-upstream dial timeout, and 60-second application-upstream `response_header_timeout`. The helper transport separately uses a 10-second Unix-socket dial timeout and 30-second response-header timeout. The Codex request-body maximum is 32 MiB. There is no complete-body deadline: a peer may trickle a body while remaining within the server's idle behavior. Zulip request bodies are absent because all three route families are `GET`; its typed request and query bounds remain adapter-owned. Container PID, memory, CPU, file-descriptor, and network bounds constrain each service.
+The immutable Caddy configuration sets a 64 KiB request-header maximum, 10-second header-read timeout, 300-second idle timeout, 10-second application-upstream dial timeout, and 60-second application-upstream `response_header_timeout`. The helper transport separately uses a 10-second Unix-socket dial timeout and 30-second response-header timeout. Zulip request bodies are absent because all three route families are `GET`; its typed request and query bounds remain adapter-owned. Container PID, memory, CPU, file-descriptor, and network bounds constrain each service.
 
-There is deliberately no response-byte cap and no claimed exact total stream-duration cap. Removing the byte cap avoids truncating valid model streams and preserves backpressure, but permits a fast peer to transfer more data than a byte budget would allow; Caddy's available timeouts and container bounds are coarser controls and do not establish an exact maximum byte count or wall-clock duration. Caddy preserves HTTP framing failures but does not parse Responses SSE events or JSON and therefore cannot decide protocol completion.
-
-Codex completion is delegated to the pinned external Pi implementation, not guaranteed by repository-owned proxy or extension code. The repository-owned extension only registers Pi's `openai-codex` provider with the fixed base URL and placeholder key. The image pins Pi revision `dace3062222cdc49d9a400a9b5ea026b98a7ef2d`; at that revision `packages/ai/src/api/openai-codex-responses.ts` sends streaming requests, parses SSE, recognizes terminal response events, and fails when the stream ends without a stop reason. That source and its provider tests are fetched into the image build but are not writable or test-owned by this repository. Non-stream response completeness, if Pi adds or selects such a mode, is likewise Pi's responsibility and is not exercised by this launch path. The repository can guarantee only unbounded streaming transport without application retry and propagation of premature close/reset/timeout as transport failure; it cannot claim that every such failure is recognized semantically by Pi. The Zulip adapter remains repository-owned and reports success only after a complete bounded response validates.
+Caddy preserves HTTP framing failures but does not decide protocol completion.
+The repository-owned Zulip adapter reports success only after a complete bounded
+response validates. Native Pi owns model transport and completion semantics;
+those requests do not pass through Caddy.
 
 Caddy and the helper do not retry application requests. Whether a remote mutation committed before cancellation may be unknown. Zulip's reviewed `429` behavior remains typed-adapter policy. Service, helper, credential, TLS, DNS, or upstream failure never triggers direct authenticated fallback.
 
@@ -513,7 +513,7 @@ Caddy and the helper do not retry application requests. Whether a remote mutatio
 
 Caddy performs ordinary DNS resolution and dialing for the single configured application upstream host. Its application egress uses a distinct lifecycle-owned ordinary network, separate from the agent-link network.
 
-The Codex helper alone joins a separate lifecycle-owned ordinary refresh-egress network. This topology keeps helper refresh egress distinct from Caddy application egress. Exact installed helper code permits only HTTPS `POST /oauth/token` with its fixed OAuth fields. The Zulip static-credential helper has no egress network. Recovery metadata records both Codex egress networks and the helper attachment independently.
+The Zulip static-credential helper has no egress network.
 
 === Readiness and observability
 
@@ -533,7 +533,7 @@ Logs must omit raw precheck headers, query values, topic names, bodies, cookies,
 
 === Credential profiles
 
-The Codex helper is the sole reader and transactional writer of dedicated OAuth state and returns fixed `Authorization`, account, and installed profile headers after any request-time refresh. The ordinary human Codex login remains a different owner. The Zulip helper constructs fixed basic authentication from its admitted identity. Helpers expose no template language, arbitrary header map, environment expansion, caller-selected account, credential path, or Keychain service.
+The Zulip helper constructs fixed basic authentication from its admitted identity. Helpers expose no template language, arbitrary header map, environment expansion, caller-selected account, credential path, or Keychain service.
 
 All containers run non-root with read-only root filesystems, capabilities dropped, `no-new-privileges`, and explicit resource bounds. They receive no repository, outer-daemon socket, SSH agent, or ordinary home directory. Agent root cannot access the private socket volume or another sibling's mounts or networks.
 
@@ -543,31 +543,37 @@ The only admitted Caddy dependency is Docker Official Image `caddy:2.11.4-alpine
 
 === Migration and removal
 
-+ Add one unmodified Docker Official Image Caddy container and one minimal helper container per credential domain, with a private socket volume and credentials mounted only into the helper.
-+ Generate immutable Caddy configuration for the fixed Codex route, three Zulip route families, header operations, bounds, catch-alls, bodyless precheck, and local readiness path.
-+ Point Pi at the Codex Caddy listener. Keep the Zulip typed adapter but route its three upstream request families through its local Caddy.
-+ Record, publish, validate, stop, and recover both Caddy and helper container identities and their shared socket volume; retain the Zulip adapter identity separately.
-+ On 2026-09-14, the custom broker HTTP server, parser/framing checks, DNS parser, header filtering/allowlist engine, TLS client, reverse-proxy loop, routing machinery, response-byte limiter, and access-log implementation were deleted after parity acceptance. No fallback path remains.
-+ Preserve separate Codex and Zulip trust domains and keep Flower R2's dedicated relay unchanged.
+The 2026-09-14 Caddy migration removed the custom authenticated HTTP broker.
+The 2026-10-27 Codex model-broker removal selects native host-Pi providers and
+retains only the Zulip Caddy/helper pair and its typed adapter. Flower R2 keeps
+its dedicated per-launch Keychain relay.
 
-The agent's credential-free public network remains outside this reverse proxy. Removing direct egress is a separate design.
+Old Codex session records are cleanup-only: no publication or new join may admit
+them. Existing attachments must exit before owner-validated reset removes the
+recorded Caddy/helper containers, socket volume, application and refresh networks,
+and immutable configuration. Failed cleanup preserves recovery authority;
+recovery must not resolve images, refresh OAuth state, or read model credentials.
+Legacy single-container records retain their existing cleanup-only handling.
+The launcher does not delete or migrate old dedicated credential files.
+
+The agent's credential-free public network remains outside this reverse proxy.
+Removing direct egress is a separate design.
 
 === Caddy acceptance checks
 
 - Startup and join admit only Docker Official Image Caddy 2.11.4-alpine whose OCI index, platform-manifest, image-configuration, and runtime container image identities form the recorded chain; the service implementation identity separately binds the mounted Caddy configuration digest.
 - Every credential domain has separately recorded Caddy and helper containers and private socket volume; credentials are visible only to its helper.
-- Codex accepts only downstream `POST /codex/responses` with no query and rewrites it to fixed upstream `/backend-api/codex/responses`; Zulip Caddy accepts only the three typed-adapter route families; every configuration ends in a non-proxying catch-all.
+- Zulip Caddy accepts only the three typed-adapter route families; every configuration ends in a non-proxying catch-all.
 - `GET /admit` over the private Unix socket receives no body; constant-time exact admission enforces the at-most-4096-byte bearer session token, and metadata stays within the 64 KiB header bound.
   Other headers are ignored without logging; method/path logging follows Readiness and observability.
-- Helper transport uses separate 10-second Unix dial and 30-second response-header limits; after admission, credential read/refresh uses one internal 30-second monotonic deadline, with no claimed combined complete-exchange deadline.
-- Codex helper success is exactly bodyless `204` with nonempty canonical `Authorization: Bearer` and `Chatgpt-Account-Id`; Zulip success is exactly bodyless `204` with nonempty `Authorization: Basic`; wrong token is `401`, credential failure is `503`, and failures have `Content-Length: 0` with no custom headers.
+- Helper transport uses separate 10-second Unix dial and 30-second response-header limits; after admission, credential reading uses one internal 30-second monotonic deadline, with no claimed combined complete-exchange deadline.
+- Zulip helper success is exactly bodyless `204` with nonempty `Authorization: Basic`; wrong token is `401`, credential failure is `503`, and failures have `Content-Length: 0` with no custom headers.
 - Expanded Caddy response matching requires `2xx` plus every required nonempty helper header before replacing client values and proxying; every other result returns fixed local bodyless `401`/`503` and sends no application body upstream.
 - Caddy fixes `Host`, strips authority/profile/forwarding fields, copies only helper auth/account fields, and passes other safe end-to-end headers unchanged.
-- Tests enforce 64 KiB headers, Codex 32 MiB body, 10-second header read, 300-second idle timeout, 10-second upstream dial, and 60-second response-header wait; no test assumes a complete-body, total-response, or response-byte deadline.
-- Repository tests verify that Caddy has one Codex upstream and no application retry policy, and that malformed upstream response framing is not turned into a successful complete transport. They do not claim to validate Responses SSE or JSON.
-- The pinned external Pi revision owns Codex terminal-event and premature-end handling; its source/tests must be reviewed or run in the Pi repository when that pin changes. Non-stream completion is delegated but is not used or evidenced by this repository launch path. Complete Zulip validation remains a repository guarantee.
+- Tests enforce 64 KiB headers, 10-second header read, 300-second idle timeout, 10-second upstream dial, and 60-second response-header wait; no test assumes a complete-body, total-response, or response-byte deadline.
+- Repository tests verify that Caddy has one fixed Zulip upstream and no application retry policy, and that malformed upstream response framing is not turned into a successful complete transport. They do not claim to validate Responses SSE or JSON.
 - Caddy application egress uses an ordinary, separately lifecycle-owned network.
-- Only the Codex helper has a separately lifecycle-owned ordinary refresh-egress network and fixed helper `POST /oauth/token`; the Zulip helper has no egress.
+- The Zulip helper has no egress.
 - Readiness proves Caddy-to-helper admission locally through a no-upstream route and performs no refresh or persistent write.
 - Caddy access logs and its header-bearing reverse-proxy error logger are disabled; this sacrifices per-request proxy diagnostics to prevent trusted profile-header disclosure.
   Logging acceptance for the launcher-owned Caddy/helper service interfaces and typed adapter follows Readiness and observability.
@@ -675,7 +681,7 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - Pi streams model requests through its fixed HTTP route, while Zulip clients use only the typed read-only adapter; neither receives reusable credentials
 - Unknown methods, paths, origins, oversized request bodies, alternate authority, and client-supplied authentication fail closed; safe end-to-end headers otherwise pass unchanged
 - Caddy rejects malformed targets and protocol-invalid framing and headers; its fixed upstream prevents callers from selecting arbitrary destinations
-- Codex login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
+- Host Pi uses native model authentication; the guest receives no model credentials or provider overrides
 - A route failure does not expose its credential or affect another credential-domain instance
 - Caddy or profile-helper unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
 - An authenticated-egress session token remains available to validated joiners after the publishing launcher exits, fails after its Caddy service instance ends, authorizes only that accepted service, and cannot authenticate directly to an upstream provider

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Single-threaded private Unix-socket Caddy credential helper."""
 from __future__ import annotations
-import argparse, base64, configparser, contextlib, hmac, importlib.util, json, os, signal, sys, time
+import argparse, base64, configparser, contextlib, hmac, json, os, signal, sys, time
 from pathlib import Path
 import socketserver
 from http import HTTPStatus
@@ -36,23 +36,6 @@ def operation_deadline(seconds=WORK_TIMEOUT):
             signal.setitimer(signal.ITIMER_REAL,restored,old[1])
         finally: signal.pthread_sigmask(signal.SIG_UNBLOCK,{signal.SIGALRM})
 
-def _codex_module():
-    path=Path(__file__).with_name("codex_profile.py")
-    spec=importlib.util.spec_from_file_location("caddy_codex_profile",path)
-    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
-
-def codex_credentials(deadline):
-    access,account=_codex_module().credentials(deadline=deadline)
-    return (("Authorization","Bearer "+access),("Chatgpt-Account-Id",account))
-def codex_ready(deadline):
-    module=_codex_module(); data=module.read_auth(); tokens=data["tokens"]
-    access=tokens["access_token"]; claims=module.jwt_payload(access)
-    account=tokens.get("account_id")
-    auth=claims.get("https://api.openai.com/auth")
-    account=account or (auth.get("chatgpt_account_id") if isinstance(auth,dict) else None)
-    if not isinstance(claims.get("exp"),(int,float)) or not isinstance(account,str) or not account:
-        raise CredentialFailure("invalid Codex credential structure")
-    return (("Authorization","Bearer ready"),("Chatgpt-Account-Id","ready"))
 def _zulip(path=None):
     parser=configparser.ConfigParser(interpolation=None)
     with (path or Path(os.environ.get("ZULIPRC","/var/lib/zulip/zuliprc"))).open(encoding="utf-8") as stream: parser.read_file(stream)
@@ -116,10 +99,10 @@ class HelperHandler(BaseHTTPRequestHandler):
             with operation_deadline() as deadline:
                 callback=self.server.readiness if self.path=="/ready" else self.server.credentials
                 headers=callback(deadline)
-            expected_names=("Authorization","Chatgpt-Account-Id") if len(headers)==2 else ("Authorization",)
+            expected_names=("Authorization",)
             if tuple(k for k,v in headers)!=expected_names or any(not v or any(c in v for c in "\r\n") for k,v in headers): raise CredentialFailure()
             auth=dict(headers)["Authorization"]
-            if not auth.startswith("Bearer ") if len(headers)==2 else not auth.startswith("Basic "): raise CredentialFailure()
+            if not auth.startswith("Basic "): raise CredentialFailure()
         except Exception: return self._failure(HTTPStatus.SERVICE_UNAVAILABLE,"credential-failure")
         self._log_result("ready" if self.path=="/ready" else "admitted")
         self.send_response_only(HTTPStatus.NO_CONTENT)
@@ -129,12 +112,13 @@ class HelperHandler(BaseHTTPRequestHandler):
     do_HEAD=do_POST=do_PUT=do_DELETE=do_OPTIONS=do_PATCH=unsupported
 
 def serve(profile,socket_path,token):
-    credentials,ready=(codex_credentials,codex_ready) if profile=="codex" else (zulip_credentials,zulip_ready)
+    if profile != "zulip": raise ValueError("unsupported credential profile")
+    credentials,ready=zulip_credentials,zulip_ready
     path=Path(socket_path); path.unlink(missing_ok=True); path.parent.mkdir(parents=True,exist_ok=True)
     server=UnixHTTPServer(str(path),token,credentials,ready); os.chmod(path,0o600)
     try: server.serve_forever()
     finally: server.server_close(); path.unlink(missing_ok=True)
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument("--profile",required=True,choices=("codex","zulip")); parser.add_argument("--socket",default="/run/profile-helper/socket")
+    parser=argparse.ArgumentParser(); parser.add_argument("--profile",required=True,choices=("zulip",)); parser.add_argument("--socket",default="/run/profile-helper/socket")
     args=parser.parse_args(); serve(args.profile,args.socket,os.environ.get("CADDY_PROFILE_TOKEN",""))
 if __name__=="__main__": main()

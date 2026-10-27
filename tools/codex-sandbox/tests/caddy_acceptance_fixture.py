@@ -21,6 +21,7 @@ class Handler(BaseHTTPRequestHandler):
   self.send_header("Content-Length",str(len(body))); self.end_headers()
   if body:self.wfile.write(body)
  def do_GET(self):
+  if self.server.server_port==8082: return self.do_POST()
   if self.server.server_port==8080:
    if self.path=="/state": return self.reply(200,snapshot(),(("Content-Type","application/json"),))
    if self.path.startswith("/mode/"):
@@ -42,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
    if mode in ("delay","timeout"): release.wait(5)
    if mode=="unauthorized": return self.reply(401)
    if mode=="malformed": return self.reply(204,headers=(("X-Helper-Secret","helper-header-secret"),("Set-Cookie","helper-cookie-secret=1")))
-   return self.reply(204,headers=(("Authorization","Bearer fixture-secret"),("Chatgpt-Account-Id","fixture-account")))
+   return self.reply(204,headers=(("Authorization","Basic fixture-secret"),))
   self.reply(404)
  def do_POST(self):
   if self.server.server_port==8080 and self.path=="/client":
@@ -54,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
     if authorization is not None: headers["Authorization"]=authorization
     client=http.client.HTTPConnection(spec.get("target","caddy"),8787,timeout=8); response=None
     try:
-     client.request(spec.get("method","POST"),spec.get("path","/codex/responses"),body=data,headers=headers)
+     client.request(spec.get("method","GET"),spec.get("path","/api/v1/messages"),body=data,headers=headers)
      response=client.getresponse(); body=response.read()
      result={"status":response.status,"body":body.decode(errors="replace"),"headers":dict(response.getheaders())}
     except http.client.IncompleteRead as error:

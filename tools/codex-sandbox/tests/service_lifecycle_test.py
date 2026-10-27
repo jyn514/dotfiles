@@ -36,7 +36,6 @@ def startup_replacements(launcher, state):
              'register_tmux_pane', 'ensure_network', 'prepare_gateway', 'attach_proxies')
     replacements = {name: mock.Mock(return_value=[]) for name in empty}
     replacements.update(OUTER_RUNTIME=runtime.ContainerRuntime(),
-                        _secure_codex_auth_directory=lambda _: None,
                         prepare_declared_images=lambda *args: None,
                         resolve_model_image=lambda *args: 'agent@immutable',
                         run_agent=mock.Mock(return_value=17))

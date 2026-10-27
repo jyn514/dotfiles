@@ -34,8 +34,7 @@ from trusted_services import (
     ResourceTopology, ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope, service_timing,
 )
 from codex_broker import (
-    PAIR_STATUS_FIELDS, SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
-    resolved_plan as resolved_codex_broker_plan,
+    SESSION_LIFECYCLE_SCHEMA, parse_auth_record,
 )
 from zulip_broker import helper_plan as resolved_zulip_helper_plan, resolved_plan as resolved_zulip_broker_plan
 from caddy_foundation import (
@@ -713,22 +712,8 @@ def publish_main(args: argparse.Namespace) -> int:
     validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(Path(args.repo)),
                           commands=manifest["commands"], uid=parameters.get("uid"), gid=parameters.get("gid"))
     services = {p["name"]: _service_record(p["name"], p, owner) for p in proxies}
-    auth = state.get("auth")
-    if auth is not None:
-        try:
-            kind, auth = parse_auth_record(auth, managed_required=True)
-        except ValueError as error:
-            raise ConfigError("shared state has invalid authentication recovery authority") from error
-        if (kind != "managed" or auth["lifecycle-state"] != "ready" or
-                auth["resource-status"] != {field: "created" for field in PAIR_STATUS_FIELDS}):
-            raise ConfigError("authentication service is not ready for publication")
-        snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
-        if snapshot.get("State", {}).get("Running") is not True:
-            raise ConfigError("authentication service stopped before publication")
-        _validate_codex_broker(OUTER_RUNTIME, auth, launch["helper-image"], parameters["uid"], parameters["gid"], snapshot=snapshot)
-        published_auth = dict(auth)
-        published_auth["lifecycle-state"] = "published"
-        services["codex-broker"] = _service_record("codex-broker", published_auth, owner)
+    if state.get("auth") is not None:
+        raise ConfigError("retired Codex broker state is cleanup-only; cannot publish")
     payload = {
         "version": 4, "repository": repository_identity(Path(args.repo)),
         "container_repository": str(container_repository(args.container_repo)),
@@ -892,8 +877,8 @@ def _service_record(role: str, recovery: dict[str, Any], runtime: dict[str, Any]
         "endpoints": [endpoint], "runtime-owner": runtime,
         "recovery-identity": recovery["service-owner"], "recovery": recovery,
     }
-    token = recovery.get("session-token", recovery.get("key"))
-    if family == "authenticated-egress" or role == "codex-broker":
+    token = recovery.get("session-token")
+    if family == "authenticated-egress":
         result["family"] = "authenticated-egress"
         result["broker-session-token"] = token
     return result
@@ -927,10 +912,7 @@ def cached_session_state(
     cached_manifest = metadata.get("manifest")
     if not isinstance(state, dict) or not isinstance(state.get("proxies"), list):
         return None
-    auth = state.get("auth")
-    if bool(auth) != getattr(args, "auth_enabled", False):
-        return None
-    if auth and (not isinstance(auth, dict) or auth.get("image") != args.helper_image):
+    if state.get("auth") is not None:
         return None
     if cached_manifest != serializable_manifest(manifest):
         return None
@@ -1028,12 +1010,12 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
     expected_workspaces = requested_workspaces(args)
     if expected_workspaces is not None and accepted4.get("workspaces") != expected_workspaces:
         raise ConfigError("active session workspace authority changed; start a fresh sandbox after attached sessions exit")
+    if "codex-broker" in parsed4:
+        raise ConfigError("active session contains a retired Codex broker; restart after attached sessions exit")
     state = session_state(metadata)
     accepted = {"manifest": accepted4["policy"], "source-present": accepted4["source-present"],
                 "images": {"agent": accepted4["images"]["agent"],
                            "helper": accepted4["images"]["helper"],
-                           "caddy": (parsed4["codex-broker"]["container"]["image"]
-                                     if "codex-broker" in parsed4 else None),
                            "proxies": {name: image for name, image in accepted4["images"]["services"].items()
                                        if name != "codex-broker"}},
                 "parameters": accepted4["image-bound-parameters"]}
@@ -1055,7 +1037,7 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
     parameters = accepted["parameters"]
     if (not isinstance(accepted["source-present"], bool) or
             not isinstance(manifest, dict) or not isinstance(images, dict) or
-            set(images) != {"agent", "helper", "caddy", "proxies"} or
+            set(images) != {"agent", "helper", "proxies"} or
             not isinstance(images["proxies"], dict) or
             set(images["proxies"]) != set(manifest.get("commands", {})) or
             not isinstance(images["agent"], str) or not images["agent"] or
@@ -1080,20 +1062,6 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
     lifecycle_schema = state.get("trusted-services")
     if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
         raise ConfigError("active session has an unsupported trusted-service schema")
-    auth = state.get("auth")
-    auth_kind = None
-    if auth is not None:
-        try:
-            auth_kind, auth = parse_auth_record(
-                auth, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
-        except ValueError as error:
-            raise ConfigError("active session has invalid authentication state") from error
-        if (images["helper"] is None or auth_kind != "managed" or
-                auth["image"] != images["caddy"]):
-            raise ConfigError("active session authentication images do not match accepted images")
-        if (auth["lifecycle-state"] != "published" or
-                auth["resource-status"] != {field: "created" for field in PAIR_STATUS_FIELDS}):
-            raise ConfigError("active session authentication service was not published")
     try:
         OUTER_RUNTIME.verify_builder_image(images["agent"])
         helper_image = None
@@ -1101,18 +1069,6 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
             helper_image = OUTER_RUNTIME.verify_builder_image(images["helper"])
         for image in images["proxies"].values():
             OUTER_RUNTIME.verify_builder_image(image)
-        if auth is not None:
-            if not isinstance(auth.get("container"), str) or helper_image is None:
-                raise ConfigError("active session has invalid authentication state")
-            if auth_kind == "managed":
-                auth_snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
-                if auth_snapshot.get("State", {}).get("Running") is not True:
-                    raise ConfigError("active session has an unhealthy authentication service")
-                _validate_codex_broker(OUTER_RUNTIME, auth, images["helper"], args.uid, args.gid,
-                                       snapshot=auth_snapshot)
-            elif (not containers_running([auth["container"]]) or
-                  not OUTER_RUNTIME.container_matches_image(auth["container"], helper_image)):
-                raise ConfigError("active session has an unhealthy authentication service")
         containers = [proxy["container"] for proxy in proxies]
         snapshots = None
         if OUTER_RUNTIME.provider == "lima-docker":
@@ -1457,91 +1413,6 @@ def zuliprc_mount_args(path: Path) -> list[str]:
 COMMAND_PROXY_STATE_SCHEMA = 1
 
 
-def _validate_codex_network_labels(auth: dict[str, Any], labels: dict[str, dict]) -> None:
-    if any(labels[role].get("dev.codex.service-owner") != auth["service-owner"]
-           or labels[role].get("dev.codex.credential-domain") != "codex"
-           or labels[role].get("dev.codex.network-role") != role
-           for role in ("application", "refresh")):
-        raise ConfigError("active session authentication network ownership changed")
-
-
-def _validate_codex_broker(owner, auth: dict[str, Any], image: str, uid: int, gid: int,
-                           *, snapshot=None) -> None:
-    try:
-        kind, auth = parse_auth_record(auth)
-    except ValueError as error:
-        raise ConfigError("active session has invalid authentication service identity") from error
-    if kind != "managed" or auth["runtime-owner"] != runtime_identity(owner):
-        raise ConfigError("active session has invalid authentication service identity")
-    helper = resolved_codex_broker_plan(Path(__file__).with_name("auth-proxy"), image, uid, gid)
-    caddy = accepted_caddy_image(auth["caddy-image-chain"], owner)
-    material = {"caddy": caddy.__dict__, "configuration": auth["configuration"]["digest"],
-                "helper": helper.implementation_identity}
-    expected = "sha256:" + hashlib.sha256(json.dumps(
-        material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    if (auth["image"] != caddy.runtime_reference or auth["caddy-image-chain"] != caddy.__dict__
-            or auth["helper-implementation"] != helper.implementation_identity
-            or auth["implementation-identity"] != expected):
-        raise ConfigError("active session has invalid authentication service identity")
-    live = snapshot if snapshot is not None else owner.inspect_container(auth["container"])
-    helper_live = owner.inspect_container(auth["helper-container"])
-    try:
-        validate_configuration_mount(live, Path(auth["configuration"]["path"]),
-                                     auth["configuration"]["digest"])
-    except ValueError as error:
-        raise ConfigError("active session Caddy configuration changed") from error
-    networks = live.get("NetworkSettings", {}).get("Networks", {})
-    helper_networks = owner.container_networks(helper_live)
-    try:
-        network_labels = {}
-        for role in ("application", "refresh"):
-            inspected = owner.run(["network", "inspect", auth["networks"][role]],
-                                  capture_output=True)
-            network = json.loads(inspected.stdout)[0]
-            network_labels[role] = network.get(
-                "Labels", network.get("CNI", {}).get("nerdctlLabels", {})) or {}
-    except (KeyError, ValueError, subprocess.SubprocessError) as error:
-        raise ConfigError("active session authentication network inspection failed") from error
-    _validate_codex_network_labels(auth, network_labels)
-    mounts = [mount for mount in helper_live.get("Mounts", [])
-              if mount.get("Destination") == "/var/lib/codex-auth"]
-    caddy_credentials = [mount for mount in live.get("Mounts", [])
-                         if mount.get("Destination") == "/var/lib/codex-auth"]
-    caddy_sockets = [mount for mount in live.get("Mounts", [])
-                     if mount.get("Destination") == "/run/profile-helper"]
-    helper_sockets = [mount for mount in helper_live.get("Mounts", [])
-                      if mount.get("Destination") == "/run/profile-helper"]
-    if (set(networks) != {auth["networks"]["agent-link"], auth["networks"]["application"]}
-            or set(helper_networks) != {auth["networks"]["refresh"]}
-            or caddy_credentials or len(mounts) != 1 or mounts[0].get("RW") is not True
-            or len(caddy_sockets) != 1 or caddy_sockets[0].get("Name") != auth["socket-volume"]
-            or caddy_sockets[0].get("RW") is not False
-            or len(helper_sockets) != 1 or helper_sockets[0].get("Name") != auth["socket-volume"]
-            or helper_sockets[0].get("RW") is not True):
-        raise ConfigError("active session authentication network or credential mount changed")
-    source = mounts[0].get("Source")
-    try:
-        source_identity = credential_source_identity(Path(source)) if isinstance(source, str) else None
-    except (OSError, ValueError) as error:
-        raise ConfigError("active session authentication credential source changed") from error
-    if source_identity != auth["credential-volume"]["identity"]:
-        raise ConfigError("active session authentication credential source changed")
-    inspection = {"snapshot": live}
-    verified = owner.inspect_image(auth["image"])
-    helper_verified = owner.inspect_image(image)
-    if not owner.container_matches_image(auth["container"], verified, **inspection, labels={
-            "dev.codex.service-owner": auth["service-owner"],
-            "dev.codex.credential-domain": "codex",
-    }) or not owner.container_matches_image(auth["helper-container"], helper_verified,
-            snapshot=helper_live, labels={"dev.codex.service-owner": auth["service-owner"],
-                                          "dev.codex.credential-domain": "codex"}):
-        raise ConfigError("active session has an unhealthy authentication service")
-    ready = owner.run(["exec", auth["container"], "wget", "-q", "-O", "/dev/null",
-                       "--header=Authorization: Bearer " + auth["key"],
-                       "http://127.0.0.1:8787/ready"],
-                      check=False, capture_output=True)
-    if ready.returncode:
-        raise ConfigError("active session authentication service is not locally ready")
 _ADAPTER_BEGIN = b"\n# BEGIN OWNED COMMAND PROXY ADAPTER\n"
 _ADAPTER_END = b"\n# END OWNED COMMAND PROXY ADAPTER\n"
 
@@ -2016,7 +1887,6 @@ def _stop_legacy_state(state: dict[str, Any], owner=None) -> None:
         report_remaining("volumes", volumes, results, remaining)
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
-
 
 
 _MANAGED_PROXY_REQUIRED = {
@@ -2918,7 +2788,6 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     attach.add_argument("--state", required=True)
     attach.add_argument("--reused")
     attach.add_argument("--helper-image")
-    attach.add_argument("--auth-enabled", action="store_true")
     attach.add_argument("--network", required=True)
     attach.add_argument("--manifest", required=True)
     attach.add_argument('--images')

@@ -391,7 +391,7 @@ class TicLauncherTest(unittest.TestCase):
         agent = mock.Mock(return_value=19)
         replacements.update(prepare_declared_images=prepare, run_agent=agent,
                             resolve_model_image=mock.Mock(return_value=self.state.image),
-                            resolve_sidecar_image=transport, _secure_codex_auth_directory=lambda state: None)
+                            resolve_sidecar_image=transport)
         with self.provider() as runtime, mock.patch.dict(self.globals, replacements), mock.patch(
                 'sys.stderr', new_callable=io.StringIO) as warning:
             self.assertEqual(19, self.launcher['execute'](self.state))

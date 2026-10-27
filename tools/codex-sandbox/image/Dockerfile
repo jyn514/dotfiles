@@ -88,7 +88,6 @@ RUN node /opt/cache-pi-extensions.mjs install
 COPY ./config/pi-agent/pi-extensions /home/codex/.pi/agent/pi-extensions
 COPY ./tools/pi-link/index.ts ./tools/pi-link/identity.ts ./tools/pi-link/messaging.ts /home/codex/.pi/agent/pi-link/
 COPY ./tools/pi-link/skills /home/codex/.pi/agent/pi-link/skills
-COPY ./tools/codex-sandbox/auth-proxy/pi-extension /home/codex/.pi/agent/extensions/codex-sidecar
 RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 
 FROM agent-deps AS pi-runtime
@@ -162,7 +161,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 # Package runtime entrypoints only; developer bytecode must not invalidate images.
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/jj-conflict ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/jj-conflict ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/sandbox-wrappers/docker ./libexec/sandbox-wrappers/gateway-transport ./libexec/sandbox-wrappers/docker-ssh /libexec/sandbox-wrappers/
 COPY --from=tools /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
 RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
