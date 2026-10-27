@@ -50,7 +50,16 @@ class NeovimConfigTests(unittest.TestCase):
             env["DOTFILES_NVIM_CASE"] = case
             env["DOTFILES_NVIM_TEST_SCRIPT"] = str(script)
             result = subprocess.run(
-                ["nvim", "--headless", "-c", f"luafile {Path(__file__).with_name('fixtures') / 'run_test.lua'}", "-c", "qa!"],
+                [
+                    "nvim",
+                    "--headless",
+                    "--cmd",
+                    "let g:fzf_lua_server = 'disabled-in-tests'",
+                    "-c",
+                    f"luafile {Path(__file__).with_name('fixtures') / 'run_test.lua'}",
+                    "-c",
+                    "qa!",
+                ],
                 cwd=work,
                 env=env,
                 text=True,
@@ -58,6 +67,14 @@ class NeovimConfigTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+
+    def test_config_loads_fzf_without_starting_its_rpc_server(self) -> None:
+        self.run_nvim(
+            """
+assert(type(FzfLua) == 'table')
+assert(vim.g.fzf_lua_server == 'disabled-in-tests')
+"""
+        )
 
     def test_tab_alignment_uses_display_columns(self) -> None:
         self.run_nvim(Path(__file__).with_name("fixtures") / "profile_behavior.lua", case="tab-alignment")
