@@ -17,6 +17,16 @@ Before writing, identify:
 - nearby skills, repository instructions, or canonical docs that may already own the behavior;
 - the decisions or failure modes that generic agent behavior handles poorly.
 
+Before any skill edit, recover why the affected guidance was introduced or revised.
+Apply this history check even to localized edits that do not need the full authoring workflow.
+Use relevant history already established in the current conversation rather than searching again.
+Otherwise, search retained sessions by skill name, affected guidance or motivating incident, and read the relevant exchanges before choosing the change.
+Treat search hits as leads, not complete evidence.
+Distinguish the original requirement, the failure the guidance addressed, and the mechanism chosen to address it.
+Preserve the requirement when replacing the mechanism.
+If no relevant record is found or history is unavailable, state that limit; do not infer that the guidance has no purpose.
+Use `jj-workflow` when file history is needed to locate or explain the change.
+
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
@@ -137,7 +147,8 @@ Challenge the draft with at least two concrete tasks: one that must trigger it a
 For example, if a skill supports both writing and review, test “review this README without editing it,” not only “write a README.”
 A review procedure in the body does not make the skill discoverable when its description mentions only authoring.
 
-When conducting paired behavioral or summarization trials, read [Behavioral trials](references/behavioral-trials.md) before preparing inputs.
+Before arranging behavioral evidence about a prompt or skill change, read [Behavioral trials](references/behavioral-trials.md).
+This includes passive observation of ongoing work and paired behavioral or summarization trials; consult it before preparing inputs or contacting an observed agent.
 A textual review does not require a trial and does not establish measured compliance.
 
 ## 7. Validate and tighten

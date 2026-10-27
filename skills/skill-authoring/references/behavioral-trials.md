@@ -1,7 +1,22 @@
 # Behavioral trials
 
-Read this reference before preparing paired behavioral or summarization trial inputs.
-These protocols apply when conducting trials; skill edits and textual reviews do not require a trial by default.
+Read this reference before arranging behavioral evidence about a prompt or skill change, including passive observation, or preparing paired behavioral or summarization trials.
+Skill edits and textual reviews do not require a trial by default.
+
+## Observe ongoing work
+
+When observing ongoing work to judge whether guidance helped, inspect the existing transcript, artifacts, and ordinary completion events.
+Do not announce the evaluation, disclose its criteria, or request evaluation-specific reports from the agent being observed.
+When a result is not yet available, wait for normal completion evidence rather than asking the observed agent to produce monitoring callbacks.
+
+Deliver the changed instructions and request that they be loaded when needed to establish exposure.
+Keep that notice separate from evaluation instructions, and verify exposure from the resulting record before judging behavior.
+
+If task needs justify further coaching or intervention, provide it within the existing authorization, but record it as an additional influence.
+Do not attribute subsequent improvement to the prompt or skill change alone.
+When passive observation cannot provide enough evidence, report that limit rather than changing the observed workflow merely to make evaluation easier.
+
+## Replay and paired trials
 
 For trials based on a past session, directly resume or fork the original session at the decision point by default.
 Preserve its actual messages, tool calls, and tool results; do not replace them with a summary or a new user message quoting the history.
