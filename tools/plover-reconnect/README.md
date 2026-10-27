@@ -2,17 +2,9 @@
 
 Ever unplug and replug your steno device from your laptop?
 Right now, to reconnect it to Plover, you have to manually reconnect it in settings.
-This extensions watches USB events to automatically reconnect it.
+This extension watches USB events and reconnects it automatically.
 
 This is currently not published to the Plover registry; you have to install it from source as shown below.
-After installing, fully stop and restart Plover (don't just close the window).
-
-Once installed, enable `plover-reconnect` in Plover's Extensions settings, then
-restart Plover. The `USB reconnect` menu item is available even while the
-extension is disabled; open it, select a device, and choose Save. The selected
-device is stored persistently and can be changed without restarting Plover, but
-automatic reconnection only occurs while the extension is enabled.
-If you save while it is disabled, the tool warns you and still saves the device.
 
 ## Installation
 
@@ -29,6 +21,17 @@ For example:
 - Linux: `~/.local/bin/Plover.AppImage`
 - macOS: `/Applications/Plover.app/Contents/MacOS/Plover`
 - Windows PowerShell: `& 'C:\Program Files\Plover\Plover.exe'`
+
+After installing, fully stop and restart Plover (don't just close the window).
+
+## Configure in Plover
+
+Enable `plover-reconnect` in Plover's Extensions settings, then restart Plover.
+The `USB reconnect` menu item is available even while the extension is disabled;
+open it, select a device, and choose Save. The selected device is stored
+persistently and can be changed without restarting Plover, but automatic
+reconnection only occurs while the extension is enabled. If you save while it
+is disabled, the tool warns you and still saves the device.
 
 ## Limitations
 

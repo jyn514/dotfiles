@@ -48,10 +48,11 @@ The guest doctor also checks the loaded network policy, no host shares, no
 administrative groups, and no passwordless sudo. The probe uses temporary
 canaries and removes them; run it only in the owned build guest.
 
-## TicGit confinement probe
+## Historical SRT confinement probe
 
-Use this procedure to test the [selected TicGit confinement design](spec/tic-proxy.typ), not a production endpoint.
-The spec owns the findings and remaining acceptance requirements; this section describes how to repeat the experiment.
+This section records the earlier SRT-based TicGit confinement experiment; it does not test the selected replacement in the [current TicGit proxy contract](spec/tic-proxy.typ).
+The superseded feasibility-probe specification is preserved in the `ticgit-proxy-wip` Jujutsu bookmark at revision `13d4be75` (`jj file show --revision ticgit-proxy-wip tools/codex-sandbox/spec/tic-proxy.typ`).
+The current contract replaces that design and does not contain its feasibility-probe section.
 No retained `target/` files are required.
 
 Use disposable repositories, canaries, and containers in the separate [build VM](../agent-docker/README.md).
@@ -104,7 +105,7 @@ Do not test only generated arguments or import a private helper as a substitute 
 Use the supported unmodified TicGit build recorded in the spec, with matching runtime libraries.
 The earlier musl environment required an extracted glibc loader and libraries to run the Linux release; loader failures are not confinement denials.
 
-Reconstruct the fixture and checks from the spec's feasibility-probe section.
+The integrated native feasibility probe below belongs to the superseded SRT design. Its original specification is available through the historical bookmark above; the current contract does not define this probe.
 Use `SandboxRuntimeConfigSchema.parse`, `SandboxManager.checkDependencies`, `SandboxManager.initialize`,
 and `SandboxManager.wrapWithSandboxArgv` to validate, initialize, and launch each command under the same policy.
 Shell-quote native argv before passing it to `wrapWithSandboxArgv`, then spawn its returned argv with the fixture cwd and private environment.

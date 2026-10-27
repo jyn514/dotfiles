@@ -89,9 +89,9 @@ python3 tools/codex-sandbox/tests/runtime_integration.py \
 ```
 
 The Lima test builds an owned image, moves its mutable tag, verifies the original image still runs,
-correlate live network membership, preserve literal argv and stdin/EOF, and check
-exec failure, daemon-side cancellation, and host SIGTERM cleanup. They use dummy
-environment data and remove their owned containers and image registrations.
+correlates live network membership, preserves literal argv and stdin/EOF, and checks
+exec failure, daemon-side cancellation, and host SIGTERM cleanup. It uses dummy
+environment data and removes its owned containers and image registrations.
 
 `python3 tools/codex-sandbox/tests/lima_host_integration.py` provisions its own VM
 and runs these contracts before and after reboot alongside the network/share

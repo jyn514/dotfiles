@@ -103,9 +103,9 @@ Can Lapwing derive predictable translations instead of enumerating every
 outline-to-word mapping, how much could the official dictionaries shrink, and
 which English words are absent?
 
-## Benchmark boundary
+## Reduced-US benchmark boundary for the following analyses
 
-The audit uses commit `4ac5d53cf039a2b1f4c484456663c85e7df4e859` of
+The analyses below use commit `4ac5d53cf039a2b1f4c484456663c85e7df4e859` of
 `aerickt/plover-lapwing-aio` and the US lookup stack documented in `README.md`:
 commands, numbers, proper nouns, then base. UK additions and dynamic Python
 runtime dictionaries are excluded.

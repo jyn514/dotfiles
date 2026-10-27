@@ -66,6 +66,8 @@ Detach and reattach existing clients through the launcher to establish their sou
 The launcher and locks use POSIX interfaces, but runtime verification currently covers Linux only.
 Run the attachment regressions with `dev/test-environment python3 tests/tmux/attach_session_test.py`.
 
+### Fish SSH-agent selection
+
 Fish startup selects the 1Password agent only when `SSH_AUTH_SOCK` is unset or empty and the client is local.
 Inside tmux, it uses the live source record for the client tmux selects for the current pane (the most recently active client when several qualify).
 Remote, unknown, and detached clients retain their agent selection, and supplied socket paths are preserved.
@@ -76,6 +78,8 @@ Run its selection regressions with `dev/test-environment python3 tests/setup/ssh
 
 ## Clipboard environment
 
+### OSC 52 clipboard
+
 Terminal copies use OSC 52 with an explicit `c` clipboard selector because mosh 1.4 drops tmux's empty selector.
 After reloading the configuration, detach and reattach to refresh terminal capabilities.
 To check remote copying, enter `set-buffer -w hello` at the tmux command prompt, then paste locally.
@@ -84,6 +88,8 @@ If copying fails after reattaching, run `tmux info` and find `Ms` under the affe
 `Ms: [missing]` means tmux cannot emit clipboard writes, even if the configuration parses successfully.
 tmux 3.8 discards an `Ms` format that omits parameter 1; `%p1%.0s` consumes it without printing it before the explicit `c` selector.
 The effective format should contain `52;%p1%.0sc;%p2%s`.
+
+### Wayland display refresh
 
 The [configuration](tmux.conf) refreshes `WAYLAND_DISPLAY` when creating or
 attaching to a session. Attaching without that variable, such as over SSH,

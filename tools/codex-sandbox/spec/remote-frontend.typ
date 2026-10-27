@@ -19,8 +19,8 @@ SSH authentication and host-key checking use the human's existing SSH policy.
 Both machines require an installed compatible sandbox launcher and Pi build;
 this command does not provision or update the remote installation.
 
-For a read, the trace is: local Pi submits one structured `read` request;
-SSH carries it to the remote attachment connector; the existing guest worker
+A read follows this path: local Pi submits one structured `read` request, SSH
+carries it to the remote attachment connector, and the existing guest worker
 reads the guest path and returns its normal result frames. The remote host never
 executes a model-supplied shell command outside the guest.
 

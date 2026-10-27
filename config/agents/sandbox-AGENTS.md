@@ -25,7 +25,7 @@
   `jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'`.
 - The active project's accepted policy owns services and credentials; writable dotfiles does not enable its optional services.
 - Host and private-network services are blocked except through designated relays or proxies. Proxy capabilities are fixed at session startup; direct failure does not authorize another route.
-- Public network acccess is allowed, but must be READ-ONLY unless explicitly authorized by a human.
+- Public network access is allowed, but must be READ-ONLY unless explicitly authorized by a human.
   Be considerate of others and do not hammer expensive network endpoints.
 - Root, `sudo`, and the exposed `docker` or `podman` command do not grant access to the outer container daemon or sibling proxy containers.
 

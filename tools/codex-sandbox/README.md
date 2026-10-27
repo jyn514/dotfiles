@@ -9,7 +9,9 @@ Choose the section for your task:
 - [Change terminal ownership, profile startup, or run tests](development.md).
 - [Change sandbox contracts](#design-and-reference).
 
-## Purpose
+<a id="purpose"></a>
+
+## Execution model and workspace access
 
 `codex-sandbox` runs Pi on the host with its normal credentials by default,
 while its built-in tools and human `!` shell commands run in the guest container.

@@ -12,9 +12,9 @@ jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 The `root:` fileset selects paths relative to dotfiles, not the invoking project's cwd.
 The active project remains the session's working directory and policy owner.
 
-This is a plan, not an implementation or a claim of verified behavior.
+This document preserves the pre-implementation plan. Subsequent implementation evidence and its limits are recorded in [Implementation evidence](#implementation-evidence).
 
-## Current behavior
+## Pre-implementation behavior
 
 - `codex-sandbox` derives `DOTFILES` from its own source location and mounts only the active repository writable.
   `agent_repository_mounts()` protects Git/JJ metadata, including linked-worktree backing paths.

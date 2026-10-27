@@ -265,19 +265,23 @@ The messaging module owns these JSON frames:
 Frames use `type` for the frame name and `messagingVersion: 2` for the wire version.
 Version 1 hubs ignored worker attribution, so all receipt-based operations require v2 end-to-end instead of silently routing worker answers to the owner root.
 The in-process manager events remain version 1; ordinary legacy direct chat is unchanged.
+
 An outcome carries `kind` (`root`, `workers`, `worker`, or `routing`), `name`, optional `sessionId`, `status`, and optional `reason`.
 Individual worker outcomes also require `workerId` and `taskName`.
 Statuses are `submitted`, `failed`, `skipped`, `unsupported`, and `unknown`.
 Tool details expose `{ messageId, operation, outcomes, empty }`, plus `error` when at least one outcome exists and none is `submitted`.
 Model-visible text includes the full message ID and each reported recipient's identity, status, and reason.
 A lost broadcast receipt explicitly leaves both recipient selection and submission outcomes unknown.
+
 The optional `fromWorker` attribution names `ownerSessionId`, `workerId`, and `taskName`.
 Only reply requests may carry it; the hub requires its owner session to equal the registered source socket session, and derives the root author from that socket.
 It does not permit broadcast or replace root author identity.
+
 The in-process manager emits `pi-link:worker-reply:v1` with version, current `ownerSessionId`, stable worker address, admitted child `reference`, message, and `respond(Promise<LinkResult>)`.
 Root verifies the current owner and calls `respond` synchronously during event emission, resolving the destination from the manager-authoritative reference, not its own root references.
 The manager is responsible for validating child transcript admission before emitting.
 Worker metadata survives owner-to-hub-to-recipient transport.
+
 `PI_SUBAGENT_OWNER_TOKEN` does not suppress pi-link. Template extension exclusions decide whether a managed child loads it; explicit tool lists decide which ordinary tools the model can use.
 When both packages load, pi-link owns public `link_reply`; the helper registers a fallback at `session_start` only if that tool is absent.
 Before independent endpoint routing, pi-link synchronously emits `pi-link:child-reply:v1` with `{ version: 1, replyTo, message, signal, respond(Promise<LinkResult>) }`.

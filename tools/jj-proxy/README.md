@@ -18,6 +18,8 @@ cargo build --locked --manifest-path tools/jj-proxy/Cargo.toml
 .agents/sandbox/jj-proxy-image
 ```
 
+### Build and image inputs
+
 The image owner reads JJ release URLs and SHA-256 checksums from `config/mise.lock`, also used by host mise.
 The proxy downloads the locked musl binary for amd64 or arm64 and verifies it before extraction.
 The runtime packages Git's HTTP/HTTPS helpers under `/trusted/bin`, where Landlock permits execution.
@@ -32,6 +34,8 @@ Sandbox startup uses `.agents/sandbox/jj-proxy-image`, which reuses a tag keyed
 by the Dockerfile's copied inputs and `config/mise.lock`. Local Cargo artifacts and test output do not
 change that key. Keep the builder's input list aligned with Dockerfile `COPY`
 instructions when adding image sources.
+
+### Launcher, workspace, and inspection
 
 The launcher validates metadata indirections, creates the private socket volume, mounts both workspaces and metadata, and waits for readiness.
 `JJ_PROXY_REPO` names the active guest root.

@@ -315,6 +315,7 @@ The author must still be connected and in the permitted group.
 A broadcast reply goes only to its author, never its audience.
 Replies have new IDs and can themselves be answered after delivery.
 They use the same bounded routing receipt and structured details as broadcasts, not a model-response wait.
+
 With the manager/child bridge installed, worker-authored questions retain worker attribution, and answers reach only that stable worker through its owner manager, not the parent model or siblings. Worker reply authority comes from actual child transcript admission, not a root inbox copy. Without the bridge, worker replies remain explicitly unsupported.
 
 ### `link_list`

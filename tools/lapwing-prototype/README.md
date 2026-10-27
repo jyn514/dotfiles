@@ -41,7 +41,7 @@ redistributing dictionary data.
 python3 analyze_storage.py "$DICTIONARY"
 ```
 
-Results for all 45,161 plain words:
+The following table reports a different population of 45,161 plain words; the relationship to the 51,910-word reduced-US pool is not specified here.
 
 | Representation | Size |
 |---|---:|

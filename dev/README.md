@@ -74,6 +74,8 @@ so bootstrap behavior stays predictable.
 
 ## Testing and probes
 
+### Dependencies and setup
+
 Before running Pi tests or compaction replays, install the locked dependencies on first setup or after dependency changes.
 This requires Node/npm; Pi tests and replays also require Bun.
 Run the install before starting tests, not alongside them:
@@ -93,6 +95,8 @@ If a sandbox provides transport wrappers instead of offline executables, select 
 `DOTFILES_TEST_JAVA_REAL` and `DOTFILES_TEST_CODEX_REAL`.
 Set `PI_PACKAGE_DIR` to the installed Pi SDK directory when it is not under the original HOME.
 Installed-Pi tests need that build's APIs, not the older locked unit-test SDK in `node_modules/`.
+
+### Run the full suite
 
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
 It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
@@ -122,6 +126,9 @@ Put each independently invoked default native suite in its own adapter file unde
 Keep the command and its native framework's test scope unchanged when adding an adapter.
 Other suites need an existing discovery route or explicit dispatch in `dev/test`, by default or through a documented opt-in mode.
 Check that intended cases execute through that route, not only through a focused command.
+
+### Run focused tests
+
 For focused Python suites, use `dev/pytest`:
 
 ```sh
@@ -139,6 +146,8 @@ For focused tests and ad-hoc Pi probes, including `--help` checks, use `dev/test
 dev/test-environment bun test tests/pi/luna_compaction_test.ts tests/pi/replay_compaction_test.ts
 ```
 
+### Isolation and permissions
+
 The wrapper provides HOME and XDG environment isolation, not a filesystem sandbox.
 Commands can still write explicit paths outside HOME.
 Check generated-source freshness with check-only commands or a disposable checkout, not an updater targeting the working copy.
@@ -151,6 +160,8 @@ Sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` need that permi
 If an execution sandbox denies socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun the affected command outside it.
 Use the harness's approval mechanism for the rerun.
 Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket permissions.
+
+### Real-configuration exceptions
 
 Do not wrap the [configured startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup).
 Do not wrap live `dev/replay-compaction` requests.

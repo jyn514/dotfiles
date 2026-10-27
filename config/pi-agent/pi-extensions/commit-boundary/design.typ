@@ -178,7 +178,6 @@ Preserve ordinary regular-file modes when producing diffs.
 Do not add a TypeScript duplicate or reduce the comparison to overlapping line ranges or matching strings.
 An already-lost boundary or an unavailable comparison returns `unusable`, without blaming the proposal.
 Unsupported kinds are skipped by the harness.
-Unexpected producer execution errors fail the checker process; the harness reports the actual error once, conditionally forgets the checked revision, and fails open through common finalization.
 Cancellation and target-state verification failures retain their own handling.
 
 == One warning, then ordinary editing

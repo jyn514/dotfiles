@@ -37,7 +37,7 @@ its plugin environment. The optional `test` extra supplies the supported
 Plover range for tests that exercise host APIs. `usbx` is the only host-device
 backend; the plugin contains no platform-specific USB code.
 
-== Learned device
+== Device selection and stored identity
 
 The configuration tool lists devices returned by `usbx` as
 `Manufacturer — Product`. Selecting *Use this device* records this fingerprint:

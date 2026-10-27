@@ -6,6 +6,8 @@ Partly taken (with love) from Charles Daniels' [excellent repository](https://gi
 
 ## Setup and configuration
 
+### Setup commands
+
 Run `./setup dotfiles` from the repository root to install or refresh configuration
 links. Conflicting regular files move to `~/.local/config/`. Other `./setup`
 options can install packages or change system configuration; read the relevant
@@ -15,6 +17,8 @@ It retains the unencrypted backup unless the final confirmation reads `y` succes
 On Arch, global package setup installs `kernel-modules-hook` to preserve the running kernel's modules across upgrades.
 `./setup sudo` (also included in `./setup all`) enables cleanup of old modules on future boots.
 
+### User services
+
 Run `./setup services` separately from package installation to configure local
 user services. It refreshes configuration links and, on Linux, enables lingering
 and tmux startup for future boots without disturbing running sessions. Install
@@ -22,6 +26,8 @@ tmux first with the package setup. On Linux and macOS it also configures
 [headless Obsidian Sync](config/README.md#headless-obsidian-sync).
 Backup and sandbox provisioning retain their separate setup commands;
 `./setup all` does not enable user services.
+
+### Python environments
 
 Mise's Python is scoped to bootstrap tasks, including `pi-install`; it is not a global shell default.
 Shell startup removes stale mise shim directories from PATH, including in non-interactive shells.

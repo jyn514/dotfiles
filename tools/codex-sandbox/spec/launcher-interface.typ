@@ -685,7 +685,7 @@ The capability requests no native-TicGit image; guest transport helpers, if need
 The TicGit contract owns fixed cwd/store selection, request normalization, repository support restrictions, and native outcome semantics.
 Native host calls need no sandbox endpoint; separate brokers may use the same SQLite database without sharing endpoint ownership.
 
-== Acceptance evidence
+== Acceptance checks
 
 - Equivalent Bake and project-command configurations produce the same normalized
   policy and logical image requests; the launcher requires no declaration-kind

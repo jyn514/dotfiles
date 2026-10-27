@@ -310,7 +310,8 @@ History and stats also contain UTF-8 byte-boundary truncation panics; these are 
 Retained source references and coverage limits are in `target/tic-design/native-effects-static-audit.md`.
 This audit does not establish safety of arbitrary native-code bugs, unexamined dependency paths, or runtime transport and lifecycle behavior.
 
-Implementation still requires ordinary native stdin support, parser export, the direct-reader repair, bounded stdin transport, repository-support checks, and per-launch lifetime-pipe integration.
+At the time of the 2026-10-24 audit, implementation still required ordinary native stdin support, parser export, the direct-reader repair, bounded stdin transport, repository-support checks, and per-launch lifetime-pipe integration.
+Subsequent local implementation evidence is recorded in the 2026-10-25 closeout; it does not establish actual provider acceptance, which remains unproven.
 Review the resulting implementation against the source audit and repeat affected call-path review when the supported fork or dependencies change.
 Resolve concrete gaps in those boundaries without reinstating an OS-sandbox requirement or moving host/guest service logic into TicGit.
 Then verify the complete path with disposable host-local repositories:

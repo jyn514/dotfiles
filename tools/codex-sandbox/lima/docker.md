@@ -378,7 +378,7 @@ install and audit it; a temporary rule makes `doctor` report policy drift.
 For an authorized temporary diagnostic rule, pass nftables source on stdin with
 `nft -f -` rather than sending a quoted rule through Lima's command transport.
 
-## Prototype boundaries
+## Runtime, network, and image policy
 
 The guest Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and
 slirp4netns 1.3.5 are pinned in setup, along with Ubuntu nftables 1.0.9-1ubuntu0.1.

@@ -10,7 +10,7 @@ The `open` tool owns the repository's command-line file dispatch. Its public nam
 
 On macOS, command dispatch and desktop defaults cooperate but are not the same mechanism. See [macOS file associations](macos-file-associations.md) for the Launch Services model, repository ownership boundaries, and failure modes.
 
-## Restore desktop defaults
+## Manage desktop defaults
 
 Preview the exact managed changes:
 

@@ -38,6 +38,8 @@ Nested wrapper calls use the inner private HOME.
 The wrapper clears inherited `JJ_CONFIG` so Jujutsu reads user configuration from the private HOME and XDG directories.
 It also removes inherited sandbox credentials, JJ workspace routing and authority projections, Pi session selection, and personal configuration paths before starting the child.
 
+### Persistent test caches
+
 The wrapper sets `CARGO_HOME` to the stable test-only directory `target/test-environment/cargo` in this checkout.
 This reuses downloads and keeps unchanged compiled dependencies fresh across runs.
 The wrapper does not import the inherited Cargo home's configuration or credentials.
@@ -57,6 +59,8 @@ Set `DOTFILES_TEST_UV_CACHE_DIR` to another owned disposable directory when a
 fresh cache is required; nested wrapper calls retain that path.
 An unusable cache directory fails before the child starts.
 
+### Command selection
+
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides or resolves mise shims before changing HOME.
 `DOTFILES_TEST_<TOOL>_REAL` takes precedence over `<TOOL>_REAL`.
 The selected paths supply both the exported test overrides and temporary command symlinks under the private HOME.
@@ -74,6 +78,8 @@ Inside an agent sandbox, this keeps the Docker wrapper that configures the gatew
 ```sh
 dev/test-environment docker info
 ```
+
+### Installed SDKs and test fixtures
 
 An explicit `PI_PACKAGE_DIR` takes precedence.
 Otherwise, the wrapper discovers the installed Pi SDK under the original HOME before replacing HOME.

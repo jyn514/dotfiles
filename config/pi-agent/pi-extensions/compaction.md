@@ -77,7 +77,7 @@ Do not use “parent” alone when it could refer to different conversations or 
 Keep all established unmet obligations visible, including paused or externally blocked work.
 For each activity, keep these together:
 - Its permission and phase, progress, and unmet outcome or actual question.
-- Selected next action and why, and state and qualified evidence/limits.
+- Its state, with qualified evidence and limits; its selected next action and why.
 - Worker identity, owned files or interfaces, and recorded return status.
 - Scoped holds/blockers.
 

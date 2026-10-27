@@ -206,7 +206,7 @@ Preserve original smoke reports and ticket IDs; do not rerun creation to manufac
 
 This functional smoke test lives under `tests/`; it is not another Pi frontend
 or a lifecycle/concurrency proof.
-Default `dev/test` discovery runs their offline safety tests. For a retained
+Default `dev/test` discovery runs the workflow's offline safety tests. For a retained
 local native/client/broker run, select an immutable pinned build bundle:
 
 ```sh

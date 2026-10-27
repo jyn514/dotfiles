@@ -31,7 +31,10 @@ Do not load a chain of design procedures by default.
 
 For a staged new-tool workflow, consume approved requirements and repository integration constraints as the scope evidence. Do not invent product scope or observable behavior; record only design decisions needed to satisfy that evidence. The resulting design contributes to the implementation specification and does not replace it. For a greenfield tool, do not require a current implementation or extraction history.
 
+### Outcome and authority
+
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
+Stop and use opportunity-scan if no subsystem is selected.
 Before selecting state, tracking, acknowledgment, or coordination mechanisms, state the minimum observable outcome.
 For each added mechanism, name the user requirement or pre-existing constraint that the direct solution cannot meet without it.
 Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when classifying proposed guarantees.
@@ -42,6 +45,10 @@ What should the user or caller be able to know, decide, or do because of it?
 Compare a simpler approach against that purpose before preserving obligations inferred by the proposal.
 Ground your interpretation of intent in the request; distinguish it from explicit requirements, and do not silently override those requirements.
 For worked comparisons of added guarantees and operation scope, see the [contrasting examples](references/simplicity-examples.md).
+
+When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
+
+### Configuration and storage
 
 Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
 Before selecting a persistence mechanism, identify the current storage boundary.
@@ -56,9 +63,6 @@ Examples:
 - Moving a credential from a password manager into a host file changes its storage boundary, even when consumers receive the same bytes.
 - Replacing a database library does not change the boundary when owner, format, access policy, and lifetime remain fixed.
 - Turning an in-memory cache into a disk cache changes the boundary because persistence and recovery behavior change.
-
-Stop and use opportunity-scan if no subsystem is selected.
-When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
 
 ## Principles
 

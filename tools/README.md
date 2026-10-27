@@ -13,14 +13,17 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`codex-import`](../bin/codex-import) repairs missing synced sessions in Codex's local index while other Codex sessions run.
   The [`codex` wrapper](../bin/codex) runs it before interactive startup; import failures print a warning and startup continues.
   Administrative commands, help, version checks, and noninteractive commands such as `exec` skip startup import.
+
   A receipt in `CODEX_HOME/codex-import-receipt.json` avoids launching an app-server when index coverage and previously scanned unindexed files are unchanged.
   Indexed sessions can keep growing without invalidating the receipt.
   New files, changed unindexed files, deleted paths, lost index coverage, configuration changes, and replaced executables trigger a full repair.
   The fast path reads Codex 0.162.1's `state_5.sqlite` schema without modifying it; unsupported layouts and custom `sqlite_home` configuration fall back to full repair.
   Use `codex-import --force` to bypass the receipt, including when retrying a file Codex silently omitted during an earlier scan.
-  It starts a temporary `codex app-server --stdio` and pages through `thread/list` with scan-and-repair enabled for current and archived sessions, across providers and source kinds.
+
+  Full repair starts a temporary `codex app-server --stdio` and pages through `thread/list` with scan-and-repair enabled for current and archived sessions, across providers and source kinds.
   It leaves the persistent daemon running and does not resume sessions, reset the backfill marker, or edit SQLite directly.
   Codex owns the index repairs; transcripts stay unchanged.
+
   Completion reports the number of sessions listed, not the number newly imported or a guarantee that every rollout parsed successfully.
   On failure, completed page repairs may remain; retry `codex-import`.
   It uses `CODEX_HOME` (default `~/.codex`) and requires `codex` and `python3`.
@@ -70,8 +73,10 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`clean-discord`](../bin/clean-discord) converts Discord copy-pasted text to `[HH:MM] <name> message` lines; requires Babashka (`bb`).
   Run `clean-discord chat.txt` or `paste | clean-discord`; output goes to stdout without changing the source.
   Use `clean-discord -i chat.txt` to rewrite the file instead, with no stdout output.
+
   In-place mode requires a file, preserves permissions, follows symlinks, and atomically replaces the file only after cleaning succeeds.
   Failed cleaning leaves the original unchanged; already-cleaned IRC text is not accepted as Discord input.
+
   It recognizes timestamp/name/colon headers split across lines, including a missing opening bracket on the first timestamp.
   It removes trailing `[badge],` name decorations, detached copies at message boundaries, and blank lines.
   An opening four-space-indented block separated from the reply by blank lines becomes a `>` quote; other indentation stays unchanged.
@@ -81,16 +86,19 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
   A bare session UUID also implies `--session`, so `extract-chat ID --branches --native` works directly.
   Existing paths take precedence over UUID lookup, and positional UUIDs can be mixed with file or directory inputs.
+
   Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
   References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
   Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.
   Missing ancestors, reference cycles, and invalid cutoffs fail instead of producing a partial transcript.
   Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
+
   For Pi, `--native` uses `pi --export` to produce HTML (`pi` must be on PATH); other formats remain Markdown. Native Pi exports include the full session regardless of `--final-only`; without `--extract-dir`, Pi writes to the current directory.
   For Codex, `extract-chat --session ID --branches --native` uses `codex-to-pi --branches` and Pi's native exporter to produce a navigable HTML conversation tree.
   This requires Python and Pi on PATH and local paginated Codex history; `--branches` requires `--native`.
   Codex HTML uses the source rollout's basename with `.html` in `--extract-dir` or the current directory; temporary Pi sessions are removed after success or failure.
   Native Codex exports use the converter's user/assistant message selection and ignore `--final-only`.
+
   Pi Markdown includes saved goal status, objective, and token budget; provider/model switches and assistant or shell cancellations appear in session order, and partial replies remain visible. These events remain with `--final-only`; goal usage counters and continuation prompts are omitted.
   Empty file/directory scans report the searched source paths on stderr and exit 0, without creating or removing export files. Output may expose private conversations.
 - [`codex-to-pi`](../bin/codex-to-pi) converts a Codex session ID, JSONL path, or ChatGPT share URL to Pi v3 JSONL.

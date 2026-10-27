@@ -79,7 +79,7 @@ For split, Jujutsu prepares two directory trees:
 The diff editor is expected to edit the right tree until it contains exactly the content wanted in the selected commit.
 When the editor exits successfully, Jujutsu computes the selected changes from the difference between left and right, and leaves the rest as the remaining commit.
 
-The proposed tool, `jj-agent-split-editor`, is a non-interactive diff editor.
+The implemented tool, `jj-agent-split-editor`, is a non-interactive diff editor.
 It accepts the left and right tree paths from Jujutsu, reads a preselected patch path from the environment, constructs `left + patch` in a temporary tree, and then replaces the right tree with that constructed tree.
 
 == Contract <agent-jj-split-contract>
@@ -102,7 +102,7 @@ the remaining commit keeps the original description.]
 #invariant[The selected commit is always `diff(left, patched-left)`.
 It is never inferred from the agent's current working copy, prose summary, or intended file list.]
 
-== Example invocation <agent-jj-split-example>
+== Lower-level diff-editor invocation <agent-jj-split-example>
 
 #example[
 ```sh
@@ -216,6 +216,8 @@ file or shared state; the adapter owns cancellation, target verification,
 boundary retirement, and the actual write.
 
 = Agent workflow <agent-jj-split-workflow>
+
+For the normal agent workflow, use the repository wrapper described here; the diff-editor invocation above is the lower-level primitive it drives.
 
 The agent workflow is a controlled sequence.
 Each step is mechanical except the judgment of which hunks belong together.
