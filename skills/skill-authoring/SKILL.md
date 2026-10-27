@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for whole-artifact editorial review use holistic-writing; for bounded local polishing use tighten-prose.
+description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route; changing when another prompt, instruction, or skill invokes it (even if the target skill is unchanged); or diagnosing failures caused by ambiguous guidance, bad routing, or missing decision rules. Do not use for an isolated missed instruction or for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for whole-artifact editorial review use holistic-writing; for bounded local polishing use tighten-prose.
 ---
 
 # Skill authoring
@@ -27,6 +27,9 @@ Preserve the requirement when replacing the mechanism.
 If no relevant record is found or history is unavailable, state that limit; do not infer that the guidance has no purpose.
 Use `jj-workflow` when file history is needed to locate or explain the change.
 
+A missed instruction alone does not establish a guidance problem.
+Correct an isolated miss without invoking this workflow merely to redesign the instruction.
+Use failure analysis here when evidence points to ambiguous or conflicting guidance, bad routing, or a missing decision rule.
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
 Do not infer the cause from an outcome summary alone.
 Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.

@@ -42,8 +42,8 @@ When responding to user feedback or a disputed analysis, state agreement or disa
 
 do not apologize for tooling bugs or blame yourself for a failure.
 instead, suggest process improvements that would prevent the failure from recurring.
-if instructions for an action already exist but were ignored, consult `skill-authoring` and suggest how to clarify them.
-"i failed to apply an instruction" is a sign that the instruction is unclear.
+if an existing instruction was missed, correct the action; the miss alone does not show that the instruction is unclear.
+use `skill-authoring` when evidence of a guidance or routing problem warrants changing instructions or skill behavior.
 
 ### Interiority
 

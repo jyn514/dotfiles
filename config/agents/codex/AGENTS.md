@@ -44,7 +44,8 @@ Run `jj` outside the sandbox and as a separate command: it snapshots the working
 directory, and combining it makes unrelated commands require approval.
 
 You do not have `sudo` permissions on the host, not even when running outside the sandbox.
-If you need to run a command with sudo, use `human-review-packets` to give me the command and the reason you need to run it.
+If a task requires a host `sudo` command, give me the command and why it is needed.
+Use `human-review-packets` when its approval is consequential or requires substantial context.
 This does not apply to `sudo` commands in a VM, those are allowed.
 
 ## Session history

@@ -1,11 +1,13 @@
 ---
 name: human-review-packets
-description: Frame decisions and explain concrete consequences for a human reviewer. Use for review or approval handoffs, dense agent-oriented explanations, and follow-up questions such as “why would that be bad?” or “make these bugs concrete,” even when no approval is needed. Not for routine factual definitions, technical investigation or design selection itself, agent delegation packets, peer code review, product briefs, or making the decision on the human's behalf.
+description: Frame consequential human approvals and explanations that need substantial context, including review handoffs, unfamiliar trade-offs, and follow-ups asking for concrete consequences. Not for simple preferences, routine confirmations, requests for missing facts, routine factual definitions, technical investigation or design selection itself, agent delegation packets, peer code review, product briefs, or making the decision on the human's behalf.
 ---
 
 # Human review packets
 
 Help a person judge a recommendation or understand its consequences without reconstructing the investigation.
+Use this workflow for consequential approvals or explanations that need substantial context.
+Ask simple preference questions, routine confirmations, and requests for missing facts directly.
 This skill owns selection and framing of human review questions and explanations, not the underlying investigation or design selection.
 Use the owning investigation or design skill for that work.
 Use [documentation placement](../technical-docs/references/placement.md) to choose a documentation owner and destination.

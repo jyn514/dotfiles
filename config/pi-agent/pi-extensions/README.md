@@ -444,9 +444,9 @@ immediately; it does not open the panel or wait for answers. Titles, question te
 and supplied options must be non-empty. Options are optional, and free-text
 answers are always available.
 
-For judgment or approval questions, the tool's prompt guidance routes the model
+For consequential approvals or questions that require substantial context, the tool's prompt guidance routes the model
 to [`human-review-packets`](../../../skills/human-review-packets/SKILL.md).
-Routine requests for missing facts do not need that skill.
+Simple preference questions, routine confirmations, and requests for missing facts do not need that skill.
 
 ```json
 {

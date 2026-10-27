@@ -259,7 +259,7 @@ export default function askUser(pi: ExtensionAPI): void {
     description: "Queue questions and return IDs immediately. Answers arrive later as user steering messages with question IDs. Continue only independent work; silence is not an answer or permission.",
     promptSnippet: "Ask questions asynchronously; returns IDs, not answers",
     promptGuidelines: [
-      "When asking for human judgment or approval, use the human-review-packets skill to frame the question. Routine requests for missing facts do not need it.",
+      "Use the human-review-packets skill for consequential approvals or questions that require substantial context to judge. Ask simple preference questions, routine confirmations, and requests for missing facts directly.",
       "Use cancel_ask_user to remove questions made obsolete by later work.",
     ],
     parameters: Parameters,

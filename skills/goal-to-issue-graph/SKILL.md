@@ -27,7 +27,8 @@ Write a compact root contract:
 
 Cite the source of consequential constraints, especially compatibility, preservation and required human approval.
 Do not promote an implementation guard, provisional policy or conservative assumption into a user requirement.
-Ask focused questions when missing context changes the objective or permitted behavior; use `human-review-packets` for judgment calls.
+Ask focused questions when missing context changes the objective or permitted behavior.
+Use `human-review-packets` for consequential approvals or questions that require substantial context; ask simple preferences or missing facts directly.
 Continue independent investigation.
 If uncertainty concerns discoverable facts rather than a user choice, assign a bounded discovery task with a concrete output and consuming task.
 Do not require a full specification before a graph can describe discovery work.
