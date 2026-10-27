@@ -41,12 +41,16 @@ For remaining work, distinguish:
 - **Recommended follow-up:** worthwhile but outside current authority or scope.
 - **Rejected:** considered and deliberately not recommended.
 
-Recommend only concrete work supported by the session. Prioritize defects that can cause wrong behavior, lost work, misleading validation, or repeated operator error over polish. Do not manufacture suggestions to fill a list.
+Recommend only concrete work supported by the session.
+Prioritize wrong behavior, lost work, misleading validation, repeated operator error, and avoidable process cost over cosmetic polish.
+Do not manufacture suggestions to fill a list.
 
 ## 4. Review the usefulness of docs, skills, and tooling
 
 Review materials used during the session and concrete missed or mistimed routes,
-not the entire documentation tree or skill catalog. Assess:
+not the entire documentation tree or skill catalog.
+Evaluate the process against the task, not just whether the process was followed.
+Assess:
 
 - **Selection:** Did skills trigger when the task warranted them, too early, or
   not at all? Did documentation routes lead to the relevant owner and sections?
@@ -59,10 +63,15 @@ not the entire documentation tree or skill catalog. Assess:
   missing ownership, hidden failure causes, misleading diagnostics, drift from
   implementation, validation gaps, repeated manual work, and user corrections.
 
-Support conclusions with concrete actions, errors, or corrections from the
-session. Loading a skill does not establish that it helped; distinguish observed
-benefit or cost from uncertain attribution. Briefly report material benefits and
-costs, even when no change is warranted, rather than listing every file read.
+For material process cost, compare a costly or repeated step with a smaller approach that preserves the user's requirements.
+State what useful decision or protection would be lost if the step were omitted, delayed, narrowed, or replaced with existing evidence.
+Being required does not establish that a step was worth its cost.
+Recommend changes for future work; do not use this assessment to bypass current requirements.
+A passing check can still protect against a plausible failure; finding no failure does not make the check useless.
+
+Support conclusions with concrete actions, errors, or corrections from the session.
+Loading or following a skill does not establish that it helped; distinguish observed benefit or cost from uncertain attribution.
+Briefly report material benefits and costs, even when no change is warranted, rather than listing every file read.
 Record knowledge that another agent would otherwise have to reconstruct.
 Maintained documents must stand on their own without referring readers to session-local `target/`, `/tmp`, or other disposable artifacts.
 Put important findings, rationale, prerequisites, and enough reproduction detail in the owning documentation or specification.
@@ -116,7 +125,7 @@ Report only new information not already apparent from tool output or earlier mes
 
 - blockers or required work left unfinished;
 - required or recommended follow-ups;
-- material benefits and costs of the docs and skills used, with process improvements or the reason none is necessary;
+- material benefits and costs of the process, including steps to omit, narrow, or replace in future work, or why costly steps were justified;
 - anything else that would be hard for another agent to recover without reading the session log.
 
 Do not report commits or successful verification unless the user explicitly asks.
