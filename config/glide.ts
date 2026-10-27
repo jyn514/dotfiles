@@ -57,6 +57,7 @@ const disabled_sites = [
   "configure.zsa.io",
   "linear.app",
   "kumo.io",
+  "crimson.land",
 ];
 
 for (const hostname of disabled_sites) {
