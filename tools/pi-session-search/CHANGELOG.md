@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Search and session-ID lookup include the Pi subagent transcript store.
+  `PI_SESSION_SEARCH_SUBAGENT_ROOT` overrides its default location under the Pi agent directory.
 - `pi-session-search search` and `pi-session-search read` expose the existing
   Pi and Codex session APIs as bounded JSON for scripts and non-Pi agents.
   The CLI preserves API validation and security boundaries, reports usage and
@@ -36,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Explicit `read_session` file paths can read transcripts outside the configured search roots, including symlink targets.
+  Search and automatic ID or ancestor discovery remain confined to their configured roots.
 - Centered reads retain the target when `maxMessages` reduces the context window, instead of clipping from the window's start.
   Invalid `aroundTimestamp` values now fail instead of reading from the beginning.
 - Always exclude whole text-only user goal-continuation envelopes from search

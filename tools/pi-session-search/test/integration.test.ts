@@ -10,14 +10,16 @@ OF ANY KIND, either express or implied. See the License for the specific languag
 governing permissions and limitations under the License.
 */
 
+import "./isolate-subagents.ts";
 import { strict as assert } from "node:assert";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
 	formatHitsForCommand,
+	readSession,
 	readSessionWindow,
 	searchSessions,
 } from "../index.ts";
@@ -271,30 +273,29 @@ describe("readSessionWindow (integration)", () => {
 		assert.ok(!out.includes("Have we ever discussed"));
 	});
 
-	it("refuses paths that escape the sessions root", async () => {
-		await assert.rejects(
-			() => readSessionWindow({ sessionFile: "/etc/passwd" }),
-			/Refusing to read outside/,
-		);
-		await assert.rejects(
-			() => readSessionWindow({ sessionFile: "../../../etc/passwd" }),
-			/Refusing to read outside/,
-		);
-	});
-
-
-	it("refuses a symlinked file that escapes the root, even by relative path", async () => {
-		const escaped = mkdtempSync(join(tmpdir(), "pi-session-escape-"));
-		const escapedFile = join(escaped, "secret.jsonl");
-		writeFileSync(escapedFile, "{}", "utf-8");
-		const symlinkPath = join(fixture.root, "--evil--", "leak.jsonl");
-		mkdirSync(join(fixture.root, "--evil--"));
-		symlinkSync(escapedFile, symlinkPath);
-
-		await assert.rejects(
-			() => readSessionWindow({ sessionFile: symlinkPath }),
-			/Refusing to read outside/,
-		);
+	it("reads an explicit transcript outside discovery roots and follows its cursor", async () => {
+		const escaped = mkdtempSync(join(tmpdir(), "pi-session-export-"));
+		try {
+			const exported = join(escaped, "export.jsonl");
+			writeFileSync(exported, [
+				JSON.stringify({ type: "session", id: "export", cwd: "/export" }),
+				JSON.stringify({ type: "message", id: "a", message: { role: "user", content: "external transcript" } }),
+				JSON.stringify({ type: "message", id: "b", message: { role: "assistant", content: "external reply" } }),
+			].join("\n") + "\n");
+			const first = await readSession({ sessionFile: exported, maxMessages: 1 });
+			assert.match(first.text, /external transcript/);
+			assert.match(await readSessionWindow({ sessionFile: relative(fixture.root, exported) }), /external reply/);
+			const next = await readSession({ sessionFile: exported, after: first.nextCursor });
+			assert.deepEqual(next.messages.map(m => m.entryId), ["b"]);
+			const alias = join(fixture.root, "--home-tester-project--", "export-alias.jsonl");
+			symlinkSync(exported, alias);
+			assert.match(await readSessionWindow({ sessionFile: alias }), /external reply/);
+			assert.match(await readSessionWindow({ sessionFile: "--home-tester-project--/export-alias.jsonl" }), /external reply/);
+			assert.equal((await searchSessions({ query: "external transcript" })).hits.length, 0,
+				"explicit reads do not expand search discovery");
+		} finally {
+			rmSync(escaped, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -569,7 +570,7 @@ describe("session ID reads", () => {
 			await assert.rejects(() => readSessionWindow(options), /non-empty string/);
 		}
 		await assert.rejects(() => readSessionWindow({ sessionId: "../../../secret" }), /No readable session/);
-		await assert.rejects(() => readSessionWindow({ sessionFile: "/foreign/home/sessions/parent.jsonl" }), /outside session root/);
+		await assert.rejects(() => readSessionWindow({ sessionFile: "/foreign/home/sessions/parent.jsonl" }), /ENOENT/);
 	});
 
 	it("rejects duplicate IDs across files but tolerates aliases of the same real file", async () => {

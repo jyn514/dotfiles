@@ -73,9 +73,10 @@ input — is documented there in full.
 These were tightened during the open-source review. Don't relax them
 without an explicit discussion on the PR:
 
-- **`realpath` containment.** Both per-subdirectory and per-file. A
-  `.jsonl` symlinked outside the configured sessions root must be
-  detected and skipped. Don't substitute `lstat`-only checks.
+- **`realpath` containment during discovery.** Both per-subdirectory and per-file.
+  Search, session-ID lookup, and Codex ancestor discovery skip `.jsonl` symlinks outside their configured root.
+  Explicit file reads intentionally accept any readable path, including external symlink targets.
+  Don't substitute `lstat`-only checks during discovery.
 - **Bounded streaming records.** Follow README's “Bounded record parsing”
   security contract when changing the reader. Do not restore a whole-file
   size ceiling or retain the full transcript in memory.

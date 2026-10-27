@@ -10,6 +10,7 @@ OF ANY KIND, either express or implied. See the License for the specific languag
 governing permissions and limitations under the License.
 */
 
+import "./isolate-subagents.ts";
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";

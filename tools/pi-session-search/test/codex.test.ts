@@ -10,6 +10,7 @@ OF ANY KIND, either express or implied. See the License for the specific languag
 governing permissions and limitations under the License.
 */
 
+import "./isolate-subagents.ts";
 import { strict as assert } from "node:assert";
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -643,7 +644,7 @@ describe("Codex sessions through searchSessions and readSession", () => {
 		assert.match(read.text, /incomplete coverage/i);
 	});
 
-	it("contains both direct files and ancestor lookup within the configured roots", { skip: process.platform === "win32" }, async () => {
+	it("reads explicit external Codex files but keeps ancestor discovery within its root", { skip: process.platform === "win32" }, async () => {
 		const outside = join(root, "outside.jsonl");
 		const parent = [meta(), message("secret", "outside-secret needle", 1)];
 		writeFileSync(outside, jsonl(parent));
@@ -653,8 +654,10 @@ describe("Codex sessions through searchSessions and readSession", () => {
 		const found = await searchSessions({ query: "outside-secret" });
 		assert.equal(found.hits.length, 0);
 		assert.ok(found.skippedFiles >= 1);
-		await assert.rejects(readSession({ sessionFile: outside }), /outside|root|contain|within/i);
-		await assert.rejects(readSession({ sessionFile: alias }), /outside|root|contain|within/i);
+		const direct = await readSession({ sessionFile: outside, maxMessages: 0 });
+		const continued = await readSession({ sessionFile: outside, after: direct.nextCursor });
+		assert.match(continued.text, /outside-secret needle/);
+		assert.match((await readSession({ sessionFile: alias })).text, /outside-secret needle/);
 		const leaf = writeCodex([meta(otherThread, base(rolloutA, parent, 2)), message("leaf", "local leaf", 3)], otherThread, rolloutB);
 		await assert.rejects(readSession({ sessionFile: leaf }), /history|ancestor|reference|missing|found|outside|root/i);
 	});

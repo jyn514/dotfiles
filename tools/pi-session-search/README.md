@@ -14,12 +14,12 @@ prior Pi and Codex transcripts on disk **without resuming them**.
 - **Tool `search_sessions`** — the LLM can call this itself when the user
   references a prior conversation. Substring or `/regex/flags`, optional
   filters by `cwd`, time range, role, and tool calls. Returns a JSON list of
-  hits with `sessionFile` (relative to the Pi root, absolute for Codex),
+  hits with `sessionFile` (relative to the Pi root, absolute for subagents and Codex),
   `sessionId`, `sessionCwd`, `timestamp`, `role`, a snippet, and `entryId` when present.
 - **Tool `read_session`** — read around a specific hit, from the start or end,
   or after a previous read. Use after a promising `search_sessions` result to pull more
   context without resuming the session. Provide exactly one of `sessionFile`
-  (absolute or relative to the configured root) or `sessionId` (the exact header
+  (any readable file, absolute or relative to the configured Pi root) or `sessionId` (the exact header
   ID). ID reads work when a parent path names a different machine or sandbox;
   the session must still exist under a configured local root.
   Ambiguous Codex IDs return an indexed version list with previews, not full transcripts.
@@ -290,6 +290,10 @@ Environment variables:
 
 - `PI_SESSION_SEARCH_ROOT` — override the sessions directory (default
   `~/.pi/agent/sessions`).
+- `PI_SESSION_SEARCH_SUBAGENT_ROOT` — override the Pi subagent transcript directory.
+  Defaults to `$PI_CODING_AGENT_DIR/pi-codex-subagents/runs`, or `~/.pi/agent/pi-codex-subagents/runs` when unset.
+  Set this override when the subagent extension uses a custom `storageDir`.
+  A missing subagent directory is an empty source.
 - `PI_SESSION_SEARCH_CODEX_ROOT` — override the Codex sessions directory.
   Defaults to `$CODEX_HOME/sessions` when `CODEX_HOME` is set, otherwise `~/.codex/sessions`.
   A missing Codex root is an empty source; it does not prevent Pi searches.
@@ -310,7 +314,9 @@ Pi stores each session as a JSONL file under
 JSON object — the first is a `session` header (with `id` and `cwd`), the rest
 are `message` entries (and a few other types).
 
-`search_sessions` walks the Pi directory and recursively walks the Codex root.
+`search_sessions` walks the Pi sessions directory and the subagent store, then recursively walks the Codex root.
+Subagent transcripts use `<parent-key>/<child-id>.jsonl`; their headers supply cwd and date filters.
+Subagent hits return absolute paths so they round-trip without changing the normal Pi root.
 It streams JSONL records, extracts conversation text (skipping images and, by default, tool calls), and matches your query.
 Codex `session_meta` supplies thread identity, cwd, and date filtering; `response_item` supplies messages and function/custom tool calls.
 Duplicate `event_msg` representations are ignored.
@@ -337,25 +343,23 @@ No model is called. No external network. No session is mutated.
 ## Trust model & security notes
 
 **This tool is read-only and intended for a single trusted local user.** It
-gives the active LLM access to prior Pi and Codex conversations under the configured roots.
+gives the active LLM access to prior Pi and Codex conversations, including subagent transcripts and explicitly selected files.
 That makes it a productivity tool *and* a meaningful exfiltration primitive with untrusted input.
 
 **Trust boundary.**
 
-- The user owns and trusts the configured Pi and Codex sessions roots.
-- Only files within those resolved roots are readable, including inherited Codex history.
-- Anything inside the root — user messages, assistant messages, tool calls,
+- The user owns and trusts the configured search roots and explicitly selected transcript files.
+- Explicit file reads can open any file readable by the process, including symlink targets outside the search roots.
+  Search roots control discovery, not filesystem access; use operating-system or sandbox permissions to restrict access.
+- Anything in a selected transcript — user messages, assistant messages, tool calls,
   tool results — is treated as readable by the active model.
 
 **Mitigations actually in place.**
 
 - **Read-only.** No tool here writes, deletes, or transmits anything.
-- **Path containment in `read_session`.** Resolves symlinks on both the file
-  and the configured root, rejects any path that doesn't end up under the
-  resolved root.
-  ID and Codex ancestor lookup check containment on every directory and file before reading headers.
-  The same check applies to the selected file.
-  It never rewrites a foreign absolute path to a local path.
+- **Explicit file selection in `read_session`.** Resolves the supplied path and selects the Pi or Codex decoder from the header.
+  Relative paths resolve from the configured Pi root; absolute paths are never rewritten to another location.
+  ID and Codex ancestor discovery still check containment on every directory and file before reading headers.
 - **Path containment in `search_sessions`.** Per-subdirectory and per-file
   symlink containment: a `.jsonl` symlinked outside the root is detected at
   `realpath` time and skipped (counted as `skippedFiles` in the result).

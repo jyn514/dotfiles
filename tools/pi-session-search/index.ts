@@ -44,11 +44,19 @@ export function getRoot(): string {
 }
 
 type SessionSource = "pi" | "codex";
-interface SessionRoot { source: SessionSource; root: string }
+interface SessionRoot { source: SessionSource; root: string; subagents?: boolean }
 
 function sessionRoots(): SessionRoot[] {
+	// Follow Pi's documented agent-directory setting without loading its full
+	// runtime: the standalone reader must also fit in a bounded Node heap.
+	const configuredAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const agentDir = configuredAgentDir === "~" ? homedir()
+		: configuredAgentDir?.startsWith("~/") ? path.join(homedir(), configuredAgentDir.slice(2))
+		: configuredAgentDir || path.join(homedir(), ".pi/agent");
 	return [
 		{ source: "pi", root: getRoot() },
+		{ source: "pi", root: process.env.PI_SESSION_SEARCH_SUBAGENT_ROOT ||
+			path.join(agentDir, "pi-codex-subagents", "runs"), subagents: true },
 		{ source: "codex", root: process.env.PI_SESSION_SEARCH_CODEX_ROOT ||
 			path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions") },
 	];
@@ -468,13 +476,13 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 			for await (const candidate of sessionCandidates(config, opts.signal, () => { skippedFiles += 1; })) {
 				if (opts.signal?.aborted) break outer;
 				const full = candidate.file;
-				if (config.source === "pi" && opts.cwd && !candidate.cwd.includes(opts.cwd) &&
+				if (config.source === "pi" && !config.subagents && opts.cwd && !candidate.cwd.includes(opts.cwd) &&
 					!path.basename(path.dirname(full)).includes(opts.cwd)) continue;
 				try {
 					const info = await stat(full);
 					let header: SessionHeader | undefined;
 					let startMs: number;
-					if (config.source === "codex") {
+					if (config.source === "codex" || config.subagents) {
 						header = await firstHeader(full, config.source, maxRecordBytes, opts.signal);
 						if (!header) { skippedFiles += 1; continue; }
 						startMs = Date.parse(header.timestamp);
@@ -529,7 +537,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 								retainedCopies.set(identity, full);
 							}
 							const idx = match.index ?? 0;
-							hits.push({ sessionFile: config.source === "codex" ? path.resolve(full) : path.relative(config.root, full) || full,
+							hits.push({ sessionFile: config.source === "codex" || config.subagents ? path.resolve(full) : path.relative(config.root, full) || full,
 								...(config.source === "codex" ? { source: "codex" as const } : {}), sessionId,
 								...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
 								sessionCwd: headerCwd, timestamp: String(obj.timestamp ?? ""), role: h.kind,
@@ -617,27 +625,20 @@ async function resolveSession(opts: ReadSessionOptions, cap: number): Promise<Se
 	const roots = sessionRoots();
 	if (opts.sessionFile !== undefined) {
 		const candidate = path.isAbsolute(opts.sessionFile) ? opts.sessionFile : path.join(getRoot(), opts.sessionFile);
-		let file: string;
-		try { file = await realpath(candidate); }
-		catch { file = path.resolve(candidate); }
-		const permitted: SessionRoot[] = [];
-		for (const config of roots) {
-			let root: string;
-			try { root = await realpath(config.root); }
-			catch { root = path.resolve(config.root); }
-			if (contained(root, file)) permitted.push({ ...config, root });
+		const file = await realpath(candidate);
+		if (!(await stat(file)).isFile()) throw new Error("Session path is not a regular file.");
+		// An explicit path is not limited to discovery roots. The header selects
+		// the decoder, including for exported or symlinked transcripts.
+		const header = await firstHeader(file, "codex", cap, opts.signal);
+		const source: SessionSource = header ? "codex" : "pi";
+		const configs = roots.filter(config => config.source === source);
+		for (const config of configs) {
+			try { config.root = await realpath(config.root); }
+			catch { config.root = path.resolve(config.root); }
 		}
-		if (!permitted.length) throw new Error("Refusing to read outside session roots configured for Pi and Codex.");
-		permitted.sort((a, b) => b.root.length - a.root.length);
-		// Roots may overlap. Header format, not the first matching path prefix,
-		// selects the decoder when both roots authorize this file.
-		if (permitted.length > 1) {
-			for (const config of permitted) {
-				const header = await firstHeader(file, config.source, cap, opts.signal);
-				if (header) return { config, file, header };
-			}
-		}
-		return { config: permitted[0], file };
+		configs.sort((a, b) => b.root.length - a.root.length);
+		const config = configs.find(config => contained(config.root, file)) ?? configs[0];
+		return { config, file, header };
 	}
 	const matches: SelectedSession[] = [];
 	const seen = new Set<string>();
@@ -729,7 +730,6 @@ async function openHistory(selected: SelectedSession, cap: number, signal?: Abor
 		while (true) {
 			signal?.throwIfAborted();
 			file = await realpath(file);
-			if (!contained(config.root, file)) throw new Error("Refusing Codex history outside configured session root.");
 			if (seen.has(file)) throw new Error("Cyclic Codex history_base reference.");
 			seen.add(file);
 			if (!(await stat(file)).isFile()) throw new Error("Session path is not a regular file.");
@@ -737,7 +737,7 @@ async function openHistory(selected: SelectedSession, cap: number, signal?: Abor
 			let st;
 			try { st = await handle.stat(); }
 			catch (error) { await handle.close(); throw error; }
-			const segment: HistorySegment = { file, relativeFile: path.relative(config.root, file), handle,
+			const segment: HistorySegment = { file, relativeFile: contained(config.root, file) ? path.relative(config.root, file) : file, handle,
 				identity: { dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs },
 				size: st.size, limit: base?.end_byte_offset ?? st.size, safeEnd: 0, ordinalEnd: base?.end_ordinal_exclusive };
 			segments.unshift(segment);
@@ -830,7 +830,7 @@ type SessionCursor = ReadCursor | CodexReadCursor;
 
 function cursorPath(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0 && value.length <= 8192 &&
-		!path.isAbsolute(value) && !value.split(path.sep).some(p => !p || p === "." || p === "..");
+		(path.isAbsolute(value) || !value.split(path.sep).some(p => !p || p === "." || p === ".."));
 }
 
 function decodeCursor(raw: string): SessionCursor {
@@ -1244,10 +1244,10 @@ export default function (pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({
 			sessionFile: Type.Optional(Type.String({
-				description: "Path to a session .jsonl file, as returned by search_sessions or a version list. Pi paths may be relative to the Pi root; Codex paths are absolute and select one version. Provide exactly one of sessionFile or sessionId.",
+				description: "Path to any readable session .jsonl file, including exports and subagent transcripts. Relative paths resolve from the Pi root. Search and version-list paths can be passed unchanged. Provide exactly one of sessionFile or sessionId.",
 			})),
 			sessionId: Type.Optional(Type.String({
-				description: "Exact session header ID, resolved within configured Pi and Codex roots. Multiple Codex versions return an indexed preview list; choose a returned sessionFile to read one. Use when a parent session path comes from another machine or sandbox. Provide exactly one of sessionFile or sessionId.",
+				description: "Exact session header ID, resolved within configured Pi, subagent, and Codex roots. Multiple Codex versions return an indexed preview list; choose a returned sessionFile to read one. Use when a parent session path comes from another machine or sandbox. Provide exactly one of sessionFile or sessionId.",
 			})),
 			tail: Type.Optional(Type.Boolean({
 				description: "Return the last maxMessages eligible messages in file order. With maxMessages=0, select the safe EOF cursor. Default false.",
