@@ -9,7 +9,8 @@ import {
   ModelRuntime, parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import codexSidecar from "../config/pi-agent/pi-extensions/codex-sidecar.ts";
-import { checkpointText, COMPACTION_INSTRUCTIONS, COMPACTION_MODEL, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
+import { COMPACTION_MODEL } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
+import { checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/checkpoint-capture.ts";
 
 export function replayInput(text, entryId) {
   // Parse without SessionManager.open, which can migrate and rewrite the source.

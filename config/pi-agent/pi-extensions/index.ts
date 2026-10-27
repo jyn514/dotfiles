@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import askUser from "./ask-user.ts";
 import contextBreakdown from "./context-breakdown.ts";
 import commitBoundary from "./commit-boundary.ts";
+import compactSession from "./compact-session.ts";
 import currentDate from "./current-date.ts";
 import footer from "./footer.ts";
 import hostOS from "./host-os.ts";
@@ -33,6 +34,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   hostOS(pi);
   skillReferenceAutocomplete(pi);
   lunaCompaction(pi);
+  compactSession(pi);
   notifyWhenSettled(pi);
   instructionIncludes(pi);
   promptHistorySearch(pi);

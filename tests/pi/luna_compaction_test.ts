@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { buildContextEntries, discoverAndLoadExtensions, ModelRegistry, parseSessionEntries, sessionEntryToContextMessages, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "bun:test";
-import lunaCompaction, { COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
+import lunaCompaction, { COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
+import { COMPACTION_INSTRUCTIONS } from "../../config/pi-agent/pi-extensions/checkpoint-capture";
 import { listCuts, replayInput } from "../../dev/replay-compaction";
 
 const usage = { input: 12, output: 8, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -423,7 +424,12 @@ describe("Luna compaction", () => {
       const original = resolve("config/pi-agent/pi-extensions/luna-compaction.ts");
       expect(Bun.spawnSync(["cp", original, source]).exitCode).toBe(0);
       expect(Bun.spawnSync(["cmp", original, source]).exitCode).toBe(0);
+      const helper = resolve("config/pi-agent/pi-extensions/checkpoint-capture.ts");
+      const copiedHelper = join(dirname(source), "checkpoint-capture.ts");
+      expect(Bun.spawnSync(["cp", helper, copiedHelper]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["cmp", helper, copiedHelper]).exitCode).toBe(0);
       symlinkSync(source, installed);
+      symlinkSync(copiedHelper, join(dirname(installed), "checkpoint-capture.ts"));
       const fixture = join(bin, "jj");
       expect(Bun.spawnSync(["cp", resolve("tests/pi/fixtures/jj-status.sh"), fixture]).exitCode).toBe(0);
       expect(Bun.spawnSync(["cmp", resolve("tests/pi/fixtures/jj-status.sh"), fixture]).exitCode).toBe(0);

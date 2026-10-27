@@ -338,7 +338,22 @@ An existing internal guest lifecycle capture request may call the same common ca
 
 ## Compaction
 
-The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
+`compact_session({ report: "..." })` replaces preceding conversation context with a checkpoint written by the active agent, then continues in the same session.
+Read [`compaction.md`](compaction.md) before preparing the report; the tool description points to its source location in the agent's filesystem.
+Sandbox descriptions use the launcher's resource path mapping; host-side Luna reads still use the host source path.
+Call the tool alone after other tools finish, not in a parallel batch or through another tool.
+The report is used unchanged, with a caller-produced recovery appendix; no additional summarizer request is made.
+The tool checks the required heading, not the report's accuracy or completeness.
+
+Replacement happens at Pi's completed-turn boundary, after its tool result is saved.
+Cancellation or session/branch replacement discards a pending request.
+The transcript is retained: use `read_session` with the supplied session identity to recover preceding messages.
+In-memory sessions have no saved transcript to recover.
+System instructions, tools, goals, and worker state keep their existing owners; compaction does not authorize work or change goal status.
+This tool requires Pi's actionable `turn_end` boundary and `CompactionEntryDraft.firstKeptEntryId: null` APIs.
+Run `/reload` after updating extension code.
+
+Manual and automatic compaction still use the Luna extension and [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
 Its three sections are **Objective and authority**, **Current work**, and **Recovery**.
 Checkpoints carry forward the last established user request when no newer request is recorded.
 Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owning session or agent, holds, and recorded next action together.
@@ -346,15 +361,16 @@ Generated checkpoints must include an `Objective and authority` Markdown heading
 If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
 If generation fails, session history is kept.
 
-The caller appends a short `jj status` excerpt, working directory, capture time, recorded-target count, and recovery locator.
+Both paths append a short `jj status` excerpt, working directory, capture time, and recovery locator, with a recorded-target count when target metadata is available.
 Oversized status retains the beginning and end of text fields, marks omissions, and sets `truncated: true`.
 The end preserves revision information without parsing individual status lines.
 Failed captures report unknown state; omitted paths do not establish a clean working copy.
 Status can become stale and is not evidence of task completion.
 
 The complete status remains in `details.repositoryState`; all recorded edit/write targets remain in `details.modifiedFiles`.
-Targets come from tool-call arguments, including failed attempts and already committed work, not from current dirty status.
+Luna collects targets from tool-call arguments, including failed attempts and already committed work, not from current dirty status.
 They do not prove successful edits, authorship, current ownership, or commit coverage.
+Self-authored compaction carries already-recorded targets forward without collecting intervening calls; an absent collection is not an observed empty list.
 Targets from the matching previous checkpoint carry forward, but no target inventory is appended to model-visible context.
 The caller appendix is excluded from later compaction requests using `details.checkpointLength`.
 Task-specific ownership and uncertain-operation paths still belong beside the relevant activity in the generated checkpoint.
@@ -383,7 +399,7 @@ Use the local path for the raw query; `read_session` omits capture details and d
 A null `recovery.sessionFile` means an in-memory session with no saved file to query.
 Older compactions have no capture ID; inspect their raw entries by native entry ID instead.
 
-Instructions are read afresh for each compaction; instruction-only edits need no reload.
+Luna reads the instructions afresh for each generated checkpoint; instruction-only edits need no reload.
 After changing extension code, use `/reload` as described above.
 Follow the [testing guide](../../../dev/README.md#testing-and-probes) for locked dependencies and offline compaction tests.
 These include native extension loading, persisted-context reconstruction, and recovery of full captures through their visible locators.

@@ -10,7 +10,7 @@ import {
   createLsTool, createReadTool, createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { rewritePiResourcePaths } from "./guest-tools-core.ts";
+import { parsePiResourcePaths, rewritePiResourcePaths } from "./guest-tools-core.ts";
 import { createBoundaryController, type BoundaryMetadata } from "./commit-boundary.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
@@ -21,12 +21,7 @@ type CallContext = {
 };
 
 function guestResourcePaths(): Record<string, string> {
-  const paths = JSON.parse(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS || "{}");
-  if (Object.entries(paths).some(([hostPath, guestPath]) =>
-    !hostPath.startsWith("/") || typeof guestPath !== "string" || !guestPath.startsWith("/"))) {
-    throw new Error("Pi resource path mapping is invalid");
-  }
-  return paths;
+  return parsePiResourcePaths(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS);
 }
 
 export function callContext(ctx: ExtensionContext): CallContext {
