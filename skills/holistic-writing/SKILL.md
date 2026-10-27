@@ -8,6 +8,7 @@ description: Author, substantially revise, or editorially review whole prose art
 Write for readers without the originating conversation, investigation, or design session.
 This skill owns what the artifact explains, how its explanation develops, and how the prose reads.
 Completeness and extractable facts do not establish that the writing is worth following.
+Use the same editorial criteria when writing and reviewing: prose that needs revision does not become good because a reviewer can reconstruct its meaning.
 
 ## Scope and authority
 
@@ -43,15 +44,23 @@ For an editorial pass, retain the destination unless relocation is requested.
 Before adding documentation, use the placement reference; do not force essays, reports, or instructions into documentation forms.
 
 Before interpreting craft, encounter the reading experience: what comes to matter, what you expect, and what stays with you afterward.
-Distinguish pleasure or friction in reading the prose from what it makes readers think or feel about its subject or themselves.
+Distinguish pleasure or friction in following the prose from what readers come to understand and how they feel about the subject or themselves.
+Be specific about whether a detail changes their mental model, their feelings, or both.
 Precise understanding, quiet satisfaction, curiosity, changed appreciation, and felt danger can all matter; neither positive affect nor a tidy mechanism or plot account substitutes for the effect.
 When a revision is merely smoother, or an explanation seems clear but its reading judgment feels thin, read the [contrasting readings and revisions](references/reading-examples.md) before choosing edits.
+
+Readers skim headings, search for terms, skip familiar material, and return to earlier passages.
+Read the whole artifact to assess it, then trace the paths its readers are likely to take for their tasks.
+Check whether they can recognize where to go and understand what they find without having read every preceding word.
+A reference can serve a reader who wants one answer; an argument may need sustained reading to develop its thought.
 
 Establish what is observed, selected, provisional, and unresolved.
 Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority.
 Preserve provenance for measurements and reconstructed decisions.
 Your review limits are not facts about the author's investigation.
 Do not add a first-person claim such as “I have not tested this” unless supplied evidence establishes it.
+When reviewing, describe the language and its reading effects rather than inferring the author's identity or effort.
+A low-effort impression concerns the presentation; it does not establish who wrote the prose or how hard they worked.
 
 ## 2. Choose and develop what matters
 
@@ -63,6 +72,18 @@ Distinguish facts, decisions, proposals, examples, and unresolved questions.
 
 Choose what deserves attention and explain the connections that matter to that reader.
 Your judgment can be wrong; refusing to make it leaves the reader to decide, often with less context and her own risk of error.
+
+When the artifact supports a choice, explain what each relevant option changes, what the reader gains or gives up, and which circumstances make that difference matter.
+An inventory of mechanisms, settings, or data does not by itself establish that the prose helps the reader decide.
+Trace the connection from the described behavior to its consequences for this reader; do not substitute a recommendation without reasons for that explanation.
+Credit connections the prose makes through warranted inference: not every implication must be explicit, and not every artifact needs an exhaustive comparison or a table.
+When reviewing, identify the consequential connection the reader must supply and why that effort matters to the stated task.
+Stay within the supplied evidence; do not invent missing product facts or treat an unverified factual premise as an established defect.
+
+For an explanatory distinction, identify what it helps these readers understand or decide.
+If neither side changes their understanding or choice, it is a distinction without a difference: remove or rework it when writing, and count its wasted attention or false emphasis against the prose when reviewing.
+A corrective contrast needs a plausible misconception and an explanation that gives these readers reason to reconsider; do not invent confusion to defend it.
+
 Develop a hypothesis as a hypothesis, explaining its proposed mechanism and uncertainty without claiming confirmation.
 For a nontrivial mechanism, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
 Introduce one conceptual layer at a time, with plain-language meaning before notation and a worked example before an algorithm when useful.
@@ -71,6 +92,11 @@ A reader may understand a particular case before learning the broader concept or
 Before recommending an earlier definition, identify what the reader cannot understand at that point without it; needing the concept later does not establish that it belongs earlier.
 Explain why a schema or invariant exists before listing its fields.
 Do not force every artifact into a design-document progression or require a worked example of every application.
+
+Give a thought room to develop.
+Joining sentences or packing definitions together can preserve facts while making their connections harder to follow.
+Concision makes good use of attention; it need not mean compressing the prose.
+Use the space that helps the reader follow, without rewarding either length or brevity on its own.
 
 For important measurements, identify the population or denominator, what was counted, input revision or time range, method, and limitations.
 Explain what the number demonstrates and whether it is provisional or an acceptance constant.
@@ -82,11 +108,17 @@ Avoid wide Markdown tables; use bullets or short subsections for prose, commands
 
 Identify the reading problem before choosing edits: a buried relationship needs different work from an awkward sentence.
 Revise connected passages when selection or arrangement causes the difficulty; retain what already works.
-Preserve needed lookup paths, not necessarily existing headings or section boundaries.
 Judge diction, rhythm, emphasis, selection, and development, not words removed or paragraphs joined.
 Preserve effective voice, deliberate casing, fragments, idiom, and precise terms rather than normalizing them for consistency.
 Voice also lives in particular attention, selection, connections, and implications, not only verbal personality.
 Apply vocabulary bans by meaning rather than word matching.
+
+Read headings on their own: what subject or task would a reader expect under each one?
+Compare that promise with what the section actually does; regroup or rename when they differ.
+For example, a section about reporting a decision should describe the expected response, not introduce criteria for making the decision.
+Preserve needed lookup paths, not necessarily existing headings or section boundaries.
+
+Shape each paragraph around a developing thought, contrast, or reading effect; sharing a broad topic is not enough to bind sentences together.
 
 Preserve governing requirements, authority, priority, conditions, exceptions, commands, paths, defaults, and validation.
 Moving an unconditional rule under “When tests fail” makes it appear conditional even if its words do not change.
@@ -94,7 +126,6 @@ Keep dependent conditions together; separate independent rules, exceptions, and 
 Distinguish rationale and examples from normative behavior.
 Keep required warnings beside the actions they govern.
 When removing duplicated instructions, apply the [consolidation check](references/consolidation.md).
-Read revised sections independently and follow changed routes so readers can still find their action and constraints.
 For skills, preserve discovery triggers and check linked references and examples.
 
 Keep rationale, rejected alternatives, and examples that guide a future choice or prevent a likely mistake.
@@ -107,6 +138,8 @@ Do not remove necessary detail merely to shorten a document; move it later, labe
 Read the complete artifact in the form its reader encounters, including dull stretches.
 Read the complete result before defending individual edits, then compare it with the original as prose.
 Restore anything that reads better in the original.
+Also skim the result and read revised sections independently, following the routes readers need for their actions and constraints.
+A requirement being present somewhere is not enough if a section label sends its reader elsewhere.
 Useful sections, preserved facts, and individually defensible edits do not establish that the whole reads well.
 A revision can improve without fully solving the original reading problem; identify what remains difficult.
 

@@ -7,6 +7,8 @@ The examples guide judgment, not a required style, emotional arc, or scoring pro
 
 The whole-work judgments reported here are PhotoCraft 2/5, Frog and Toad 5/5, and the font article 5/5.
 They were supplied by jyn during calibration; the excerpts have no separate grades.
+The discussion and sentence-order examples use feature-level human feedback; they do not grade their excerpts or proposed rewrites.
+The help-page passages and sample reviews are constructed and ungraded.
 “Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
 The final three revision exercises are invented and ungraded.
 
@@ -40,6 +42,89 @@ The speed claim might matter to a reader waiting for previews, but the paragraph
 An inventory can be exactly right in a reference or a compatibility check.
 The reading problem here is its sustained use in an invitation to adopt a tool, not evidence that the tool is bad or that its developers have particular incentives.
 [Arvind Narayanan’s related thread](https://x.com/random_walker/status/1182635589604171776) ([unrolled](https://threadreaderapp.com/thread/1182635589604171776.html)) distinguishes purchasers’ feature checklists from end users’ needs and usability; it does not establish facts about PhotoCraft.
+
+## An upstream discussion can explain the setup while obscuring the request
+
+**Source:** [git-meta discussion 112](https://github.com/git-meta/git-meta/discussions/112).
+The excerpts also include local agent revisions, with human feedback on wording and organization.
+Rendered line breaks in the posted paragraph below are normalized.
+These feature-level comparisons do not establish a whole-document grade for the revision.
+
+### State the request before the workaround
+
+The upstream title names the proposed change:
+
+> Move `git-meta.sqlite` into a subdirectory in the `.git` dir?
+
+An agent proposed a broader replacement title:
+
+> Sharing a database across worktrees with restricted write access
+
+Its revised body opened:
+
+> I'm integrating TicGit, a ticket tracker built on git-meta-lib, with a sandbox for coding agents. Is there a supported way to share its database across linked worktrees without giving TicGit write access to the rest of Git's metadata?
+
+**Human feedback:** jyn relayed another reader's comment that the point of the discussion was unclear; showing that reader the upstream title immediately cleared it up.
+The reader also recommended putting “Could git-meta use a shared subdirectory?” before “Our current workaround.”
+
+A subsequent agent revision makes the proposal explicit:
+
+> Would you consider moving `git-meta.sqlite` into a subdirectory of Git's common directory, such as `.git/git-meta/`?
+
+**Editorial reading:** the agent's title names a problem area, while the upstream title tells a maintainer which change they are being asked to consider.
+The broad opening can read as a request for storage advice rather than a proposal to move the database.
+Making the proposal clear first gives the maintainer a reason to examine the workaround and its costs.
+The technical setup can be understandable while the requested action remains obscure.
+An agent's ability to reconstruct that request from the whole discussion does not establish that readers will recognize it when needed.
+This is not a requirement that every report propose a fix; a genuine support question should remain a question about how to do something.
+
+### Read qualifications in their surrounding explanation
+
+The posted discussion begins this section:
+
+> ## Goal and downstream design
+>
+> My coding agents run inside a full guest VM, while native TicGit runs on the host.
+> I want commands forwarded from that VM and ordinary host TicGit commands to see the same tickets across linked worktrees.
+> All SQLite access stays on the host; the VM forwards commands rather than opening the database through its shared filesystem.
+
+**Human feedback:** jyn called the SQLite sentence useful but not pleasant.
+“All … access stays on the host” sounds like defending the design, which is not relevant here.
+She proposed stating the action and consequence directly, then noted that even this might be unnecessary because the previous sentence already explains it.
+
+Later in the same section:
+
+> This is our sandbox design choice, not an intrinsic requirement of TicGit or git-meta; another confinement approach could also work.
+
+jyn noted that “downstream design” already establishes whose choice this is: the writing need not repeatedly qualify its statements.
+
+Her later wording corrections to the local revision included:
+
+- “The working workaround” became “Our current workaround.”
+- “The workaround tested so far” became “Our current workaround is to …”
+- “Requires trusted setup code” became “requires extra code.”
+
+**Editorial reading:** the paragraph has already located TicGit on the host and established command forwarding; the heading already identifies the downstream design.
+Defending each qualification in isolation misses what the surrounding writing has supplied.
+In the workaround passage, the relevant cost is the extra code to prepare the directory and check existing files and links.
+The additional labels draw attention to verification and trust without explaining that cost better.
+Testing and trust can matter to a maintainer; these corrections do not prohibit those words or remove necessary evidence and limitations.
+
+### Ask for the intended decision without adding another job
+
+The local revision asked:
+
+> Would a fixed shared subdirectory fit git-meta's design, or would you recommend a supported way to keep this downstream?
+
+jyn changed it to:
+
+> Would a fixed shared subdirectory fit git-meta's design, or would you recommend we keep this downstream?
+
+**Human feedback:** she noted that asking for a recommended supported way presupposes such a way and makes another request of the maintainer.
+
+**Editorial reading:** the corrected question allows a recommendation to keep the change downstream as a complete answer.
+It does not also ask the maintainer to find or design an alternative to the existing workaround.
+Both sentences are polite, but they ask for different amounts of work.
 
 ## An explanation can leave danger felt, not merely understood
 
@@ -114,6 +199,54 @@ The material comparison makes durability concrete; understanding the cutter chan
 Detail helps the reader care about the subject rather than merely delaying a separate emotional payoff.
 This interpretation is not jyn’s stated rationale for the whole-work 5/5.
 Her explicit transferable lesson was making readers care about the subject, not importing sadness, catharsis, or fictional plot into technical writing.
+
+## Keep a relationship together
+
+**Source and scope:** this sentence from a Rust proposal prompted human feedback about its delayed relationship.
+The condition-first explanation was endorsed; the possible rewrite below is illustrative, not a human-rated revision or a whole-document judgment.
+
+> The proposal assigns `file!`, `line!`, and `column!` in an injected attribute a synthetic source file, such as `<cli-arg>`.
+
+“Assigns” leaves the reader waiting for the assigned value while the sentence inserts another condition.
+One possible revision puts that condition first:
+
+> In an injected attribute, `file!`, `line!`, and `column!` use a synthetic source file, such as `<cli-arg>`.
+
+Now the macros and what they use stay together.
+The improvement comes from arranging the relationship, not from making the sentence short.
+A review that only restates which file is assigned misses the effort of following the original word order.
+
+## A preface can delay help or protect a choice
+
+These help-page passages and sample reviews are constructed and ungraded.
+The first brief is to help an account holder change their password; the page is headed “Change your password.”
+
+> This section provides a comprehensive overview of the steps required to change your password.
+
+**A review that recovers the intent:**
+
+> The opening clearly orients readers by explaining that the section will show them how to change their password.
+
+**A review that examines the reading:**
+
+> The heading already says “Change your password.”
+> “Comprehensive overview” makes a simple task sound like coursework.
+> Now I want the first step.
+
+That reading concerns what the sentence adds at this point, not whether its meaning is easy to recover.
+Something coming before the instructions is not inherently a problem.
+Consider an account owner deciding whether to delete an old project, with this text before the delete button:
+
+> Warning: deleting this project also deletes its saved reports.
+> Export any reports you want to keep before continuing.
+
+**A review of the warning:**
+
+> This belongs before the delete button.
+> Losing an old project and losing its reports are different decisions; the warning gives the owner a chance to keep the reports.
+
+The warning earns the interruption by changing the choice the reader can make before acting.
+The contrast does not make a preface or a formal phrase a defect by itself.
 
 ## Smaller revision exercises
 
