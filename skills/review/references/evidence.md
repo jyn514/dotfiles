@@ -12,4 +12,17 @@ A worker report, aggregate test count, correct helper, or atomic commit is not e
 
 Fixture inputs through intended interfaces can establish integration, but cannot satisfy a condition requiring real inputs. A feasibility or component milestone can complete at its declared scope without completing downstream integration. Record a failed check or unresolved contract that prevents integration as **blocked**; do not certify blocked outputs or claim broader completion.
 
-Label each check by the process or boundary it reaches. A unit/helper or mocked-launcher test does not prove that the receiver loaded an extension, ran a hook, or received a transformed payload. For receiver-visible claims, trace the production path from entrypoint through configuration, launch, handler order, and receiver, then use an integration test that reaches the receiver or direct runtime observation. If unavailable, mark that behavior unverified; component results support but do not substitute.
+Label each check by the process or boundary it reaches.
+A unit/helper or mocked-launcher test does not prove that the receiver loaded an extension, ran a hook, or received a transformed payload.
+For receiver-visible claims, trace the production path from entrypoint through configuration, launch, handler order, and receiver, then use an integration test that reaches the receiver or direct runtime observation.
+If unavailable, mark that behavior unverified; component results support but do not substitute.
+
+## Reuse evidence without duplicating verification
+
+Independent verification requires inspecting underlying evidence, not automatically repeating its production.
+Check the actual diff and relevant results against the governing requirement, tested artifacts, scope, inputs and intended consumer interfaces.
+Retain the tested identities and establish whether intervening changes invalidate the result; rerun missing or invalidated checks.
+A worker summary or aggregate count is not enough, but independence does not require reconstructing every count, join or receipt in a second verification system.
+Use raw traces where they resolve a correctness question, not as a mandatory duplicate reconstruction of every passing check.
+When repeated mechanical checks are necessary, extend existing maintained tests or validation rather than adding successive coordinator scripts.
+Keep one authoritative result and reference its evidence and demonstrated limits from acceptance and recovery records.

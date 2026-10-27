@@ -66,16 +66,7 @@ Also use it before extending repeated similar batches during an active run, even
 Keep unmet acceptance conditions and scoped blockers visible while advancing independent authorized work.
 Advance acceptance and integration only when governing prerequisites and required evidence permit.
 
-## Continue independent work before waiting
-
-Before awaiting a long-running check or milestone decision, identify valuable authorized work independent of its result and advance or delegate it.
-Preserve the candidate under verification; isolate parallel edits when they would invalidate its inputs or evidence.
-Serialize only dependent decisions, conflicting mutations, and resource-constrained operations, not all work toward the goal.
-If no useful independent work remains, wait rather than inventing work.
-
 Use [delegation](../delegation/SKILL.md) for assignments, shared contracts, waiting, review, and integration.
-Judge returned work against the governing requirement and supporting evidence, not merely the worker's local criteria.
-Keep each result's demonstrated scope and remaining obligations visible.
 
 ## Apply implementation procedures only to implementation
 
@@ -123,7 +114,13 @@ Before compaction, interruption, or handoff, preserve:
 - assumptions, pending judgments and worker effects, and checks needing rerun.
 
 Persist only state expensive to reconstruct and use a permitted existing surface.
+Reference existing acceptance records and results rather than copying their contents into another task database.
+A recovery checkpoint preserves state; it does not create a human approval requirement or stop instruction.
 On resume, read that state and reconcile it with later user instructions before choosing work.
+Before recording a human stop or approval dependency carried by a summary, recover its source message or authoritative goal state and check its scope.
+If that source is unavailable, state the uncertainty rather than attributing the restriction to the user.
+Ask for clarification only when the unresolved authority affects the next action; continue independent authorized work.
+Respect actual human stops and harness pause, block, budget, and resume controls; a missing citation is not permission to bypass them.
 Check current artifacts, pending workers, and evidence freshness; do not replay completed mutations or trust stale summaries over current state.
 
 ## Ask, block, pause, or finish honestly
@@ -140,7 +137,7 @@ Use [creative-inquiry](../creative-inquiry/SKILL.md) if another approach could r
 Declare the whole run blocked only when no meaningful authorized progress remains, then explain the dependency.
 
 At completion, compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
-Require concrete evidence for every explicit requirement and no required work remaining; a worker report or the model's confidence does not supply missing evidence or human approval.
+Require concrete evidence for every explicit requirement and no required work remaining.
 For completed implementation, apply the review threshold above and [completion review](../review/references/completion.md) when required.
 For research, writing, planning, and review, verify the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.
 

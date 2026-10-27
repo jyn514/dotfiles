@@ -1,13 +1,12 @@
 ---
 name: work-selection
-description: Reassess the next action before adding another substantive prerequisite, workaround, or diagnostic round to an existing approach—even when earlier steps succeeded. Compare continuing with a smaller approach that preserves the user's requirements. Not for obvious mechanical repairs or straightforward execution of a settled change.
+description: Reassess the next action before adding another substantive prerequisite, workaround, or diagnostic round—even when earlier steps succeeded—or when decision-changing feedback is slow and supporting activity displaces the requested outcome. Compare faster, smaller approaches without weakening requirements. Expected runtime can still be an unacceptable feedback loop. Not for obvious mechanical repairs or straightforward execution of a settled change.
 ---
 
 # Work selection
 
-Reassess within the current authorized task, including implementation, research, writing, planning, and review.
-This skill does not authorize a different activity, additional effects, autonomous execution, or resuming an inactive goal.
-[Autonomous-work](../autonomous-work/SKILL.md) owns unattended-run authority, acceptance order, persistence, and stopping.
+Reassess the next action within the user's authorized task.
+Use [autonomous-work](../autonomous-work/SKILL.md) for unattended-run authority, acceptance order, persistence, and stopping.
 Use [opportunity-scan](../opportunity-scan/SKILL.md) only for project-wide discovery when no task is selected.
 
 ## Compare with the existing path
@@ -28,10 +27,42 @@ When a dependency follows from a chosen approach, name the choice that creates i
 “Keeping X requires Y” is not the same as “the user’s goal requires Y.”
 If changing the choice removes the dependency, include that alternative in the comparison.
 
+## Keep feedback fast
+
+Optimize for time to the next decision-changing result, not activity or completed checks.
+Before a costly check, identify which results would change the next action and how soon they should arrive.
+Aim for actionable development feedback within about two minutes unless the user or task establishes another budget.
+This is a threshold for reconsidering the approach, not a universal command timeout or permission to weaken acceptance.
+
+Apply this reassessment to work already underway, not only proposed work.
+On loading this skill during a slow loop or receiving a feedback-latency correction, identify the current delay.
+Revisit the choices keeping that delay on the critical path before assigning more work around it.
+Prior authorization establishes permission, not continued usefulness; preserve user requirements while reconsidering agent-selected constraints.
+Compare continuing unchanged, stopping with evidence preserved, and isolating further development from the running check.
+Judge the remaining cost and expected useful results, not time already spent.
+Do not automatically stop a required acceptance run or merely route new assignments around an unexamined existing constraint.
+
+If feedback will take longer, compare the smallest representative workload, a targeted intended-consumer check, and a different approach before proceeding.
+Use small checks to choose the next change; they do not replace required full-population or end-to-end acceptance.
+A progressing computation can still be an unacceptable feedback loop, even when its duration was expected.
+
+Separate slow acceptance runs from the development loop.
+Preserve the candidate under verification without freezing further implementation where the work can be isolated.
+Compare isolation and later integration costs against the expected wait and the useful work it prevents; do not reject isolation merely because it has overhead.
+Hold only conflicting mutations, and do not introduce copies, automation or new workflow obligations when existing facilities suffice.
+
+Reassess when the feedback budget passes without a decision-changing result.
+Also reassess when several minutes yield only supporting reports, receipts or preparation rather than the requested outcome.
+Use available evidence to choose the nearest useful outcome check or change the approach, rather than adding another supporting round.
+Keep this comparison lightweight; do not turn it into another reporting or review stage.
+A long check remains appropriate when smaller checks cannot settle the decision and its cost is justified.
+Use [performance-investigation](../performance-investigation/SKILL.md) to diagnose execution cost or resource behavior.
+Healthy execution alone does not settle work selection.
+
 ## Get an independent recommendation
 
-At this trigger, use an available compatible fresh-context scout template and follow its advertised caller contract.
-Use [delegation](../delegation/SKILL.md#frame-independent-scouting-and-review) for caller framing, assignment, and integration; scouting grants no additional effects.
+When a substantive choice remains after this comparison, use an available compatible fresh-context scout template and follow its advertised caller contract.
+Use [delegation](../delegation/SKILL.md#frame-independent-scouting-and-review) for caller framing, assignment, and integration.
 Supply the literal task, current acceptance condition, governing references, and evidence entrypoints for the main user activity as well as current work.
 Include the latest relevant user correction with its provenance; quote it only when the exact text is available.
 Keep any parent hypothesis, proposed next action, or rationale provisional under that framing procedure, not a requirement or substitute for independent evidence inspection.
@@ -52,6 +83,14 @@ Finding no better alternative is a successful result: continue when the existing
 
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.
 Neither is a default next phase of reassessment.
+
+## Example: expected execution, slow learning
+
+A full acceptance run is expected to take 45 minutes and requires its candidate's source bytes to remain unchanged.
+The agent rejects an isolated candidate because copying and later integration have costs, then spends the wait producing receipts instead of implementing.
+Compare those costs against 45 minutes of blocked development, and find the smallest check that can guide the next edit.
+Keep the full acceptance run when required, but preserve its candidate independently if that permits useful authorized work.
+Do not call the feedback loop adequate merely because the run is progressing normally.
 
 ## Example: an agent-selected single-file constraint
 

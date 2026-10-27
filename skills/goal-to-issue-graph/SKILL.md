@@ -94,20 +94,23 @@ Keep an identifier when its meaning stays the same; assign a new one for a mater
 Map each criterion to its proving boundary and evidence class, such as a CLI fixture, property test, benchmark, API result or artifact inspection.
 State applicable contexts when different input origins or execution paths could change the result.
 
-Specify a mandatory structured completion matrix derived from the current issue criteria, not an optional narrative summary.
-Each criterion needs a row with its identifier, current criterion text or source reference, status and concrete supporting evidence.
-Bind the matrix to the current issue-body snapshot and exact integrated revision being closed.
-Reuse prior evidence only when the closeout contract permits it; retain the revision actually tested and establish applicability to the closing revision.
-Never present prior evidence as having been run on the closing revision.
+Require an acceptance-evidence mapping for every current criterion, using the existing ticket's acceptance/evidence fields when they can express it clearly.
+For each criterion, identify its current text or source reference, status and concrete supporting evidence.
+Keep this mapping in one canonical record; link from handoffs and recovery state rather than maintaining parallel copies.
+Use a separate completion matrix only when the existing record cannot make criterion coverage clear or an applicable governing workflow requires one.
+Treat agent-authored workflow formats as revisable mechanisms, not user requirements; do not introduce stricter shared packaging merely to standardize closeout.
+Identify the issue and exact integrated revision being closed, and preserve references to the criteria whose acceptance was checked.
+Create additional snapshots only when existing versioned records cannot establish those identities.
+Retain the revision actually tested and establish applicability to the closing revision; never present reused evidence as newly executed.
 For permitted no-code-change outcomes, identify the applicable versioned inputs, products or receipts instead of inventing a fixing commit.
-The issue's actual closeout owner—not merely a contributing worker—must complete and validate the matrix before claiming successful issue completion.
-Require exact current criterion coverage, all criteria met, relevant evidence for each, and consistent issue/revision identities.
-A shared passing suite may support several rows only when the evidence identifies what proves each criterion.
-Missing criteria, partial results, stale criterion text, worker-only results and unreconciled revision mismatches block successful closure.
+The issue's actual closeout owner—not merely a contributing worker—must check that every current criterion is met by applicable evidence before claiming successful completion.
+A shared result may support several criteria when the mapping identifies what proves each one.
+Downstream closeout records the acceptance decision and any new reconciliation, linking to existing evidence rather than reproducing its narrative.
+Missing criteria, partial results, stale criterion text, unsupported worker claims and unreconciled revision mismatches block successful closure.
 An investigation may complete with no change only when its acceptance permits that outcome; cancellation or supersession is not evidence that acceptance was met.
 
-Use the tracker's supported matrix format and closeout validator; EDN is not required.
-If tooling cannot enforce the checks, require explicit matrix validation at closeout and report the enforcement gap rather than claiming tool-enforced completion.
+Use existing tracker validation where it checks this mapping; otherwise inspect it directly without creating another validation artifact by default.
+Do not claim tool-enforced completion for checks performed only by inspection.
 Do not build a new tracker or validation framework merely to write the plan.
 Structural validation prevents omissions and stale-evidence mismatches; the closeout owner must still check that the evidence actually proves each criterion.
 Planning defines this contract, not completed evidence or permission to execute the checks.
@@ -178,6 +181,9 @@ Could every listed ticket close while the promised outcome still fails?
 If yes, repair the acceptance or missing work rather than adding vague “review everything” tickets.
 Use independent review when consequential scope or dependency judgment remains uncertain, not as a mandatory ceremony for a small obvious graph.
 Check that the planned closeout rejects an omitted criterion, stale issue body, mismatched revision and a closed-but-unmet prerequisite.
+Review reporting obligations in shared contracts as well as individual tickets.
+Require a concrete consumer or evidence need for each mandated format; reuse existing versioned records when they establish the same criterion coverage and result identities.
+Remove unnecessary matrices, copied bodies, hashes and validation reports without weakening the acceptance checks they were meant to support.
 
 State how changed authority, inputs, interfaces or integration products invalidate affected evidence.
 Final acceptance must concern the same current inputs and product; reuse unaffected evidence instead of rerunning everything by habit.
@@ -206,6 +212,6 @@ An explicitly permitted alternative representation can satisfy coverage only whe
 ## Handoff
 
 Provide the root contract, bounded tickets, explained edges, identified acceptance criteria with verification mappings and material unresolved decisions.
-Name the execution/closeout owner and supported matrix-validation procedure; leave unexecuted evidence explicitly pending.
+Name the execution/closeout owner and canonical acceptance-evidence record; leave unexecuted evidence explicitly pending.
 State inspected and unexamined scope, whether the graph can expand through discovery, what validation actually ran, and whether tracker IDs exist.
 Do not report planned checks as executed or the product as complete because its graph is ready.

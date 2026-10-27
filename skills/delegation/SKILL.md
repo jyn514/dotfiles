@@ -13,13 +13,12 @@ Prefer doing small inspections and integration repairs directly when delegation 
 
 Delegate bounded outcomes rather than isolated components.
 Prefer one worker owning a producer-to-consumer result and its acceptance check.
-Split that path only when independent execution saves time or an ownership or capability constraint requires separate workers.
+Give the worker authority for the ordinary checks, failure inspection, and in-scope corrections its assigned activity permits.
+For implementation assignments, include edits and checks through the first intended-consumer result without returning for permission at each step.
+Require a return before an unresolved consequential choice, a concrete ownership conflict, or an operation outside the assignment's permitted effects or resource limits.
+Do not split routine preparation and execution into separate approval handoffs; retain explicit user-imposed limits and approvals.
+Split the outcome only when independent execution saves time or an ownership or capability constraint requires separate workers.
 The parent remains responsible for coordination and integration.
-
-Before assigning work, identify what the worker's result will unblock and choose a useful independent next action for the parent.
-Look for evidence to analyze, preparation useful under either outcome, or another independent part of the same objective.
-Do not reserve invented cleanup or repeat an unchanged review merely to stay busy.
-If no useful independent action exists, compare direct execution with the capability or time saved by delegation.
 
 For coupled implementation with unsettled shared contracts, use [the shared-contract check](references/shared-contracts.md).
 Reuse settled contracts; separate files alone do not establish independence.
@@ -28,11 +27,21 @@ Reuse settled contracts; separate files alone do not establish independence.
 
 Provide the worker with:
 
-- The governing question or outcome, acceptance condition, current evidence, and uncertainty.
+- The governing question or outcome, why it advances the user's overall goal, acceptance condition, current evidence, and uncertainty.
 - Relevant inputs and procedures, with their full text or resolved paths when the worker cannot discover them.
 - Applicable repository/shared rules and semantic distinctions; do not assume the worker inherits the parent's context.
 - Ownership and shared contracts, permitted effects, protected work, and explicit holds.
 - The expected result, required checks, remaining integration work, and useful evidence to return.
+
+Request the smallest sufficient evidence set for the receiving agent to judge the result and take its next action.
+Preserve the task's purpose, consequential constraints and access to underlying evidence; brevity is not a reason to omit them.
+Reuse applicable tests, logs and artifacts; require new evidence only for a missing or invalidated claim.
+Summarize the result, unresolved issues and evidence locations in the handoff rather than reproducing the evidence or creating another report format.
+
+Before prescribing a prerequisite or method that constrains execution, check governing guidance or actual implementation for its necessity and availability.
+Do not make permission conditional on an assumed mechanism.
+If the workflow is uncertain, include bounded inspection within the assignment's permitted activity rather than prescribing an unverified method as a prerequisite.
+For example, require regeneration only after establishing that the target is generated and identifying its source; an authoritative data file may instead require direct edits.
 
 When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the architecture owner's reuse dispositions.
 Cover nearby existing resources.
@@ -48,7 +57,9 @@ when access or tool failure prevents completion, report the exact unread ranges 
 Choose a worker suited to the task's judgment and cost requirements using the harness's available capabilities.
 Do not expand authority because a worker or tool can perform an action.
 Allow preparation and investigation to proceed when only a later command or shared-contract decision must wait.
-Reconcile worker instructions when the user changes a decision or removes a restriction.
+Reconcile active worker instructions when governing decisions or agent-selected restrictions change.
+Within existing authorization, state which earlier ownership limits, prescribed methods, and holds are superseded and which remain in force.
+Update the affected assignments, not only coordinator summaries; a broad permission message does not resolve a conflicting specific instruction.
 
 ### Frame independent scouting and review
 
@@ -67,37 +78,23 @@ For review, include cumulative added mechanisms, not just the latest patch.
 Ask whether the proposed work is necessary and whether a smaller approach preserves the requirements, not only how to complete it.
 Before treating an unknown as a blocker, check whether independent evidence inspection or preparation can proceed without the missing result or human decision.
 
-## Continue before waiting
+## While work is outstanding
 
-A blocking wait, such as `wait_agent` or waiting for every worker, declares that no useful independent authorized work remains before the required result arrives.
-Before waiting, name the exact result needed and the action it blocks.
-Distinguish a true result dependency from overlapping writes, resource contention, or a restriction introduced by the chosen experiment.
-Reconsider self-imposed restrictions before treating them as blockers.
-
-Check for three concrete alternatives:
-
-1. Analyze evidence already available.
-2. Prepare inputs or checks useful under either result.
-3. Advance an independent part of the same authorized objective.
-
+Advance useful independent work when available; otherwise wait.
+Do not invent supporting work or poll repeatedly to avoid being idle.
 Hold only the operation that conflicts or needs the result, not the entire investigation.
-For example, a timed benchmark may need to wait while source inspection and probe preparation continue.
 Use [performance-investigation](../performance-investigation/SKILL.md) to decide which measurements need isolation; attribution does not automatically require controlled before/after precision.
-Do not replace a blocking wait with repeated status polling.
-Wait when the remaining authorized work genuinely depends on the result; do not invent more work to avoid waiting.
 
 ## Integrate and verify
 
 Inspect returned work against the governing requirement and agreed boundaries, not only the worker's local criteria.
 For implementation, inspect the actual diff and acceptance evidence from the required checks through the intended interfaces.
 For research and review, inspect the supporting sources or raw evidence and distinguish observation from inference.
-Independent verification requires inspecting underlying evidence, not necessarily repeating execution.
-Reuse evidence after confirming that it covers the relevant artifacts, scope, and intended interfaces.
-Rerun checks that are missing or invalidated by changes; a worker’s summary or test count alone does not establish acceptance.
-Use independent review for consequential judgment.
-
-Apply [review evidence standards](../review/references/evidence.md) when reporting local-only, integrated, or blocked results; this does not automatically start its full audit.
-Worker completion alone does not establish readiness for dependent work.
+Use [review evidence standards](../review/references/evidence.md) to inspect underlying evidence, decide what needs rerunning, and report local-only, integrated, or blocked results.
+Consulting those standards does not start the full audit.
+Make parent verification address the remaining uncertainty: inspect the changed work and applicability of existing evidence, rather than repeat the worker's investigation.
+Record the acceptance decision and any new reconciliation in the canonical result; link to supporting evidence instead of retelling it.
+Use independent review for consequential judgment, with a specific correctness question or failure class to investigate.
 Proceed only within the scope supported by verified evidence, including permitted partial results.
 Integrate the remaining work or resolve its blockers before starting work that depends on it.
 Keep remaining integration work and holds visible in existing task state.
