@@ -154,6 +154,7 @@ Leave the artifact unchanged when no considered revision earns its cost.
 Compare the original with the strongest concrete alternative considered and identify unresolved reading problems.
 “Every section has a purpose” or “the evidence is findable” does not settle how the writing reads.
 This verdict concerns the alternatives considered, not whether a better version is possible.
+If the reason only defends retaining facts, read the [lookup contrast](references/reading-examples.md#needed-facts-can-still-be-hard-to-find).
 If support is insufficient, arrange a bounded independent whole-artifact reading when available, or report that limitation.
 If it finds a missed improvement, reconsider the affected scope rather than defending the earlier verdict.
 Make corrections within this pass; do not recursively invoke the workflow because its output changed.

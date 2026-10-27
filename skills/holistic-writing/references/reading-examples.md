@@ -8,7 +8,7 @@ The examples guide judgment, not a required style, emotional arc, or scoring pro
 The whole-work judgments reported here are PhotoCraft 2/5, Frog and Toad 5/5, and the font article 5/5.
 They were supplied by jyn during calibration; the excerpts have no separate grades.
 The discussion and sentence-order examples use feature-level human feedback; they do not grade their excerpts or proposed rewrites.
-The help-page passages and sample reviews are constructed and ungraded.
+The help-page and reference-lookup passages and sample reviews are constructed and ungraded.
 “Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
 The final three revision exercises are invented and ungraded.
 
@@ -247,6 +247,80 @@ Consider an account owner deciding whether to delete an old project, with this t
 
 The warning earns the interruption by changing the choice the reader can make before acting.
 The contrast does not make a preface or a formal phrase a defect by itself.
+
+## Needed facts can still be hard to find
+
+These excerpts and sample reviews are constructed and ungraded.
+A testing reference has a long “Isolation” section.
+Returning maintainers use it to check whether settings survive a run or which executable the runner uses.
+Here is part of that section:
+
+> The runner uses a temporary home directory.
+> Settings written there disappear after the run.
+>
+> Downloaded packages stay in a persistent cache so later runs can reuse them.
+> To test a fresh download, select an empty cache directory.
+>
+> Commands are selected from the runner’s isolated search path.
+> To test a repository wrapper, invoke its path explicitly.
+
+**An unchanged verdict that defends the information:**
+
+> Each paragraph documents distinct isolation behavior.
+> All of these details are necessary, so I would leave the section unchanged.
+
+That establishes why the facts belong, not why their presentation works.
+A reader looking for command selection must recognize that the answer is inside “Isolation” and scan past unrelated state-lifetime rules.
+Consider a revision that keeps every sentence:
+
+> ### Temporary settings
+>
+> The runner uses a temporary home directory.
+> Settings written there disappear after the run.
+>
+> ### Retained downloads
+>
+> Downloaded packages stay in a persistent cache so later runs can reuse them.
+> To test a fresh download, select an empty cache directory.
+>
+> ### Command selection
+>
+> Commands are selected from the runner’s isolated search path.
+> To test a repository wrapper, invoke its path explicitly.
+
+**A review that compares the reading paths:**
+
+> I would keep the details and add these labels within the existing section.
+> A returning maintainer can recognize the executable-selection answer from the headings instead of rereading the cache rules.
+> “Temporary settings” and “Retained downloads” also make the difference in persistence visible before the reader assumes everything is temporary.
+
+The proposed improvement is lookup, not compression or a claim that the underlying behavior changed.
+It depends on the reference’s length and its readers’ return visits, not just the presence of several topics.
+
+Now consider a short answer to “Why was the second run faster?”:
+
+> The second run reused downloads left by the first.
+> Its temporary settings were still removed, but those settings are not the downloads.
+> A temporary home therefore does not make this a fresh-download comparison.
+
+Splitting that answer into topics produces:
+
+> ### Downloads
+>
+> The second run reused downloads left by the first.
+>
+> ### Settings
+>
+> Its temporary settings were still removed, but those settings are not the downloads.
+>
+> ### Comparison
+>
+> A temporary home therefore does not make this a fresh-download comparison.
+
+Here the reader needs the connected explanation, not three independent lookup destinations.
+The labels repeat the sentence topics and interrupt the reasoning without helping the reader find a separate answer.
+Keep the continuous paragraph.
+The choice is whether a concrete revision helps these readers use the text, not whether necessary facts forbid edits or multiple topics require headings.
 
 ## Smaller revision exercises
 
