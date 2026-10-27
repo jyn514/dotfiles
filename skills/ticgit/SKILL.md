@@ -6,7 +6,7 @@ description: How to use TicGit (`ti`) to track Git-native tickets in a local rep
 # TicGit Agent Guide
 
 Use `ti` for planning, progress notes, triage, and resolving work.
-Prefer `--markdown` when the command supports it.
+Use plain `ti list` for compact tables, `--markdown` for detailed inspection, and `--json` for programmatic queries.
 Use explicit ticket and writeup IDs; do not rely on current-ticket defaults.
 Native Markdown can suggest commands unavailable through the proxy; follow the supported workflows below instead.
 
@@ -15,7 +15,7 @@ Native Markdown can suggest commands unavailable through the proxy; follow the s
 Inspect the assigned ticket; use listing to locate tickets when needed:
 
 ```sh
-ti list --markdown
+ti list
 ti show <id> --markdown
 ```
 
@@ -41,6 +41,26 @@ ti claim -t <id>
 The proxy uses its accepted workspace authorship identity, not a separate identity for each agent or subagent.
 Assignment and explicit ticket IDs do not reserve work for an agent.
 Filter assignments explicitly with `ti list --assigned <email>`.
+
+## Inspect An Issue Graph
+
+Inspect tracker state, dependencies, and acceptance records:
+
+```sh
+ti list --state in-progress --subissues
+ti list --all --subissues --json
+ti show <id> --filter .comments
+```
+
+Include `--subissues` when listing the whole graph; the default list omits child tickets.
+Use JSON to join tickets with their dependency IDs and identify unfinished prerequisites.
+A dependency-clear ticket is not necessarily authorized or ready to start; inspect its required inputs and governing workflow.
+`next` can recommend an in-progress ticket, so it is not an unclaimed-work queue.
+
+Keep dependency closure, tracker state, current execution, and accepted outcomes distinct.
+An in-progress state does not prove an agent is currently executing the task, and a closed dependency may be resolved, rejected, or a duplicate.
+Read the canonical acceptance record before claiming the required outcome is met; `resolved` alone is not acceptance evidence.
+For an overview, link to that record in its chosen home, such as ticket comments, a specification, or a linked artifact.
 
 ## Create And Edit Tickets
 
