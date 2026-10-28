@@ -106,6 +106,7 @@ Do not also enable pytest-instafail; it conflicts with sugar and inflates pass c
 See [pytest-sugar #222](https://github.com/Teemu/pytest-sugar/issues/222).
 The runner uses installed pytest only after a successful plugin check.
 Otherwise it uses `uv` and the pinned requirements in `install/test.txt`, or prints installation guidance if `uv` is unavailable.
+The runner completes a serial collection pass before starting parallel workers, so a collection error stops before any test executes.
 Python tests and the native-suite adapters in `tests/native/` share the existing pytest-xdist scheduler: eight workers and `--dist loadfile`.
 Use `--jobs N` or `TEST_JOBS` to change the worker count.
 Each adapter runs its existing native command with a separate private HOME and XDG state; native frameworks still discover and run their own cases.

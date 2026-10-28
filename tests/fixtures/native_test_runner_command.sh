@@ -26,8 +26,13 @@ if [ "$name" = pytest ] && [ "${1:-}" = --help ]; then
 	fi
 	exit "${TEST_PYTEST_HELP_STATUS:-0}"
 fi
+collect_only=0
+for argument do
+	if [ "$argument" = --collect-only ]; then collect_only=1; fi
+done
 if [ "$name" = uvx ]; then
 	printf '%s\n' "$@" > "$TEST_ARGV_LOG"
+	if [ "$collect_only" = 1 ]; then exit "${TEST_PYTEST_COLLECT_STATUS:-0}"; fi
 	exit 23
 fi
 line=$name
@@ -41,6 +46,7 @@ if [ "$name" = pytest ]; then
 	if [ -n "${TEST_ARGV_LOG:-}" ]; then
 		printf '%s\n' "$@" > "$TEST_ARGV_LOG"
 	fi
+	if [ "$collect_only" = 1 ]; then exit "${TEST_PYTEST_COLLECT_STATUS:-0}"; fi
 	exit "${TEST_PYTEST_STATUS:-0}"
 fi
 if [ "$name" = python3 ] && [ "${1:-}" = tools/codex-sandbox/tests/image_runtime_integration.py ]; then

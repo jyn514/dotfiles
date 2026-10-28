@@ -66,6 +66,15 @@ pytest_args="-n $jobs --dist loadfile --quiet --no-header --force-sugar -p no:ca
 if [ "$verbose" = 1 ]; then
 	pytest_args="-n $jobs --dist loadfile --verbose --force-sugar -p no:cacheprovider"
 fi
+# Collect serially before xdist can start executing tests on other workers.
+collection_log=$results/collection.log
+if "$root/dev/pytest" --test-environment-ready --collect-only --quiet --quiet --no-header -p no:cacheprovider > "$collection_log" 2>&1; then
+	:
+else
+	status=$?
+	cat "$collection_log" >&2
+	exit "$status"
+fi
 # shellcheck disable=SC2086
 "$root/dev/pytest" --test-environment-ready $pytest_args
 

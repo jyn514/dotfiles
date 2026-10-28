@@ -105,7 +105,7 @@ class TestRunnerTests(unittest.TestCase):
             subprocess.run(["cmp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
             bin_directory = root / "bin"
             bin_directory.mkdir()
-            for command in ("dirname", "mktemp", "date", "grep", "rm"):
+            for command in ("cat", "dirname", "mktemp", "date", "grep", "rm"):
                 (bin_directory / command).symlink_to(shutil.which(command))
             (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "uvx.args"
@@ -184,23 +184,23 @@ class TestRunnerTests(unittest.TestCase):
         result, arguments, probes = self.run_fallback(missing_plugin=True)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
-        self.assertEqual(1, probes)
+        self.assertEqual(2, probes)
 
-    def test_installed_pytest_checks_all_plugins_with_one_successful_probe(self) -> None:
+    def test_installed_pytest_checks_all_plugins_for_each_dispatch(self) -> None:
         result, arguments, probes = self.run_fallback(installed_pytest=True, uv_available=False)
         self.assertEqual(99, result.returncode, result.stderr)
-        self.assertEqual(1, probes)
+        self.assertEqual(2, probes)
         self.assertEqual("-n", arguments[0])
 
     def test_failed_help_cannot_establish_plugin_availability(self) -> None:
         result, arguments, probes = self.run_fallback(installed_pytest=True, help_status=7)
         self.assertEqual(23, result.returncode, result.stderr)
-        self.assertEqual(1, probes)
+        self.assertEqual(2, probes)
         self.assertEqual("--from", arguments[0])
 
     def test_broken_installed_pytest_uses_uvx(self) -> None:
         result, arguments, probes = self.run_fallback(broken_pytest=True)
-        self.assertEqual(1, probes)
+        self.assertEqual(2, probes)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
 
@@ -272,7 +272,8 @@ class TestRunnerTests(unittest.TestCase):
             self.assertFalse(log.exists(), "a test suite ran before the prerequisite check")
 
     def run_native_containers(self, *, metadata=None, containers=True,
-                              pytest_status=0, probe_status=0, shellcheck_status=0):
+                              pytest_status=0, pytest_collect_status=0,
+                              probe_status=0, shellcheck_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
@@ -304,6 +305,7 @@ class TestRunnerTests(unittest.TestCase):
                 "HOME": str(home), "PATH": f"{binaries}:{os.environ['PATH']}",
                 "TEST_LOG": str(log), "TEST_PYTHON_REAL": shutil.which("python3"),
                 "TEST_PYTEST_STATUS": str(pytest_status),
+                "TEST_PYTEST_COLLECT_STATUS": str(pytest_collect_status),
                 "TEST_PROBE_STATUS": str(probe_status),
                 "TEST_SHELLCHECK_STATUS": str(shellcheck_status),
                 # A stale inherited capture must never replace the actual marker.
@@ -378,6 +380,18 @@ class TestRunnerTests(unittest.TestCase):
                     self.assertNotIn("All checks passed", result.stdout)
                 else:
                     self.assertIn("All checks passed", result.stdout)
+
+    def test_collection_failure_stops_before_test_execution(self) -> None:
+        result, commands, _ = self.run_native_containers(
+            containers=False, pytest_collect_status=42,
+        )
+
+        self.assertEqual(42, result.returncode, result.stderr)
+        pytest_commands = [line for line in commands if line.startswith("pytest ")]
+        self.assertEqual(1, len(pytest_commands))
+        self.assertIn("<--collect-only>", pytest_commands[0])
+        self.assertFalse(any("dev/check-shell.py" in line for line in commands))
+        self.assertNotIn("All checks passed", result.stdout)
 
     def test_native_containers_preserve_test_and_probe_failure_status(self) -> None:
         for pytest_status, probe_status in ((23, 0), (0, 31)):
