@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import json
 import random
@@ -115,9 +116,31 @@ class LayoutFormatTests(unittest.TestCase):
         path = ROOT / "tools/moonlander/moonlander-layout.json"
         readable = json.loads(path.read_text())
 
+        self.assertEqual(readable["$schema"], "./layout.schema.json")
         self.assertEqual(readable["schemaVersion"], 2)
         canonical = layout_format.loads(path.read_text())
+        self.assertEqual(layout_format.dumps(canonical), path.read_text())
         self.assertEqual(layout_format.loads(layout_format.dumps(canonical)), canonical)
+
+    def test_schema_closes_every_structural_object(self):
+        path = ROOT / "tools/moonlander/layout.schema.json"
+        schema = json.loads(path.read_text())
+
+        self.assertFalse(schema["additionalProperties"])
+        for name in (
+            "actionMetadata",
+            "layer",
+            "layout",
+            "macro",
+            "revision",
+            "row3",
+            "row6",
+            "row7",
+            "rows",
+            "tapDance",
+        ):
+            with self.subTest(definition=name):
+                self.assertFalse(schema["$defs"][name]["additionalProperties"])
 
     def test_generated_supported_keys_round_trip(self):
         rng = random.Random(0x4D4F4F4E)
@@ -185,6 +208,43 @@ class LayoutFormatTests(unittest.TestCase):
 
         with self.assertRaisesRegex(layout_format.FormatError, "invalid QMK expression"):
             layout_format.decode(value)
+
+    def test_rejects_unknown_structural_fields_even_when_unused(self):
+        original = layout_format.encode(snapshot([generated_key("tap") for _ in range(72)]))
+        mutations = {
+            "document": lambda value: value.update({"surprise": True}),
+            "layout": lambda value: value["layout"].update({"surprise": True}),
+            "layout revision": lambda value: value["layout"]["revision"].update(
+                {"surprise": True}
+            ),
+            "layer": lambda value: value["layout"]["revision"]["layers"][0].update(
+                {"surprise": True}
+            ),
+            "number row": lambda value: value["layout"]["revision"]["layers"][0][
+                "keys"
+            ]["number"].update({"surprise": True}),
+            "key metadata": lambda value: value["layout"]["revision"]["layers"][0][
+                "keys"
+            ]["number"]["left"].__setitem__(
+                0, {"key": "KC_Q", "surprise": True}
+            ),
+            "macro definition": lambda value: value["layout"]["revision"]["macros"].update(
+                {"UNUSED": {"keys": [], "surprise": True}}
+            ),
+            "macro step": lambda value: value["layout"]["revision"]["macros"].update(
+                {"UNUSED": {"keys": [{"key": "KC_Q", "surprise": True}]}}
+            ),
+            "tap-dance definition": lambda value: value["layout"]["revision"][
+                "tapDances"
+            ].update({"UNUSED": {"tap": "KC_Q", "surprise": True}}),
+        }
+
+        for context, mutate in mutations.items():
+            with self.subTest(context=context):
+                value = copy.deepcopy(original)
+                mutate(value)
+                with self.assertRaisesRegex(layout_format.FormatError, f"unknown {context}"):
+                    layout_format.decode(value)
 
 
 if __name__ == "__main__":

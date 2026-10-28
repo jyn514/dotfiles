@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "layout.schema.json",
+  "title": "Readable Moonlander layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schemaVersion", "layout"],
+  "properties": {
+    "$schema": { "const": "./layout.schema.json" },
+    "schemaVersion": { "const": 2 },
+    "layout": { "$ref": "#/$defs/layout" }
+  },
+  "$defs": {
+    "qmkExpression": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*(\\(.*\\))?$"
+    },
+    "actionMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": {},
+        "description": {}
+      }
+    },
+    "key": {
+      "oneOf": [
+        { "$ref": "#/$defs/qmkExpression" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key"],
+          "properties": {
+            "key": { "$ref": "#/$defs/qmkExpression" },
+            "label": {},
+            "glow": {},
+            "lockGlow": {},
+            "tappingTerm": {},
+            "icon": {},
+            "emoji": {},
+            "actionMetadata": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tap": { "$ref": "#/$defs/actionMetadata" },
+                "hold": { "$ref": "#/$defs/actionMetadata" },
+                "doubleTap": { "$ref": "#/$defs/actionMetadata" },
+                "tapHold": { "$ref": "#/$defs/actionMetadata" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "row7": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/key" }
+        },
+        "right": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/key" }
+        }
+      }
+    },
+    "row6": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/key" }
+        },
+        "right": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/key" }
+        }
+      }
+    },
+    "row3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/key" }
+        },
+        "right": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/key" }
+        }
+      }
+    },
+    "rows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "top", "home", "bottom", "lower", "thumb"],
+      "properties": {
+        "number": { "$ref": "#/$defs/row7" },
+        "top": { "$ref": "#/$defs/row7" },
+        "home": { "$ref": "#/$defs/row7" },
+        "bottom": { "$ref": "#/$defs/row6" },
+        "lower": { "$ref": "#/$defs/row6" },
+        "thumb": { "$ref": "#/$defs/row3" }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keys"],
+      "properties": {
+        "position": {},
+        "title": {},
+        "color": {},
+        "automouse": {},
+        "keys": { "$ref": "#/$defs/rows" }
+      }
+    },
+    "macroStep": {
+      "oneOf": [
+        { "$ref": "#/$defs/qmkExpression" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key"],
+          "properties": {
+            "key": { "$ref": "#/$defs/qmkExpression" },
+            "delay": {}
+          }
+        }
+      ]
+    },
+    "macro": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "type": "array",
+          "maxItems": 5,
+          "items": { "$ref": "#/$defs/macroStep" }
+        },
+        "size": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "applyAlt": { "type": "boolean" },
+        "endEnter": { "type": "boolean" }
+      }
+    },
+    "tapDance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tap": { "$ref": "#/$defs/qmkExpression" },
+        "hold": { "$ref": "#/$defs/qmkExpression" },
+        "doubleTap": { "$ref": "#/$defs/qmkExpression" },
+        "tapHold": { "$ref": "#/$defs/qmkExpression" }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {},
+        "config": {},
+        "swatch": {},
+        "navigators": {},
+        "layers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layer" }
+        },
+        "macros": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/macro" }
+        },
+        "tapDances": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/tapDance" }
+        },
+        "combos": {}
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision"],
+      "properties": {
+        "hashId": {},
+        "geometry": {},
+        "title": {},
+        "privacy": {},
+        "tags": {},
+        "revision": { "$ref": "#/$defs/revision" }
+      }
+    }
+  }
+}

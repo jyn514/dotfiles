@@ -9,6 +9,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = 2
+SCHEMA_PATH = "./layout.schema.json"
 ROW_INDICES = {
     "number": (list(range(0, 7)), list(range(36, 43))),
     "top": (list(range(7, 14)), list(range(43, 50))),
@@ -57,6 +58,14 @@ CALL = re.compile(r"^([A-Z][A-Z0-9_]*)\((.*)\)$")
 
 class FormatError(ValueError):
     pass
+
+
+def _reject_unknown(value: Any, allowed: set[str], context: str) -> None:
+    if not isinstance(value, dict):
+        raise FormatError(f"{context} must be an object")
+    unknown = set(value) - allowed
+    if unknown:
+        raise FormatError(f"unknown {context} fields: {', '.join(sorted(unknown))}")
 
 
 def _stable(value: Any) -> Any:
@@ -301,6 +310,7 @@ def encode(snapshot: dict[str, Any]) -> dict[str, Any]:
             }
         )
     result = {
+        "$schema": SCHEMA_PATH,
         "schemaVersion": SCHEMA_VERSION,
         "layout": {
             "hashId": layout["hashId"],
@@ -381,12 +391,18 @@ def _parse_action(token: str) -> dict[str, Any]:
 
 
 def _macro_action(definition: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(
+        definition,
+        {"keys", "size", "applyAlt", "endEnter"},
+        "macro definition",
+    )
     steps = []
     for readable_step in definition.get("keys", []):
         if isinstance(readable_step, str):
             token = readable_step
             delay = None
         elif isinstance(readable_step, dict):
+            _reject_unknown(readable_step, {"key", "delay"}, "macro step")
             token = readable_step.get("key")
             delay = readable_step.get("delay")
         else:
@@ -495,18 +511,62 @@ def _decode_slot(
 
 
 def decode(readable: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(readable, {"$schema", "schemaVersion", "layout"}, "document")
+    if readable.get("$schema") != SCHEMA_PATH:
+        raise FormatError(f"unsupported or missing $schema {readable.get('$schema')!r}")
     if readable.get("schemaVersion") != SCHEMA_VERSION:
         raise FormatError(f"unsupported or missing schemaVersion {readable.get('schemaVersion')!r}")
     layout = readable.get("layout")
-    if not isinstance(layout, dict):
-        raise FormatError("layout must be an object")
+    _reject_unknown(
+        layout,
+        {"hashId", "geometry", "title", "privacy", "tags", "revision"},
+        "layout",
+    )
     revision = layout.get("revision")
-    if not isinstance(revision, dict):
-        raise FormatError("layout.revision must be an object")
+    _reject_unknown(
+        revision,
+        {
+            "model",
+            "config",
+            "swatch",
+            "navigators",
+            "layers",
+            "macros",
+            "tapDances",
+            "combos",
+        },
+        "layout revision",
+    )
     macros = revision.get("macros") or {}
     tap_dances = revision.get("tapDances") or {}
+    if not isinstance(macros, dict):
+        raise FormatError("layout revision macros must be an object")
+    if not isinstance(tap_dances, dict):
+        raise FormatError("layout revision tapDances must be an object")
+    for name, definition in macros.items():
+        if not isinstance(name, str):
+            raise FormatError("macro names must be strings")
+        _macro_action(definition)
+    for name, definition in tap_dances.items():
+        if not isinstance(name, str):
+            raise FormatError("tap-dance names must be strings")
+        _reject_unknown(
+            definition,
+            {"tap", "hold", "doubleTap", "tapHold"},
+            "tap-dance definition",
+        )
+        for token in definition.values():
+            _parse_action(token)
+    readable_layers = revision.get("layers") or []
+    if not isinstance(readable_layers, list):
+        raise FormatError("layout revision layers must be an array")
     layers = []
-    for readable_layer in revision.get("layers") or []:
+    for readable_layer in readable_layers:
+        _reject_unknown(
+            readable_layer,
+            {"position", "title", "color", "automouse", "keys"},
+            "layer",
+        )
         keys: list[dict[str, Any] | None] = [None] * 72
         readable_rows = readable_layer.get("keys")
         if not isinstance(readable_rows, dict):
@@ -515,6 +575,7 @@ def decode(readable: dict[str, Any]) -> dict[str, Any]:
             raise FormatError("layer keys must contain the six Moonlander rows")
         for row_name, (left_indices, right_indices) in ROW_INDICES.items():
             row = readable_rows[row_name]
+            _reject_unknown(row, {"left", "right"}, f"{row_name} row")
             for side, indices in (("left", left_indices), ("right", right_indices)):
                 slots = row.get(side) if isinstance(row, dict) else None
                 if not isinstance(slots, list) or len(slots) != len(indices):

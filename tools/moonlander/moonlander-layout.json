@@ -1,4 +1,5 @@
 {
+  "$schema": "./layout.schema.json",
   "schemaVersion": 2,
   "layout": {
     "hashId": "KW9E9",

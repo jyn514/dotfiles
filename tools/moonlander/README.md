@@ -42,6 +42,8 @@ Before applying, run the check without `--apply` and review the Oryx-to-reposito
 Each layer stores the six rows of QMK's `LAYOUT_moonlander` macro as separate left and right arrays.
 Use QMK expressions such as `KC_Q`, `MO(2)`, `LT(5, KC_DELETE)`, and `LGUI(KC_GRAVE)` for ordinary keys.
 `KC_NO` is an unassigned key; `KC_TRANSPARENT` falls through to a lower layer.
+The layout references `layout.schema.json` for editor completion and structural validation.
+The synchronizer also rejects unknown fields instead of silently discarding misspelled data.
 
 Macros use `M_<LAYER>_<ORYX_INDEX>` keys with definitions in `revision.macros`.
 Tap dances use `TD(<LAYER>_<ORYX_INDEX>)` with definitions in `revision.tapDances`.
