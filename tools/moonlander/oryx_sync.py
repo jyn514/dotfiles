@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import layout_format
+
 
 ENDPOINT = "https://oryx.zsa.io/graphql"
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,11 +115,7 @@ class GraphQLClient:
 
 
 def canonical_key(key: dict[str, Any]) -> dict[str, Any]:
-    return {
-        field: key[field]
-        for field in KEY_FIELDS
-        if field in key and key[field] is not None
-    }
+    return layout_format.canonical_key(key)
 
 
 def canonical_layout(layout: dict[str, Any]) -> dict[str, Any]:
@@ -185,7 +183,7 @@ def validate_snapshot(snapshot: dict[str, Any]) -> None:
 
 
 def pretty(snapshot: dict[str, Any]) -> str:
-    return json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    return layout_format.dumps(snapshot)
 
 
 def write_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
@@ -440,8 +438,8 @@ def next_mutation(expected: dict[str, Any], current: dict[str, Any], raw: dict[s
 
 def load_snapshot(path: Path) -> dict[str, Any]:
     try:
-        snapshot = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        snapshot = layout_format.loads(path.read_text())
+    except (OSError, layout_format.FormatError) as error:
         raise SyncError(f"cannot read {path}: {error}") from error
     validate_snapshot(snapshot)
     return snapshot

@@ -37,6 +37,17 @@ ORYX_TOKEN=... tools/moonlander/sync-moonlander --apply
 
 Before applying, run the check without `--apply` and review the Oryx-to-repository diff. Applying can change metadata, layers, keys, automouse settings, and combos; it can delete extra remote layers or combos.
 
+### Edit the layout
+
+Each layer stores the six rows of QMK's `LAYOUT_moonlander` macro as separate left and right arrays.
+Use QMK expressions such as `KC_Q`, `MO(2)`, `LT(5, KC_DELETE)`, and `LGUI(KC_GRAVE)` for ordinary keys.
+`KC_NO` is an unassigned key; `KC_TRANSPARENT` falls through to a lower layer.
+
+Macros use `M_<LAYER>_<ORYX_INDEX>` keys with definitions in `revision.macros`.
+Tap dances use `TD(<LAYER>_<ORYX_INDEX>)` with definitions in `revision.tapDances`.
+A key object adds Oryx display or timing metadata to the QMK expression in its `key` field.
+The synchronizer rejects arbitrary C and accepts only the QMK expression subset it can convert losslessly to Oryx.
+
 ### Build or flash
 
 ```sh

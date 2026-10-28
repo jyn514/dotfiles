@@ -9,6 +9,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE_PATH = ROOT / "tools/moonlander/oryx_sync.py"
+sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("oryx_sync", MODULE_PATH)
 assert SPEC and SPEC.loader
 oryx_sync = importlib.util.module_from_spec(SPEC)
