@@ -183,6 +183,19 @@ def main(arguments: list[str]) -> int:
         "XDG_CONFIG_DIRS", "XDG_DATA_DIRS",
     ):
         environment.pop(key, None)
+    # Launch-selected worker transports and host Pi leases point outside HOME.
+    # Strip this attachment family, not all CODEX_SANDBOX_* settings: unrelated
+    # runtime controls and Docker gateway routing must remain available.
+    for key in tuple(environment):
+        if key.startswith("CODEX_SANDBOX_TOOL_") or key in (
+            "CODEX_SANDBOX_PI_OWNER", "CODEX_SANDBOX_PI_ATTACHMENT",
+            "CODEX_SANDBOX_PI_OWNER_FD", "CODEX_SANDBOX_PI_SPLIT_PROMPT",
+            "CODEX_SANDBOX_PI_RESOURCE_PATHS", "CODEX_SANDBOX_PI_TOOL_MODULE",
+            "CODEX_SANDBOX_GUEST_CWD", "CODEX_SANDBOX_GUEST_REPO",
+            "CODEX_SANDBOX_PREVIOUS_CWD", "CODEX_SANDBOX_CD_REQUEST",
+            "CODEX_SANDBOX_CD_VALIDATE", "PI_SUBAGENT_PI_BIN",
+        ):
+            environment.pop(key)
     environment["SANDBOX_PROXY_DEFAULT_DIR"] = "/nonexistent"
     # Fish's own interactive startup checks this before spawning detached
     # completion generation. Those jobs otherwise outlive the test child and

@@ -5,9 +5,11 @@ import runpy
 import selectors
 import signal
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -27,6 +29,78 @@ UNSET_NAMES = (
     "XDG_CONFIG_DIRS", "XDG_DATA_DIRS", "PI_MODEL_FILE", "PI_MODEL_SESSION_ID", "PI_CALL_MODEL",
 )
 TEST_ENVIRONMENT = runpy.run_path(str(WRAPPER))
+# Launch outputs consumed by guest-tools, tool-worker, and the host Pi owner.
+# Keep these expectations independent of the wrapper's filtering implementation.
+ATTACHMENT_NAMES = (
+    "CODEX_SANDBOX_TOOL_CONTAINER", "CODEX_SANDBOX_TOOL_COMMAND",
+    "CODEX_SANDBOX_TOOL_CONNECT", "CODEX_SANDBOX_TOOL_SOCKET",
+    "CODEX_SANDBOX_TOOL_READY", "CODEX_SANDBOX_TOOL_READY_HOST",
+    "CODEX_SANDBOX_TOOL_WORKER", "CODEX_SANDBOX_PI_TOOL_MODULE",
+    "CODEX_SANDBOX_PI_OWNER", "CODEX_SANDBOX_PI_ATTACHMENT",
+    "CODEX_SANDBOX_PI_OWNER_FD", "CODEX_SANDBOX_PI_SPLIT_PROMPT",
+    "CODEX_SANDBOX_PI_RESOURCE_PATHS", "CODEX_SANDBOX_GUEST_CWD",
+    "CODEX_SANDBOX_GUEST_REPO", "CODEX_SANDBOX_PREVIOUS_CWD",
+    "CODEX_SANDBOX_CD_REQUEST", "CODEX_SANDBOX_CD_VALIDATE",
+    "PI_SUBAGENT_PI_BIN",
+)
+
+
+def attachment_probe() -> None:
+    """Run only after the wrapper boundary, with an owned local worker."""
+    environment = dict(os.environ)
+    assert not set(ATTACHMENT_NAMES).intersection(environment)
+    directory = Path.home() / "attachment"
+    directory.mkdir()
+    ready = directory / "worker.ready"
+    endpoint = directory / "worker.sock"
+    worker_environment = environment | {
+        "CODEX_SANDBOX_TOOL_SOCKET": str(endpoint),
+        "CODEX_SANDBOX_TOOL_READY": str(ready),
+        "CODEX_SANDBOX_PI_TOOL_MODULE": (
+            ROOT / "tools/codex-sandbox/tests/tool-worker-fixture.mjs"
+        ).as_uri(),
+    }
+    worker = subprocess.Popen(
+        ["node", ROOT / "tools/codex-sandbox/image/tool-worker.mjs"],
+        env=worker_environment, cwd=directory,
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+            if worker.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError("disposable tool worker did not become ready")
+            time.sleep(0.01)
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(5)
+            connection.connect(str(endpoint))
+            request = {"model": None, "session": None, "tool": "read",
+                       "params": {"path": "file.txt"}}
+            connection.sendall((json.dumps(request) + "\n").encode())
+            with connection.makefile() as stream:
+                result = json.loads(stream.readline())
+        nested = subprocess.run(
+            [WRAPPER, "env", "-0"], env=worker_environment,
+            capture_output=True, text=True, check=True, timeout=10,
+        )
+        nested_environment = dict(
+            entry.split("=", 1) for entry in nested.stdout.rstrip("\0").split("\0")
+        )
+        print(json.dumps({
+            "environment": environment, "nested_environment": nested_environment,
+            "result": result, "ready_mode": ready.stat().st_mode & 0o777,
+            "home": str(Path.home()), "ready": str(ready), "endpoint": str(endpoint),
+        }))
+    finally:
+        worker.terminate()
+        try:
+            _, errors = worker.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            worker.kill()
+            worker.communicate()
+            raise
+        if worker.returncode not in (0, -signal.SIGTERM):
+            raise RuntimeError(errors)
 
 
 class TestEnvironmentTest(unittest.TestCase):
@@ -136,6 +210,54 @@ class TestEnvironmentTest(unittest.TestCase):
             "CODEX_SIDECAR_KEY", "CODEX_SIDECAR_URL", "SANDBOX_PROXY_DIR",
         ):
             self.assertNotIn(name, environment)
+
+    def test_attachment_selectors_are_removed_without_stripping_runtime_capabilities(self) -> None:
+        values = {name: f"poison-{name}" for name in ATTACHMENT_NAMES}
+        values.update({
+            "CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT": "poison-future-endpoint",
+            "CODEX_SANDBOX_TIMING": "1", "CODEX_SANDBOX_QUIET_NOTICES": "1",
+            "DOCKER_HOST": "ssh://disposable-gateway",
+            "AGENT_DOCKER_SSHKEY": "/fixture/docker-key",
+            "AGENT_DOCKER_KNOWN_HOSTS": "/fixture/known-hosts",
+            "DOTFILES_TEST_ATTACHMENT_MARKER": "explicit-test-override",
+        })
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                result = subprocess.run(
+                    [WRAPPER, *([WRAPPER] if nested else []), "env", "-0"],
+                    env=self.inherited | values, text=True, capture_output=True,
+                    check=False, timeout=15,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                environment = dict(entry.split("=", 1)
+                    for entry in result.stdout.rstrip("\0").split("\0"))
+                for name in (*ATTACHMENT_NAMES, "CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT"):
+                    self.assertNotIn(name, set(environment))
+                for name in values.keys() - set(ATTACHMENT_NAMES) - {"CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT"}:
+                    self.assertEqual(values[name], environment[name])
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required for the tool worker")
+    def test_poisoned_attachment_is_untouched_and_child_can_supply_a_private_worker(self) -> None:
+        poison = self.old_home / "live-attachment"
+        poison.write_bytes(b"private attachment state\x00\xff\r\n")
+        values = {name: str(poison) for name in ATTACHMENT_NAMES}
+        before = self.snapshot(self.old_home)
+        result = subprocess.run(
+            [WRAPPER, sys.executable, Path(__file__), "--attachment-probe"],
+            env=self.inherited | values, text=True, capture_output=True,
+            check=False, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(before, self.snapshot(self.old_home))
+        for environment in (report["environment"], report["nested_environment"]):
+            for name in ATTACHMENT_NAMES:
+                self.assertNotIn(name, set(environment))
+        self.assertEqual({"kind": "result", "result": {
+            "content": [{"type": "text", "text": "guest:file.txt"}]}}, report["result"])
+        self.assertEqual(0o600, report["ready_mode"])
+        for name in ("home", "ready", "endpoint"):
+            self.assertFalse(Path(report[name]).exists(), report[name])
 
     def test_blocks_host_elevation_commands(self) -> None:
         for command in ("doas", "pkexec", "sudo"):
@@ -717,4 +839,7 @@ class TestEnvironmentTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    if sys.argv[1:] == ["--attachment-probe"]:
+        attachment_probe()
+    else:
+        unittest.main()
