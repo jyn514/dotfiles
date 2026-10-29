@@ -18,6 +18,8 @@ Do not preserve compatibility for internal interfaces whose producers and consum
 If running software loads source directly from the checkout, editing that source can deploy it immediately.
 Before the first write to live-loaded source, identify which producer versions and startup configuration remain active.
 Test the required old-producer/new-consumer combination using a disposable candidate before replacing the live source.
+For example, an already-running launcher can retain its old environment while its next call loads an edited connector from the checkout.
+Run that old-launcher/new-connector regression against a disposable candidate before editing the live connector, not during later integration testing.
 
 ## Single authority
 
