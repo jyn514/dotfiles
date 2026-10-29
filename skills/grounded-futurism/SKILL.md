@@ -111,9 +111,10 @@ Apply this check to the forecast's own reasoning as well as to actors within the
 
 ### 4. Investigate only uncertainties that could change the answer
 
-Research an unresolved link when resolving it could change a route, conclusion, or useful next observation.
-Check whether a consequential mechanism or proposed warning sign already exists when its current status could change the assessment.
-Do this before treating it as hypothetical, absent, or solely future evidence.
+First identify the factual claims that most affect the forecast, including claims used to limit its severity or likelihood.
+Use available evidence to check those claims, and research unresolved links before assigning likelihoods.
+Do not research only the initiating threat while leaving propagation, containment, or recovery assumptions unexamined.
+Check whether a consequential mechanism already exists before treating it as hypothetical or absent.
 Revise the assessment using those findings, then decide whether the evidence supports numerical probabilities under §5.
 If the check cannot be completed, state that limit rather than treating uninspected evidence as absent.
 Investigate only when the answer could change the conclusion.
@@ -158,6 +159,9 @@ State the inspected comparison set; a shortlist does not establish an exhaustive
 ### 6. Conclude with discriminating evidence
 
 Identify observations that would distinguish rival routes or materially change an important dependency.
+Inspect each proposed observation: if it could already have occurred, check the available evidence and research its status before answering.
+Distinguish what already exists from the unresolved change in frequency, scale, duration, or mechanism.
+Revise the forecast using the findings rather than presenting an unchecked observation as solely future evidence.
 When containment depends on actors responding to deterioration, ask whether they can detect it in time and still have options to recover.
 Distinguish evidence visible to the forecaster from feedback available to those actors.
 State which unresolved transitions matter most and why; allow several independent bottlenecks.
