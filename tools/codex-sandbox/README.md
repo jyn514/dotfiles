@@ -322,10 +322,17 @@ pi --session SESSION_ID         # resume a Pi session
 pi --export session.jsonl out.html  # export HTML locally without sandbox startup
 codex-sandbox restart --repo "$PWD"  # restart this repo's Pi attachments; run inside tmux
 codex-sandbox restart-all       # restart all sandboxed Pi attachments; run inside tmux
+codex-sandbox cache clean       # remove the VM-wide guest tool cache; stop sandboxes first
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
 tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images without build cache
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
+
+The launcher mounts a versioned VM-wide cache volume at `/home/codex/.cache`.
+Sandbox sessions and workspaces in the same VM share it.
+The launcher directs XDG, npm, Bun, Go build and module, pip, and uv caches there;
+configuration, credentials, package installations, and project build outputs remain outside it.
+`cache clean` verifies the volume owner before removal and fails while a sandbox still mounts the volume.
 
 Under tmux, `/split` opens a Pi pane with completed context, a fresh session ID,
 and focuses it, using the same guest container. `/split PROMPT` automatically

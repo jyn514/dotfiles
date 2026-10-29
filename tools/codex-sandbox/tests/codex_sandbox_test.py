@@ -2577,6 +2577,48 @@ class CodexSandboxTest(unittest.TestCase):
             self.assertEqual(0, launcher["main"](["restart-all"]))
             restart.assert_called_once_with(None)
 
+    def test_cache_clean_is_administrative_and_removes_the_owned_volume(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        runtime = object()
+        clean = mock.Mock()
+        with mock.patch(
+                "host_pi_owner.detached_frontend",
+                side_effect=AssertionError("cache cleanup detached")), \
+                mock.patch.dict(launcher["main"].__globals__, {
+                    "image_runtime": mock.Mock(return_value=runtime),
+                    "clean_user_cache": clean,
+                }), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, launcher["main"](["cache", "clean"]))
+        clean.assert_called_once_with()
+        self.assertIn("Sandbox user cache cleared.", output.getvalue())
+
+    def test_cache_clean_uses_the_stable_volume_owner(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        runtime = object()
+        remove = mock.Mock()
+        with mock.patch.dict(launcher["clean_user_cache"].__globals__, {
+                "OUTER_RUNTIME": runtime,
+                "remove_owned_resource": remove,
+        }):
+            launcher["clean_user_cache"]()
+        remove.assert_called_once_with(
+            runtime, launcher["ResourceKind"].VOLUME,
+            "codex-user-cache-v1", "codex-user-cache:v1",
+        )
+
+    def test_cache_clean_rejects_unknown_operations_without_runtime_effects(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        image_runtime = mock.Mock()
+        with mock.patch(
+                "host_pi_owner.detached_frontend",
+                side_effect=AssertionError("cache cleanup detached")), \
+                mock.patch.dict(launcher["main"].__globals__, {
+                    "image_runtime": image_runtime,
+                }), contextlib.redirect_stderr(io.StringIO()) as diagnostics:
+            self.assertEqual(1, launcher["main"](["cache", "unknown"]))
+        image_runtime.assert_not_called()
+        self.assertIn("usage: codex-sandbox cache clean", diagnostics.getvalue())
+
     def test_restart_cli_rejects_invalid_arguments_before_stopping_sessions(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         restart = mock.Mock()

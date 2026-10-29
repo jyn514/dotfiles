@@ -14,6 +14,19 @@ LAUNCHER = ROOT / "tools/codex-sandbox/codex-sandbox"
 
 
 class AgentCommandTest(unittest.TestCase):
+    def test_user_cache_volume_has_stable_vm_wide_identity(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        runtime = mock.Mock()
+        state = SimpleNamespace(uid=501, gid=20)
+        with mock.patch.dict(
+                launcher["prepare_user_cache_volume"].__globals__,
+                OUTER_RUNTIME=runtime):
+            launcher["prepare_user_cache_volume"](state)
+        runtime.create_owned_volume.assert_called_once_with(
+            "codex-user-cache-v1", 501, 20, "codex-user-cache:v1",
+            role="user-cache",
+        )
+
     def test_host_pi_resource_paths_bind_prompt_paths_to_guest_mounts(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         with tempfile.TemporaryDirectory() as directory:
@@ -126,6 +139,13 @@ class AgentCommandTest(unittest.TestCase):
             self.assertIn(
                 "PYTHONPYCACHEPREFIX=/src/repository/work/cache/python-bytecode", command)
             self.assertIn("RUFF_CACHE_DIR=/src/repository/work/cache/ruff", command)
+            self.assertIn("BUN_INSTALL_CACHE_DIR=/home/codex/.cache/bun", command)
+            self.assertIn("GOCACHE=/home/codex/.cache/go-build", command)
+            self.assertIn("GOMODCACHE=/home/codex/.cache/go-mod", command)
+            self.assertIn("npm_config_cache=/home/codex/.cache/npm", command)
+            self.assertIn("PIP_CACHE_DIR=/home/codex/.cache/pip", command)
+            self.assertIn("UV_CACHE_DIR=/home/codex/.cache/uv", command)
+            self.assertIn("XDG_CACHE_HOME=/home/codex/.cache", command)
             self.assertIn(
                 "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready", command)
             session = next(item for item in command if item.startswith("PI_MODEL_SESSION_ID="))
@@ -136,6 +156,10 @@ class AgentCommandTest(unittest.TestCase):
             )
             self.assertIn(
                 f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
+                command,
+            )
+            self.assertIn(
+                "type=volume,src=codex-user-cache-v1,dst=/home/codex/.cache",
                 command,
             )
             session_mounts = [

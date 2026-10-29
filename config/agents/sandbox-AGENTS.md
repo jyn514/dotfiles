@@ -36,6 +36,8 @@
   The launcher preserves it across sandbox sessions for the same workspace, but it remains disposable with the VM or manual volume removal.
   Cargo uses the active workspace's `work/cargo-target` automatically.
   Python bytecode, mypy, and Ruff use the active workspace's `work/cache` automatically.
+- User-wide tool caches under `/home/codex/.cache` persist across workspaces and sandbox sessions in the same VM.
+  Treat them as disposable cache data, not as storage for configuration, credentials, or required artifacts.
 - Use host-backed `target/` only for artifacts that host tools, other agents, or jyn must inspect.
 - Use host-backed `notes/` for compact unresolved findings that can change a future decision.
   Do not use it for routine logs, session summaries, or information already owned by maintained documentation.

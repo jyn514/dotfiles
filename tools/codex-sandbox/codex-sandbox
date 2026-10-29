@@ -72,6 +72,9 @@ PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
 PROXY_IDLE_SECONDS = 300.0
 WORK_DIRECTORY = "work"
+USER_CACHE_PATH = Path("/home/codex/.cache")
+USER_CACHE_VOLUME = "codex-user-cache-v1"
+USER_CACHE_OWNER = "codex-user-cache:v1"
 
 
 STAGED_CONFIG = {
@@ -1786,6 +1789,12 @@ def prepare_workspace_work_volumes(state: State) -> None:
         )
 
 
+def prepare_user_cache_volume(state: State) -> None:
+    OUTER_RUNTIME.create_owned_volume(
+        USER_CACHE_VOLUME, state.uid, state.gid, USER_CACHE_OWNER, role="user-cache",
+    )
+
+
 def agent_repository_mounts(state: State) -> list[str]:
     """Assemble one source view, then writable roots and protected overlays."""
     cached = getattr(state, "repository_mount_arguments", None)
@@ -1870,6 +1879,7 @@ def build_agent_command(
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
     project_work = state.container_repository / WORK_DIRECTORY
+    user_cache = USER_CACHE_PATH
     command = [
         "docker", "run", "--name", state.codex_container,
         "--cap-drop=NET_RAW",
@@ -1885,6 +1895,13 @@ def build_agent_command(
         "--env", f"MYPY_CACHE_DIR={project_work / 'cache/mypy'}",
         "--env", f"PYTHONPYCACHEPREFIX={project_work / 'cache/python-bytecode'}",
         "--env", f"RUFF_CACHE_DIR={project_work / 'cache/ruff'}",
+        "--env", f"BUN_INSTALL_CACHE_DIR={user_cache / 'bun'}",
+        "--env", f"GOCACHE={user_cache / 'go-build'}",
+        "--env", f"GOMODCACHE={user_cache / 'go-mod'}",
+        "--env", f"npm_config_cache={user_cache / 'npm'}",
+        "--env", f"PIP_CACHE_DIR={user_cache / 'pip'}",
+        "--env", f"UV_CACHE_DIR={user_cache / 'uv'}",
+        "--env", f"XDG_CACHE_HOME={user_cache}",
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
@@ -1928,6 +1945,7 @@ def build_agent_command(
         "--mount", f"type=bind,src={installed_config_source('$HOME/.pi/agent/pi-link')},"
         f"dst={resource_paths[str(state.home / '.pi/agent/pi-link')]},readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.config/git/ignore')},dst=/home/codex/.gitignore,readonly",
+        "--mount", f"type=volume,src={USER_CACHE_VOLUME},dst={USER_CACHE_PATH}",
         *agent_repository_mounts(state),
         "--workdir", str(guest_working_directory),
         *arguments,
@@ -2295,6 +2313,7 @@ def execute(state: State) -> int:
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     if getattr(state, "workspaces", None):
         phase("workspace work volumes", lambda: prepare_workspace_work_volumes(state))
+        phase("user cache volume", lambda: prepare_user_cache_volume(state))
         phase("workspace mounts", lambda: agent_repository_mounts(state))
     phase("tmux registration", lambda: register_tmux_pane(state))
     sidecar_selected = bool(
@@ -2754,6 +2773,12 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
     return 0
 
 
+def clean_user_cache() -> None:
+    remove_owned_resource(
+        OUTER_RUNTIME, ResourceKind.VOLUME, USER_CACHE_VOLUME, USER_CACHE_OWNER,
+    )
+
+
 def main(arguments: list[str]) -> int:
     """Public CLI/import entry; interactive callers must have no live threads."""
     # This explicit first-use setting is host-only and consumed before Pi's
@@ -2786,7 +2811,9 @@ def main(arguments: list[str]) -> int:
         return 2
     # Administrative and noninteractive interfaces retain their existing process
     # ownership. Interactive UI is separated before execute creates any resources.
-    administrative = arguments[:1] in (["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"])
+    administrative = arguments[:1] in (
+        ["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"], ["cache"],
+    )
     options = arguments[:arguments.index("--")] if "--" in arguments else arguments
     noninteractive = any(argument in ("--print", "-p", "--export") for argument in options)
     for index, argument in enumerate(options):
@@ -2816,6 +2843,17 @@ def detached_owner_main(arguments: list[str], bootstrap: socket.socket) -> int:
 
 def launch(arguments: list[str]) -> int:
     global OUTER_RUNTIME
+    if arguments[:1] == ["cache"]:
+        try:
+            if arguments != ["cache", "clean"]:
+                raise LauncherError("usage: codex-sandbox cache clean")
+            OUTER_RUNTIME = image_runtime()
+            clean_user_cache()
+            print("Sandbox user cache cleared.")
+            return 0
+        except (LauncherError, OSError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"error: Sandbox user cache cleanup failed: {error}", file=sys.stderr)
+            return 1
     if len(arguments) == 2 and arguments[0] in ("validate-cd", "prepare-cd"):
         try:
             # Validation is read-only even when an agent shell supplied jj author overrides.
