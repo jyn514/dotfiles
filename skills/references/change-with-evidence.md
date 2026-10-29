@@ -7,9 +7,21 @@ instructions.
 Read surrounding context before edits, investigations, or audits.
 Do not draw broad conclusions from search snippets.
 
+## Input recognition
+
+Apply [LANGSEC](https://langsec.org/) by defining the accepted input language at the parsing boundary.
+Reuse the owning parser and pass its structured results to effectful code instead of recognizing the same language again.
+For a deliberately limited recognizer, state its accepted fragment and test lookalikes outside it.
+Recognize the complete input, including framing and namespace-bearing components, rather than accepting a prefix for another layer to reinterpret.
+Reject malformed or unsupported input before starting the requested effect.
+Where another component interprets the result, check that both sides assign it the same meaning.
+Use the owning serializer or encoder for generated output, keeping values as data rather than syntax.
+If another phase parses that output, test syntax-like values through the complete writer-to-reader round trip.
+
 ## Language separation
 
-Apply LANGSEC (language-theoretic security): keep different languages in separate files rather than nesting them. For example, a Python script must launch a separate Bash file, not embed a multiline Bash string.
+Keep different languages in separate files rather than nesting them.
+For example, a Python script must launch a separate Bash file, not embed a multiline Bash string.
 
 ## Compatibility
 

@@ -42,6 +42,8 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
   Verify that intentionally dynamic inputs still change within the existing owner's lifetime.
   Exercise the binding through the subprocess or protocol boundary where the resource is actually used, when one exists.
   Lookup-count assertions alone do not establish correct resource selection or freshness.
+- For content-freshness guarantees, replace a resource while retaining its path or selector and any metadata used as a proxy for content.
+  Include feasible equal-size, equal-time replacements and check the content delivered to the consumer, not just cache invalidation counts.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
 - When overrides can change output shape or identity, test those transitions as well as same-form value changes.
   Where the contract requires replacement, verify that winning effects appear and obsolete effects from losing definitions are absent.
@@ -67,6 +69,8 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - State concurrency requirements as states and ordering, independently of the callbacks used to pause the fixture.
   Assert the precondition that makes a race valid before starting or releasing a competing operation.
   When upstream moves a callback, move the fixture only if it still proves the same ownership, admission, and cancellation contract; otherwise resolve the behavior change first.
+  For replacement or debounce semantics, run a superseded callback after scheduling its replacement, including successful and failed cancellation.
+  Check that obsolete work neither publishes effects nor clears the current work's ownership.
 - For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
 - After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-the-user-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
 - When claiming that a change fixes an observed failure, compare baseline and candidate from the same pre-failure state.

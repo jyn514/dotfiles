@@ -23,8 +23,13 @@ For coupled-worker assignments, use [delegation's shared-contract check](../../d
    Then translate the winning values into consumer effects, even when that translation changes their shape or names.
    Otherwise a losing definition can leave effects that the winning projection no longer replaces.
 4. Identify object identity independently of names and ambient state: filesystem identity, selected revision, provider, platform, and configuration scope where applicable.
+   Trace which namespace each receiver uses to resolve a name, including URI authority, filesystem root, and revision.
+   Treat dropping or re-resolving those components as a behavior change, not string cleanup.
+   When multiple effects must describe one selection, pass its identity with its data instead of resolving a mutable selector again.
    At trust crossings, state whose authority permits the effect and where it is enforced, including alternate entry points.
 5. Identify lifecycle states, invalid transitions, deadlines, and cancellation owners.
+   Distinguish a live owner from the currently selected request or scheduled action.
+   Where only current work may act, check that dispatched callbacks still own their effects; cancellation alone may not revoke them.
    State who owns outstanding work and resource cleanup after cancellation or shutdown, and whether failure can leave an effect committed, failed, or outcome-unknown.
 6. For destructive or multi-step work, identify recovery authority and the evidence available after interruption, including durable state when needed.
    Ensure required recovery evidence remains available if primary paths move or disappear.
