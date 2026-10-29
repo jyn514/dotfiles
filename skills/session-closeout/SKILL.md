@@ -31,6 +31,16 @@ For work not covered by an existing audit, use [completion review](../review/ref
 Search earlier turns when the current context does not establish the opening request or a decision's outcome. Do not call work complete when a requirement lacks evidence; name the missing check or remaining task.
 You can identify the current session with `PI_SESSION_ID` (for the Pi harness) or `CODEX_THREAD_ID` (for Codex).
 
+When `read_session` supports `view: "edit_candidates"`, use that view with the session ID or file to find earlier paths for inspection.
+Continue with `after: nextCursor` in the same view when more candidates are needed.
+If codemode is available, filter or group the candidate objects there rather than parsing transcript prose.
+Inspect a relevant candidate by passing its `source` into an ordinary `read_session` call.
+Direct calls, persisted nested calls, and checkpoint paths can include failed attempts, copied records, and already-committed work.
+Establish ownership and outcomes from source inspection, repository evidence, and existing validation, not the candidate list.
+Keep `incomplete` and skipped records explicit; a false flag does not certify an exhaustive inventory.
+This lookup supplements the requirements and decisions audit above; it does not replace it.
+If the view is unavailable or the source is unsupported, use ordinary session reads and report any remaining evidence gaps.
+
 ## 3. Resolve closeout findings
 
 Fix in-scope omissions only when repair is separately authorized, then rerun the cheapest checks that establish the repaired requirement. Leave protected or unrelated work untouched.
