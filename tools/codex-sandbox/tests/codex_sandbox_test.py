@@ -35,6 +35,7 @@ DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
 SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
 SANDBOX_PI = TOOL / "image" / "pi"
+os.environ["CODEX_SANDBOX_QUIET_NOTICES"] = "1"
 try:
     NATIVE_TMUX = runpy.run_path(str(ROOT / "libexec/tmux/attachment.py"))["native_tmux"]()
 except RuntimeError:
@@ -1148,10 +1149,11 @@ class BackgroundRelayTest(unittest.TestCase):
         def acquire(value):
             value.proxy_lock = SimpleNamespace(shared=False)
 
-        with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
-                             recover_relays=mock.Mock(), acquire_lock=acquire,
-                             load_repository_policy=mock.Mock(),
-                             stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
+        with mock.patch.dict(os.environ, CODEX_SANDBOX_QUIET_NOTICES=""), \
+                mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
+                                recover_relays=mock.Mock(), acquire_lock=acquire,
+                                load_repository_policy=mock.Mock(),
+                                stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
                 mock.patch("sys.stderr", new_callable=io.StringIO) as output:
             with self.assertRaisesRegex(RuntimeError, "stop after notice"):
                 execute(state)
@@ -1160,6 +1162,12 @@ class BackgroundRelayTest(unittest.TestCase):
             "cached resources are reused when valid; builds run only when needed.",
             output.getvalue(),
         )
+
+    def test_test_quiet_mode_suppresses_launcher_notices(self) -> None:
+        notice = runpy.run_path(str(LAUNCHER))["launcher_notice"]
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+            notice("hidden during tests")
+        self.assertEqual("", output.getvalue())
 
     def test_session_authority_precedes_policy_loading(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
@@ -1189,10 +1197,11 @@ class BackgroundRelayTest(unittest.TestCase):
             value.proxy_lock = SimpleNamespace(shared=True)
 
         policy = mock.Mock(side_effect=AssertionError("join read repository policy"))
-        with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
-                             recover_relays=mock.Mock(), acquire_lock=acquire,
-                             load_accepted_session=mock.Mock(), load_repository_policy=policy,
-                             stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
+        with mock.patch.dict(os.environ, CODEX_SANDBOX_QUIET_NOTICES=""), \
+                mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
+                                recover_relays=mock.Mock(), acquire_lock=acquire,
+                                load_accepted_session=mock.Mock(), load_repository_policy=policy,
+                                stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
                 mock.patch("sys.stderr", new_callable=io.StringIO) as output:
             with self.assertRaisesRegex(RuntimeError, "stop after notice"):
                 execute(state)
@@ -1721,7 +1730,10 @@ class CodexSandboxTest(unittest.TestCase):
                         exit "$FAKE_WORKER_EXIT"
                     fi
                     agent_dir=$(head -n 1 "$marker")
-                    if [ -n "$agent_dir" ]; then : > "$agent_dir/tool-worker-ready"; chmod 600 "$agent_dir/tool-worker-ready"; fi
+                    if [ -n "$agent_dir" ]; then
+                        (umask 077; : > "$agent_dir/tool-worker-ready")
+                        [ -z "$FAKE_WORKER_READY_POST_CREATE_DELAY" ] || sleep "$FAKE_WORKER_READY_POST_CREATE_DELAY"
+                    fi
                     if [ -n "$FAKE_AGENT_READY" ]; then : > "$FAKE_AGENT_READY"; fi
                     # Keep the worker alive until removal without adding a
                     # one-second shutdown delay to every launcher test.
@@ -1915,6 +1927,10 @@ class CodexSandboxTest(unittest.TestCase):
                    if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
         self.assertEqual(1, len(creates), result.stderr)
         self.assertIn("CODEX_SANDBOX_TOOL_WORKER=1", creates[0])
+
+    def test_worker_readiness_is_private_when_first_published(self) -> None:
+        result = self.run_launcher(FAKE_WORKER_READY_POST_CREATE_DELAY="0.1")
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_host_pi_skill_paths_are_readable_by_guest_tools(self) -> None:
         skills = self.home / ".agents/skills"
