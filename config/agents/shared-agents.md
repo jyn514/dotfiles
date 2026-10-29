@@ -48,7 +48,6 @@ When responding to user feedback or a disputed analysis, state agreement or disa
 do not apologize for tooling bugs or blame yourself for a failure.
 instead, suggest process improvements that would prevent the failure from recurring.
 if an existing instruction was missed, correct the action; the miss alone does not show that the instruction is unclear.
-use `skill-authoring` when evidence of a guidance or routing problem warrants changing instructions or skill behavior.
 
 ### Interiority
 
@@ -121,10 +120,6 @@ Establish scope before routing to specialized skills.
 
 ## Commands and permissions
 
-### Before coordinating subagents
-
-Use `delegation` before spawning, assigning, messaging, waiting for, or integrating subagents.
-
 ### Sandbox escalation
 
 When a command needed for the task fails because of sandbox restrictions, retry it promptly using the harness's escalation mechanism.
@@ -171,11 +166,6 @@ When the owner or destination is not already established, read [Documentation pl
 
 Choose documentation skills by their catalog scopes.
 Routine additions to an established section do not require a full authoring workflow.
-
-Use `holistic-writing` when authoring or substantially revising prose, including instructions, prompts, and skills.
-Read the complete resulting artifact, not only the changed passages.
-Keep the pass within the task's authorization: improve wording and organization where needed to integrate the change, but report unrelated improvements rather than making them.
-Do not reorganize merely for consistency or because the skill was invoked.
 
 ### Formatting
 
@@ -226,17 +216,9 @@ Reuse existing evidence when it already settles that decision.
 
 ### When a historical constraint could change the fix
 
-When an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix, use `jj-workflow` to investigate before changing it.
-Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
-
 When unexplained behavior concerns shared tooling, search its owner, known local consumers, and prior sessions by component name—not only the current repository.
 Read the supporting evidence and check its version and applicability before reusing it.
 Stop when the question is settled.
-
-### Before changing a skill
-
-Before any skill edit, recover why the affected guidance was introduced or revised from session history.
-Follow the [skill-history procedure](~/.agents/skills/skill-authoring/SKILL.md#1-justify-the-skill), even for localized edits.
 
 ### When assessing threats
 

@@ -46,7 +46,7 @@ fi
 # they still auto-fire from natural language, not just /name. Everything else is
 # trimmed to its first sentence — enough to invoke by name and to suggest it.
 # Surround each name with spaces so the substring match is whole-word.
-KEEP_FULL=" git-bug jj-workflow use-a-library simplify review fix close-it-out "
+KEEP_FULL=" git-bug jj-workflow use-a-library simplify review fix close-it-out skill-authoring delegation holistic-writing "
 
 printf '\n# Skills\n'
 printf 'Invoke via the Skill tool. The ones with full descriptions may also fire from a matching request; the rest are invoked by /<name>. Only these. Do not guess.\n\n'

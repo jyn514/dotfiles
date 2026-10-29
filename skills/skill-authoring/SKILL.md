@@ -17,8 +17,8 @@ Before writing, identify:
 - nearby skills, repository instructions, or canonical docs that may already own the behavior;
 - the decisions or failure modes that generic agent behavior handles poorly.
 
-Before any skill edit, recover why the affected guidance was introduced or revised.
-Apply this history check even to localized edits that do not need the full authoring workflow.
+For changes within this skill's scope, recover why the affected guidance was introduced or revised before choosing the change.
+Mechanical spelling or link corrections that preserve discovery and behavior do not require this history check.
 Use relevant history already established in the current conversation rather than searching again.
 Otherwise, search retained sessions by skill name, affected guidance or motivating incident, and read the relevant exchanges before choosing the change.
 Treat search hits as leads, not complete evidence.
@@ -171,7 +171,10 @@ Apply every relevant category when a change spans several kinds.
   A body-only edit does not require loading every harness again.
 - **Caller route only:** read the caller and target description together, and trace one task that must route and one nearby task that must not.
   Check linked paths; a changed route alone does not require reloading an unchanged skill.
-- **Discovery change:** for a new skill or changes to name, frontmatter, installed location, or discovery configuration,
+- **Description meaning only:** review the description's scope and apply §6's routing checks.
+  Reuse loader evidence when the name, frontmatter syntax and field set, installed location, and discovery configuration are unchanged.
+  Check that the edited description still meets the frontmatter requirements in §4; changed wording alone does not require every harness to reload it.
+- **Loader or discovery-configuration change:** for a new skill or changes to name, frontmatter syntax or field set, installed location, or discovery configuration,
   load it through every target harness and inspect discovery or validation warnings.
   Confirm no collision or precedence rule causes another skill to win discovery.
   When Pi is a target, read [Pi loader checks](references/pi-loader-checks.md) before checking it.

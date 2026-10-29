@@ -69,22 +69,28 @@ class AgentSkillsPackageTest(unittest.TestCase):
                 self.assertFalse((ROOT / "skills" / name).exists())
                 self.assertFalse(list(skill_directory.rglob("references/**/SKILL.md")))
 
-    def test_standalone_prompt_preserves_review_discovery_description(self) -> None:
+    def test_standalone_prompt_preserves_skill_owned_discovery_descriptions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             shutil.copytree(ROOT / "skills", home / ".claude/skills")
-            skill = home / ".claude/skills/review/SKILL.md"
-            description = "Review fixture artifacts. Preserve this second-sentence discovery trigger."
-            skill.write_text("\n".join(
-                f"description: {description}" if line.startswith("description: ") else line
-                for line in skill.read_text().splitlines()
-            ) + "\n")
+            descriptions = {
+                name: f"Review {name} fixture artifacts. Preserve this second-sentence discovery trigger."
+                for name in ("review", "jj-workflow", "skill-authoring", "delegation", "holistic-writing")
+            }
+            for name, description in descriptions.items():
+                skill = home / f".claude/skills/{name}/SKILL.md"
+                skill.write_text("\n".join(
+                    f"description: {description}" if line.startswith("description: ") else line
+                    for line in skill.read_text().splitlines()
+                ) + "\n")
             result = subprocess.run(
                 [ROOT / "libexec/gen-claude-system-prompt"], cwd=home,
                 env=os.environ | {"HOME": str(home)},
                 capture_output=True, text=True, check=True,
             )
-            self.assertIn(f"- review: {description}\n", result.stdout)
+            for name, description in descriptions.items():
+                with self.subTest(skill=name):
+                    self.assertIn(f"- {name}: {description}\n", result.stdout)
             self.assertNotIn("- double-check:", result.stdout)
 
     def test_publish_command_stages_the_skills_readme(self) -> None:

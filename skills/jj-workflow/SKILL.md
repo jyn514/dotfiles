@@ -1,6 +1,6 @@
 ---
 name: jj-workflow
-description: "Use when a task involves inspecting file or revision history, establishing change provenance or ownership, comparing revisions, or shaping history through splits, rebases, restacks, conflicts, or abandonment. Do not use for routine status, diff, or commit tasks that need no history judgment."
+description: "Use when a task involves inspecting file or revision history, establishing change provenance or ownership, comparing revisions, or shaping history through splits, rebases, restacks, conflicts, or abandonment. Use also before changing an unexplained constraint, compatibility behavior, regression, or proposed reversal when its history could change the fix. Do not use for routine status, diff, or commit tasks that need no history judgment, or routine edits whose requirements and surrounding behavior are clear."
 ---
 
 # jj Workflow

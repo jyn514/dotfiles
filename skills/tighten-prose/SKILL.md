@@ -39,8 +39,9 @@ Use the contrast to guide judgment, not to impose this style on every passage.
 
 ## Delegate the bounded pass
 
-The main agent delegates this local pass to a small-model subagent when available.
-Use [delegation](../delegation/SKILL.md) for the assignment and integration.
+Prefer a small-model subagent for a useful batch of passages or independent wording judgment; this reduces subscription usage.
+Apply an exact replacement or an edit smaller than its handoff directly.
+When delegating, use [delegation](../delegation/SKILL.md) for the assignment and integration.
 Supply the exact passage, necessary context, and requirements to preserve.
 The worker follows the workflow directly without further delegation; the parent reads its revision before its report.
-If delegation is unavailable, perform the local pass directly and report that limitation.
+If a useful delegation is unavailable, perform the local pass directly and report that limitation.
