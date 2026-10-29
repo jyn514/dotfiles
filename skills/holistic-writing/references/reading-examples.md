@@ -10,7 +10,7 @@ They were supplied by jyn during calibration; the excerpts have no separate grad
 The discussion and sentence-order examples use feature-level human feedback; they do not grade their excerpts or proposed rewrites.
 The help-page and reference-lookup passages and sample reviews are constructed and ungraded.
 “Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
-The final three revision exercises are invented and ungraded.
+The final five revision exercises are invented and ungraded.
 
 ## A product catalogue can be readable without making its product matter
 
@@ -336,6 +336,52 @@ Compare:
 
 The first sentence makes a plain engineering contrast sound grand.
 The second names the difference directly.
+
+### Explain what the detail changes for the reader
+
+In this invented build tool, all linked worktrees share one cache in Git's common directory.
+
+**Name without the relevant property**
+
+> Clearing the cache affects other worktrees because `cache_dir()` uses `common_dir()`.
+
+**Property and consequence**
+
+> The cache lives in Git's common directory, which all linked worktrees share.
+> Clearing it from one checkout therefore clears it for the others, even though each checkout has its own working files.
+
+The function name helps someone find the implementation; the shared directory explains the behavior.
+
+### Explain why a proposed loop repeats
+
+These notes concern an invented preview server, not an actual implementation:
+
+- The server stops answering requests after trying to open a deleted preview.
+- Progress notifications invoke a handler that calls `open_preview()`.
+- `open_preview()` queues a progress notification even when it fails with `NOT_FOUND`.
+- `dispatch_progress()` drains pending progress notifications before returning to network events.
+
+**Smoother prose that still leaves the loop to the reader**
+
+> My hypothesis is that the deleted preview is repeatedly reopened.
+> `open_preview()` returns `NOT_FOUND` and queues a progress notification.
+> `dispatch_progress()` processes progress notifications before network events.
+> This could explain why the server stops answering requests.
+
+**A developed explanation**
+
+> My hypothesis is that reporting the missing preview triggers another attempt to open it.
+> A progress notification invokes the handler, which calls `open_preview()`.
+> That call fails, but still queues another progress notification.
+> Handling that notification repeats the failed open and queues the next one.
+>
+> `dispatch_progress()` normally empties this queue before returning to network events.
+> If every failure adds another notification, the queue never empties: the server stays busy reporting the failure instead of handling new requests.
+
+The final version explains how the end of one iteration starts the next, then relates that cycle to the visible symptom.
+It introduces the handler before relying on it and explains the queue's role before explaining why the server stalls.
+The opening marks the proposed diagnosis as a hypothesis; the remaining sentences develop it rather than repeatedly disclaiming certainty.
+It adds reasoning from the supplied behavior, not new test results.
 
 ### Explain a hypothesis without claiming confirmation
 

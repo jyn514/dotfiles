@@ -85,6 +85,15 @@ For an explanatory distinction, identify what it helps these readers understand 
 If neither side changes their understanding or choice, it is a distinction without a difference: remove or rework it when writing, and count its wasted attention or false emphasis against the prose when reviewing.
 A corrective contrast needs a plausible misconception and an explanation that gives these readers reason to reconsider; do not invent confusion to defend it.
 
+Read forward using the intended reader's assumed background and what the document has introduced so far.
+Supply enough context for each passage to make sense when the reader reaches it; develop the connection locally or move its explanation earlier.
+Explain the property that makes a technical detail relevant, not just its name.
+For a mechanism the reader needs to understand, show why one step leads to the next.
+For a loop, walk through one iteration and explain why it leaves the condition for another iteration intact.
+Numbered steps, source links, and words such as “therefore” do not supply a missing relationship.
+If an essential connection is unsupported, identify that specific gap rather than inventing evidence or retreating to disconnected facts.
+When a mechanism remains a list of facts, compare the [property-and-consequence and feedback-loop examples](references/reading-examples.md#explain-what-the-detail-changes-for-the-reader).
+
 Develop a hypothesis as a hypothesis, explaining its proposed mechanism and uncertainty without claiming confirmation.
 For a nontrivial mechanism, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
 Introduce one conceptual layer at a time, with plain-language meaning before notation and a worked example before an algorithm when useful.
@@ -108,8 +117,11 @@ Avoid wide Markdown tables; use bullets or short subsections for prose, commands
 ## 3. Revise connected passages without losing meaning
 
 Identify the reading problem before choosing edits: a buried relationship needs different work from an awkward sentence.
+Develop a connected explanation before polishing its sentences; do not inherit the source's sentence order as the revision's plan.
 Revise connected passages when selection or arrangement causes the difficulty; retain what already works.
 Judge diction, rhythm, emphasis, selection, and development, not words removed or paragraphs joined.
+Words can earn attention through emphasis, rhythm, tone, or a needed connection, not only by adding facts.
+Cut explanatory padding too: a second paraphrase needs a purpose beyond being another way to say the same thing.
 Preserve effective voice, deliberate casing, fragments, idiom, and precise terms rather than normalizing them for consistency.
 Voice also lives in particular attention, selection, connections, and implications, not only verbal personality.
 Apply vocabulary bans by meaning rather than word matching.
