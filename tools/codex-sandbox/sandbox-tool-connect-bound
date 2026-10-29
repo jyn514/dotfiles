@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Open one channel on the launcher's already-admitted guest attachment."""
+
+import json
+import os
+import sys
+
+
+def main() -> int:
+    try:
+        command = json.loads(os.environ.get("CODEX_SANDBOX_TOOL_COMMAND", ""))
+        if (not isinstance(command, list) or not command or
+                not all(isinstance(arg, str) and arg and "\0" not in arg for arg in command)):
+            raise ValueError("invalid connector command")
+    except ValueError:
+        print("guest tool attachment command is unavailable or invalid", file=sys.stderr)
+        return 1
+    # The launcher admitted the engine and selected the worker. Another channel
+    # is not another attachment or recovery attempt. Inherit stdio and replace
+    # this process so cancellation/EOF retain the native client's behavior.
+    os.execvp(command[0], command)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

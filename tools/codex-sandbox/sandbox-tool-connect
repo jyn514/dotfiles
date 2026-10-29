@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
-"""Connect one host Pi tool call to its launcher-selected guest worker."""
+"""Connect one host Pi call, including attachments launched before command binding."""
 
 import os
+from pathlib import Path
 import re
 import sys
 
-from sandbox_runtime import image_runtime
-
 
 def main() -> int:
+    if "CODEX_SANDBOX_TOOL_COMMAND" in os.environ:
+        # New launchers stage the bound connector directly. This branch supports
+        # command-aware callers of the old source path; malformed commands must
+        # fail there, never fall back to rediscovering an engine.
+        connector = Path(__file__).with_name("sandbox-tool-connect-bound")
+        os.execv(sys.executable, [sys.executable, str(connector)])
+        return 1
+
+    # Migration for already-running host Pi processes: their environment cannot
+    # gain the new command, yet they execute this source file live after edits.
+    # Retain the old route until those attachments naturally close.
+    from sandbox_runtime import image_runtime
     container = os.environ.get("CODEX_SANDBOX_TOOL_CONTAINER", "")
     if not re.fullmatch(r"codex-sandbox-[a-zA-Z0-9-]+", container):
         print("guest tool container is not selected", file=sys.stderr)
         return 1
-    runtime = image_runtime()
-    command = runtime.argv([
+    command = image_runtime().argv([
         "exec", "--interactive", container, "node",
         "/opt/agent-tools/bin/tool-connect.mjs",
     ])

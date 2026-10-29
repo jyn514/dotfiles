@@ -3,14 +3,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
-import validateSkill, { validateSkillTool } from "../../config/pi-agent/pi-extensions/validate-skill";
+import validateSkill, { createValidateSkillTool } from "../../config/pi-agent/pi-extensions/validate-skill";
 
 let cwd: string;
 beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), "validate-skill-test-")); });
 afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
 
 async function check(path = "SKILL.md") {
-  const result = await validateSkillTool.execute("test", { path }, undefined, undefined, { cwd } as never);
+  const result = await createValidateSkillTool().execute("test", { path }, undefined, undefined, { cwd } as never);
   expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual(
     JSON.parse(JSON.stringify(result.details)),
   );
@@ -25,7 +25,8 @@ describe("validate_skill", () => {
   test("registers the tool", () => {
     const tools: unknown[] = [];
     validateSkill({ registerTool: (tool: unknown) => tools.push(tool) } as never);
-    expect(tools).toEqual([validateSkillTool]);
+    expect(tools).toHaveLength(1);
+    expect((tools[0] as { name: string }).name).toBe("validate_skill");
   });
 
   test("Pi loads the bundle and exposes a working validate_skill tool", async () => {

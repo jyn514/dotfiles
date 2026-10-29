@@ -18,7 +18,7 @@ assert.equal(typeof manifest.exports?.["."]?.import, "string");
 const sdkUrl = pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href;
 const { discoverAndLoadExtensions, getAgentDir, loadSkills, SessionManager } = await import(sdkUrl);
 const extension = join(root, "config/pi-agent/pi-extensions/validate-skill.ts");
-const connector = join(root, "tools/codex-sandbox/tests/fixtures/local-tool-connect.py");
+const connector = join(root, "tools/codex-sandbox/sandbox-tool-connect");
 
 function skill(name) {
   return `---\nname: ${name}\ndescription: A validation fixture.\n---\n`;
@@ -79,10 +79,11 @@ test("native validation routes guest paths through the worker, without host fall
   await writeFile(join(guestHome, "SKILL.md"), skill("guest-home"));
   await symlink(target, join(guest, "alias.md"));
   const socket = join(directory, "worker.sock");
+  const ready = join(directory, "worker-ready");
   const worker = spawn(process.execPath, [join(root, "tools/codex-sandbox/image/tool-worker.mjs")], {
     cwd: guest,
     env: { ...process.env, HOME: guestHome, CODEX_SANDBOX_TOOL_SOCKET: socket,
-      CODEX_SANDBOX_PI_TOOL_MODULE: sdkUrl },
+      CODEX_SANDBOX_TOOL_READY: ready, CODEX_SANDBOX_PI_TOOL_MODULE: sdkUrl },
     stdio: ["ignore", "ignore", "pipe"],
   });
   let errors = "";
@@ -95,11 +96,14 @@ test("native validation routes guest paths through the worker, without host fall
     }
     await rm(directory, { recursive: true, force: true });
   });
-  await eventually(() => fs.existsSync(socket), worker, () => errors);
+  await eventually(() => fs.existsSync(ready), worker, () => errors);
   setEnvironment(t, {
     CODEX_SANDBOX_TOOL_CONTAINER: "local-test-worker-not-container",
     CODEX_SANDBOX_TOOL_CONNECT: connector,
-    CODEX_SANDBOX_TOOL_SOCKET: socket,
+    CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify([
+      "/usr/bin/env", `CODEX_SANDBOX_TOOL_SOCKET=${socket}`, process.execPath,
+      join(root, "tools/codex-sandbox/image/tool-connect.mjs"),
+    ]),
   });
   const tool = await loadTool(host);
 
@@ -151,14 +155,25 @@ test("native validation routes guest paths through the worker, without host fall
     await writeFile(target, skill("guest-skill"));
   });
 
-  await t.test("missing connector rejects instead of validating a valid host file", async t => {
+  await t.test("loaded attachment stays bound; initialization observes a missing connector", async t => {
     setEnvironment(t, { CODEX_SANDBOX_TOOL_CONNECT: undefined });
-    await assert.rejects(check(tool, host, "SKILL.md"), /attachment is unavailable/);
+    assert.deepEqual(await check(tool, host, "SKILL.md"), {
+      loaded: true, name: "guest-skill", diagnostics: [],
+    });
+    const missing = await loadTool(host);
+    await assert.rejects(check(missing, host, "SKILL.md"), /attachment is unavailable/);
   });
 
-  await t.test("a disconnected worker rejects instead of falling back to the host", async t => {
-    setEnvironment(t, { CODEX_SANDBOX_TOOL_SOCKET: join(directory, "missing.sock") });
-    await assert.rejects(check(tool, host, "SKILL.md", AbortSignal.timeout(3000)), /ENOENT|ECONNREFUSED/);
+  await t.test("a newly selected disconnected worker errors without changing the loaded attachment", async t => {
+    setEnvironment(t, { CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify([
+      "/usr/bin/env", `CODEX_SANDBOX_TOOL_SOCKET=${join(directory, "missing.sock")}`, process.execPath,
+      join(root, "tools/codex-sandbox/image/tool-connect.mjs"),
+    ]) });
+    const disconnected = await loadTool(host);
+    await assert.rejects(check(disconnected, host, "SKILL.md", AbortSignal.timeout(3000)), /ENOENT|ECONNREFUSED/);
+    assert.deepEqual(await check(tool, host, "SKILL.md"), {
+      loaded: true, name: "guest-skill", diagnostics: [],
+    });
   });
 
   await t.test("an aborted call rejects without a host result", async () => {

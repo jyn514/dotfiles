@@ -135,6 +135,8 @@ class CleanupOverlapTest(unittest.TestCase):
             scratch = root / 'scratch'
             scratch.mkdir()
             state.skills_tmp = scratch
+            state.pi_tool_connector = root / 'host-only-tool-connector'
+            state.pi_tool_connector.write_text('staged connector')
             revoked, tic_started, shared_started, release = (threading.Event() for _ in range(4))
 
             def stop(_status):
@@ -165,11 +167,13 @@ class CleanupOverlapTest(unittest.TestCase):
                     self.assertTrue(shared_started.wait(3))
                     self.assertTrue(tic_started.wait(3))
                     self.assertTrue(scratch.exists())
+                    self.assertTrue(state.pi_tool_connector.exists())
                     self.assertFalse(future.done())
                 finally:
                     release.set()
                 self.assertTrue(future.result(5))
             self.assertFalse(scratch.exists())
+            self.assertFalse(state.pi_tool_connector.exists())
             module.reset_session.assert_called_once()
 
     def test_failures_from_both_branches_retain_recovery_and_return_false(self):

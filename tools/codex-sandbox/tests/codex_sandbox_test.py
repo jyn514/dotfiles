@@ -134,6 +134,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                         yield worker
 
                 runtime = SimpleNamespace(
+                    argv=mock.Mock(return_value=["admitted-engine", "fixed-channel"]),
                     environment_file=lambda _environment: contextlib.nullcontext([]),
                     inspect_image=mock.Mock(return_value="inspected-image"),
                     workload=workload,
@@ -161,6 +162,17 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                     environment = owner.call_args.args[3]
                     self.assertEqual("/src/repo", environment["CODEX_SANDBOX_GUEST_REPO"])
                     self.assertEqual("/src/repo/nested", environment["CODEX_SANDBOX_GUEST_CWD"])
+                    self.assertEqual(["admitted-engine", "fixed-channel"],
+                                     json.loads(environment["CODEX_SANDBOX_TOOL_COMMAND"]))
+                    self.assertEqual(state.pi_tool_connector,
+                                     Path(environment["CODEX_SANDBOX_TOOL_CONNECT"]))
+                    self.assertEqual((TOOL / "sandbox-tool-connect-bound").read_bytes(),
+                                     state.pi_tool_connector.read_bytes())
+                    self.assertFalse(state.pi_tool_connector.is_relative_to(state.pi_agent_tmp))
+                    runtime.argv.assert_called_once_with([
+                        "exec", "--interactive", "worker-container", "node",
+                        "/opt/agent-tools/bin/tool-connect.mjs",
+                    ])
                 log.seek(0)
                 self.assertEqual({"[false, false, false]", "worker stderr"},
                                  set(log.read().splitlines()))

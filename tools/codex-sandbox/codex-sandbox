@@ -148,6 +148,7 @@ class State:
     skills_source: Path | None = None
     host_pi_package: Path | None = None
     pi_agent_tmp: Path | None = None
+    pi_tool_connector: Path | None = None
     pi_model_file: Path | None = None
     pi_model_session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     cd_request: Path | None = None
@@ -1971,6 +1972,24 @@ def host_pi_blocks_startup_input(home: Path) -> bool:
         return False
 
 
+def stage_tool_connector(state: State) -> dict[str, str]:
+    # Existing host-only scratch ownership: never put host-executable code in
+    # pi_agent_tmp, which is mounted writable in the guest. Children and split
+    # panes inherit this file until final attachment release runs cleanup.
+    state.pi_tool_connector = temporary_file()
+    shutil.copyfile(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect-bound",
+                    state.pi_tool_connector)
+    return {
+        "CODEX_SANDBOX_TOOL_CONNECT": str(state.pi_tool_connector),
+        # Derive the fixed worker operation from this launch's admitted runtime.
+        # Per-call connector processes must not rediscover or readmit an engine.
+        "CODEX_SANDBOX_TOOL_COMMAND": json.dumps(OUTER_RUNTIME.argv([
+            "exec", "--interactive", state.codex_container, "node",
+            "/opt/agent-tools/bin/tool-connect.mjs",
+        ])),
+    }
+
+
 def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
@@ -2032,7 +2051,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
                         if key not in {'SANDBOX_TIC_ENDPOINT', 'SANDBOX_TIC_TOKEN'}}
     host_environment.update({
         "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
-        "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
+        **stage_tool_connector(state),
         "CODEX_SANDBOX_GUEST_CWD": str(container_working_directory),
         "CODEX_SANDBOX_GUEST_REPO": str(state.container_repository),
         "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
@@ -2619,6 +2638,7 @@ def cleanup(state: State) -> bool:
         state.prepared_images, getattr(state, "proxy_reused_marker", None),
         getattr(state, "cd_request", None),
         getattr(state, "workspaces_file", None),
+        getattr(state, "pi_tool_connector", None),
     ):
         if path is not None and not keep_scratch:
             path.unlink(missing_ok=True)

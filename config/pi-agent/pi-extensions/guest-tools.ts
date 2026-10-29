@@ -23,17 +23,13 @@ type CallContext = {
   session: { id: string; file: string | null } | null;
 };
 
-function guestResourcePaths(): Record<string, string> {
-  return parsePiResourcePaths(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS);
-}
-
-export function callContext(ctx: ExtensionContext): CallContext {
+function callContext(ctx: ExtensionContext, resourcePaths: Record<string, string>): CallContext {
   const model = ctx.model;
   const id = ctx.sessionManager.getSessionId();
   const file = ctx.sessionManager.getSessionFile();
   return {
     model: model ? { provider: model.provider, modelId: model.id } : null,
-    session: id ? { id, file: file ? rewritePiResourcePaths(file, guestResourcePaths()) : null } : null,
+    session: id ? { id, file: file ? rewritePiResourcePaths(file, resourcePaths) : null } : null,
   };
 }
 
@@ -47,9 +43,7 @@ type BoundaryCall = {
   onBoundary: (metadata: BoundaryMetadata | undefined) => void;
 };
 
-export async function waitForGuestToolReady(
-  path = process.env.CODEX_SANDBOX_TOOL_READY_HOST,
-): Promise<void> {
+export async function waitForGuestToolReady(path?: string): Promise<void> {
   if (!path) return;
   const inspect = async () => {
     try {
@@ -89,7 +83,8 @@ function boundaryReply(metadata: BoundaryMetadata | undefined) {
   return metadata;
 }
 
-export function callGuest(
+function callGuest(
+  attachment: { connector?: string; container: string; command?: string },
   tool: string,
   params: Record<string, unknown>,
   context: CallContext,
@@ -98,12 +93,17 @@ export function callGuest(
   onData?: (data: Buffer) => void,
   boundary?: BoundaryCall,
 ): Promise<any> {
-  const connector = process.env.CODEX_SANDBOX_TOOL_CONNECT;
-  if (!connector || !process.env.CODEX_SANDBOX_TOOL_CONTAINER) {
+  const { connector, container, command } = attachment;
+  if (!connector) {
     return Promise.reject(new Error("guest tool attachment is unavailable"));
   }
   return new Promise((resolve, reject) => {
-    const child = spawn("python3", [connector], { stdio: ["pipe", "pipe", "pipe"] });
+    // Keep ordinary child environment current, but never select a different
+    // worker/engine halfway through this extension runtime's attachment.
+    const child = spawn("python3", [connector], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, CODEX_SANDBOX_TOOL_CONTAINER: container, CODEX_SANDBOX_TOOL_COMMAND: command },
+    });
     let pending = "";
     let errorText = "";
     let terminal: GuestFrame | undefined;
@@ -164,14 +164,38 @@ export function callGuest(
   });
 }
 
+/** Bind only launch-selected resources, once per extension initialization/reload.
+ * Model/session identity is still copied from Pi at each invocation, never here.
+ */
+export function createGuestAttachment(env: NodeJS.ProcessEnv) {
+  const container = env.CODEX_SANDBOX_TOOL_CONTAINER;
+  if (!container) return undefined;
+  const transport = {
+    container,
+    connector: env.CODEX_SANDBOX_TOOL_CONNECT,
+    command: env.CODEX_SANDBOX_TOOL_COMMAND,
+  };
+  const resourcePaths = parsePiResourcePaths(env.CODEX_SANDBOX_PI_RESOURCE_PATHS);
+  const readyPath = env.CODEX_SANDBOX_TOOL_READY_HOST;
+  return {
+    cwd: env.CODEX_SANDBOX_GUEST_CWD,
+    repository: env.CODEX_SANDBOX_GUEST_REPO,
+    previousCwd: env.CODEX_SANDBOX_PREVIOUS_CWD,
+    resourcePaths,
+    context: (ctx: ExtensionContext) => callContext(ctx, resourcePaths),
+    ready: () => waitForGuestToolReady(readyPath),
+    call: callGuest.bind(undefined, transport),
+  };
+}
+
 export default function guestTools(pi: ExtensionAPI) {
-  if (!process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
-  const cwd = process.env.CODEX_SANDBOX_GUEST_CWD;
+  const attachment = createGuestAttachment(process.env);
+  if (!attachment) return;
+  const { cwd, repository, resourcePaths, previousCwd } = attachment;
   if (!cwd) throw new Error("guest working directory is unavailable");
-  pi.on("session_start", () => waitForGuestToolReady());
+  pi.on("session_start", () => attachment.ready());
   const boundary = createBoundaryController(pi, (ctx, signal) =>
-    callGuest("commit_boundary_checkpoint", {}, callContext(ctx), signal));
-  const repository = process.env.CODEX_SANDBOX_GUEST_REPO;
+    attachment.call("commit_boundary_checkpoint", {}, attachment.context(ctx), signal));
   const sandboxContext = repository
     ? readFileSync(new URL("../../agents/sandbox-context.md", import.meta.url), "utf8")
       .replaceAll("{{repository}}", () => repository).trim()
@@ -181,7 +205,6 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!repository) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
-  const resourcePaths = guestResourcePaths();
   // The session tools run on the host. Accept paths advertised by the guest
   // view without changing transcript contents or decoding their cursors.
   pi.on("tool_call", (event) => sessionToolInputToHost(event.toolName, event.input, resourcePaths));
@@ -191,7 +214,6 @@ export default function guestTools(pi: ExtensionAPI) {
     ...(hostRepository ? [join(hostRepository, ".agents/sandbox/AGENTS.md")] : []),
     join(homedir(), ".agents/sandbox/AGENTS.md"),
   ];
-  const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
   const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
   pi.on("session_start", (event, ctx) => {
     if (event.reason !== "startup" && event.reason !== "reload") return;
@@ -236,13 +258,13 @@ export default function guestTools(pi: ExtensionAPI) {
       ...tool,
       async execute(id, params, signal, onUpdate, ctx) {
         if (tool.name !== "edit" && tool.name !== "write") {
-          return callGuest(tool.name, params as Record<string, unknown>, callContext(ctx), signal, onUpdate);
+          return attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx), signal, onUpdate);
         }
         const call = boundary.begin(ctx);
         let metadata: BoundaryMetadata | undefined;
         let successfulWrite = false;
         try {
-          const result = await callGuest(tool.name, params as Record<string, unknown>, callContext(ctx),
+          const result = await attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx),
             signal, onUpdate, undefined, {
               onBoundary(value) { metadata = value; },
             });
@@ -255,11 +277,11 @@ export default function guestTools(pi: ExtensionAPI) {
     });
   }
   pi.on("user_bash", (_event, ctx) => {
-    const context = callContext(ctx);
+    const context = attachment.context(ctx);
     return {
       operations: {
         exec: (command, _cwd, { onData, signal, timeout }) =>
-          callGuest("user_bash", { command, timeout }, context, signal, undefined, onData),
+          attachment.call("user_bash", { command, timeout }, context, signal, undefined, onData),
       },
     };
   });

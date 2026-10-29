@@ -59,6 +59,12 @@ An execution attachment binds one interactive host Pi and its ordinary children
 to a guest worker and directory. Human-created `/split` panes have separate
 attachments to that worker, not separate containers. Pi conversation files remain
 on the host.
+At startup, derive the connector operation from the admitted runtime and selected worker.
+Stage its self-contained host connector in launcher-owned host-only scratch, outside guest-writable mounts, until final attachment release.
+Each tool call opens an independent channel using that fixed operation; it does not rediscover or readmit a runtime.
+Preserve per-call cancellation and model/session snapshots, and report worker loss without replay or fallback.
+Extension reload rebinds the same launch-selected connector; `/cd` obtains a fresh attachment through ordinary startup.
+Already-running attachments that still name the live source connector retain their old launch interface until they close.
 The launcher selects the active repository and guest mounts; repository tool arguments use guest paths.
 Host-discovered shared skills are mounted at the guest skills path. Recursive project instruction includes and resource reads
 resolve in the guest view under the extension authority contract. Rewrite mapped

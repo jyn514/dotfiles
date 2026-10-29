@@ -25,7 +25,8 @@ class HostPiWrapperTest(unittest.TestCase):
             **{key: value for key, value in os.environ.items()
                if not key.startswith("CODEX_SANDBOX_")}, "HOME": str(self.home),
             "CODEX_SANDBOX_TOOL_CONTAINER": "codex-sandbox-test-worker",
-            "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/tool-connect",
+            "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/staged-tool-connect",
+            "CODEX_SANDBOX_TOOL_COMMAND": '["selected-engine", "fixed-worker-channel"]',
             "CODEX_SANDBOX_GUEST_CWD": "/src/example",
             "CODEX_SANDBOX_PI_OWNER": "/private/owner.sock",
             "CODEX_SANDBOX_PI_ATTACHMENT": "parent-attachment",
@@ -49,7 +50,8 @@ class HostPiWrapperTest(unittest.TestCase):
         native = json.loads(result.stdout)
         self.assertEqual({
             "CODEX_SANDBOX_TOOL_CONTAINER": "codex-sandbox-test-worker",
-            "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/tool-connect",
+            "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/staged-tool-connect",
+            "CODEX_SANDBOX_TOOL_COMMAND": '["selected-engine", "fixed-worker-channel"]',
             "CODEX_SANDBOX_GUEST_CWD": "/src/example",
         }, native["sandbox_environment"])
         self.assertEqual([

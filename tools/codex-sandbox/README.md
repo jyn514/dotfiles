@@ -47,6 +47,11 @@ again; use `docker context use default` to switch back to the local engine.
 A successful `/reload` restores the guest tool extension. Failed reload may
 restore host-local built-in tools and `!` commands; guest routing is a
 normal-operation guarantee, not a malicious-code security boundary.
+New launches copy the tool connector into launcher-owned, host-only scratch and bind its command to the admitted runtime and guest worker.
+Each call opens an independent channel without selecting or admitting the runtime again.
+Children and split panes inherit that staged connector; final workload cleanup removes it.
+`/reload` refreshes extensions and instructions, not the staged connector or runtime selection.
+Attachments started before command binding continue legacy discovery until they close.
 The [host extension authority contract](spec/proxy-design.typ) still requires
 admitted host handlers and protected host code; conformance remains unverified.
 **Known gap:** host extensions load from this guest-writable checkout, so the contract's host-code isolation requirement remains unmet.

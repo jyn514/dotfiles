@@ -295,10 +295,11 @@ test("guest startup waits for private worker readiness without polling", async (
 test("registered tools and human bash snapshot their own public invocation context", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-guest-metadata-"));
   // A holds its transport open while B changes the context and executes.
-  const connector = join(import.meta.dir, "fixtures/guest-tool-metadata.py");
+  const connector = join(import.meta.dir, "../sandbox-tool-connect");
   const env = {
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
     CODEX_SANDBOX_TOOL_CONNECT: connector,
+    CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify(["python3", join(import.meta.dir, "fixtures/guest-tool-metadata.py")]),
     CODEX_SANDBOX_GUEST_CWD: dir,
     CODEX_SANDBOX_GUEST_REPO: dir,
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
@@ -328,6 +329,12 @@ test("registered tools and human bash snapshot their own public invocation conte
     // Mutate the actual model object, not just the context reference.
     ctx.model.provider = "provider-b";
     ctx.model.id = "model-b";
+    // Another environment selection must not split the already-registered
+    // tools' transport, prompt paths, and per-invocation session projection.
+    process.env.CODEX_SANDBOX_TOOL_CONNECT = join(dir, "not-a-connector");
+    process.env.CODEX_SANDBOX_TOOL_CONTAINER = "another-worker";
+    process.env.CODEX_SANDBOX_TOOL_COMMAND = JSON.stringify(["/bin/false"]);
+    process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = "not-json";
     sessionId = "session-b";
     sessionFile = "/host/sessions/b.jsonl";
     const b = await tools.get("bash").execute("b", { command: "b" }, undefined, undefined, ctx);
@@ -368,6 +375,26 @@ test("registered tools and human bash snapshot their own public invocation conte
     expect((await unknown.operations.exec("unknown", dir, { onData() {} })).model).toBeNull();
     expect(process.env.PI_CALL_MODEL).toBe("stale-env");
     expect(readFileSync(env.PI_MODEL_FILE, "utf8")).toBe('{"modelId":"stale-file"}');
+
+    // Cancellation traverses the production bound connector and reaches only
+    // its exec-replaced client. A later independent channel remains usable.
+    rmSync(join(dir, "started"));
+    rmSync(join(dir, "release"));
+    const controller = new AbortController();
+    const cancelled = tools.get("bash").execute("cancelled", { command: "pause" }, controller.signal, undefined, ctx);
+    await eventually(() => existsSync(join(dir, "started")));
+    controller.abort();
+    await expect(cancelled).rejects.toThrow("guest tool cancelled");
+    expect((await tools.get("bash").execute("after-cancellation", {}, undefined, undefined, ctx)).tool).toBe("bash");
+
+    // A new owner (including /reload) binds the new selection rather than a
+    // module-import singleton. Its failed channel cannot fall back to the old.
+    process.env.CODEX_SANDBOX_TOOL_CONNECT = connector;
+    process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({ "/host/sessions": "/new/sessions" });
+    const reloaded = new Map<string, any>();
+    guestTools({ registerTool: (tool: any) => reloaded.set(tool.name, tool), on() {} } as any);
+    await expect(reloaded.get("bash").execute("new-owner", {}, undefined, undefined, ctx))
+      .rejects.toThrow("guest tool transport ended (1)");
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
