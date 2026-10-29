@@ -105,6 +105,18 @@ Keep governing requirements distinct from revisable agent choices in saved state
 Record user decisions before dependent delegation and reconcile superseded holds, questions, and worker instructions without dropping constraints that still apply.
 Do not rely on compaction to retain everything needed to resume.
 
+Before compacting a complex run, check whether authority, acceptance, ownership, or evidence applicability is becoming hard to track.
+When it is, use [delegation](../delegation/SKILL.md) to spawn a bounded archivist subagent while you can still name the uncertain points.
+Give it those points, the current objective and permitted activity, existing task-state locations, and transcript, evidence and worker references.
+Treat your account as claims to check, not the archivist's authority.
+Ask it to reconcile duplicate or conflicting status claims against original records and identify superseded instructions with their replacement sources.
+Require current dispositions, source references, and explicit unresolved contradictions, not another chronological summary or a whole-project audit.
+The archivist reconciles records; it does not grant authority, certify technical acceptance, delete original evidence, or rerun acceptance checks.
+Inspect its result and incorporate supported corrections into the existing permitted task-state surface before preparing the checkpoint.
+Do not create a parallel status ledger or treat the archivist's inference as a user decision.
+If delegation is unavailable or compaction cannot wait, preserve the uncertain claims and recovery references explicitly rather than resolving them by assumption.
+A coherent current record needs no archivist pass.
+
 Before compaction, interruption, or handoff, preserve:
 
 - the governing objective, permitted activity and effects, and protected boundaries;
