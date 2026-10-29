@@ -22,6 +22,36 @@ edit those implementations, not copies.
 Tools can still fall back to source when no compatible binary exists; tool-specific compile settings take precedence.
 `mise.lock` records platform-specific artifacts for the selected versions.
 
+## Fish startup aliases and hooks
+
+Each interactive Fish startup reads Git abbreviations directly from native Git's user-global configuration.
+This includes `~/.local/gitconfig` through the tracked Git configuration's include.
+Included files are reread on the next shell startup, including nested includes and files that were previously absent.
+No timestamp manifest or alias cache is maintained.
+Ordinary aliases remain Git-command abbreviations; `!` aliases retain their `g`-prefixed shell abbreviations.
+Git's last definition wins by original alias name, before choosing the ordinary or `g`-prefixed Fish form.
+
+The query uses an empty temporary directory and a repository-discovery ceiling.
+It clears inherited `GIT_DIR`, `GIT_WORK_TREE`, and `GIT_COMMON_DIR`.
+System configuration and injected command settings (`GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, and `GIT_CONFIG_COUNT`) are excluded.
+They cannot influence conditional includes.
+Native Git selects user-global sources, resolves includes, and retains precedence across both `~/.config/git/config` and `~/.gitconfig`.
+An explicit `GIT_CONFIG_GLOBAL` override replaces those default sources.
+Fish consumes only records marked `global` by Git.
+Using `--global` alone would select only one user file on some Git versions.
+It would still evaluate conditional includes against the starting repository.
+
+Repository-local aliases and repository-conditioned includes remain Git's responsibility, not global Fish abbreviations.
+Git's NUL-framed scope/alias records are buffered and checked before calling `abbr` directly.
+No shell code is generated or sourced for Git abbreviations.
+No matching aliases is a successful empty result.
+
+Bat compatibility settings and Atuin, Zoxide, and Direnv hooks remain in the transactional `~/.local/config/fish-startup-hooks-*.fish` cache.
+Alias changes do not rerun those producers or rewrite that cache.
+The old combined `fish-startup-*.fish` caches are no longer sourced; they are left in place.
+A hook producer failure preserves the previous hook cache.
+A Git query failure returns before applying abbreviations or refreshing hooks.
+
 ## Agent instructions
 
 Agent launchers put `libexec/agent-wrappers` on PATH.

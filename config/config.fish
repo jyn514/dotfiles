@@ -50,6 +50,64 @@ function source_init
 	or return
 end
 
+function load-global-git-abbreviations --argument-names git_command
+	# --global reads only one user file on some Git versions. Let Git read all
+	# user-global sources, with no repository, system, or command-scope inputs.
+	# An empty directory plus a ceiling also excludes repo-conditioned includes.
+	set -l neutral_directory (command mktemp -d); or return
+	set -l config_environment
+	# Keep an explicitly selected relative user config anchored before -C.
+	if set -q GIT_CONFIG_GLOBAL; and test -n "$GIT_CONFIG_GLOBAL"; and not string match -q '/*' -- "$GIT_CONFIG_GLOBAL"
+		set --append config_environment "GIT_CONFIG_GLOBAL=$PWD/$GIT_CONFIG_GLOBAL"
+	end
+	set -l aliases
+	command env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+		-u GIT_CONFIG -u GIT_CONFIG_PARAMETERS GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 \
+		"GIT_CEILING_DIRECTORIES="(path dirname -- "$neutral_directory") \
+		$config_environment "$git_command" -C "$neutral_directory" \
+		config --show-scope --includes --null --get-regexp '^alias\.' | begin
+		while read --null --local scope; and read --null --local record
+			if test "$scope" = global
+				set --append aliases "$record"
+			end
+		end
+	end
+	set -l git_status $pipestatus[1]
+	command rmdir "$neutral_directory"; or return
+	# Buffer before applying anything: failed Git output must not become abbrs.
+	if test $git_status -eq 1; and test (count $aliases) -eq 0
+		return 0
+	end
+	test $git_status -eq 0; or return $git_status
+	# Git's last definition wins by original alias name, before a leading !
+	# changes the Fish name. Otherwise losing definitions leave obsolete forms.
+	set -l names
+	set -l values
+	for record in $aliases
+		set -l fields (string split --max 1 \n -- "$record")
+		set -l name (string sub --start 7 -- "$fields[1]")
+		if set -l index (contains --index -- "$name" $names)
+			set values[$index] "$fields[2]"
+		else
+			set --append names "$name"
+			set --append values "$fields[2]"
+		end
+	end
+	for name in $names
+		set -l value "$values[1]"
+		set --erase values[1]
+		if string match -q '!*' -- "$value"
+			# string split preserves embedded/trailing newlines in substitutions.
+			set -l expansion (string split --max 1 '' -- "$value")
+			abbr --add --global "g$name" -- "$expansion[2]"
+		else
+			abbr --add --global --command git "$name" -- "$value"
+		end
+		or return
+	end
+	return 0
+end
+
 while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
 	set --erase PATH[$shim_index]
 end
@@ -537,10 +595,15 @@ end
 
 if [ -z "$old_fish" ]
 	set -l startup_generator $DOTFILES/bin/generate-fish-startup-cache
-	set -l startup_dependencies $startup_generator $DOTFILES/config/config.fish $DOTFILES/config/gitconfig
+	# Git aliases are user-global, but includes can change independently of this
+	# checkout. Read them fresh outside any repository; keep only hooks cached.
+	if set -l git_command (command --search git)
+		load-global-git-abbreviations $git_command; or return
+	end
+	set -l startup_dependencies $startup_generator $DOTFILES/config/config.fish
 	set -l startup_commands
 	set -l startup_availability
-	for startup_command in bat git atuin zoxide direnv
+	for startup_command in bat atuin zoxide direnv
 		if set -l startup_path (command --search $startup_command)
 			set --append startup_commands $startup_path
 			set --append startup_dependencies $startup_path
@@ -550,7 +613,8 @@ if [ -z "$old_fish" ]
 			set --append startup_availability 0
 		end
 	end
-	set -l startup_cache ~/.local/config/fish-startup-(string join '' $startup_availability).fish
+	# A new name avoids sourcing aliases left in the old combined cache.
+	set -l startup_cache ~/.local/config/fish-startup-hooks-(string join '' $startup_availability).fish
 	set -l startup_cache_arguments --destination $startup_cache
 	for startup_dependency in $startup_dependencies
 		set --append startup_cache_arguments --dependency $startup_dependency
@@ -559,10 +623,10 @@ if [ -z "$old_fish" ]
 	set -l startup_status $status
 	contains $startup_status 0 75; or return $startup_status
 	. $startup_cache; or return
-	if [ $startup_availability[3] = 1 ]
+	if [ $startup_availability[2] = 1 ]
 		bind -M default / _atuin_search
 	end
-	if [ $startup_availability[4] = 1 ]
+	if [ $startup_availability[3] = 1 ]
 		function cd; z $argv; end
 		complete --erase cd
 		complete cd --wraps __zoxide_z
