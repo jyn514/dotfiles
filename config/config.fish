@@ -119,11 +119,15 @@ function refresh-fish-cache
 	set -l cache_arguments $argv
 	set -l destination
 	set -l dependencies
+	set -l cache_identity
 	set -l index 1
 	while [ $index -le (count $argv) ]
 		switch $argv[$index]
 			case --destination
 				set destination $argv[(math $index + 1)]
+				set index (math $index + 1)
+			case --identity
+				set cache_identity $argv[(math $index + 1)]
 				set index (math $index + 1)
 			case --dependency
 				set --append dependencies $argv[(math $index + 1)]
@@ -135,8 +139,14 @@ function refresh-fish-cache
 	end
 	if [ -f $destination ]
 		set -l fresh 1
+		if set -q cache_identity[1]
+			read --line --local cached_header < "$destination"
+			if test "$cached_header" != "# refresh-fish-cache identity: $cache_identity"
+				set fresh 0
+			end
+		end
 		for dependency in $dependencies
-			if [ $dependency -nt $destination ]
+			if not test -e "$dependency"; or test "$dependency" -nt "$destination"
 				set fresh 0
 				break
 			end
@@ -604,9 +614,11 @@ if [ -z "$old_fish" ]
 	set -l startup_commands
 	set -l startup_availability
 	for startup_command in bat atuin zoxide direnv
-		if set -l startup_path (command --search $startup_command)
-			set --append startup_commands $startup_path
-			set --append startup_dependencies $startup_path
+		if set -l startup_path (command --search $startup_command | string collect --no-trim-newlines)
+			# Strip only the output terminator, preserving newlines in paths.
+			set startup_path (string split --right --max 1 \n -- "$startup_path")
+			set --append startup_commands "$startup_path[1]"
+			set --append startup_dependencies "$startup_path[1]"
 			set --append startup_availability 1
 		else
 			set --append startup_commands -
@@ -615,7 +627,10 @@ if [ -z "$old_fish" ]
 	end
 	# A new name avoids sourcing aliases left in the old combined cache.
 	set -l startup_cache ~/.local/config/fish-startup-hooks-(string join '' $startup_availability).fish
-	set -l startup_cache_arguments --destination $startup_cache
+	# Escape each vector element before joining: identity is one inert line,
+	# even for paths containing whitespace, quotes, or shell metacharacters.
+	set -l startup_identity (string join ' ' -- (string escape -- $startup_commands))
+	set -l startup_cache_arguments --destination $startup_cache --identity "$startup_identity"
 	for startup_dependency in $startup_dependencies
 		set --append startup_cache_arguments --dependency $startup_dependency
 	end

@@ -338,6 +338,63 @@ class FishStartupTest(unittest.TestCase):
         self.assertEqual(before[2], self.hook_calls()[:-1])
         self.assertEqual("git", self.hook_calls()[-1][0])
 
+    def appear_earlier_atuin(self) -> tuple[Path, tuple[bytes, int]]:
+        earlier = self.home / ".local/bin/atuin"
+        # Metacharacters and newlines must remain literal path data, not shell
+        # syntax or extra command-vector elements in the identity header.
+        later = self.directory / "later ' \\ $() ; #\n bin"
+        later.mkdir()
+        shadowing = self.directory / "earlier \\ ' $() ; #\r\n bin"
+        shadowing.mkdir()
+        earlier.rename(later / "atuin")
+        self.environment["PATH"] += ":" + str(shadowing) + ":" + str(later)
+        first = self.startup(self.a, "printf '%s\\n' $TEST_ATUIN")
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual("loaded\n", first.stdout)
+        cache = self.cache()
+        before = (cache.read_bytes(), cache.stat().st_mtime_ns)
+        self.tool("atuin", "print('function _atuin_search; end\\nset -g TEST_ATUIN shadowed')")
+        earlier.rename(shadowing / "atuin")
+        earlier = shadowing / "atuin"
+        os.utime(earlier, ns=(1_000_000_000, 1_000_000_000))
+        self.assertLess(earlier.stat().st_mtime_ns, before[1])
+        return earlier, before
+
+    def test_earlier_path_candidate_with_older_mtime_changes_consumed_hook(self) -> None:
+        earlier, before = self.appear_earlier_atuin()
+        result = self.startup(
+            self.b,
+            "printf 'SELECTED:'; command --search atuin; "
+            "printf 'CONSUMED:%s\\n' $TEST_ATUIN",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        # subprocess text mode normalizes CRLF in the printed path.
+        expected = f"SELECTED:{earlier}\nCONSUMED:shadowed\n".replace("\r\n", "\n")
+        self.assertEqual(expected, result.stdout)
+        self.assertNotEqual(before[0], self.cache().read_bytes())
+        self.assertEqual(8, len(self.hook_calls()))
+        warm_before = (self.cache().read_bytes(), self.cache().stat().st_mtime_ns, self.hook_calls())
+        warm = self.startup(self.a, "printf '%s\\n' $TEST_ATUIN")
+        self.assertEqual(0, warm.returncode, warm.stderr)
+        self.assertEqual("shadowed\n", warm.stdout)
+        self.assertEqual(
+            warm_before,
+            (self.cache().read_bytes(), self.cache().stat().st_mtime_ns, self.hook_calls()),
+        )
+
+    def test_failed_identity_change_preserves_old_bytes_and_mtime_then_retries(self) -> None:
+        _, before = self.appear_earlier_atuin()
+        failed = self.startup(self.b, "printf '%s\\n' $TEST_ATUIN", FAIL_ZOXIDE="24")
+        self.assertEqual(0, failed.returncode, failed.stderr)
+        self.assertIn("using previous cache", failed.stderr)
+        self.assertEqual("loaded\n", failed.stdout)
+        self.assertEqual(before, (self.cache().read_bytes(), self.cache().stat().st_mtime_ns))
+        self.assertEqual(7, len(self.hook_calls()))
+        retry = self.startup(self.a, "printf '%s\\n' $TEST_ATUIN")
+        self.assertEqual(0, retry.returncode, retry.stderr)
+        self.assertEqual("shadowed\n", retry.stdout)
+        self.assertEqual(11, len(self.hook_calls()))
+
     def test_hook_producer_failure_preserves_and_consumes_previous_hook_cache(self) -> None:
         first = self.startup(self.a)
         self.assertEqual(0, first.returncode, first.stderr)

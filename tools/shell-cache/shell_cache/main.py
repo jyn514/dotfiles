@@ -13,9 +13,10 @@ import tempfile
 STALE_CACHE = 75
 
 
-def parse_arguments(arguments: list[str]) -> tuple[Path, list[Path], list[str]] | None:
+def parse_arguments(arguments: list[str]) -> tuple[Path, list[Path], list[str], str | None] | None:
     destination: Path | None = None
     dependencies: list[Path] = []
+    identity: str | None = None
     index = 0
     while index < len(arguments):
         argument = arguments[index]
@@ -23,9 +24,15 @@ def parse_arguments(arguments: list[str]) -> tuple[Path, list[Path], list[str]] 
             command = arguments[index + 1 :]
             if destination is None or not command:
                 return None
-            return destination, dependencies, command
-        if argument not in ("--destination", "--dependency") or index + 1 >= len(arguments):
+            return destination, dependencies, command, identity
+        if argument not in ("--destination", "--dependency", "--identity") or index + 1 >= len(arguments):
             return None
+        if argument == "--identity":
+            identity = arguments[index + 1]
+            if "\n" in identity or "\r" in identity:
+                return None
+            index += 2
+            continue
         value = Path(arguments[index + 1]).expanduser()
         if argument == "--destination":
             if destination is not None:
@@ -41,8 +48,17 @@ def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def fresh(destination: Path, dependencies: list[Path]) -> bool:
+def identity_header(identity: str) -> bytes:
+    # The caller owns encoding; never interpret identity as shell syntax.
+    return ("# refresh-fish-cache identity: " + identity + "\n").encode("utf-8")
+
+
+def fresh(destination: Path, dependencies: list[Path], identity: str | None = None) -> bool:
     try:
+        if identity is not None:
+            with destination.open("rb") as cached:
+                if cached.readline() != identity_header(identity):
+                    return False
         cache_time = destination.stat().st_mtime_ns
         return all(dependency.stat().st_mtime_ns <= cache_time for dependency in dependencies)
     except OSError:
@@ -67,7 +83,9 @@ def clean_abandoned(destination: Path) -> None:
                 pass
 
 
-def refresh(destination: Path, dependencies: list[Path], command: list[str]) -> int:
+def refresh(
+    destination: Path, dependencies: list[Path], command: list[str], identity: str | None = None,
+) -> int:
     old_exists = destination.is_file()
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +100,7 @@ def refresh(destination: Path, dependencies: list[Path], command: list[str]) -> 
             return fallback(old_exists, f"could not lock cache: {error}")
 
         old_exists = destination.is_file()
-        if old_exists and fresh(destination, dependencies):
+        if old_exists and fresh(destination, dependencies, identity):
             return 0
         descriptor = -1
         pending: Path | None = None
@@ -94,6 +112,9 @@ def refresh(destination: Path, dependencies: list[Path], command: list[str]) -> 
             pending = Path(name)
             with os.fdopen(descriptor, "wb") as output:
                 descriptor = -1
+                if identity is not None:
+                    output.write(identity_header(identity))
+                    output.flush()
                 result = subprocess.run(command, check=False, stdout=output)
                 output.flush()
                 os.fsync(output.fileno())
@@ -130,9 +151,10 @@ def main(arguments: list[str]) -> int:
     parsed = parse_arguments(arguments)
     if parsed is None:
         print(
-            "usage: refresh-fish-cache --destination path [--dependency path ...] -- command ...",
+            "usage: refresh-fish-cache --destination path [--dependency path ...] "
+            "[--identity single-line-value] -- command ...",
             file=sys.stderr,
         )
         return 2
-    destination, dependencies, command = parsed
-    return refresh(destination, dependencies, command)
+    destination, dependencies, command, identity = parsed
+    return refresh(destination, dependencies, command, identity)

@@ -49,7 +49,9 @@ No matching aliases is a successful empty result.
 Bat compatibility settings and Atuin, Zoxide, and Direnv hooks remain in the transactional `~/.local/config/fish-startup-hooks-*.fish` cache.
 Alias changes do not rerun those producers or rewrite that cache.
 The old combined `fish-startup-*.fish` caches are no longer sourced; they are left in place.
-A hook producer failure preserves the previous hook cache.
+The cache records the selected hook executable paths in an inert first-line identity comment.
+A different PATH selection refreshes hooks even when availability is unchanged and the newly selected executable has an older timestamp.
+The identity and generated hooks are replaced together; a hook producer failure preserves the previous cache, including its identity, so the next startup retries.
 A Git query failure returns before applying abbreviations or refreshing hooks.
 
 ## Agent instructions
