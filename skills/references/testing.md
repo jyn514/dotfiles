@@ -68,6 +68,8 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 
 ## Failure paths and lifecycle cases
 
+- At failure boundaries, check what the real provider changes before it throws.
+  A mock that throws before mutation cannot establish post-failure state, retry, or restore behavior when the provider mutates first.
 - Test both failure directions: accepting invalid results and losing required valid results. Include representative non-special-cased inputs where general behavior is required. For bounded algorithms, test forced work separately from branching work; small fixtures must not conceal the required input-population constraint. Preserve validation and publication constraints rather than relaxing them for a passing test.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
 - State concurrency requirements as states and ordering, independently of the callbacks used to pause the fixture.
