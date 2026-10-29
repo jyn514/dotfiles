@@ -39,7 +39,16 @@ Native extension discovery first uses Node resolution from the caller's package
 root, preserving the installed extension's runtime dependency closure; bundled
 workspace source is a fallback only. Managed settings symlinks are never replaced or written through; an unresolved
 or disabled declaration instead produces an actionable warning (or strict-mode
-error). The native launch primitive's optional internal `healthHost` carries the
+error). Before each browser-requested spawn, the server rereads that declaration
+with the same public-resource checks. A broken declaration returns an immediate
+`PREFLIGHT_FAILED` / `DASHBOARD_BRIDGE_UNAVAILABLE` error naming the checked path;
+it files no spawn intents, starts no process, and arms no registration watchdog.
+Repairing the declaration therefore makes the next spawn eligible without a
+Dashboard restart. Server startup remains available in this degraded state so
+existing sessions and repair surfaces continue to work.
+
+The check applies only to Pi-backed spawns, not ACP sessions. The native launch
+primitive's optional internal `healthHost` carries the
 selected HTTP bind address through readiness checks. Extension and CLI callers
 use the existing `localDialHost` helper; bridge URLs and UDS transport are
 unchanged.

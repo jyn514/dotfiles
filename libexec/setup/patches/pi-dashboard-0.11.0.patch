@@ -1675,9 +1675,88 @@
        const controller = new AbortController();
        activeControllers.set(prompt.id, controller);
  
+--- a/packages/server/src/browser-handlers/handler-context.ts
++++ b/packages/server/src/browser-handlers/handler-context.ts
+@@ -3,6 +3,7 @@
+  * Each handler receives only what it needs via this context.
+  */
+ 
++import type { BridgeDeclarationProbeResult } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
+ import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { WebSocket } from "ws";
+ import type { DirectoryService } from "../directory-service.js";
+@@ -88,6 +89,8 @@
+    */
+   terminalAdmission?: import("../lib/route-admission.js").RouteAdmissionDeps;
+   headlessPidRegistry: HeadlessPidRegistry;
++  /** Re-read Pi's package declaration before each spawn; absent in narrow unit fixtures only. */
++  probeBridgeDeclaration?: (cwd: string) => BridgeDeclarationProbeResult;
+   pendingResumeRegistry: PendingResumeRegistry;
+   pendingDashboardSpawns?: Map<string, number>;
+   /**
 --- a/packages/server/src/browser-handlers/session-action-handler.ts
 +++ b/packages/server/src/browser-handlers/session-action-handler.ts
-@@ -963,6 +963,9 @@
+@@ -21,15 +21,15 @@
+ } from "../rpc-keeper/dispatch-reload.js";
+ import { createBranchedSessionFile } from "../session/session-file-reader.js";
+ import { decideResume } from "../session/session-origin.js";
+-import { type AcpGuardContext, endedPromptHint, refuseIfAcp, UNSUPPORTED_FOR_ACP, unsupportedMessage } from "./acp-guard.js";
+ import { preflightAcpSpawn, spawnAcpSession, validateAcpAgent } from "../spawn-process/acp-spawn.js";
+ import { keeperOptsFromSpawnResult } from "../spawn-process/headless-pid-registry.js";
++import { getKeeperManager, spawnPiSession } from "../spawn-process/process-manager.js";
+ import { createSessionTerminator } from "../spawn-process/session-terminator.js";
+-import { getKeeperManager, spawnPiSession } from "../spawn-process/process-manager.js";
+ import { appendSpawnFailure } from "../spawn-process/spawn-failure-log.js";
+ import { preflightSpawn } from "../spawn-process/spawn-preflight.js";
+ import { deriveSpawnCorrelationTtlMs } from "../spawn-process/spawn-recovery-window.js";
+ import { armSpawnWatchdog, getSpawnRegisterWatchdog } from "../spawn-process/spawn-register-watchdog.js";
++import { type AcpGuardContext, endedPromptHint, refuseIfAcp, UNSUPPORTED_FOR_ACP, unsupportedMessage } from "./acp-guard.js";
+ import type { BrowserHandlerContext } from "./handler-context.js";
+ import { isBareReloadCommand } from "./session-action-helpers.js";
+ import { choiceToSpawnOptions, resolveResumeChoice, validateSpawnChoice } from "./spawn-choice.js";
+@@ -793,6 +793,41 @@
+   const config = loadConfig();
+   const strategy = config.spawnStrategy ?? "tmux";
+ 
++  // A spawned Pi process cannot register when its declared Dashboard bridge is
++  // broken. Re-check on every attempt so repairing the package link works
++  // without a server restart, and fail before filing any one-shot intents.
++  const bridgeProbe = msg.agent === undefined ? ctx.probeBridgeDeclaration?.(msg.cwd) : undefined;
++  if (bridgeProbe && !bridgeProbe.ok) {
++    const reasons = [{
++      code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++      message: bridgeProbe.message,
++    }];
++    sendTo(ws, {
++      type: "spawn_result",
++      cwd: msg.cwd,
++      success: false,
++      message: bridgeProbe.message,
++      requestId: msg.requestId,
++    });
++    sendTo(ws, {
++      type: "spawn_error",
++      cwd: msg.cwd,
++      strategy,
++      message: bridgeProbe.message,
++      code: "PREFLIGHT_FAILED",
++      reasons,
++    });
++    appendSpawnFailure({
++      ts: new Date().toISOString(),
++      cwd: msg.cwd,
++      strategy,
++      code: "PREFLIGHT_FAILED",
++      message: bridgeProbe.message,
++      reasons,
++    });
++    return;
++  }
++
+   // §6.2 / D11: stamp the session owner ONLY through this trusted road, and
+   // only while the resolver is active AND the socket carries a human principal.
+   // Pre-mint the spawn token so the owner is filed against it BEFORE the spawn
+@@ -963,6 +998,9 @@
          timeoutMs: config.spawnRegisterTimeoutMs,
          ws,
          spawnToken: spawnResult.spawnToken,
@@ -1785,12 +1864,32 @@
          sessionManager.update(sessionId, { currentTool: null });
 --- a/packages/server/src/pairing/browser-gateway.ts
 +++ b/packages/server/src/pairing/browser-gateway.ts
-@@ -1,3 +1,4 @@
+@@ -9,6 +9,7 @@
+   ServerToBrowserMessage,
+ } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { NotifyLogEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
 +import { isWebOnlyDisabledCommand, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
- /**
-  * Browser Gateway - WebSocket handler for browser client connections.
-  * Runs on the HTTP server port via upgrade handling.
-@@ -2154,6 +2155,17 @@
+ import { WebSocket, WebSocketServer } from "ws";
+ import { getLastBindReachability } from "../auth/bind-reachability-service.js";
+ import { type DirectoryService, hasOpenSpecDir, hasOpenSpecRoot } from "../directory-service.js";
+@@ -661,6 +662,8 @@
+    *  `wireEvents`. Absent → subscribe never waits on a bridge replay.
+    *  See change: fix-large-session-resume-replay. */
+   replayState?: ReplayState,
++  /** Live, read-only Pi bridge declaration check for the spawn preflight. */
++  probeBridgeDeclaration?: (cwd: string) => import("@blackbelt-technology/pi-dashboard-shared/bridge-register.js").BridgeDeclarationProbeResult,
+ ): BrowserGateway {
+   const wss = new WebSocketServer({ noServer: true });
+ 
+@@ -2043,6 +2046,7 @@
+               }),
+           },
+           headlessPidRegistry, pendingResumeRegistry, pendingDashboardSpawns,
++          probeBridgeDeclaration,
+           pendingAttachRegistry,
+           pendingInitialPromptRegistry,
+           pendingResumeIntents,
+@@ -2154,6 +2158,17 @@
            if (!allowed) return;
          }
  
@@ -1937,17 +2036,15 @@
    return runOnConfigSaveChain(run);
 --- a/packages/server/src/server.ts
 +++ b/packages/server/src/server.ts
-@@ -1,14 +1,18 @@
-+import { isWebOnlyDisabledRoute, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
- /**
+@@ -2,20 +2,23 @@
   * Dashboard HTTP + WebSocket server.
   */
  
 +import { once } from "node:events";
-+import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
-+import type { Socket } from "node:net";
  import { readFileSync, realpathSync } from "node:fs";
++import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
  import { createRequire } from "node:module";
++import type { Socket } from "node:net";
  import os from "node:os";
  import path from "node:path";
  import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -1957,7 +2054,15 @@
  import {
    createMcpClientConfigService,
    createRealConfigIO,
-@@ -25,11 +29,6 @@
+ } from "@blackbelt-technology/pi-dashboard-mcp-core";
+ import type { ExitIntent } from "@blackbelt-technology/pi-dashboard-shared/boot-state.js";
+ import { isRecoveryAllowed } from "@blackbelt-technology/pi-dashboard-shared/boot-state.js";
+-import { findBundledExtension, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
++import { findBundledExtension, probeBridgeDeclaration, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
+ import type { PackageOperationCompleteMessage, ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { AuthConfig, DashboardConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+ import { CONFIG_DIR, CONFIG_FILE, getPluginConfig as getPluginConfigFromFile, loadConfig, resolvePublicBaseUrls, writeConfigFileSecure } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+@@ -25,13 +28,9 @@
  import type { HostAction, HostResource, Principal } from "@blackbelt-technology/pi-dashboard-shared/identity.js";
  import { advertiseDashboard, createBrowser, type DashboardBrowser, type DiscoveredServer, resolveAdvertisedAddresses, stopAdvertising } from "@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js";
  import { DEFAULT_MEMORY_LIMITS } from "@blackbelt-technology/pi-dashboard-shared/memory-limits.js";
@@ -1968,7 +2073,10 @@
 -} from "@blackbelt-technology/pi-dashboard-shared/plugin-bridge-register.js";
  import type { PluginRequestMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
  import { RECOVERY_REATTACH_GRACE_MS, RECOVERY_SHUTDOWN_WINDOW_MS } from "@blackbelt-technology/pi-dashboard-shared/recovery-timing.js";
++import { isWebOnlyDisabledRoute, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
  import {
+   deriveEffectiveSource,
+   deriveLocalIdentity,
 @@ -422,6 +421,8 @@
     * port stays loopback. See change: configurable-bind-host.
     */
@@ -2000,7 +2108,25 @@
  export async function createServer(config: ServerConfig): Promise<DashboardServer> {
    // Decide the network trust mode ONCE, before any hook is installed and before
    // the server listens (so no operator write can race it). Never re-derived
-@@ -778,6 +764,24 @@
+@@ -669,10 +655,15 @@
+   const extPath = activeExtension?.dir ?? findBundledExtension(path.resolve(__serverDir, "..", "..", ".."));
+   if (extPath) {
+     registerBridgeExtension(extPath);
+-    console.log(`[dashboard] Bridge extension registered: ${extPath}`);
++    const initialBridgeProbe = probeBridgeDeclaration(extPath);
++    if (initialBridgeProbe.ok) {
++      console.log(`[dashboard] Bridge extension registered: ${extPath}`);
++    } else {
++      console.warn(`[dashboard] Bridge extension unavailable: ${initialBridgeProbe.message}`);
++    }
+   } else {
+     console.warn(`[dashboard] Bridge extension NOT found (searched from ${__serverDir}). ` +
+-      `Sessions will spawn but never connect to the gateway. ` +
++      `New Pi session spawns will be refused until it is available. ` +
+       `Manually add the extension path to ~/.pi/agent/settings.json packages[] as a workaround.`);
+   }
+ 
+@@ -778,6 +769,24 @@
    let httpBoundAt = 0;
    // Same contract for the optional TLS listener (its own bind, its own floor). See change: add-tailscale-cert-tls.
    let tlsBoundAt = 0;
@@ -2025,7 +2151,16 @@
    // Strict local-proof context (`requireLocalProof`, live config read). Threaded to
    // every genuinely-local admission site. See change: harden-trust-and-credential-boundaries (D2).
    // The proof cookie is bound to the listener's port; `0` until `listen` runs (inject() in tests).
-@@ -1699,31 +1703,9 @@
+@@ -1453,7 +1462,7 @@
+   const browseRoots = () => (confineRemoteBrowse ? resolveBrowseRoots(browseRootSources) : Promise.resolve(null));
+ 
+   const replayState = createReplayState(config.replayTimings);
+-  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry, pendingInitialPromptRegistry, pendingResumeIntents, pendingClientCorrelations, pendingWorktreeBaseRegistry, metaPersistence, fitWorkerPool, config.maxReplayEvents, config.replayWindowMode, sessionArchive, pendingArchiveIntents, remoteTranscriptStore, pendingPrincipalOwnerRegistry, identityEnforced, undefined, questionStore, browseRoots, replayState);
++  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry, pendingInitialPromptRegistry, pendingResumeIntents, pendingClientCorrelations, pendingWorktreeBaseRegistry, metaPersistence, fitWorkerPool, config.maxReplayEvents, config.replayWindowMode, sessionArchive, pendingArchiveIntents, remoteTranscriptStore, pendingPrincipalOwnerRegistry, identityEnforced, undefined, questionStore, browseRoots, replayState, () => probeBridgeDeclaration(extPath));
+   // Transition-only feed behind `GET /api/events/stream` (registry frames + question changes).
+   // See change: add-agent-event-stream.
+   const agentEventHub = createAgentEventHub({
+@@ -1699,31 +1708,9 @@
      listPersistedGrants: () => listAccessGrants().filter((g) => g.scope === "project"),
      live: piTrustLive,
    });
@@ -2060,7 +2195,7 @@
    const hostProjectTrust = await loadHostProjectTrustService();
    pluginServiceRegistry.set("host.isProjectTrusted", hostProjectTrust.isProjectTrusted);
    pluginServiceRegistry.set("host.projectTrustSource", hostProjectTrust.projectTrustSource);
-@@ -2001,6 +1983,12 @@
+@@ -2001,6 +1988,12 @@
      maxParamLength: 1024,
    });
  
@@ -2073,7 +2208,7 @@
    // Optional native TLS listener (off by default): a second `https.Server` that
    // dispatches into THIS Fastify instance — one route table, one gate chain, one
    // upgrade switch, two transports. Reconciled after `listen`; failure-isolated.
-@@ -2040,7 +2028,7 @@
+@@ -2040,7 +2033,7 @@
    fastify.addHook("onRequest", async (request) => {
      localCredential.stamp(request.raw, {
        kind: "http",
@@ -2082,7 +2217,7 @@
      });
    });
  
-@@ -2210,7 +2198,6 @@
+@@ -2210,7 +2203,6 @@
      isRefused,
    });
    yoloForLiveTrust = yolo;
@@ -2090,7 +2225,7 @@
    const yoloBoot = yolo.activateFromEnv(process.env[YOLO_ENV]);
    if (yoloBoot.ok) {
      const s = yoloBoot.session;
-@@ -2237,7 +2224,6 @@
+@@ -2237,7 +2229,6 @@
    browserGateway.registerHandler("grant_response", (msg) => {
      grantCoordinator
        .onResponse(msg)
@@ -2098,7 +2233,7 @@
        .catch((err: unknown) => {
          console.error(`[access-grant] grant_response failed: ${(err as Error)?.message ?? err}`);
        });
-@@ -2249,13 +2235,7 @@
+@@ -2249,13 +2240,7 @@
      deps: {
        now: Date.now,
        grants: createDefaultProvisioningGrantStore(),
@@ -2113,7 +2248,7 @@
        ladder: {
          killSwitch: () => isGrantPromptKilled(),
          promptEnabled: () => loadConfig().accessGrants?.promptEnabled === true,
-@@ -3902,6 +3882,7 @@
+@@ -3902,6 +3887,7 @@
              try { await secondFastify.close(); } catch { /* ignore */ }
              secondFastify = null;
            }
@@ -2121,7 +2256,7 @@
            try { await tlsListener.stop(); } catch { /* ignore */ }
            try { await fastify.close(); } catch { /* ignore */ }
          },
-@@ -4680,15 +4661,7 @@
+@@ -4680,15 +4666,7 @@
              },
            )),
          };
@@ -2138,7 +2273,7 @@
        } catch (err) {
          console.error('[plugin-loader] Unexpected error during pre-listen load:', err);
        } finally {
-@@ -4696,18 +4669,16 @@
+@@ -4696,18 +4674,16 @@
          routeOwners.end();
        }
  
@@ -2161,7 +2296,7 @@
          });
          // Ephemeral single-use ticket (D11) bound to the requested WS route
          // scope. The one cheap read BEFORE the first gate — the host-admission
-@@ -5070,6 +5041,31 @@
+@@ -5070,6 +5046,31 @@
        await listenWithProofFloor(fastify, (at) => (httpBoundAt = at), { port: config.port, host: config.host });
        const bound = fastify.server.address();
        if (bound && typeof bound === "object") httpListenPort = bound.port;
@@ -2193,7 +2328,7 @@
        writePid(process.pid);
        console.log(`Dashboard server running at http://${config.host}:${config.port}`);
        // Optional TLS listener: only after Fastify is ready and the main listen resolved.
-@@ -5263,72 +5259,7 @@
+@@ -5263,72 +5264,7 @@
            },
          );
  
@@ -2267,7 +2402,7 @@
  
        // Log-only health scan of settings.json packages[] (never mutates, never
        // throws). Not awaited: cold listConfiguredPackages can take seconds on
-@@ -5566,6 +5497,7 @@
+@@ -5566,6 +5502,7 @@
          try { await secondFastify.close(); } catch { /* ignore */ }
          secondFastify = null;
        }
@@ -2662,10 +2797,15 @@
      });
 --- a/packages/shared/src/bridge-register.ts
 +++ b/packages/shared/src/bridge-register.ts
-@@ -11,6 +11,7 @@
+@@ -8,9 +8,10 @@
+  * packages/electron/src/lib/bridge-register.ts.
+  */
+ import fs from "node:fs";
++import { createRequire } from "node:module";
++import os from "node:os";
  import path from "node:path";
- import os from "node:os";
- import { createRequire } from "node:module";
+-import os from "node:os";
+-import { createRequire } from "node:module";
 +import { minimatch } from "minimatch";
  
  /**
@@ -2711,7 +2851,7 @@
   *
   * Returns null if both strategies fail, the resolved directory doesn't
   * have a package.json, or the path is under /tmp/.mount_* (AppImage).
-@@ -89,21 +92,77 @@
+@@ -89,21 +92,99 @@
    baseDir: string,
    deps: FindExtensionDeps = {},
  ): string | null {
@@ -2743,59 +2883,147 @@
 + * Compare public pi.extensions resources by realpath, not installation location/name.
 + * This intentionally does not resolve remote sources or install another package.
 + */
-+function declaresBridge(entry: unknown, extensionPath: string, settingsDir: string, home: string): boolean {
++type BridgeDeclarationState = "enabled" | "disabled" | "unmentioned" | "unrelated";
++
++function bridgeDeclarationState(entry: unknown, extensionPath: string, settingsDir: string, home: string): BridgeDeclarationState {
 +  const declaration = typeof entry === "string" ? { source: entry } : entry as {
 +    source?: unknown; extensions?: unknown; autoload?: unknown;
 +  } | null;
-+  if (!declaration || typeof declaration.source !== "string") return false;
++  if (!declaration || typeof declaration.source !== "string") return "unrelated";
 +  const source = declaration.source;
-+  if (!(source.startsWith(".") || source.startsWith("/") || source.startsWith("~/") || /^[a-zA-Z]:[/\\]/.test(source))) return false;
++  if (!(source.startsWith(".") || source.startsWith("/") || source.startsWith("~/") || /^[a-zA-Z]:[/\\]/.test(source))) return "unrelated";
 +  const root = path.resolve(settingsDir, source.startsWith("~/") ? path.join(home, source.slice(2)) : source);
 +  try {
 +    const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 +    const target = JSON.parse(fs.readFileSync(path.join(extensionPath, "package.json"), "utf8"));
 +    const targetEntries = target.pi?.extensions;
 +    const entries = manifest.pi?.extensions;
-+    if (!Array.isArray(entries) || !Array.isArray(targetEntries)) return false;
++    if (!Array.isArray(entries) || !Array.isArray(targetEntries)) return "unrelated";
 +    const targets = targetEntries.filter((p: unknown): p is string => typeof p === "string")
 +      .map((p: string) => fs.realpathSync(path.resolve(extensionPath, p)));
-+    return entries.some((resource: unknown) => {
-+      if (typeof resource !== "string") return false;
++    for (const resource of entries) {
++      if (typeof resource !== "string") continue;
 +      const file = path.resolve(root, resource);
-+      if (!targets.includes(fs.realpathSync(file))) return false;
++      if (!targets.includes(fs.realpathSync(file))) continue;
 +      const filters = declaration.extensions;
-+      if (filters === undefined) return declaration.autoload !== false;
-+      if (!Array.isArray(filters) || !filters.length || !filters.every(p => typeof p === "string")) return false;
++      if (filters === undefined) return declaration.autoload === false ? "unmentioned" : "enabled";
++      if (!Array.isArray(filters) || !filters.every(p => typeof p === "string")) return "disabled";
++      if (!filters.length) return declaration.autoload === false ? "unmentioned" : "disabled";
 +      const rel = path.relative(root, file).replaceAll(path.sep, "/");
 +      const absolute = file.replaceAll(path.sep, "/");
 +      const exact = (p: string) => [rel, absolute].includes(p.replace(/^\.\//, ""));
 +      const matches = (p: string) => [rel, absolute, path.basename(file)].some(f => minimatch(f, p));
 +      if (declaration.autoload === false) {
 +        // Native Pi delta filters are ordered, not the grouped autoload policy.
-+        let enabled = false;
++        let state: BridgeDeclarationState = "unmentioned";
 +        for (const p of filters) {
 +          const marked = /^[!+\-]/.test(p);
-+          const target = marked ? p.slice(1) : p;
-+          if ((p.startsWith("+") || p.startsWith("-")) ? exact(target) : matches(target)) {
-+            enabled = !p.startsWith("-") && !p.startsWith("!");
++          const pattern = marked ? p.slice(1) : p;
++          if ((p.startsWith("+") || p.startsWith("-")) ? exact(pattern) : matches(pattern)) {
++            state = p.startsWith("-") || p.startsWith("!") ? "disabled" : "enabled";
 +          }
 +        }
-+        return enabled;
++        return state;
 +      }
 +      const includes = filters.filter(p => !/^[!+\-]/.test(p));
 +      let enabled = !includes.length || includes.some(matches);
 +      if (filters.some(p => p.startsWith("!") && matches(p.slice(1)))) enabled = false;
 +      if (filters.some(p => p.startsWith("+") && exact(p.slice(1)))) enabled = true;
 +      if (filters.some(p => p.startsWith("-") && exact(p.slice(1)))) enabled = false;
-+      return enabled;
-+    });
++      return enabled ? "enabled" : "disabled";
++    }
++    return "unrelated";
 +  } catch {
-+    return false;
++    return "unrelated";
 +  }
++}
++
++function declaresBridge(entry: unknown, extensionPath: string, settingsDir: string, home: string): boolean {
++  return bridgeDeclarationState(entry, extensionPath, settingsDir, home) === "enabled";
++}
++
++export type BridgeDeclarationProbeResult =
++  | { ok: true; settingsPath: string; declarationPath: string }
++  | { ok: false; settingsPath: string; declarationPath?: string; message: string };
++
++function declaredLocalRoot(entry: unknown, settingsDir: string, home: string): string | null {
++  const declaration = typeof entry === "string" ? { source: entry } : entry as { source?: unknown } | null;
++  if (!declaration || typeof declaration.source !== "string") return null;
++  const source = declaration.source;
++  if (!(source.startsWith(".") || source.startsWith("/") || source.startsWith("~/") || /^[a-zA-Z]:[/\\]/.test(source))) {
++    return null;
++  }
++  return path.resolve(settingsDir, source.startsWith("~/") ? path.join(home, source.slice(2)) : source);
  }
  
  /** Optional overrides for testing / multi-HOME scenarios. */
-@@ -151,9 +210,26 @@
+@@ -122,6 +203,65 @@
+ }
+ 
+ /**
++ * Re-read Pi settings and verify that its public package declarations load the
++ * selected Dashboard bridge. This is deliberately read-only and uncached so a
++ * repaired declaration takes effect on the next spawn without restarting the
++ * Dashboard server.
++ */
++export function probeBridgeDeclaration(
++  extensionPath: string | null,
++  opts: Pick<BridgeRegisterOptions, "homedir"> = {},
++): BridgeDeclarationProbeResult {
++  const home = opts.homedir
++    ?? process.env.HOME
++    ?? process.env.USERPROFILE
++    ?? os.homedir();
++  const settingsPath = path.join(home, ".pi", "agent", "settings.json");
++  const settingsDir = path.dirname(settingsPath);
++  if (!extensionPath) {
++    return {
++      ok: false,
++      settingsPath,
++      message: `Dashboard bridge package is unavailable; Pi settings ${settingsPath} cannot load it.`,
++    };
++  }
++
++  let settings: Record<string, unknown>;
++  try {
++    settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
++  } catch {
++    return {
++      ok: false,
++      settingsPath,
++      message: `Cannot read Pi settings ${settingsPath} to verify the Dashboard bridge.`,
++    };
++  }
++
++  const packages = Array.isArray(settings.packages) ? settings.packages : [];
++  for (const entry of packages) {
++    if (!declaresBridge(entry, extensionPath, settingsDir, home)) continue;
++    return {
++      ok: true,
++      settingsPath,
++      declarationPath: declaredLocalRoot(entry, settingsDir, home) ?? extensionPath,
++    };
++  }
++
++  const localRoots = packages
++    .map((entry) => declaredLocalRoot(entry, settingsDir, home))
++    .filter((root): root is string => root !== null);
++  const declarationPath = localRoots.find((root) => /pi[-_ ]?dashboard/i.test(root));
++  return {
++    ok: false,
++    settingsPath,
++    ...(declarationPath ? { declarationPath } : {}),
++    message: declarationPath
++      ? `Pi settings ${settingsPath} do not load the Dashboard bridge from ${declarationPath}. Repair that package declaration and try again.`
++      : `Pi settings ${settingsPath} do not declare the Dashboard bridge package. Repair the package declaration and try again.`,
++  };
++}
++
++/**
+  * Register an extension path in pi's settings.json packages array.
+  *
+  * Non-destructive cleanup: only removes dashboard-related paths
+@@ -151,9 +291,26 @@
        const raw = fs.readFileSync(settingsPath, "utf-8").trim();
        if (raw) settings = JSON.parse(raw);
      }
