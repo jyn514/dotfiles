@@ -112,7 +112,10 @@ Apply this check to the forecast's own reasoning as well as to actors within the
 ### 4. Investigate only uncertainties that could change the answer
 
 Research an unresolved link when resolving it could change a route, conclusion, or useful next observation.
-When a consequential mechanism remains hypothetical in your account, check for concrete examples before treating its existence as unresolved.
+Check whether a consequential mechanism or proposed warning sign already exists when its current status could change the assessment.
+Do this before treating it as hypothetical, absent, or solely future evidence.
+Revise the assessment using those findings, then decide whether the evidence supports numerical probabilities under §5.
+If the check cannot be completed, state that limit rather than treating uninspected evidence as absent.
 Investigate only when the answer could change the conclusion.
 Distinguish “not found in the inspected evidence” from “not yet happening.”
 Choose the cheapest relevant evidence: measured behavior, a physical constraint, deployment records, or a historical comparison.
