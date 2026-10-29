@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 import sys
 import unittest
 from pathlib import Path
@@ -84,6 +85,40 @@ def raw(snapshot_value=None, qmk_version=None):
             "combos": revision["combos"],
         },
     }
+
+
+class PullTests(unittest.TestCase):
+    def test_pull_cli_saves_selected_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.json"
+            previous = snapshot()
+            oryx_sync.write_snapshot(path, previous)
+            selected = snapshot()
+            selected["layout"]["title"] = "updated remotely"
+            client = mock.Mock()
+            client.execute.return_value = {"layout": raw(selected)}
+            with mock.patch.object(oryx_sync, "DEFAULT_SNAPSHOT", path), mock.patch.object(
+                oryx_sync, "GraphQLClient", return_value=client
+            ), mock.patch("builtins.print") as output:
+                self.assertEqual(oryx_sync.main(["--pull"]), 0)
+            self.assertEqual(oryx_sync.load_snapshot(path), selected)
+            output.assert_called_once_with(f"updated {path}")
+            client.execute.assert_called_once()
+
+    def test_pull_rejects_invalid_layout_before_replacing_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.json"
+            previous = snapshot()
+            oryx_sync.write_snapshot(path, previous)
+            invalid = raw()
+            invalid["revision"]["layers"][0]["keys"] = []
+            client = mock.Mock()
+            client.execute.return_value = {"layout": invalid}
+            with mock.patch.object(oryx_sync, "DEFAULT_SNAPSHOT", path), mock.patch.object(
+                oryx_sync, "GraphQLClient", return_value=client
+            ):
+                self.assertEqual(oryx_sync.main(["--pull"]), 2)
+            self.assertEqual(oryx_sync.load_snapshot(path), previous)
 
 
 class CanonicalLayoutTests(unittest.TestCase):

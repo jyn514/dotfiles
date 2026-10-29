@@ -63,7 +63,10 @@ tools/moonlander/flash-moonlander
 V=1 COMPILE_ONLY=1 tools/moonlander/flash-moonlander
 ```
 
-On first use, the command creates a ZSA QMK checkout on branch `firmware25`. It caches the Oryx source archive under `~/.local/share/oryx/`, patches it with `tools/moonlander/keymap-additions.c`, and replaces the matching keymap under `$QMK_HOME/keyboards/zsa/moonlander/keymaps/`. The initial pull still changes `tools/moonlander/moonlander-layout.json`.
+On first use, the command creates a ZSA QMK checkout on branch `firmware25`.
+It caches the Oryx source archive under `~/.local/share/oryx/`, patches it with `tools/moonlander/keymap-additions.c`, and replaces the matching keymap under `$QMK_HOME/keyboards/zsa/moonlander/keymaps/`.
+The initial pull still changes `tools/moonlander/moonlander-layout.json`.
+The saved snapshot and firmware source archive come from the same selected Oryx revision; the build does not look up `latest` again.
 
 Flashing replaces the keyboard firmware. Use `COMPILE_ONLY=1` whenever hardware changes are not intended.
 

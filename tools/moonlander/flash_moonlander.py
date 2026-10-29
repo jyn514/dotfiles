@@ -86,11 +86,10 @@ def identifier(value: object, field: str) -> str:
     return value
 
 
-def latest_revision(client: oryx_sync.GraphQLClient) -> tuple[str, str]:
+def pull_revision(client: oryx_sync.GraphQLClient) -> tuple[str, str]:
     snapshot = oryx_sync.load_snapshot(SNAPSHOT)
-    oryx_sync.validate_snapshot(snapshot)
-    _, raw = oryx_sync.fetch_snapshot(client, snapshot)
-    layout = identifier(snapshot["layout"]["hashId"], "layout ID")
+    raw = oryx_sync.pull_snapshot(client, snapshot, SNAPSHOT)
+    layout = identifier(raw["hashId"], "layout ID")
     revision = identifier(raw.get("revision", {}).get("hashId"), "revision ID")
     return layout, revision
 
@@ -252,11 +251,9 @@ def flash(arguments: list[str], client: oryx_sync.GraphQLClient | None = None) -
         print("usage: flash-moonlander", file=sys.stderr)
         return 2
 
-    require_success(
-        run([str(TOOL_DIR / "sync-moonlander"), "--pull"], stdout=subprocess.DEVNULL),
-        "layout synchronization",
+    layout, revision = pull_revision(
+        client or oryx_sync.GraphQLClient(token=os.environ.get("ORYX_TOKEN"))
     )
-    layout, revision = latest_revision(client or oryx_sync.GraphQLClient())
 
     home = Path.home()
     qmk_home = Path(os.environ.get("QMK_HOME", home / "src/qmk_firmware"))
@@ -306,6 +303,10 @@ def main(arguments: list[str]) -> int:
     except CommandFailure as error:
         print(f"flash-moonlander: {error}", file=sys.stderr)
         return error.status
-    except (FlashError, oryx_sync.SyncError) as error:
+    except oryx_sync.SyncError as error:
+        # Preserve the pull CLI's error status after removing its subprocess.
+        print(f"flash-moonlander: {error}", file=sys.stderr)
+        return 2
+    except FlashError as error:
         print(f"flash-moonlander: {error}", file=sys.stderr)
         return 1

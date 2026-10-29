@@ -235,6 +235,14 @@ def fetch_snapshot(client: GraphQLClient, expected: dict[str, Any]) -> tuple[dic
     return current, raw
 
 
+def pull_snapshot(client: GraphQLClient, expected: dict[str, Any], path: Path) -> dict[str, Any]:
+    """Save the selected latest layout and return that same server revision."""
+    current, raw = fetch_snapshot(client, expected)
+    validate_snapshot(current)
+    write_snapshot(path, current)
+    return raw
+
+
 def prepare_apply(
     client: GraphQLClient,
     expected: dict[str, Any],
@@ -517,12 +525,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply and not token:
             raise SyncError("--apply requires ORYX_TOKEN")
         client = GraphQLClient(token=token)
-        current, raw = fetch_snapshot(client, expected)
         if args.pull:
-            validate_snapshot(current)
-            write_snapshot(args.snapshot, current)
+            pull_snapshot(client, expected, args.snapshot)
             print(f"updated {args.snapshot}")
             return 0
+        current, raw = fetch_snapshot(client, expected)
         difference = snapshot_diff(expected, current)
         if not difference:
             print("Oryx matches the repository snapshot")

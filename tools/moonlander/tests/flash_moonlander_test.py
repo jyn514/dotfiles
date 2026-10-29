@@ -1,3 +1,4 @@
+import copy
 import io
 import os
 from pathlib import Path
@@ -36,6 +37,33 @@ def archive_bytes(root="zsa_moonlander_test_source", keymap=None):
         archive.writestr(f"{root}/rules.mk", "")
         archive.writestr(f"{root}/config.h", "")
     return output.getvalue()
+
+
+def oryx_layout():
+    return {
+        "hashId": "layout",
+        "title": "selected",
+        "geometry": "moonlander",
+        "privacy": False,
+        "tags": [],
+        "revision": {
+            "hashId": "revision-a",
+            "model": "mk1",
+            "config": None,
+            "swatch": None,
+            "navigators": None,
+            "combos": [],
+            "layers": [
+                {
+                    "position": 0,
+                    "title": "base",
+                    "color": None,
+                    "automouse": False,
+                    "keys": [{"tap": {"code": "KC_A"}} for _ in range(72)],
+                }
+            ],
+        },
+    }
 
 
 class ArchiveTests(unittest.TestCase):
@@ -84,6 +112,117 @@ class ArchiveTests(unittest.TestCase):
 
 
 class FlashTests(unittest.TestCase):
+    def test_pull_and_build_share_one_revision_even_if_latest_changes(self):
+        first = oryx_layout()
+        second = copy.deepcopy(first)
+        second["revision"]["hashId"] = "revision-b"
+        second["revision"]["layers"][0]["keys"][0] = {"tap": {"code": "KC_B"}}
+        client = mock.Mock()
+        client.execute.side_effect = [{"layout": first}, {"layout": second}]
+        sync = flash_moonlander.oryx_sync
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            snapshot = home / "snapshot.json"
+            previous = sync.canonical_layout(first)
+            previous["layout"]["title"] = "previous snapshot"
+            sync.write_snapshot(snapshot, previous)
+            qmk_home = home / "qmk"
+            keymaps = qmk_home / "keyboards/zsa/moonlander/keymaps"
+            keymaps.mkdir(parents=True)
+            cache = home / ".local/share/oryx"
+            cache.mkdir(parents=True)
+            for revision in ("revision-a", "revision-b"):
+                (cache / f"{revision}.zip").write_bytes(
+                    archive_bytes(keymap=keymap_source() + f"// {revision}\n")
+                )
+            calls = []
+
+            def fake_run(arguments, **kwargs):
+                calls.append(arguments)
+                selected = arguments[arguments.index("-km") + 1]
+                self.assertIn(
+                    expected["revision"]["hashId"],
+                    (keymaps / selected / "keymap.c").read_text(),
+                )
+                self.assertEqual(sync.load_snapshot(snapshot), sync.canonical_layout(expected))
+                return 0
+
+            with mock.patch.dict(os.environ, {
+                "HOME": str(home), "QMK_HOME": str(qmk_home),
+                "ORYX_TOKEN": "fixture-token",
+            }, clear=True), mock.patch.object(
+                flash_moonlander, "SNAPSHOT", snapshot
+            ), mock.patch.object(
+                sync, "GraphQLClient", return_value=client
+            ) as client_factory, mock.patch.object(
+                flash_moonlander, "qmk_prefix", return_value=["qmk"]
+            ), mock.patch.object(flash_moonlander, "run", side_effect=fake_run):
+                for count, expected in enumerate((first, second), start=1):
+                    with self.subTest(revision=expected["revision"]["hashId"]):
+                        calls.clear()
+                        self.assertEqual(flash_moonlander.main([]), 0)
+                        self.assertEqual([call[1] for call in calls], ["compile", "flash"])
+                        self.assertEqual(
+                            [call[call.index("-km") + 1] for call in calls],
+                            [f"layout-{expected['revision']['hashId']}"] * 2,
+                        )
+                        self.assertEqual(client.execute.call_count, count)
+                        client_factory.assert_called_with(token="fixture-token")
+
+    def test_invalid_oryx_identifiers_do_not_start_qmk(self):
+        sync = flash_moonlander.oryx_sync
+        for field in ("layout", "revision"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary:
+                raw = oryx_layout()
+                if field == "layout":
+                    raw["hashId"] = "../layout"
+                else:
+                    raw["revision"]["hashId"] = "../revision"
+                path = Path(temporary) / "snapshot.json"
+                sync.write_snapshot(path, sync.canonical_layout(raw))
+                client = mock.Mock()
+                client.execute.return_value = {"layout": raw}
+                with mock.patch.object(flash_moonlander, "SNAPSHOT", path), mock.patch.object(
+                    sync, "GraphQLClient", return_value=client
+                ), mock.patch.object(flash_moonlander, "run") as run:
+                    self.assertEqual(flash_moonlander.main([]), 1)
+                run.assert_not_called()
+
+    def test_pull_request_failure_preserves_status_and_does_not_start_qmk(self):
+        sync = flash_moonlander.oryx_sync
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.json"
+            previous = sync.canonical_layout(oryx_layout())
+            sync.write_snapshot(path, previous)
+            client = mock.Mock()
+            client.execute.side_effect = sync.SyncError("fixture request failure")
+            with mock.patch.object(flash_moonlander, "SNAPSHOT", path), mock.patch.object(
+                sync, "GraphQLClient", return_value=client
+            ), mock.patch.object(flash_moonlander, "run") as run:
+                self.assertEqual(flash_moonlander.main([]), 2)
+            run.assert_not_called()
+            self.assertEqual(sync.load_snapshot(path), previous)
+
+    def test_pull_write_failure_preserves_snapshot_and_does_not_start_qmk(self):
+        sync = flash_moonlander.oryx_sync
+        raw = oryx_layout()
+        client = mock.Mock()
+        client.execute.return_value = {"layout": raw}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "snapshot.json"
+            previous = sync.canonical_layout(raw)
+            previous["layout"]["title"] = "previous snapshot"
+            sync.write_snapshot(path, previous)
+            with mock.patch.object(flash_moonlander, "SNAPSHOT", path), mock.patch.object(
+                sync, "GraphQLClient", return_value=client
+            ), mock.patch.object(
+                Path, "replace", side_effect=OSError("fixture write failure")
+            ), mock.patch.object(flash_moonlander, "run") as run:
+                self.assertEqual(flash_moonlander.main([]), 2)
+            run.assert_not_called()
+            self.assertEqual(sync.load_snapshot(path), previous)
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
     def test_compile_only_installs_patched_source_and_compiles(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
@@ -108,7 +247,7 @@ class FlashTests(unittest.TestCase):
                 "COMPILE_ONLY": "1",
             }
             with mock.patch.dict(os.environ, environment, clear=True), mock.patch.object(
-                flash_moonlander, "latest_revision", return_value=("layout", "revision")
+                flash_moonlander, "pull_revision", return_value=("layout", "revision")
             ), mock.patch.object(
                 flash_moonlander, "ensure_archive", return_value=archive
             ), mock.patch.object(
@@ -116,12 +255,9 @@ class FlashTests(unittest.TestCase):
             ), mock.patch.object(flash_moonlander, "run", side_effect=fake_run):
                 self.assertEqual(flash_moonlander.flash([]), 0)
 
-            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(calls), 1)
             self.assertEqual(
-                calls[0][0], [str(TOOL_DIR / "sync-moonlander"), "--pull"]
-            )
-            self.assertEqual(
-                calls[1][0],
+                calls[0][0],
                 ["qmk", "compile", "-kb", "zsa/moonlander/reva", "-km", "layout-revision"],
             )
             self.assertFalse((destination / "old").exists())
@@ -144,20 +280,19 @@ class FlashTests(unittest.TestCase):
             marker.write_text("still here")
             archive = home / "source.zip"
             archive.write_bytes(archive_bytes())
-            statuses = iter((0, 9))
 
             with mock.patch.dict(
                 os.environ,
                 {"HOME": str(home), "QMK_HOME": str(qmk_home)},
                 clear=True,
             ), mock.patch.object(
-                flash_moonlander, "latest_revision", return_value=("layout", "revision")
+                flash_moonlander, "pull_revision", return_value=("layout", "revision")
             ), mock.patch.object(
                 flash_moonlander, "ensure_archive", return_value=archive
             ), mock.patch.object(
                 flash_moonlander, "qmk_prefix", return_value=["qmk"]
             ), mock.patch.object(
-                flash_moonlander, "run", side_effect=lambda *args, **kwargs: next(statuses)
+                flash_moonlander, "run", return_value=9
             ):
                 with self.assertRaises(flash_moonlander.CommandFailure):
                     flash_moonlander.flash([])
@@ -182,7 +317,7 @@ class FlashTests(unittest.TestCase):
                 {"HOME": str(home), "QMK_HOME": str(qmk_home)},
                 clear=True,
             ), mock.patch.object(
-                flash_moonlander, "latest_revision", return_value=("layout", "revision")
+                flash_moonlander, "pull_revision", return_value=("layout", "revision")
             ), mock.patch.object(
                 flash_moonlander, "ensure_archive", return_value=archive
             ), mock.patch.object(
@@ -194,7 +329,11 @@ class FlashTests(unittest.TestCase):
             self.assertEqual(marker.read_text(), "still here")
 
     def test_command_failure_status_is_preserved(self):
-        with mock.patch.object(flash_moonlander, "run", return_value=23):
+        with mock.patch.object(
+            flash_moonlander, "pull_revision", return_value=("layout", "revision")
+        ), mock.patch.object(Path, "is_dir", return_value=False), mock.patch.object(
+            flash_moonlander, "run", return_value=23
+        ):
             self.assertEqual(flash_moonlander.main([]), 23)
 
 
