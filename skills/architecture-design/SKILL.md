@@ -1,6 +1,6 @@
 ---
 name: architecture-design
-description: "Design, assess, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, routine local edits with settled boundaries, or current-change review."
+description: "Design, assess, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Use also when authoring or revising a design/specification requires choosing an approach or introducing or changing guarantees, supported cases, or failure behavior, even when the request is framed as updating documentation. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, recording already-settled decisions, prose-only edits, routine local edits with settled boundaries, or current-change review."
 ---
 
 # Architecture Design
@@ -86,7 +86,7 @@ Before extending a tool to handle edge cases, ask if you can narrow the requirem
 Minimize features: add no feature or configurable dimension without an explicit requirement. Keep unspecified and adjacent policy fixed; do what was asked, no more.
 
 Require explicit input when omission could select the wrong identity, target, scope, or high-consequence action.
-Otherwise prefer safe defaults rather than forcing the runtime user to make every decision.
+Otherwise choose sensible defaults that best satisfy the requirements; unspecified details are delegated decisions.
 
 ## Procedure
 
