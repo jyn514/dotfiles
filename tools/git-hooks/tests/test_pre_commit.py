@@ -210,6 +210,75 @@ class PreCommitTest(unittest.TestCase):
             self.assertIn(b"Failed to xml parse", checker_failure.stdout)
             self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
 
+    def test_symlink_only_changes_do_not_check_unchanged_regular_files(self) -> None:
+        for executable in (False, True):
+            with self.subTest(unchanged_file_executable=executable):
+                with tempfile.TemporaryDirectory() as temporary:
+                    repository = Path(temporary) / "repository"
+                    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+                    subprocess.run(
+                        ["git", "-C", str(repository), "config", "user.email", "test@example.com"],
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "-C", str(repository), "config", "user.name", "Test"],
+                        check=True,
+                    )
+                    unchanged = repository / "unchanged"
+                    unchanged.write_text("#!/bin/sh\n" if executable else "content\n")
+                    unchanged.chmod(0o755 if executable else 0o644)
+                    subprocess.run(["git", "-C", str(repository), "add", "unchanged"], check=True)
+                    subprocess.run(["git", "-C", str(repository), "commit", "-qm", "base"], check=True)
+                    # Both staged links resolve within the partial snapshot, with
+                    # no regular files: this isolates empty checker dispatch from
+                    # the separate missing unchanged-target snapshot problem.
+                    (repository / "directory-target").symlink_to(".")
+                    (repository / "directory-link").symlink_to("directory-target")
+                    subprocess.run(
+                        ["git", "-C", str(repository), "add", "directory-target", "directory-link"],
+                        check=True,
+                    )
+
+                    result = subprocess.run(
+                        [str(ROOT / "config/githooks/pre-commit")],
+                        cwd=repository,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=os.environ | {"TMPDIR": temporary},
+                        check=False,
+                    )
+
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
+
+    def test_nonempty_regular_file_selection_still_checks_shebang_modes(self) -> None:
+        for executable in (False, True):
+            with self.subTest(staged_file_executable=executable):
+                with tempfile.TemporaryDirectory() as temporary:
+                    repository = Path(temporary) / "repository"
+                    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+                    staged = repository / "staged"
+                    staged.write_text("content\n" if executable else "#!/bin/sh\n")
+                    staged.chmod(0o755 if executable else 0o644)
+                    subprocess.run(["git", "-C", str(repository), "add", "staged"], check=True)
+
+                    result = subprocess.run(
+                        [str(ROOT / "config/githooks/pre-commit")],
+                        cwd=repository,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=os.environ | {"TMPDIR": temporary},
+                        check=False,
+                    )
+
+                    self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                    expected = (
+                        b"Files marked executable but have no (or invalid) shebang:"
+                        if executable else b"has a shebang but is not marked executable!"
+                    )
+                    self.assertIn(expected, result.stdout + result.stderr)
+                    self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
+
     def test_linked_worktree_uses_its_index_and_common_hook_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

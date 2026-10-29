@@ -237,8 +237,17 @@ def main(_arguments: list[str], *, hook_directory: Path) -> int:
                     (b"pre_commit_hooks/check_symlinks.py", links, True),
                     (b"pre_commit_hooks/destroyed_symlinks.py", files, True),
                 ]
+                # The mode checks pass their paths to git ls-files; an empty
+                # selection would inspect the whole index, not zero staged files.
                 checks.extend(
-                    (f"pre_commit_hooks/check_{name}.py".encode(), files, True)
+                    (
+                        f"pre_commit_hooks/check_{name}.py".encode(),
+                        files,
+                        name not in (
+                            "executables_have_shebangs",
+                            "shebang_scripts_are_executable",
+                        ),
+                    )
                     for name in GENERAL_CHECKS
                 )
                 checks.extend(
