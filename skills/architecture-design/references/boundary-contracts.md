@@ -14,8 +14,14 @@ For coupled-worker assignments, use [delegation's shared-contract check](../../d
    Where calls overlap or results arrive late, state the invariant and how conflicting or stale updates are ordered or rejected, including ownership transfer.
 2. Identify where side effects are permitted and which effects form one publication.
    State the commit or visibility point and what observers may see before and after it; name any partial visibility intentionally allowed.
+   For interactive changes, compare workflow separately from authority.
+   State where interaction occurs, which application receives input, and any changes in focus or interruption behavior.
+   A narrower authority boundary does not make a different workflow equivalent; identify which interactions must remain unchanged.
 3. Identify authoritative raw representations and every derived, normalized, serialized, or displayed projection.
    Validate before a projection can discard distinctions needed by later checks.
+   When layered inputs define overrides, resolve effective values by their source identities first.
+   Then translate the winning values into consumer effects, even when that translation changes their shape or names.
+   Otherwise a losing definition can leave effects that the winning projection no longer replaces.
 4. Identify object identity independently of names and ambient state: filesystem identity, selected revision, provider, platform, and configuration scope where applicable.
    At trust crossings, state whose authority permits the effect and where it is enforced, including alternate entry points.
 5. Identify lifecycle states, invalid transitions, deadlines, and cancellation owners.

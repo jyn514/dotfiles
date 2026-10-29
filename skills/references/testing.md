@@ -43,6 +43,9 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
   Exercise the binding through the subprocess or protocol boundary where the resource is actually used, when one exists.
   Lookup-count assertions alone do not establish correct resource selection or freshness.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
+- When overrides can change output shape or identity, test those transitions as well as same-form value changes.
+  Where the contract requires replacement, verify that winning effects appear and obsolete effects from losing definitions are absent.
+  For example, switching an alias between a command abbreviation and a differently named shell abbreviation must not leave both forms.
 - Start integration testing with one small workflow through the normal production entrypoint and a fresh disposable fixture.
   Reuse automatic build and artifact selection when the entrypoint already provides it.
   Do not ask the tester to reconstruct private cache paths or pass manual selection flags instead.
