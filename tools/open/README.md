@@ -8,6 +8,11 @@ The `open` tool owns the repository's command-line file dispatch. Its public nam
 | `hx-hax TARGET` | Opens a file in an existing Helix or Neovim tmux pane, or creates one. |
 | `editor-hax TARGET` | Executes the configured terminal editor directly. |
 
+Diagnostic file locations passed to `editor-hax` or `hx-hax`, such as `file:///path/to/file:12` or `file://localhost/path/to/file:12`, refer to local files.
+Diagnostic parsing rejects other file-URI authorities rather than silently opening the same path on the local machine.
+Existing literal filesystem paths still take precedence over diagnostic parsing.
+Ordinary `open file://…` dispatch continues to pass the URI unchanged to the desktop opener.
+
 On macOS, command dispatch and desktop defaults cooperate but are not the same mechanism. See [macOS file associations](macos-file-associations.md) for the Launch Services model, repository ownership boundaries, and failure modes.
 
 ## Manage desktop defaults

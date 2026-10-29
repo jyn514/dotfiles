@@ -25,6 +25,10 @@ TRACEBACK_RE = re.compile(r'''^File ["'](.+?)["'], line ([1-9][0-9]*)''')
 LINE_WORD_RE = re.compile(r"^(.+?) line ([1-9][0-9]*):?$")
 
 
+class InvalidPathspec(ValueError):
+    """A diagnostic location cannot be interpreted as a local file."""
+
+
 def cmdexists(command: str) -> bool:
     return shutil.which(command) is not None
 
@@ -74,6 +78,8 @@ def split_line(value: str) -> list[str]:
     file = parts[0]
     parsed = urlsplit(file)
     if parsed.scheme.lower() == "file" and parsed.path != file:
+        if parsed.netloc.lower() not in ("", "localhost"):
+            raise InvalidPathspec(f"unsupported file URI authority: {parsed.netloc!r}")
         file = unquote(parsed.path)
 
     file = expand_tilde(file)
@@ -446,4 +452,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except InvalidPathspec as error:
+        print(f"{Path(sys.argv[0]).name}: {error}", file=sys.stderr)
+        raise SystemExit(2)

@@ -7,6 +7,7 @@ import importlib.machinery
 import importlib.util
 import os
 import argparse
+from contextlib import chdir
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,72 @@ class OpenScriptTest(unittest.TestCase):
             module.split_line(f"file://{quote(str(target), safe='/')}:4"),
             [self.real(target), "4"],
         )
+
+    def test_editor_commands_reject_nonlocal_file_uri_authorities(self) -> None:
+        marker = self.root / "launched"
+        fakes = self.root / "fakes"
+        fakes.mkdir()
+        for name in ("editor", "tmux", "osascript"):
+            executable = fakes / name
+            executable.write_bytes(
+                (Path(__file__).parent / "fixtures/record-launch.sh").read_bytes()
+            )
+            executable.chmod(0o755)
+        environment = {
+            **os.environ,
+            "REAL_EDITOR": str(fakes / "editor"),
+            "DOTFILES_TEST_LAUNCH_MARKER": str(marker),
+            "PATH": f"{fakes}{os.pathsep}{os.environ['PATH']}",
+        }
+        environment.pop("DISPLAY", None)
+        environment.pop("WINDOWID", None)
+        for command in ("editor-hax", "hx-hax"):
+            entrypoint = self.root / command
+            entrypoint.symlink_to(IMPLEMENTATION)
+            for authority in ("other-machine", "localhost:22", "user@localhost"):
+                with self.subTest(command=command, authority=authority):
+                    result = subprocess.run(
+                        [str(entrypoint), f"file://{authority}/etc/hosts:3"],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn("unsupported file URI authority", result.stderr)
+                    self.assertIn(authority, result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertFalse(marker.exists(), "editor/desktop effect was launched")
+
+    def test_diagnostic_file_uris_accept_only_local_authorities(self) -> None:
+        module = self.load_open_module()
+        target = self.root / "space name.txt"
+        for authority in ("", "localhost", "LOCALHOST"):
+            with self.subTest(authority=authority):
+                self.assertEqual(
+                    module.split_pathspec(f"file://{authority}{quote(str(target))}:4:2"),
+                    [self.real(target), "4", "2"],
+                )
+
+    def test_existing_literal_file_uri_path_wins_over_authority_parsing(self) -> None:
+        module = self.load_open_module()
+        # A relative filesystem name can resemble a URI; existence wins.
+        target = self.root / "file:" / "other-machine" / "note.txt:3"
+        target.parent.mkdir(parents=True)
+        target.write_text("tea\n", encoding="utf-8")
+        with chdir(self.root):
+            self.assertEqual(
+                module.split_pathspec("file://other-machine/note.txt:3"),
+                [self.real(target)],
+            )
+
+    def test_remote_file_uri_through_open_is_delegated_unchanged(self) -> None:
+        module = self.load_open_module()
+        target = "file://other-machine/etc/hosts:3"
+        with mock.patch.object(module, "os_open", return_value=0) as os_open:
+            self.assertEqual(module.xdgopen([target]), 0)
+        os_open.assert_called_once_with([target])
 
     def test_join_line_for_nvim_and_kak(self) -> None:
         nvim_module = self.load_open_module()
