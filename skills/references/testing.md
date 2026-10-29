@@ -46,6 +46,8 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
   Lookup-count assertions alone do not establish correct resource selection or freshness.
 - For content-freshness guarantees, replace a resource while retaining its path or selector and any metadata used as a proxy for content.
   Include feasible equal-size, equal-time replacements and check the content delivered to the consumer, not just cache invalidation counts.
+- For discovery caches, add a previously absent higher-priority candidate without changing the old selected resource.
+  Where the contract requires rediscovery, check that the new selection reaches the consumer even when its timestamp is older than the cache.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
 - When overrides can change output shape or identity, test those transitions as well as same-form value changes.
   Where the contract requires replacement, verify that winning effects appear and obsolete effects from losing definitions are absent.
