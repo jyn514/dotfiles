@@ -87,9 +87,13 @@ def main(arguments: list[str]) -> int:
     if not confirmed(packages, assume_yes):
         return 0
 
+    # Pip recognizes archive paths before named requirements. Canonical project
+    # names preserve distribution identity without filename suffixes or paths;
+    # leave the original spellings above for the user's confirmation.
+    requirements = sorted({re.sub(r"[-_.]+", "-", name).lower() for name in packages})
     try:
         result = subprocess.run(
-            [pip, "install", "-U", *forwarded, *packages],
+            [pip, "install", "-U", *forwarded, *requirements],
             check=False,
         )
     except OSError as error:

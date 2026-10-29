@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,7 @@ class PipUpgradeAllTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=values,
+            cwd=self.directory,
             check=False,
         )
 
@@ -70,13 +72,82 @@ class PipUpgradeAllTest(unittest.TestCase):
                     "--index-url",
                     "https://example.invalid/simple",
                     "alpha",
-                    "Zope.Interface",
+                    "zope-interface",
                 ],
             ],
             self.recorded_calls(),
         )
         self.assertIn(b"Packages to upgrade:\n  alpha\n  Zope.Interface\n", result.stderr)
         self.assertIn(b"Upgrade 2 packages? [y/N] ", result.stderr)
+
+    def test_install_canonicalizes_and_deduplicates_without_changing_confirmation(self) -> None:
+        self.pip()
+        names = ["demo.tar.gz", "Demo_Tar_Gz", "demo-tar-gz"]
+
+        result = self.run_command(
+            "--index-url", "https://example.invalid/simple",
+            reply=b"y\n",
+            environment={"PIP_LIST": json.dumps([{"name": name} for name in names])},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            ["install", "-U", "--index-url", "https://example.invalid/simple", "demo-tar-gz"],
+            self.recorded_calls()[1],
+        )
+        for name in names:
+            self.assertIn(f"  {name}\n".encode(), result.stderr)
+        self.assertIn(b"Upgrade 3 packages? [y/N] ", result.stderr)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("pip"), "native pip parser unavailable in test interpreter"
+    )
+    def test_native_parser_keeps_archive_names_in_requirement_namespace(self) -> None:
+        self.pip()
+        (self.directory / "demo.tar.gz").write_bytes(b"inert parser-only archive fixture")
+        project = self.directory / "demo-tar-gz"
+        project.mkdir()
+        (project / "setup.py").write_text("raise AssertionError('must never execute')\n")
+        (project / "pyproject.toml").write_text(
+            '[build-system]\nrequires = []\nbuild-backend = "never_execute"\n'
+        )
+        result = self.run_command(
+            "--yes", environment={"PIP_LIST": '[{"name":"demo.tar.gz"}]'}
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        arguments = self.recorded_calls()[1][2:]
+        probe = subprocess.run(
+            [
+                sys.executable, "-c",
+                "import json, sys\n"
+                "from pip._internal.req.constructors import install_req_from_line\n"
+                "def parse(value):\n"
+                "    req = install_req_from_line(value)\n"
+                "    return {\n"
+                "        'name': req.req.name if req.req is not None else None,\n"
+                "        'link': str(req.link) if req.link is not None else None,\n"
+                "        'specifier': str(req.specifier) if req.req is not None else None,\n"
+                "        'prereleases': req.specifier.prereleases if req.req is not None else None,\n"
+                "    }\n"
+                "print(json.dumps([parse(value) for value in sys.argv[1:]]))\n",
+                "demo.tar.gz", "./demo-tar-gz", *arguments,
+            ],
+            cwd=self.directory,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, probe.returncode, probe.stderr)
+        archive, directory, *requirements = json.loads(probe.stdout)
+        # Controls prove these exact fixtures are recognized as filesystem inputs.
+        self.assertEqual((self.directory / "demo.tar.gz").as_uri(), archive["link"])
+        self.assertIsNone(archive["name"])
+        self.assertEqual(project.as_uri(), directory["link"])
+        self.assertIsNone(directory["name"])
+        self.assertEqual(
+            [{"name": "demo-tar-gz", "link": None, "specifier": "", "prereleases": None}],
+            requirements,
+        )
 
     def test_rejection_and_end_of_input_do_not_mutate(self) -> None:
         self.pip()
@@ -98,7 +169,7 @@ class PipUpgradeAllTest(unittest.TestCase):
         self.assertEqual(
             [
                 ["list", "--format=json"],
-                ["install", "-U", "--yes", "alpha", "Zope.Interface"],
+                ["install", "-U", "--yes", "alpha", "zope-interface"],
             ],
             self.recorded_calls(),
         )
