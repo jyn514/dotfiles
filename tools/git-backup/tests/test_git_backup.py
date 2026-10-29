@@ -73,6 +73,88 @@ class GitBackupTests(unittest.TestCase):
             (extracted / "master/file with spaces.txt").read_text(),
         )
 
+    def test_explicit_repository_wins_over_inherited_repository_environment(self) -> None:
+        expected_head = subprocess.check_output(
+            ["git", "-C", self.repository, "rev-parse", "HEAD"]
+        ).strip()
+        cases = {
+            "git-dir": {"GIT_DIR": ".git"},
+            "common-dir": {"GIT_COMMON_DIR": ".git"},
+            "object-directory": {"GIT_OBJECT_DIRECTORY": ".git/objects"},
+            "work-tree": {"GIT_WORK_TREE": "."},
+            "index-file": {"GIT_INDEX_FILE": ".git/index"},
+            "alternate-objects": {"GIT_ALTERNATE_OBJECT_DIRECTORIES": ".git/objects"},
+            "repository-paths": {
+                "GIT_DIR": ".git",
+                "GIT_COMMON_DIR": ".git",
+                "GIT_WORK_TREE": ".",
+                "GIT_INDEX_FILE": ".git/index",
+                "GIT_OBJECT_DIRECTORY": ".git/objects",
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": ".git/objects",
+            },
+        }
+        for name, selectors in cases.items():
+            with self.subTest(name=name):
+                other = self.directory / f"other repository {name}"
+                subprocess.run(["git", "init", "-q", "-b", "other", other], check=True)
+                subprocess.run(["git", "-C", other, "config", "user.name", "Test"], check=True)
+                subprocess.run(
+                    ["git", "-C", other, "config", "user.email", "test@example.com"], check=True
+                )
+                (other / "file with spaces.txt").write_text("other repository contents\n")
+                subprocess.run(["git", "-C", other, "add", "--all"], check=True)
+                subprocess.run(["git", "-C", other, "commit", "-qm", "other"], check=True)
+                other_files = {
+                    path: path.read_bytes()
+                    for path in (other / ".git/index", other / ".git/config")
+                }
+                other_head = subprocess.check_output(["git", "-C", other, "rev-parse", "HEAD"])
+                output = self.directory / name
+                environment = dict(os.environ)
+                environment.update({key: str(other / suffix) for key, suffix in selectors.items()})
+                result = self.run_command(
+                    self.repository.as_uri(), str(output), environment=environment
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                extracted = self.directory / f"extracted-{name}"
+                extracted.mkdir()
+                subprocess.run(
+                    ["tar", "xf", f"{output}.tar", "-C", extracted], check=True
+                )
+                (contents,) = extracted.iterdir()
+                (bundle,) = contents.glob("*.bundle")
+                heads = subprocess.check_output(
+                    ["git", "bundle", "list-heads", bundle]
+                ).splitlines()
+                self.assertIn(expected_head + b" HEAD", heads)
+                self.assertTrue(all(line.split()[0] == expected_head for line in heads))
+                subprocess.run(
+                    ["tar", "xf", contents / "master.tar.xz", "-C", extracted], check=True
+                )
+                self.assertEqual(
+                    "backup contents\n", (extracted / "master/file with spaces.txt").read_text()
+                )
+                self.assertEqual(
+                    other_head, subprocess.check_output(["git", "-C", other, "rev-parse", "HEAD"])
+                )
+                for path, original in other_files.items():
+                    self.assertEqual(original, path.read_bytes())
+
+    def test_inherited_git_configuration_still_controls_local_transport(self) -> None:
+        output = self.directory / "denied"
+        environment = dict(
+            os.environ,
+            GIT_CONFIG_COUNT="1",
+            GIT_CONFIG_KEY_0="protocol.file.allow",
+            GIT_CONFIG_VALUE_0="never",
+        )
+        result = self.run_command(
+            str(self.repository), str(output), environment=environment
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(b"transport 'file' not allowed", result.stderr)
+        self.assertFalse(Path(f"{output}.tar").exists())
+
     def test_refuses_to_overwrite_an_existing_archive_before_cloning(self) -> None:
         output = self.directory / "existing"
         archive = Path(f"{output}.tar")

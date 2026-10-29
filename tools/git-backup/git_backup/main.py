@@ -7,18 +7,45 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+
+
+# Repository paths and discovery context from `git rev-parse --local-env-vars`.
+# These belong to the caller's repository, not the explicit backup source or
+# temporary clones. Keep configuration (including GIT_CONFIG_*), authentication,
+# transport, and revision-view preferences such as GIT_NO_REPLACE_OBJECTS.
+REPOSITORY_ENVIRONMENT = frozenset(
+    {
+        "GIT_DIR",
+        "GIT_COMMON_DIR",
+        "GIT_WORK_TREE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_GRAFT_FILE",
+        "GIT_SHALLOW_FILE",
+        "GIT_PREFIX",
+    }
+)
 
 
 def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def run(arguments: Sequence[bytes], *, cwd: bytes, output: int | None = None) -> int:
+def run(
+    arguments: Sequence[bytes],
+    *,
+    cwd: bytes,
+    output: int | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> int:
     try:
         result = subprocess.run(
             arguments,
             cwd=cwd,
+            env=environment,
             check=False,
             stdout=output,
             stderr=output,
@@ -81,6 +108,9 @@ def backup(repository: bytes, destination: bytes) -> int:
         print(f"ERROR: backup file {os.fsdecode(destination)!r} already exists.", file=sys.stderr)
         return 1
 
+    environment = {
+        key: value for key, value in os.environ.items() if key not in REPOSITORY_ENVIRONMENT
+    }
     with tempfile.TemporaryDirectory(prefix="git-backup.") as temporary_text:
         temporary = os.fsencode(temporary_text)
 
@@ -88,6 +118,7 @@ def backup(repository: bytes, destination: bytes) -> int:
         status = run(
             [b"git", b"clone", b"--quiet", b"--mirror", b"--bare", repository],
             cwd=temporary,
+            environment=environment,
         )
         if status:
             return fail_step(status)
@@ -111,6 +142,7 @@ def backup(repository: bytes, destination: bytes) -> int:
                 [b"git", b"bundle", b"create", bundle, b"--all"],
                 cwd=os.path.join(temporary, mirror),
                 output=output.fileno(),
+                environment=environment,
             )
         if status:
             return fail_step(status, log)
@@ -118,7 +150,11 @@ def backup(repository: bytes, destination: bytes) -> int:
 
         progress("archiving default branch")
         checkout = os.path.join(contents, b"master")
-        status = run([b"git", b"clone", b"--quiet", bundle, checkout], cwd=contents)
+        status = run(
+            [b"git", b"clone", b"--quiet", bundle, checkout],
+            cwd=contents,
+            environment=environment,
+        )
         if status:
             return fail_step(status)
         shutil.rmtree(os.path.join(checkout, b".git"))
