@@ -28,6 +28,9 @@ If no relevant record is found or history is unavailable, state that limit; do n
 Use `jj-workflow` when file history is needed to locate or explain the change.
 
 A missed instruction alone does not establish a guidance problem.
+A clear requirement can still benefit from a more explicit execution order or decision check.
+Identify what the proposed revision changes at the failed decision point;
+do not assume either that rewording will improve compliance or that existing clarity makes improvement impossible.
 Correct an isolated miss without invoking this workflow merely to redesign the instruction.
 Use failure analysis here when evidence points to ambiguous or conflicting guidance, bad routing, or a missing decision rule.
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
