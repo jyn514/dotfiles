@@ -82,6 +82,35 @@ class ReconnectTest(unittest.TestCase):
         self.assertTrue(first.cancelled)
         self.engine.reset_machine.assert_called_once_with()
 
+    def test_superseded_callbacks_cannot_reset_or_clear_current_timer(self):
+        write(self.path, DeviceFingerprint(1, 2))
+        for fail_cancel in (False, True):
+            for old_first in (False, True):
+                with self.subTest(fail_cancel=fail_cancel, old_first=old_first):
+                    FakeTimer.fail_cancel = fail_cancel
+                    self.engine.reset_mock()
+                    watcher = self.extension()
+                    with mock.patch.object(extension, "usb", self.usb), mock.patch.object(
+                        extension, "config_path", return_value=self.path
+                    ), mock.patch.object(extension.log, "warning") as warning:
+                        watcher.start()
+                        watcher._connected(Device(1, 2))
+                        old_timer = FakeTimer.instances[-1]
+                        watcher._connected(Device(1, 2))
+                        current_timer = FakeTimer.instances[-1]
+                        self.assertTrue(current_timer.started)
+                        self.assertEqual(warning.call_count, int(fail_cancel))
+                        if old_first:
+                            old_timer.fire()
+                            self.engine.reset_machine.assert_not_called()
+                            self.assertIs(watcher._timer, current_timer)
+                        current_timer.fire()
+                        self.engine.reset_machine.assert_called_once_with()
+                        self.assertIsNone(watcher._timer)
+                        old_timer.fire()
+                        self.engine.reset_machine.assert_called_once_with()
+                        self.assertIsNone(watcher._timer)
+
     def test_stop_invalidates_pending_timer(self):
         write(self.path, DeviceFingerprint(1, 2))
         watcher = self.extension()

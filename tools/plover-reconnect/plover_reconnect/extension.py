@@ -77,6 +77,9 @@ class Extension:
         with self._lock:
             if not self._started:
                 return
+            # Cancellation cannot revoke a callback already waiting for this lock.
+            # Invalidate superseded work before attempting to cancel it.
+            self._generation += 1
             generation = self._generation
             if self._timer is not None:
                 try:
