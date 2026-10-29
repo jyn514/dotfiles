@@ -107,6 +107,17 @@ For an existing subsystem, start with the affected specification, implementation
 Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.
 For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 For adapters and proxies, inspect the native interface and any existing analogous adapter before deciding what to forward, restrict, or replace.
+When a repeated operation constructs a client, runtime, or adapter, trace its constructors and factories through to external effects.
+Identify repeated resource selection and admission checks, including configuration reads, process launches, and network requests.
+Check whether an existing owner has already selected or admitted that resource before proposing another discovery path.
+
+For a proposed resource binding, name its owner, lifetime, and replacement event, such as a new request, attachment, or configuration reload.
+Include executable code as well as configuration; a fixed path does not bind the contents later loaded from it.
+Check actual producer and consumer deployment lifetimes rather than assuming a shared checkout makes their updates atomic.
+Separate resource selection from admission checks and observations of mutable state.
+Reuse a selection only for its established lifetime; do not remove fresh checks merely because they share the discovery path.
+Check which values must remain dynamic within that lifetime, including caller identity, credentials, and resource contents.
+
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 

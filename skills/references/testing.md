@@ -11,6 +11,9 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 ## Execution and case coverage
 
 - Follow the [shared test isolation constraints](~/.agents/shared.md#before-running-tests) when running tests or checking regeneration.
+  When a test launches a production entrypoint, inspect inherited inputs that select files, sockets, services, or credentials.
+  Explicitly replace or remove those inputs unless the test intentionally supplies an owned disposable resource.
+  A private HOME does not redirect explicit destinations; preserve inherited inputs the test deliberately needs.
 - Register automated suites with the repository's top-level test command, either by default or through a documented opt-in mode. Verify that the command discovers and executes them; a focused invocation alone does not prove reachability. Report missing prerequisites and skips distinctly from passing checks.
 - Use property tests when generators express the input space better than enumerated examples. When combinations or action sequences exceed a practical hand-written matrix, use bounded generated tests with requirement-derived or consumer-validated oracles. Record failing inputs for replay and reduce them to small regressions when practical. Use [property-based-testing](../property-based-testing/SKILL.md) for property-specific generator design and review.
 - Verify that executed generated cases contain the declared input classes and selected interactions, including after filtering or deduplication. Do not infer this from generator code alone. Include required cases explicitly when random generation cannot reliably exercise them; this check does not require an exhaustive cross-product.
@@ -34,6 +37,11 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 ## Consumer and integration boundaries
 
 - Validate the test oracle against the consumer's actual behavior. A mock accepting generated Docker arguments does not establish that Docker can mount them. Check equivalence and cardinality when relevant: distinct occurrences, objects, refs, paths, or owners must not collapse because normalized text or fingerprints match. If no reliable oracle is available, record that validation limit rather than claiming the invariant is protected.
+- When a change binds a discovered resource to an owner, test both sides of that lifetime.
+  Verify that the existing owner consistently uses its selected resource despite unrelated ambient changes, and that a new owner observes a new selection.
+  Verify that intentionally dynamic inputs still change within the existing owner's lifetime.
+  Exercise the binding through the subprocess or protocol boundary where the resource is actually used, when one exists.
+  Lookup-count assertions alone do not establish correct resource selection or freshness.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
 - Start integration testing with one small workflow through the normal production entrypoint and a fresh disposable fixture.
   Reuse automatic build and artifact selection when the entrypoint already provides it.

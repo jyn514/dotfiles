@@ -15,6 +15,10 @@ Apply LANGSEC (language-theoretic security): keep different languages in separat
 
 Do not preserve compatibility for internal interfaces whose producers and consumers change and deploy together. Preserve compatibility at external, persisted-data, protocol, and independently deployed boundaries, or when justified by a historical constraint.
 
+If running software loads source directly from the checkout, editing that source can deploy it immediately.
+Before the first write to live-loaded source, identify which producer versions and startup configuration remain active.
+Test the required old-producer/new-consumer combination using a disposable candidate before replacing the live source.
+
 ## Single authority
 
 When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it. Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
