@@ -54,7 +54,8 @@ The wrapper checks its arguments, executables, and local agent before starting t
 It runs a checked SSH command to expand the socket path using the remote login shell's `HOME`.
 Discovery failure stops startup without leaving children running.
 The relative socket path has one owner in the wrapper; discovery and mosh's environment command both use it.
-It starts autossh in the background without daemonizing it, forwarding the discovered socket to the local `SSH_AUTH_SOCK`.
+It quotes the resolved socket paths for SSH's forwarding parser so literal percent tokens, `${…}` text, and backslashes are not reinterpreted.
+It starts autossh in the background without daemonizing it, forwarding the discovered socket to the selected local agent.
 SSH multiplexing is disabled for this connection so its lifetime belongs to the wrapper.
 SSH runs without a remote command and uses batch authentication, a connection timeout, and keepalive checks.
 Autossh retries initial failures and restarts SSH after disconnects.
@@ -77,6 +78,7 @@ It does not change remote configuration, install dependencies, or manage tmux.
 
 Run `dev/test-environment python3 tools/mosh-agent/tests/mosh_agent_test.py` from the checkout.
 These tests exercise the executable with disposable command fixtures: prerequisites, remote discovery, child ownership, exit status, and termination.
+A native OpenSSH `-G` check also round-trips the generated forwarding specification without making a network connection, checking that both socket paths retain their literal characters.
 When mosh is installed, a native bootstrap test verifies its `--server` command sets the remote environment and preserves remote command arguments using disposable SSH, server, and client fixtures.
 They are discovered by the repository's normal pytest configuration.
 Shellcheck validates the shell wrapper.

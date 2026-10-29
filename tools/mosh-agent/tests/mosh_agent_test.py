@@ -88,6 +88,35 @@ class MoshAgentTest(unittest.TestCase):
                     if event[:2] == ['autossh', 'started']][-1]
                 self.assertEqual(arguments[arguments.index('-R') + 1].split(':', 1)[1], agent)
 
+    @unittest.skipUnless(Path('/usr/bin/ssh').is_file(), 'native OpenSSH is required')
+    def test_native_forward_parser_preserves_literal_socket_paths(self):
+        # These are already-resolved paths, not SSH configuration expressions.
+        for suffix in ('ordinary', '%d', '%.', '${HOME}', '${MOSH_AGENT_UNSET}',
+                       r'back\slash', r'back\${HOME}-%d'):
+            with self.subTest(suffix=suffix):
+                agent = f'/tmp/local-{suffix}/agent.sock'
+                remote_home = f'/tmp/remote-{suffix}'
+                self.environment['IDENTITY_AGENT'] = agent
+                self.environment['MOSH_TEST_REMOTE_HOME'] = remote_home
+                self.environment.pop('MOSH_AGENT_UNSET', None)
+                # Fixture readiness must belong to this run, not a prior subcase.
+                (self.directory / 'events').unlink(missing_ok=True)
+                result = self.run_wrapper('devbox')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((self.directory / 'checked-agent').read_text(), agent)
+                arguments = [event[3] for event in self.events()
+                    if event[:2] == ['autossh', 'started']][-1]
+                forward = arguments[arguments.index('-R') + 1]
+                native = subprocess.run(['/usr/bin/ssh', '-G', '-F', '/dev/null',
+                    '-R', forward, 'devbox'], env=self.environment,
+                    text=True, capture_output=True, timeout=5)
+                self.assertEqual(native.returncode, 0, native.stderr)
+                forwards = [line for line in native.stdout.splitlines()
+                    if line.startswith('remoteforward ')]
+                self.assertEqual(forwards,
+                    [f'remoteforward {remote_home}/.ssh/mosh-agent.sock {agent}'])
+                self.assert_stopped()
+
     def test_configured_agent_overrides_stale_environment(self):
         agent = str(self.directory / 'configured agent.sock')
         self.environment['IDENTITY_AGENT'] = agent
@@ -160,6 +189,15 @@ class MoshAgentTest(unittest.TestCase):
         result = self.run_wrapper('devbox')
         self.assertEqual(result.returncode, 1)
         self.assertIn('SSH_AUTH_SOCK', result.stderr)
+        self.assertEqual(self.events(), [])
+
+    def test_failed_forward_encoding_starts_no_children(self):
+        encoder = self.directory / 'sed'
+        shutil.copyfile(FIXTURE, encoder)
+        encoder.chmod(0o755)
+        self.environment['ENCODER_STATUS'] = '37'
+        result = self.run_wrapper('devbox')
+        self.assertEqual(result.returncode, 37, result.stderr)
         self.assertEqual(self.events(), [])
 
     def test_failed_remote_discovery_starts_no_children(self):

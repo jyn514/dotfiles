@@ -18,11 +18,15 @@ def record(event):
         output.write(json.dumps([name, event, os.getpid(), sys.argv[1:]]) + '\n')
 
 
+if name == 'sed':
+    sys.exit(int(os.environ.get('ENCODER_STATUS', '37')))
+
 if name == 'ssh-add':
     (directory / 'checked-agent').write_text(os.environ.get('SSH_AUTH_SOCK', ''))
     sys.exit(int(os.environ.get('AGENT_STATUS', '0')))
 
-remote_environment = dict(os.environ, HOME=str(directory / 'remote home'))
+remote_environment = dict(os.environ,
+    HOME=os.environ.get('MOSH_TEST_REMOTE_HOME', str(directory / 'remote home')))
 if name == 'ssh' and len(sys.argv) > 1:
     if sys.argv[1] == '-G':
         print('identityagent ' + os.environ.get('IDENTITY_AGENT', 'SSH_AUTH_SOCK'))

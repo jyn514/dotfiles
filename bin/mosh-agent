@@ -42,6 +42,10 @@ esac
 case "$remote_socket:$agent" in
 	*:*:*) printf '%s\n' 'mosh-agent: socket paths cannot contain a colon' >&2; exit 1 ;;
 esac
+# -R expands ${...}, removes backslash quoting, then expands percent tokens.
+# Quote already-resolved paths for those stages, not as new SSH expressions.
+forward=$(printf '%s\n' "$remote_socket:$agent" |
+	sed 's/\\/\\\\/g; s/\${/$\\{/g; s/%/%%/g') || exit
 
 tunnel_pid=
 mosh_pid=
@@ -69,7 +73,7 @@ AUTOSSH_GATETIME=0 autossh -M 0 -N -T \
 	-o BatchMode=yes -o ControlMaster=no -o ControlPath=none \
 	-o ExitOnForwardFailure=yes -o ConnectTimeout=10 \
 	-o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
-	-R "$remote_socket:$agent" "$host" </dev/null 3<&- &
+	-R "$forward" "$host" </dev/null 3<&- &
 tunnel_pid=$!
 # Explicit stdin preserves the terminal; wait lets shell traps run immediately.
 mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$@" <&3 3<&- &
