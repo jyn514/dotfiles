@@ -55,7 +55,12 @@ if (home / 'fail-ob').exists():
     sys.exit(1)
 vault = {'id': 'vault-id', 'path': str(home / 'notes with spaces $ and %')}
 if args[0] == 'sync-list-local':
-    print(json.dumps({'vaults': [] if (home / 'empty').exists() else [vault]}))
+    vaults = json.loads((home / 'vaults.json').read_text()) if (home / 'vaults.json').exists() else [vault]
+    print(json.dumps({'vaults': [] if (home / 'empty').exists() else vaults}))
+elif args[0] == 'login':
+    (home / 'gui-running').touch()
+elif args[0] == 'sync-setup':
+    (home / 'empty').unlink(missing_ok=True)
 elif args[0] == 'sync-status' and '--json' in args:
     print(json.dumps({'configDir': '.obsidian', 'configs': ['core-plugin', 'appearance']}))
 ''')
@@ -125,7 +130,7 @@ with (Path.home() / 'commands.jsonl').open('a') as file:
                 patch.object(setup.sys.stdin, 'isatty', return_value=True), \
                 patch.object(setup.Path, 'home', return_value=self.home), \
                 patch('builtins.input', side_effect=AssertionError('Unexpected setup prompt')):
-            self.assertEqual([self.record], setup.configure(['/tools/ob']))
+            self.assertEqual([self.record], setup.configure(['/tools/ob'], setup.GuiLauncher()))
         self.assertIn(('/tools/ob', 'login'), calls)
         self.assertIn(('/tools/ob', 'sync-setup', '--vault', 'notes',
                        '--path', str(self.home / 'Documents/notes')), calls)
@@ -143,7 +148,7 @@ if sys.argv[1] != 'info':
                 patch.object(setup, 'command', return_value=subprocess.CompletedProcess(
                     [], 0, '{"vaults": []}', '')) as client:
             with self.assertRaisesRegex(RuntimeError, 'Settings > General > Advanced'):
-                setup.configure([str(self.bin / 'ob')])
+                setup.configure([str(self.bin / 'ob')], setup.GuiLauncher())
         self.assertEqual([unittest.mock.call(str(self.bin / 'ob'), 'sync-list-local',
                                             '--json', capture=True)], client.call_args_list)
 
@@ -160,6 +165,19 @@ if sys.argv[1] != 'info':
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual({'sync': False, 'templates': False, 'daily-notes': True},
                          json.loads(self.config.read_text()))
+
+    def test_closed_gui_never_discovers_a_gui_launcher(self):
+        native_which = shutil.which
+
+        def which(name):
+            if name in ('obsidian', 'flatpak'):
+                self.fail('Closed GUI must not require a GUI launcher')
+            return native_which(name)
+
+        with patch.dict(os.environ, self.env), \
+                patch.object(setup.shutil, 'which', side_effect=which):
+            setup.setup()
+        self.assertNotIn('sync', json.loads(self.config.read_text()))
 
     def test_malformed_gui_config_prevents_service_activation(self):
         self.config.write_text('{broken')
@@ -183,8 +201,11 @@ elif sys.argv[1:] == ['plugin:disable', 'id=sync', 'filter=core']:
 else:
     sys.exit(1)
 ''')
-        result = self.run_setup()
-        self.assertEqual(0, result.returncode, result.stderr)
+        with patch.dict(os.environ, self.env), \
+                patch.object(setup.shutil, 'which', wraps=shutil.which) as discover:
+            setup.setup()
+        self.assertEqual(1, discover.call_args_list.count(unittest.mock.call('obsidian')))
+        self.assertNotIn(unittest.mock.call('flatpak'), discover.call_args_list)
         self.assertNotIn('sync', json.loads(self.config.read_text()))
 
     def test_running_gui_cannot_claim_success_while_sync_remains_enabled(self):
@@ -201,11 +222,21 @@ if sys.argv[1] == 'vault':
         self.assertFalse((self.home / '.config/systemd/user').exists())
 
     def test_running_flatpak_uses_its_launcher_and_vault_directory(self):
+        other_vault = self.home / 'second vault'
+        other_config = other_vault / '.obsidian/core-plugins.json'
+        other_config.parent.mkdir(parents=True)
+        other_config.write_text('["sync"]')
+        (self.home / 'vaults.json').write_text(json.dumps([
+            self.record, {'id': 'other-vault', 'path': str(other_vault)},
+        ]))
         self.write_command('pgrep', '')
         self.write_command('flatpak', '''
 from pathlib import Path
 import sys
 args = sys.argv[1:]
+with (Path.home() / 'flatpak-calls.jsonl').open('a') as log:
+    import json
+    log.write(json.dumps({'args': args, 'cwd': str(Path.cwd())}) + '\\n')
 if args[0] == 'info':
     sys.exit(0)
 assert args[:3] == ['run', '--cwd=' + str(Path.cwd()), 'md.obsidian.Obsidian']
@@ -221,6 +252,45 @@ else:
         result = self.run_setup()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(['templates'], json.loads(self.config.read_text()))
+        calls = [json.loads(line) for line in
+                 (self.home / 'flatpak-calls.jsonl').read_text().splitlines()]
+        self.assertEqual(1, sum(call['args'][0] == 'info' for call in calls))
+        self.assertEqual(6, sum(call['args'][0] == 'run' for call in calls))
+        self.assertEqual(['templates'], json.loads(other_config.read_text()))
+        self.assertEqual({str(self.vault), str(other_vault)},
+                         {call['cwd'] for call in calls if call['args'][0] == 'run'})
+
+    def test_running_gui_keeps_bound_launcher_when_another_installation_appears(self):
+        self.write_command('pgrep', '')
+        self.write_command('flatpak', '''
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+if args[0] == 'info':
+    conflicting = Path.home() / 'bin/obsidian'
+    conflicting.write_text('#!' + sys.executable + '\\nraise SystemExit("wrong launcher")\\n')
+    conflicting.chmod(0o755)
+    sys.exit(0)
+assert args[:3] == ['run', '--cwd=' + str(Path.cwd()), 'md.obsidian.Obsidian']
+if args[3:] == ['vault', 'info=path']:
+    print(Path.cwd())
+elif args[3:] == ['plugin:disable', 'id=sync', 'filter=core']:
+    (Path.cwd() / '.obsidian/core-plugins.json').write_text('["templates"]')
+elif args[3:] == ['plugins:enabled', 'filter=core']:
+    print('templates')
+else:
+    sys.exit(1)
+''')
+        (self.home / 'empty').touch()
+        (self.home / 'Documents/notes').mkdir(parents=True)
+        with patch.dict(os.environ, self.env), \
+                patch.object(setup.sys.stdin, 'isatty', return_value=True):
+            setup.setup()
+        self.assertEqual(['templates'], json.loads(self.config.read_text()))
+        # A fresh transaction is allowed to discover the newly preferred CLI.
+        second = self.run_setup()
+        self.assertNotEqual(0, second.returncode)
+        self.assertIn(str(self.bin / 'obsidian'), second.stderr)
 
     def test_disabled_flatpak_cli_gives_actionable_error_without_activating_sync(self):
         self.write_command('pgrep', '')
@@ -243,6 +313,45 @@ if sys.argv[1] != 'info':
         self.assertNotEqual(0, result.returncode)
         self.assertIn('another vault', result.stderr)
         self.assertFalse((self.home / '.config/systemd/user').exists())
+
+    def test_gui_starting_during_login_is_rechecked_before_mutation(self):
+        (self.home / 'empty').touch()
+        self.write_command('pgrep', '''
+from pathlib import Path
+import sys
+running = (Path.home() / 'gui-running').exists()
+with (Path.home() / 'pgrep-calls').open('a') as log:
+    log.write(str(running) + '\\n')
+sys.exit(0 if running else 1)
+''')
+        self.write_command('obsidian', '''
+from pathlib import Path
+import sys
+if sys.argv[1] == 'vault':
+    print(Path.cwd())
+elif sys.argv[1] == 'plugin:disable':
+    (Path.cwd() / '.obsidian/core-plugins.json').write_text('["templates"]')
+elif sys.argv[1] == 'plugins:enabled':
+    print('templates')
+else:
+    sys.exit(1)
+''')
+        native_which = shutil.which
+
+        def which(name):
+            if name in ('obsidian', 'flatpak'):
+                self.assertTrue((self.home / 'gui-running').exists(),
+                                'GUI discovery must wait until the app is running')
+            return native_which(name)
+
+        with patch.dict(os.environ, self.env), \
+                patch.object(setup.sys.stdin, 'isatty', return_value=True), \
+                patch.object(setup.shutil, 'which', side_effect=which):
+            setup.setup()
+        self.assertEqual(['False', 'True'],
+                         (self.home / 'pgrep-calls').read_text().splitlines())
+        self.assertEqual(['templates'], json.loads(self.config.read_text()))
+        self.assertTrue((self.home / '.config/systemd/user').exists())
 
     def test_macos_plist_preserves_argument_boundaries(self):
         path, contents = setup.service_file('darwin', self.record, ['/tools/ob'],

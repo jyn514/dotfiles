@@ -81,44 +81,56 @@ def gui_plugins(path):
     raise ValueError(f'Unrecognized Obsidian plugin configuration: {path}')
 
 
-def gui_command(vault, *args):
-    cli = shutil.which('obsidian')
-    if cli:
-        launcher = [cli]
-    else:
-        flatpak = shutil.which('flatpak')
-        installed = flatpak and subprocess.run(
-            [flatpak, 'info', 'md.obsidian.Obsidian'], capture_output=True,
-        ).returncode == 0
-        if not installed:
-            raise RuntimeError('Close Obsidian and rerun setup to disable GUI Sync')
-        launcher = [flatpak, 'run', '--cwd=' + vault['path'], 'md.obsidian.Obsidian']
-    result = subprocess.run([*launcher, *args], cwd=vault['path'],
-                            text=True, capture_output=True, timeout=20)
-    # Obsidian can report a disabled CLI while returning success.
-    if 'command line interface is not enabled' in (result.stdout + result.stderr).lower():
-        raise RuntimeError('Enable Command line interface in Obsidian Settings > General > Advanced, '
-                           'or close Obsidian and rerun setup')
-    result.check_returncode()
-    return result
+class GuiLauncher:
+    """Bind the GUI installation on first use, for one setup transaction."""
+
+    def __init__(self):
+        self.executable = None
+        self.flatpak = False
+
+    def __call__(self, vault, *args):
+        if self.executable is None:
+            cli = shutil.which('obsidian')
+            if cli:
+                self.executable = cli
+            else:
+                flatpak = shutil.which('flatpak')
+                installed = flatpak and subprocess.run(
+                    [flatpak, 'info', 'md.obsidian.Obsidian'], capture_output=True,
+                ).returncode == 0
+                if not installed:
+                    raise RuntimeError('Close Obsidian and rerun setup to disable GUI Sync')
+                self.executable = flatpak
+                self.flatpak = True
+        launcher = [self.executable]
+        if self.flatpak:
+            launcher += ['run', '--cwd=' + vault['path'], 'md.obsidian.Obsidian']
+        result = subprocess.run([*launcher, *args], cwd=vault['path'],
+                                text=True, capture_output=True, timeout=20)
+        # Obsidian can report a disabled CLI while returning success.
+        if 'command line interface is not enabled' in (result.stdout + result.stderr).lower():
+            raise RuntimeError('Enable Command line interface in Obsidian Settings > General > Advanced, '
+                               'or close Obsidian and rerun setup')
+        result.check_returncode()
+        return result
 
 
-def preflight_gui(vault):
+def preflight_gui(vault, gui):
     running = subprocess.run(['pgrep', '-u', str(os.getuid()), '-ix', 'obsidian'],
                              capture_output=True)
     if running.returncode not in (0, 1):
         raise RuntimeError('Could not determine whether Obsidian is running')
     if running.returncode == 0:
         # The CLI selects the vault from cwd. Verify that selection before mutation.
-        result = gui_command(vault, 'vault', 'info=path')
+        result = gui(vault, 'vault', 'info=path')
         if Path(result.stdout.strip()).resolve() != Path(vault['path']).resolve():
             raise RuntimeError('Obsidian CLI selected another vault; close Obsidian and rerun setup')
     return running.returncode == 0
 
 
-def disable_gui_sync(vault, executable):
+def disable_gui_sync(vault, executable, gui):
     # Recheck immediately before mutation: the app may have opened during login.
-    running = preflight_gui(vault)
+    running = preflight_gui(vault, gui)
     status = json.loads(command(*executable, 'sync-status', '--path', vault['path'],
                                 '--json', capture=True).stdout)
     # Keep the local GUI choice from propagating to phones or being overwritten.
@@ -128,8 +140,8 @@ def disable_gui_sync(vault, executable):
         command(*executable, 'sync-config', '--path', vault['path'], '--configs',
                 ','.join(item for item in configs if item != 'core-plugin'))
     if running:
-        gui_command(vault, 'plugin:disable', 'id=sync', 'filter=core')
-        enabled = gui_command(vault, 'plugins:enabled', 'filter=core')
+        gui(vault, 'plugin:disable', 'id=sync', 'filter=core')
+        enabled = gui(vault, 'plugins:enabled', 'filter=core')
         plugins = gui_plugins(path)
         persisted = plugins.get('sync', False) if isinstance(plugins, dict) else 'sync' in plugins
         if persisted or 'sync' in enabled.stdout.splitlines():
@@ -143,14 +155,14 @@ def disable_gui_sync(vault, executable):
         publish(path, (json.dumps(plugins, indent=2) + '\n').encode())
 
 
-def configure(executable):
+def configure(executable, gui):
     result = command(*executable, 'sync-list-local', '--json', capture=True)
     vaults = json.loads(result.stdout)['vaults']
     if not vaults:
         if not sys.stdin.isatty():
             raise RuntimeError('No headless vault configured; rerun ./setup services interactively')
         path = str(Path.home() / VAULT_DIRECTORY)
-        preflight_gui({'path': path})
+        preflight_gui({'path': path}, gui)
         print('Headless Sync will replace GUI Sync on this machine. Back up your notes first.')
         command(*executable, 'login')
         print(f'Connecting remote vault {VAULT_NAME!r} to {path}')
@@ -174,10 +186,11 @@ def setup():
     executable = [command(mise, 'which', 'ob', capture=True).stdout.strip()]
     node_directory = str(Path(node).parent)
     os.environ['PATH'] = node_directory + os.pathsep + os.environ['PATH']
-    vaults = configure(executable)
+    gui = GuiLauncher()
+    vaults = configure(executable, gui)
     home = Path.home()
     for vault in vaults:
-        disable_gui_sync(vault, executable)
+        disable_gui_sync(vault, executable, gui)
         path, contents = service_file(sys.platform, vault, executable, home, node_directory)
         publish(path, contents)
         if sys.platform == 'linux':
