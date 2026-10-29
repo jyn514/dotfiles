@@ -205,6 +205,56 @@ class CheckFileTest(unittest.TestCase):
         self.assertEqual(self.check("replacement\n", path="created.txt", state=actual("first\n"),
                                     revision=revision)["status"], "would-lose")
 
+    def test_repeated_line_rotations_preserve_retained_boundary_without_rewriting_disk(self):
+        # The immutable revision contains the selected insertion/deletion; the
+        # retained actual/proposed state contains additional independent work.
+        # Each comparison must realign the boundary, not move authored text.
+        insertion = ("A\nTOKEN\nB\n",
+                     "A\nTOKEN\nmine\nTOKEN\nB\n",
+                     "A\nother\nTOKEN\nmine\nTOKEN\nB\n")
+        deletion = (insertion[2], "A\nother\nTOKEN\nB\n", insertion[0])
+        cases = [insertion, tuple(s.replace("TOKEN", "") for s in insertion),
+                 tuple(s.replace("\n", "\r\n") for s in insertion), deletion]
+        path = "rotation.txt"
+        for base, boundary, retained in cases:
+            with self.subTest(base=base, boundary=boundary):
+                (self.repo / path).write_bytes(base.encode("utf-8"))
+                self.jj("commit", "-m", "rotation base")
+                (self.repo / path).write_bytes(boundary.encode("utf-8"))
+                revision = self.capture_revision()
+                before = self.identity()
+                for _ in range(2):
+                    result = self.check(retained, path=path, state=actual(retained),
+                                        revision=revision)
+                    self.assertEqual(result, {"status": "preserved"})
+                # Losing the boundary is still rejected after a successful retry.
+                lost = self.check(base, path=path, state=actual(retained), revision=revision)
+                self.assertEqual(lost["status"], "would-lose", lost)
+                self.assertEqual(set(lost), {"status", "reason"})
+                self.assertEqual(self.identity(), before)
+                self.assertEqual((self.repo / path).read_bytes(), boundary.encode("utf-8"))
+
+    def test_rotation_does_not_authorize_cross_paired_replacement(self):
+        separator = "".join(f"anchor {n}\n" for n in range(8))
+        base = "A\nTOKEN\nB\n" + separator + "old1\nold2\nend\n"
+        boundary = "A\nTOKEN\nmine\nTOKEN\nB\n" + separator + "old1\nnew1\nend\n"
+        retained = ("A\nother\nTOKEN\nmine\nTOKEN\nB\n" + separator +
+                    "new1\nnew2\nend\n")
+        path = "rotation.txt"
+        (self.repo / path).write_text(base)
+        self.jj("commit", "-m", "cross-paired rotation base")
+        (self.repo / path).write_text(boundary)
+        revision = self.capture_revision()
+        before = self.identity()
+        result = self.check(retained, path=path, state=actual(boundary), revision=revision)
+        self.assertEqual(result["status"], "would-lose", result)
+        self.assertEqual(set(result), {"status", "reason"})
+        # An invalid actual baseline must not turn into a warning about proposal.
+        self.assert_unusable(self.check(retained, path=path, state=actual(retained),
+                                        revision=revision))
+        self.assertEqual(self.identity(), before)
+        self.assertEqual((self.repo / path).read_text(), boundary)
+
     def test_executable_mode_is_preserved_in_proposal(self):
         (self.repo / "note.txt").chmod(0o755)
         revision = self.capture_revision()

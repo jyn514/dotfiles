@@ -37,7 +37,9 @@ A diff-editor shim applies that patch to Jujutsu's left tree and replaces Jujuts
 Jujutsu then performs the split exactly as if a human had edited the right side by hand.]
 
 #status[implemented as the repository-supported `jj-agent-split-editor` executable.
-Higher-level workflow documentation for agents is still expected to live outside this low-level diff-editor shim.]
+Higher-level workflow documentation for agents is still expected to live outside this low-level diff-editor shim.
+Containment includes the local-rotation retry in @agent-jj-split-repeated-lines.
+Unsupported alignment changes can still be rejected.]
 
 = Problem <agent-jj-split-problem>
 
@@ -161,6 +163,7 @@ it must not rely on `git apply` or shell path normalization as the only traversa
 
 #requirement[The production tool must compare `diff(left, patched-left)` with the original `diff(left, right)`
 and reject any selected change that was not present in the revision being split.
+For regular UTF-8 text, @agent-jj-split-repeated-lines adds local alignment retries without replacing this validator.
 Containment preserves path, removed-line occurrence, multiplicity, addition order, and final-newline state.
 When every old line in one replacement is selected for removal, any ordered subset of that region's additions is permitted.
 Otherwise, additions retain ordinal correspondence with the removed lines.
@@ -176,6 +179,73 @@ If the platform cannot make the replacement atomic, the tool must exit non-zero 
 #requirement[The production tool must preserve executable bits and symlinks according to the patch format and the copied tree.]
 
 #requirement[The production tool should print a compact summary of selected files and hunk counts before exiting zero.]
+
+== Local retries for repeated-line placement <agent-jj-split-repeated-lines>
+
+A selected diff and the full diff can describe the same surviving base line at different positions among repeated lines.
+Comparing their independently chosen insertion coordinates can therefore reject a valid selection.
+The problem is not specific to whitespace.
+
+Consider these three versions, aligned by line occurrence:
+
+#example[
+```text
+Base        Selected    Full
+A           A           A
+(no line)   (no line)   other
+(no line)   token       token
+(no line)   mine        mine
+token       token       token
+B           B           B
+```
+]
+
+`(no line)` marks absence, not file content; every file line in this example ends with LF.
+The original `token` survives after `mine` in this correspondence.
+The selected change inserts `token` and `mine`; the full change inserts those lines plus `other`.
+An independent diff may instead match the original `token` to the earlier occurrence in one comparison.
+That changes the reported insertion position without changing the selected file.
+Replacing `token` with an empty line gives the same shape as the motivating paragraph-selection failure.
+Before the local retry, the containment checker rejected both forms of this minimal example.
+It reported the selected insertion at the base gap before line 3, while the full insertion was anchored before line 2.
+This reproduction invokes containment directly; no split is needed.
+Moving the selected text elsewhere avoids the rejection but is not an acceptable requirement on authored content.
+
+The selected diff inserts `mine` and `token` after the original `token`.
+Moving that insertion block left across the original `token` rotates its contents to `token`, then `mine`.
+This is a different diff for exactly the same selected bytes, now at the full change's insertion gap.
+
+#requirement[Run the existing containment validator first.
+For rejected regular-text selections, retry local rotations of pure insertion or pure deletion blocks across identical neighboring base lines.
+A left shift requires the block's last line to equal the preceding unchanged base line;
+move that last line to the front of the block and shift its base position left by one line.
+A right shift requires the block's first line to equal the following unchanged base line;
+move that first line to the back and shift its base position right by one line.
+Use exact line bytes, including line endings and missing final newlines.
+The rule applies to repeated nonempty lines as well as empty lines; it does not normalize whitespace.]
+
+#requirement[Each candidate diff must reconstruct the exact selected bytes from the original base.
+Only the diff representation changes: never move authored text, rewrite the supplied patch, or change the selected tree.
+Use the unchanged neighboring base lines carried in the parsed selected diff.
+Walk equivalent positions locally, stopping at an unequal or unavailable neighbor, another selected edit, or a file boundary.
+Make one source-order pass over the selected blocks.
+For each pure block, try its current placement, then leftward placements, then rightward placements.
+Keep the first placement that passes the existing validator for that fragment; leave the block unchanged if none passes.
+Retries terminate without cycling or enumerating combinations across fragments.]
+
+#requirement[Pass complete candidate diffs to the existing validator against the unchanged canonical base-to-full diff.
+After the placement pass, accept only when that validator accepts the complete candidate.
+Fragment checks guide placement choices but never authorize acceptance by themselves.
+Keep its replacement ownership, ordinal pairing, occurrence counts, addition order, and newline checks.
+Rotations cannot merge original replacement owners or borrow another region's additions.
+The existing `long-insertion-cross-pair` rejection and whole-replacement boundary-deletion allowance remain unchanged.]
+
+#requirement[Use the same validator and rotation retry for split preflight, changed-input revalidation, and advisory `--check-file` comparisons.
+Patch application, advisory reply schemas, mode and binary checks, split transport, and exact-tree verification do not change.]
+
+#status[This is a limited retry around the existing validator, not a general shared-alignment solver.
+A valid selection requiring unsupported alignment changes may still be rejected.
+If none of the tried placements validates, retain the rejection; no completeness guarantee is required.]
 
 = Advisory file checks <agent-jj-split-advisory>
 
@@ -240,7 +310,8 @@ bb agent-split target/jj-split/selected.patch -m 'Extract focused change' @
 ```
 ]
 
-#requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left and right trees only for paths named in the patch, dry-runs and applies the patch to an independent left-tree copy, and checks that the selected diff is contained in the canonical Git diff of those paths.
+#requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left and right trees only for paths named in the patch, and dry-runs and applies the patch to an independent left-tree copy.
+It checks containment with the local retries in @agent-jj-split-repeated-lines and retains the existing mode and binary checks.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.
 Containment errors identify the selected parent/base line range or insertion gap and the failed comparison.
 They identify the original edit region when applicable; binary and file-mode errors have no invented text coordinates.]
@@ -435,8 +506,9 @@ The agent inspects repository state before retrying.
 
 The wrapper rejects this during preflight with exit status 1, before invoking Jujutsu's split command.
 The same initial-snapshot caveat described above applies.
-A patch that applies to the left tree but produces content not present in the original right tree is stale or wrong;
+A patch that applies to the left tree but introduces an edit not contained in the full revision is stale or wrong;
 accepting it would create a selected commit Jujutsu can only compensate for in the remaining commit.
+This is a claim about selected edits, not a requirement that every selected-file line appear in the full version: unselected removals can leave old base lines in the selected file.
 The agent rewrites the patch from the current `jj diff --git` output and tries again.
 
 == Split artifact enters the working copy
@@ -515,3 +587,20 @@ A first implementation is acceptable when:
 - the remaining commit retains the unselected changes,
 - the selected commit description can be supplied without opening an editor, and any remaining-commit description fixup is handled non-interactively,
 - the workflow is documented well enough that an agent can follow it without visual terminal interaction.
+
+== Repeated-line rotation retry <agent-jj-split-rotation-acceptance>
+
+The retry in @agent-jj-split-repeated-lines is acceptable when:
+
+- the blank-line form of the minimal example above is accepted without moving or changing the selected text;
+- the repeated nonempty-line example above is accepted, so support is not restricted to blank separators;
+- left and right rotations of insertion and deletion blocks reconstruct the same selected bytes and stop at the stated boundaries;
+- retries terminate on repeated-line runs without requiring an exhaustive search of placement combinations;
+- multiple selected fragments share one occurrence accounting, rejecting reused additions, extra duplicates, reordering, unrelated-occurrence deletion, and cross-paired replacements;
+- CRLF, space-only lines, terminal empty lines, and missing final newlines retain their exact bytes rather than receiving whitespace-specific equivalence;
+- the existing containment decision-table expectations remain intact, including the explicitly supported whole-replacement boundary deletions;
+- native split preflight and advisory `--check-file` cover both valid alignment changes and invalid cross-region selections, and post-split revalidation uses the same decision owner;
+- a successful split still produces the exact supplied selected tree and preserves the complete actual split-input tree in the remainder.
+
+The shared decision table and native split and advisory tests cover this retry.
+Compiling the specification alone does not establish containment behavior.

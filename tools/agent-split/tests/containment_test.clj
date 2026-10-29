@@ -106,3 +106,88 @@
   (let [row (first (filter #(= :unchanged-deletion (first %)) (:binary containment-cases)))]
     (is (some? row))
     (is (= "" (check-case! :binary row 3 false)))))
+
+(defn- note-index
+  ([hunk] (note-index "" hunk))
+  ([metadata hunk]
+   (get ((production 'diff-change-index)
+         (str "diff --git a/note.txt b/note.txt\n" metadata
+              "--- a/note.txt\n+++ b/note.txt\n" hunk))
+        "note.txt")))
+
+(deftest rightward-equivalent-representations-use-the-public-checker
+  ;; The real-Git mirror fixtures are already accepted without retry: Git picks
+  ;; the same anchor in both comparisons. These valid alternate unified diffs
+  ;; force the opposite direction without pretending Git emitted them. In each
+  ;; pair, rotating the selected block right reconstructs the same selected file.
+  (doseq [[label original selected neighbor]
+          [[:insertion
+            (note-index "@@ -1,3 +1,6 @@\n A\n TOKEN\n+mine\n+TOKEN\n+other\n B\n")
+            (note-index "@@ -1,3 +1,5 @@\n A\n+TOKEN\n+mine\n TOKEN\n B\n")
+            2]
+           [:deletion
+            (note-index "@@ -1,6 +1,3 @@\n A\n TOKEN\n-mine\n-TOKEN\n-other\n B\n")
+            (note-index "@@ -1,6 +1,4 @@\n A\n-TOKEN\n-mine\n TOKEN\n other\n B\n")
+            4]]]
+    (testing (name label)
+      (is (nil? (scripts.containment/rejection-reason original selected)))
+      ;; Canonical context can be sparse. Unknown neighbors must not be inferred
+      ;; from the full diff or matching text in some other occurrence.
+      (is (string? (scripts.containment/rejection-reason
+                     original (update selected :context dissoc neighbor)))))))
+
+(deftest complete-candidate-validation-prevents-pooled-allowance-reuse
+  ;; Explicitly fragment one insertion representation at its unchanged base gap.
+  ;; Git normally coalesces it; splitting the block does not change selected
+  ;; bytes. Each half fits independently, but together they spend the only
+  ;; [mine TOKEN] allowance twice. This isolates the final pooled validation.
+  (let [original (note-index "@@ -1,3 +1,5 @@\n A\n TOKEN\n+mine\n+TOKEN\n B\n")
+        selected (note-index "@@ -1,3 +1,7 @@\n A\n TOKEN\n+mine\n+TOKEN\n+mine\n+TOKEN\n B\n")
+        block (first (:edits selected))
+        fragmented (assoc selected :edits
+                          (mapv #(assoc block :added (vec %))
+                                (partition 2 (:added block))))]
+    (is (= 2 (count (:edits fragmented))))
+    (doseq [edit (:edits fragmented)]
+      (is (nil? (scripts.containment/rejection-reason original (assoc fragmented :edits [edit])))))
+    (is (string? (scripts.containment/rejection-reason original fragmented)))))
+
+(deftest multi-step-rotations-in-both-directions
+  ;; Two shifts are needed in every row: one-step acceptance cannot establish
+  ;; the run walk, especially the consumed/freed base context of deletions.
+  (doseq [[label full selected]
+          [[:insert-left
+            "@@ -1,4 +1,8 @@\n A\n+other\n+TOKEN\n+TOKEN\n+mine\n TOKEN\n TOKEN\n B\n"
+            "@@ -1,4 +1,7 @@\n A\n TOKEN\n TOKEN\n+mine\n+TOKEN\n+TOKEN\n B\n"]
+           [:insert-right
+            "@@ -1,4 +1,8 @@\n A\n TOKEN\n TOKEN\n+mine\n+TOKEN\n+TOKEN\n+other\n B\n"
+            "@@ -1,4 +1,7 @@\n A\n+TOKEN\n+TOKEN\n+mine\n TOKEN\n TOKEN\n B\n"]
+           [:delete-left
+            "@@ -1,8 +1,4 @@\n A\n-other\n-TOKEN\n-TOKEN\n-mine\n TOKEN\n TOKEN\n B\n"
+            "@@ -1,8 +1,5 @@\n A\n other\n TOKEN\n TOKEN\n-mine\n-TOKEN\n-TOKEN\n B\n"]
+           [:delete-right
+            "@@ -1,8 +1,4 @@\n A\n TOKEN\n TOKEN\n-mine\n-TOKEN\n-TOKEN\n-other\n B\n"
+            "@@ -1,8 +1,5 @@\n A\n-TOKEN\n-TOKEN\n-mine\n TOKEN\n TOKEN\n other\n B\n"]]]
+    (testing (name label)
+      (is (nil? (scripts.containment/rejection-reason (note-index full) (note-index selected)))))))
+
+(deftest nonregular-metadata-does-not-enable-text-rotation-retry
+  (let [full "@@ -1,3 +1,6 @@\n A\n TOKEN\n+mine\n+TOKEN\n+other\n B\n"
+        selected "@@ -1,3 +1,5 @@\n A\n+TOKEN\n+mine\n TOKEN\n B\n"]
+    (is (nil? (scripts.containment/rejection-reason (note-index full) (note-index selected))))
+    (doseq [mode ["120000" "160000"]
+            header [(str "index 1111111..2222222 " mode "\n")
+                    (str "old mode 100644\nnew mode " mode "\n")]]
+      (testing (pr-str [mode header])
+        ;; Header policy is independent from the identical text placement. Both
+        ;; mode sets are equal, so a mode-subset failure cannot mask this guard.
+        (is (string? (scripts.containment/rejection-reason
+                       (note-index header full) (note-index header selected))))))
+    (doseq [side [:original :selected]]
+      (testing (str "index metadata only on " side)
+        ;; Existing-kind index headers do not add a mode change. Check each side
+        ;; independently so guarding only one producer would be caught.
+        (let [header "index 1111111..2222222 120000\n"]
+          (is (string? (scripts.containment/rejection-reason
+                         (note-index (if (= side :original) header "") full)
+                         (note-index (if (= side :selected) header "") selected)))))))))

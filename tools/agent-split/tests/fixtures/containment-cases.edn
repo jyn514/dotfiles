@@ -1,7 +1,97 @@
 ;; Rows are [label base original attempt valid?].
 ;; nil means an absent file; vectors are binary bytes, not text.
 {:text
- [[:section-deletion-blank-alignment
+ [[:rotation-insertion-left
+   "A\nTOKEN\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nB\n"
+   true]
+  [:rotation-blank-insertion-left
+   "A\n\nB\n"
+   "A\nother\n\nmine\n\nB\n"
+   "A\n\nmine\n\nB\n"
+   true]
+  [:rotation-insertion-right-control
+   "A\nTOKEN\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nother\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nB\n"
+   true]
+  [:rotation-deletion-left
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\n"
+   "A\nTOKEN\nB\n"
+   "A\nother\nTOKEN\nB\n"
+   true]
+  [:rotation-blank-deletion-left
+   "A\nother\n\nmine\n\nB\n"
+   "A\n\nB\n"
+   "A\nother\n\nB\n"
+   true]
+  [:rotation-deletion-right-control
+   "A\nTOKEN\nmine\nTOKEN\nother\nB\n"
+   "A\nTOKEN\nB\n"
+   "A\nTOKEN\nother\nB\n"
+   true]
+  [:rotation-extra-duplicate
+   "A\nTOKEN\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nTOKEN\nB\n"
+   false]
+  [:rotation-reordered-additions
+   "A\nTOKEN\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\n"
+   "A\nTOKEN\nmine\nother\nTOKEN\nB\n"
+   false]
+  [:rotation-invented-addition
+   "A\nTOKEN\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\n"
+   "A\nTOKEN\ninvented\nTOKEN\nB\n"
+   false]
+  [:rotation-crlf-insertion
+   "A\r\nTOKEN\r\nB\r\n"
+   "A\r\nother\r\nTOKEN\r\nmine\r\nTOKEN\r\nB\r\n"
+   "A\r\nTOKEN\r\nmine\r\nTOKEN\r\nB\r\n"
+   true]
+  [:rotation-crlf-not-lf
+   "A\r\nTOKEN\r\nB\r\n"
+   "A\r\nother\r\nTOKEN\r\nmine\r\nTOKEN\r\nB\r\n"
+   "A\r\nTOKEN\r\nmine\nTOKEN\r\nB\r\n"
+   false]
+  [:rotation-space-only-insertion
+   "A\n  \nB\n"
+   "A\nother\n  \nmine\n  \nB\n"
+   "A\n  \nmine\n  \nB\n"
+   true]
+  [:rotation-space-not-tab
+   "A\n  \nB\n"
+   "A\nother\n  \nmine\n  \nB\n"
+   "A\n  \nmine\n\t\nB\n"
+   false]
+  [:rotation-no-final-newline
+   "A\nTOKEN\nB"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB"
+   "A\nTOKEN\nmine\nTOKEN\nB"
+   true]
+  [:rotation-final-newline-change
+   "A\nTOKEN\nB"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB"
+   "A\nTOKEN\nmine\nTOKEN\nB\n"
+   false]
+  [:rotation-multiple-independent
+   "A\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nSECOND\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nother\nSECOND\nmine\nSECOND\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nSECOND\nmine\nSECOND\nB\n"
+   true]
+  [:rotation-multiple-one-invented
+   "A\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nSECOND\nB\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nother\nSECOND\nmine\nSECOND\nB\n"
+   "A\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nA\nSECOND\ninvented\nSECOND\nB\n"
+   false]
+  [:rotation-and-cross-paired-replacement
+   "A\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nold1\nold2\nend\n"
+   "A\nother\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nnew1\nnew2\nend\n"
+   "A\nTOKEN\nmine\nTOKEN\nB\nanchor 0\nanchor 1\nanchor 2\nanchor 3\nanchor 4\nanchor 5\nanchor 6\nanchor 7\nold1\nnew1\nend\n"
+   false]
+  [:section-deletion-blank-alignment
    "# Intro\n\n### Before delegation\n\nRead coordination dialect.\nUse its fields.\n\n### Next\n"
    "# Intro\n\n### When assessing threats\n\nSentence one.\nSentence two.\nSentence three.\n\n### Next\n"
    "# Intro\n\n### Next\n"

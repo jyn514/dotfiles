@@ -480,7 +480,15 @@
                                        :whole-replacement-invented-addition
                                        :section-deletion-blank-alignment
                                        :blank-boundary-addition-cross-pair
-                                       :blank-boundary-unrelated-occurrence])]
+                                       :blank-boundary-unrelated-occurrence
+                                       :rotation-insertion-left
+                                       :rotation-blank-insertion-left
+                                       :rotation-deletion-left
+                                       :rotation-crlf-insertion
+                                       :rotation-no-final-newline
+                                       :rotation-multiple-independent
+                                       :rotation-extra-duplicate
+                                       :rotation-and-cross-paired-replacement])]
     (testing (name label)
       (with-repo
         (fn [repo]

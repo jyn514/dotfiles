@@ -40,6 +40,11 @@ These checks establish structural containment, not authorship; the operator must
 It does not compare sets of line strings.
 
 Separated edits remain selectable when earlier unselected edits change line counts.
+When repeated lines put a selected insertion or deletion at a different base position, containment retries equivalent local placements.
+These retries change only the diff representation, not the patch or selected file bytes.
+They use the unchanged neighboring lines available in the parsed diff and stop at another selected edit or unavailable context.
+A source-order pass chooses placements, then the existing validator checks the complete candidate against the original edit regions.
+The retry does not search every combination of placements; unsupported alignments may still be rejected.
 Adjacent one-for-one replacements can also be selected independently.
 A pure deletion of complete replacement regions can include their immediately adjacent empty context lines.
 This permits deleting an old section while leaving its replacement unselected when Git retains the section's blank separators as context.

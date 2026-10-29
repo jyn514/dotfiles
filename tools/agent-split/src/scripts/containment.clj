@@ -68,9 +68,14 @@
             (swap! cursor inc)
             (reset! last-side :context))
 
+        (re-find #"^index .+ (120000|160000)$" line)
+        (swap! index assoc-in [@file :non-regular?] true)
+
         (some #(str/starts-with? line %)
               ["old mode " "new mode " "deleted file mode " "new file mode "])
-        (swap! index update-in [@file :modes] conj line)))
+        (do (swap! index update-in [@file :modes] conj line)
+            (when (re-find #" (120000|160000)$" line)
+              (swap! index assoc-in [@file :non-regular?] true)))))
     (flush!)
     @index))
 
@@ -141,9 +146,8 @@
     1 (str "base line " start)
     (str "base lines " start "-" (+ start (dec (count removed))))))
 
-(defn rejection-reason
-  "Return nil for a contained selection, otherwise identify the rejected edit
-   using parent/base coordinates. This is the sole containment decision path."
+(defn- indexed-rejection-reason
+  "Validate one complete selected-diff representation against fixed full owners."
   [original selected]
   (let [regions (mapcat (fn [region]
                           (if (some #(within-region? % region) (:edits original))
@@ -196,3 +200,87 @@
                                        (lines original-region :added))))
                   (str location "added lines differ in content, count, order, replacement position, or newline state"))))
             (sort-by key groups)))))
+
+(defn- edit-side [{:keys [removed added]}]
+  (cond
+    (and (seq added) (empty? removed)) :added
+    (and (seq removed) (empty? added)) :removed))
+
+(defn- rotate-edit
+  "Shift one pure edit across a known unchanged base occurrence. The equal edge
+   tokens prove the selected bytes stay identical; deletion shifts also exchange
+   which base occurrence is removed and which remains as context."
+  [selected ordinal direction]
+  (let [edits (:edits selected)
+        {:keys [start removed] :as edit} (nth edits ordinal)
+        side (edit-side edit)
+        block (vec (get edit side))
+        left? (= direction -1)
+        neighbor-position (if left? (dec start) (+ start (count removed)))
+        neighbor (get-in selected [:context neighbor-position])
+        edge (if left? (peek block) (first block))
+        shifted-start (+ start direction)
+        shifted-end (+ shifted-start (count removed))
+        previous (get edits (dec ordinal))
+        following (get edits (inc ordinal))]
+    (when (and side neighbor
+               (= (select-keys edge [:text :newline?])
+                  (select-keys neighbor [:text :newline?]))
+               ;; Touching another edit would merge fragments; leave that case
+               ;; to the existing representation rather than inventing pairing.
+               (or (nil? previous)
+                   (< (+ (:start previous) (count (:removed previous))) shifted-start))
+               (or (nil? following) (< shifted-end (:start following))))
+      (let [rotated (if left?
+                      (into [(peek block)] (pop block))
+                      (conj (subvec block 1) (first block)))
+            shifted (cond-> (assoc edit :start shifted-start side rotated)
+                      (= side :removed)
+                      (update :removed
+                              #(mapv (fn [offset line]
+                                       (assoc line :position (+ shifted-start offset)))
+                                     (range) %)))
+            result (assoc-in selected [:edits ordinal] shifted)]
+        (if (= side :removed)
+          (update result :context
+                  #(-> % (dissoc neighbor-position)
+                       (assoc (:position edge) edge)))
+          result)))))
+
+(defn- edit-placements [selected ordinal]
+  ;; Each direction starts at the original placement and moves monotonically.
+  ;; Sparse canonical context bounds the walk; never guess an unseen base line.
+  (let [walk (fn [direction]
+               (rest (take-while some?
+                                 (iterate #(when % (rotate-edit % ordinal direction)) selected))))]
+    (concat [selected] (walk -1) (walk 1))))
+
+(defn- align-edits [original selected]
+  ;; One source-order pass, not a product of every fragment's placements. A
+  ;; single-fragment check only chooses a candidate; pooled validation below is
+  ;; still mandatory because separate fragments can reuse the same allowance.
+  (reduce (fn [candidate ordinal]
+            (if (edit-side (nth (:edits candidate) ordinal))
+              (or (some (fn [placement]
+                          (when (nil? (indexed-rejection-reason
+                                       original
+                                       (assoc placement :edits [(nth (:edits placement) ordinal)])))
+                            placement))
+                        (edit-placements candidate ordinal))
+                  candidate)
+              candidate))
+          (update selected :edits vec)
+          (range (count (:edits selected)))))
+
+(defn rejection-reason
+  "Return nil for a contained selection, otherwise identify the rejected edit
+   using parent/base coordinates. Retry only byte-preserving local rotations;
+   the same complete-diff validator owns all acceptance decisions."
+  [original selected]
+  (when-let [reason (indexed-rejection-reason original selected)]
+    (when-not (and original (seq (:edits selected))
+                   (not (or (:non-regular? original) (:non-regular? selected)
+                            (seq (:binary original)) (seq (:binary selected))))
+                   (nil? (indexed-rejection-reason original (align-edits original selected))))
+      ;; Preserve the original coordinates and diagnostic on unsuccessful retry.
+      reason)))
