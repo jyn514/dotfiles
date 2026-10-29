@@ -136,6 +136,116 @@ class ZulipHardeningTest(unittest.TestCase):
             with self.subTest(field=field): self.assertFalse(self.accepted(snapshot))
 
 
+class NativeMetadataConsumerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name).resolve()
+        self.enterContext(mock.patch.dict(os.environ, {"HOME": str(self.home)}))
+        self.enterContext(mock.patch.object(sandbox_proxies, "REPOSITORY_METADATA", None))
+        self.repo = self.home / "selected"
+        self.other = self.home / "other"
+        for root in (self.repo, self.other):
+            self.native("git", "init", "--quiet", str(root))
+            self.native("git", "-C", str(root), "-c", "user.name=Fixture", "-c",
+                        "user.email=fixture@example.invalid", "commit", "--quiet",
+                        "--allow-empty", "-m", "fixture")
+        self.selectors = [
+            {"GIT_DIR": str(self.other / ".git")},
+            {"GIT_COMMON_DIR": str(self.other / ".git")},
+            {"GIT_DIR": str(self.other / ".git"), "GIT_COMMON_DIR": str(self.other / ".git")},
+        ]
+        # Keep the helper's normal sibling imports without copying dependencies.
+        self.helper = self.home / "tool/sandbox-proxies.py"
+        self.helper.parent.mkdir()
+        for source in (ROOT / "tools/codex-sandbox").glob("*.py"):
+            if source.name != self.helper.name:
+                (self.helper.parent / source.name).symlink_to(source)
+        (self.helper.parent / "lima").symlink_to(ROOT / "tools/codex-sandbox/lima", target_is_directory=True)
+
+    @staticmethod
+    def native(*arguments, cwd=None):
+        return subprocess.run(arguments, cwd=cwd, check=True, text=True, capture_output=True)
+
+    def install_helper(self):
+        self.helper.write_text(MODULE_PATH.read_text())
+        self.helper.chmod(0o700)
+
+    def test_fallback_preserves_native_layouts_and_installed_metadata_precedence(self):
+        linked = self.home / "linked"
+        self.native("git", "-C", str(self.repo), "worktree", "add", "--quiet", "--detach", str(linked))
+        standalone = self.home / "standalone"
+        self.native("jj", "git", "init", "--no-colocate", str(standalone), cwd=self.home)
+        external = self.home / "external"
+        self.native("jj", "workspace", "add", "--no-colocate", str(external), cwd=standalone)
+        for root in (self.repo, linked, standalone, external):
+            expected = sandbox_proxies.git_metadata_paths(root)
+            identity = sandbox_proxies.repository_identity(root)
+            for selectors in self.selectors:
+                with self.subTest(root=root.name, selectors=selectors), \
+                        mock.patch.dict(os.environ, selectors), \
+                        mock.patch.object(sandbox_proxies, "REPOSITORY_METADATA", None):
+                    before = dict(os.environ)
+                    self.assertEqual(expected, sandbox_proxies.git_metadata_paths(root))
+                    self.assertEqual(identity, sandbox_proxies.repository_identity(root))
+                    # An installed description for another root cannot reroute this one.
+                    sandbox_proxies.use_repository_metadata(self.other, (self.other / ".git",) * 2)
+                    self.assertEqual(expected, sandbox_proxies.git_metadata_paths(root))
+                    sandbox_proxies.use_repository_metadata(root, expected)
+                    with mock.patch.object(subprocess, "run", side_effect=AssertionError("rediscovered")):
+                        self.assertEqual(expected, sandbox_proxies.git_metadata_paths(root))
+                        self.assertEqual(identity, sandbox_proxies.repository_identity(root))
+                    self.assertEqual(before, dict(os.environ))
+
+    def test_old_launcher_janitor_command_reaches_installed_metadata_runtime(self):
+        # Load the producer before replacing the disposable live-loaded helper.
+        # Its generated argv must work unchanged with the candidate consumer.
+        launcher = runpy.run_path(str(ROOT / "tools/codex-sandbox/codex-sandbox"))
+        sandbox_proxies.use_repository_metadata(self.repo, (self.repo / ".git",) * 2)
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        for selectors in self.selectors:
+            with self.subTest(selectors=selectors), mock.patch.dict(os.environ, selectors):
+                function = launcher["defer_proxy_cleanup"]
+                with mock.patch.dict(function.__globals__, proxy_module=lambda: sandbox_proxies,
+                                     PROXY_HELPER=self.helper, PROXY_IDLE_SECONDS=0), \
+                        mock.patch.object(subprocess, "Popen") as spawn:
+                    self.assertTrue(function(SimpleNamespace(completed_successfully=True, repository=self.repo)))
+                argv = spawn.call_args.args[0]
+                self.assertNotIn("env", spawn.call_args.kwargs)
+                self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+                self.assertEqual(subprocess.DEVNULL, spawn.call_args.kwargs["stderr"])
+                lease = runtime / "idle-cleanup.lease"
+                self.assertTrue(lease.exists())
+                # No recoverable service state: cleanup may only remove these files.
+                publication = runtime / "session.json"
+                publication.write_text('{"recovery": "fixture without service authority"}')
+                self.install_helper()
+                result = subprocess.run(argv, text=True, capture_output=True, timeout=10)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertFalse(lease.exists())
+                self.assertFalse(publication.exists())
+
+    def test_standalone_reset_uses_selected_roots_real_lock_and_recovery_files(self):
+        self.install_helper()
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        argv = [sys.executable, str(self.helper), "reset", "--repo", str(self.repo)]
+        for selectors in self.selectors:
+            with self.subTest(selectors=selectors), mock.patch.dict(os.environ, selectors):
+                with (runtime / "session.lock").open("a+b") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    result = subprocess.run(argv, text=True, capture_output=True, timeout=10)
+                    self.assertEqual(1, result.returncode, result.stderr)
+                    self.assertIn("sandbox sessions are still active", result.stderr)
+                lease = runtime / "idle-cleanup.lease"
+                lease.write_text("fixture")
+                publication = runtime / "session.json"
+                publication.write_text('{"recovery": "fixture without service authority"}')
+                result = subprocess.run(argv, text=True, capture_output=True, timeout=10)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertFalse(lease.exists())
+                self.assertFalse(publication.exists())
+
+
 class ManifestTest(unittest.TestCase):
     def test_launcher_metadata_is_reused_only_for_its_repository(self):
         paths = sandbox_proxies.git_metadata_paths(self.repo)

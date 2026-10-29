@@ -470,10 +470,16 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
             git_root = backing_path.resolve(strict=True)
         except (FileNotFoundError, subprocess.CalledProcessError) as error:
             raise ConfigError(f"Git metadata cannot be resolved for repository: {repo}") from error
+    # Explicit repository discovery must not inherit another Git shell context.
+    # Keep installed metadata authoritative and preserve native pointer handling.
+    environment = dict(os.environ)
+    for key in ("GIT_DIR", "GIT_COMMON_DIR"):
+        environment.pop(key, None)
     try:
         result = subprocess.run(
             ["git", "-C", str(git_root), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
             check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=environment,
         )
     except (FileNotFoundError, subprocess.CalledProcessError) as error:
         raise ConfigError(f"Git metadata cannot be resolved for repository: {repo}") from error
