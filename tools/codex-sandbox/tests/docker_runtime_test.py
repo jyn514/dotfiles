@@ -378,7 +378,8 @@ class DockerRuntimeTest(unittest.TestCase):
     def test_new_runtime_checks_identity_and_readiness_once(self):
         host = Mock()
         host.record.return_value = {'phase': 'ready'}
-        with patch('docker_runtime.DockerHost', return_value=host), patch.object(Docker, 'verify_identity') as identity:
+        with patch('docker_runtime.DockerHost', return_value=host), patch.object(
+                Docker, 'verify_identity', return_value={'OSType': 'linux', 'Architecture': 'aarch64'}) as identity:
             Docker(Path('/owned'))
             identity.assert_called_once_with()
             host.verify_runtime.assert_called_once_with(host.record.return_value)
@@ -709,13 +710,89 @@ class DockerRuntimeTest(unittest.TestCase):
                                 except ProcessLookupError:
                                     pass
 
-    def test_build_platform_comes_from_the_recorded_engine(self):
-        runtime = backend()
-        runtime.verify_identity = Mock()
-        with patch('docker_runtime.inspect_docker', return_value={'OSType': 'linux', 'Architecture': 'aarch64'}) as info:
+    @staticmethod
+    def admission_host(directory='/owned', engine_id='owned-engine'):
+        host = Mock()
+        host.record.return_value = {
+            'phase': 'ready', 'socket': directory + '/sock/docker.sock', 'engine_id': engine_id,
+        }
+        host.machine.return_value = {'dir': directory}
+        return host
+
+    def test_build_platform_reuses_the_recorded_engine_admission_response(self):
+        for architecture, expected in [('aarch64', 'arm64'), ('x86_64', 'amd64'), ('riscv64', 'riscv64')]:
+            with self.subTest(architecture=architecture):
+                host = self.admission_host()
+                info = {'ID': 'owned-engine', 'SecurityOptions': ['name=rootless'],
+                        'OSType': 'linux', 'Architecture': architecture}
+                with patch('docker_runtime.DockerHost', return_value=host), patch(
+                        'docker_runtime.inspect_docker', return_value=info) as query:
+                    runtime = Docker(Path('/owned'))
+                    # Callers share the admitted platform, not later mutations or lookups.
+                    info['Architecture'] = 'later-value'
+                    for _ in range(3):
+                        self.assertEqual(runtime.build_platform(), 'linux/' + expected)
+                    query.assert_called_once_with('/owned/sock/docker.sock', '/info', ['docker', 'info'])
+                    host.verify_runtime.assert_called_once_with(host.record.return_value)
+
+    def test_separate_runtime_admissions_bind_their_own_engine_platform(self):
+        first_host = self.admission_host('/first', 'first-engine')
+        second_host = self.admission_host('/second', 'second-engine')
+        responses = [
+            {'ID': 'first-engine', 'SecurityOptions': ['name=rootless'],
+             'OSType': 'linux', 'Architecture': 'aarch64'},
+            {'ID': 'second-engine', 'SecurityOptions': ['name=rootless'],
+             'OSType': 'linux', 'Architecture': 'x86_64'},
+        ]
+        with patch('docker_runtime.DockerHost', side_effect=[first_host, second_host]), patch(
+                'docker_runtime.inspect_docker', side_effect=responses) as query:
+            first = Docker(Path('/first'))
+            second = Docker(Path('/second'))
+            self.assertEqual(first.build_platform(), 'linux/arm64')
+            self.assertEqual(second.build_platform(), 'linux/amd64')
+            self.assertEqual(first.build_platform(), 'linux/arm64')
+            self.assertEqual([call.args[0] for call in query.call_args_list],
+                             ['/first/sock/docker.sock', '/second/sock/docker.sock'])
+
+    def test_engine_identity_failure_prevents_platform_admission(self):
+        host = self.admission_host()
+        info = {'ID': 'replacement-engine', 'SecurityOptions': ['name=rootless'],
+                'OSType': 'linux', 'Architecture': 'aarch64'}
+        with patch('docker_runtime.DockerHost', return_value=host), patch(
+                'docker_runtime.inspect_docker', return_value=info):
+            with self.assertRaisesRegex(RuntimeError, 'engine identity changed'):
+                Docker(Path('/owned'))
+        host.verify_runtime.assert_not_called()
+
+    def test_cleanup_checks_engine_identity_without_rebinding_platform(self):
+        host = self.admission_host()
+        info = {'ID': 'owned-engine', 'SecurityOptions': ['name=rootless'],
+                'OSType': 'linux', 'Architecture': 'aarch64'}
+        with patch('docker_runtime.DockerHost', return_value=host), patch(
+                'docker_runtime.inspect_docker', return_value=info) as query:
+            runtime = Docker(Path('/owned'))
+            runtime.client_argv = lambda arguments: arguments
+            info['Architecture'] = 'x86_64'
+            self.assertEqual(runtime.argv(['rm', 'owned']), ['rm', 'owned'])
             self.assertEqual(runtime.build_platform(), 'linux/arm64')
-            info.assert_called_once_with('/owned/docker.sock', '/info', ['docker', 'info'])
-            runtime.verify_identity.assert_not_called()
+            info['ID'] = 'replacement-engine'
+            with self.assertRaisesRegex(RuntimeError, 'engine identity changed'):
+                runtime.argv(['rm', 'owned'])
+            self.assertEqual(runtime.build_platform(), 'linux/arm64')
+            self.assertEqual(query.call_count, 3)
+
+    def test_recovery_needs_identity_but_not_build_platform_metadata(self):
+        host = self.admission_host()
+        info = {'ID': 'owned-engine', 'SecurityOptions': ['name=rootless']}
+        with patch('docker_runtime.DockerHost', return_value=host), patch(
+                'docker_runtime.inspect_docker', return_value=info) as query:
+            runtime = Docker(Path('/owned'), recovery=True)
+            runtime.client_argv = lambda arguments: arguments
+            self.assertEqual(runtime.argv(['rm', 'owned']), ['rm', 'owned'])
+            with self.assertRaisesRegex(RuntimeError, 'cleanup only'):
+                runtime.build_platform()
+            self.assertEqual(query.call_count, 2)
+        host.verify_runtime.assert_not_called()
 
     def test_failed_builder_reaps_plugin_after_wrapper_already_exited(self):
         for batched in (False, True):

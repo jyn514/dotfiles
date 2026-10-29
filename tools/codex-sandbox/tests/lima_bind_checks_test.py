@@ -220,7 +220,8 @@ class AdmittedBindTests(unittest.TestCase):
             record = {'phase': 'ready', 'shares': [{'location': str(root), 'writable': True}]}
             with patch('docker_runtime.DockerHost', return_value=host), \
                     patch.object(host, 'record', return_value=record), \
-                    patch.object(Docker, 'verify_identity') as identity, \
+                    patch.object(Docker, 'verify_identity', return_value={
+                        'OSType': 'linux', 'Architecture': 'aarch64'}) as identity, \
                     patch.object(host, 'runtime_epoch') as readiness, \
                     patch.object(host, 'verify_virtiofs') as mapping, \
                     patch.object(host, 'guest') as guest:

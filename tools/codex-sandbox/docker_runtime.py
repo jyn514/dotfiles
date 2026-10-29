@@ -266,9 +266,12 @@ class Docker(VMRuntime):
         self.recovery = recovery
         if self.record['phase'] != 'ready':
             raise RuntimeError('Docker prototype setup is incomplete')
-        self.verify_identity()
+        info = self.verify_identity()
         if not recovery:
             self.verify()
+            # Build selection belongs to this admission, not later cleanup checks.
+            arch = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(info['Architecture'], info['Architecture'])
+            self._build_platform = info['OSType'] + '/' + arch
 
     def check_binds(self, sources):
         if self.recovery:
@@ -292,6 +295,7 @@ class Docker(VMRuntime):
         info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
         if info['ID'] != self.record['engine_id'] or 'name=rootless' not in info['SecurityOptions']:
             raise RuntimeError('Docker engine identity changed; refusing recovery')
+        return info
 
     def argv(self, arguments, *, cwd=None):
         cleanup = (arguments[0] in ('inspect', 'ps', 'info', 'wait', 'rm', 'kill', 'stop') or
@@ -430,9 +434,9 @@ class Docker(VMRuntime):
                 'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state)}
 
     def build_platform(self):
-        info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
-        arch = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(info['Architecture'], info['Architecture'])
-        return info['OSType'] + '/' + arch
+        if self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        return self._build_platform
 
     def upstream_image(self, reference):
         result = self.run_builder(self.argv([
