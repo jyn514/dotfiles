@@ -147,6 +147,10 @@ If ownership remains unclear, ask before acting on those changes; continue indep
 
 ### Before running tests
 
+Classify an activity by the claim it tests, not by the command it invokes.
+A smoke test, trial, or probe remains a test when it calls setup, migration, or production entrypoints.
+Use real state only when disposable state cannot establish the claim and explicit authorization covers the exact mutation.
+
 Without explicit authorization, tests must not modify:
 - the authoritative checkout's source files or checked-in artifacts;
 - real user state;
