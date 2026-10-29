@@ -27,6 +27,17 @@ tmux first with the package setup. On Linux and macOS it also configures
 Backup and sandbox provisioning retain their separate setup commands;
 `./setup all` does not enable user services.
 
+### Pi Dashboard
+
+Ordinary package setup installs and patches Dashboard through mise.
+Run `./setup services` to configure its browser interface and bridge alongside the other user services.
+Dashboard configuration requires an online Tailscale connection and selects that IPv4 address plus `127.0.0.1` at the same HTTP port.
+Tracked policy lives in `config/pi-dashboard.json`; local pairing state and secrets remain in the runtime configuration.
+It does not start Dashboard; ordinary package setup does not configure or enable its bridge.
+See [browser and phone access](config/pi-agent/README.md#browser-and-phone-access) for pairing and operation,
+and [patch maintenance](libexec/setup/patches/README.md) before changing the pinned version.
+No Dashboard login service is installed.
+
 ### Python environments
 
 Mise's Python is scoped to bootstrap tasks, including `pi-install`; it is not a global shell default.

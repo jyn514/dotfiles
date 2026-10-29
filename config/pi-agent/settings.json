@@ -24,6 +24,10 @@
         "packages/pi-codex-subagents/index.ts"
       ],
       "skills": []
+    },
+    {
+      "source": "./pi-dashboard",
+      "skills": []
     }
   ],
   "compaction": {

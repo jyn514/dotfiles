@@ -359,6 +359,15 @@ url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-x64.tar.gz"
 checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
+[[tools."npm:@blackbelt-technology/pi-agent-dashboard"]]
+version = "0.11.0"
+backend = "npm:@blackbelt-technology/pi-agent-dashboard"
+specifiers = ["0.11.0"]
+
+[tools."npm:@blackbelt-technology/pi-agent-dashboard".options]
+allow_builds = '["@blackbelt-technology/pi-agent-dashboard", "@blackbelt-technology/pi-dashboard-server", "esbuild", "koffi", "node-pty"]'
+pnpm_args = "--config.blockExoticSubdeps=false"
+
 [[tools."npm:bash-language-server"]]
 version = "5.8.1"
 backend = "npm:bash-language-server"
@@ -401,6 +410,7 @@ specifiers = ["latest"]
 version = "0.8.0"
 backend = "pipx:git-revise"
 specifiers = ["latest"]
+uv = { path = ".mise/locks/pipx-git-revise/0.8.0", digest = "sha256:ded3734a98cde8e21257b0caff26015aeb35598052ed55ad2752970a69535a36" }
 
 [[tools."pipx:pylint"]]
 version = "4.0.9"

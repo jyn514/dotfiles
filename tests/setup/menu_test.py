@@ -318,5 +318,124 @@ setup_services() { record services; }
         self.assertEqual(3, result.stdout.count("Choose setup to run:"))
 
 
+class ServicesDispatchTests(unittest.TestCase):
+    def run_setup(self, option, system="Linux", fail_step=""):
+        """Run real dispatch/functions, replacing effects rather than the services function."""
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            shell_library = directory / "lib/shell"
+            shell_library.mkdir(parents=True)
+            (shell_library / "lib.sh").write_text('exists() { return 1; }\n')
+            (shell_library / "env.sh").write_text("")
+            (directory / "config").mkdir()
+            (directory / ".config/zsh/antidote").mkdir(parents=True)
+            (directory / ".config/fish").mkdir(parents=True)
+            (directory / ".config/fish/fish_plugins").touch()
+            log = directory / "effects.log"
+            record = '''
+record() {
+    printf '%s\\n' "$1" >> "$SETUP_EFFECT_LOG"
+    [ "$FAIL_STEP" != "$1" ] || return 31
+}
+'''
+            overrides = record + '''
+setup_dotfiles() { record dotfiles; }
+setup_install_global() { record global; }
+setup_basics() { record basics; }
+setup_shell() { record shell; }
+setup_python() { record python; }
+setup_vim() { record vim; }
+setup_sandbox() { record sandbox; }
+install_glide_native() { record glide-install; }
+install_dragon_native() { record dragon-install; }
+install_mise() { record mise-install; }
+install_pi() { record pi-install; }
+install_platform_bundles() { record platform-bundles; }
+cmd_alias() { return 0; }
+'''
+            source = (ROOT / "setup").read_text()
+            marker = 'if ! [ $# = 0 ]; then\n'
+            self.assertEqual(1, source.count(marker))
+            script = directory / "setup"
+            script.write_text(source.replace(marker, overrides + marker, 1))
+            binary = directory / "bin"
+            binary.mkdir()
+            commands = {
+                "uname": 'printf "%s\\n" "$TEST_SYSTEM"\n',
+                "id": 'printf "test-user\\n"\n',
+                "loginctl": 'record "loginctl $*"\n',
+                "systemctl": 'record "systemctl $*"\n',
+                "tailscale": 'record forbidden-tailscale; exit 94\n',
+                "python3": '''case "$*" in
+libexec/setup/glide.py) record glide-policy;;
+libexec/setup/setup_obsidian_sync.py) record obsidian;;
+libexec/setup/setup_dashboard.py)
+    [ "$MISE_GLOBAL_CONFIG_FILE" = "$EXPECTED_MISE_CONFIG" ] || exit 92
+    record dashboard-policy;;
+*) record "unexpected-python $*"; exit 93;;
+esac
+''',
+            }
+            for name, body in commands.items():
+                command = binary / name
+                command.write_text("#!/bin/sh\n" + record + body)
+                command.chmod(0o755)
+            env = os.environ | {
+                "HOME": str(directory), "PATH": f"{binary}:{os.environ['PATH']}",
+                "SETUP_EFFECT_LOG": str(log), "TEST_SYSTEM": system,
+                "EXPECTED_MISE_CONFIG": str(directory / "config/mise.toml"),
+                "FAIL_STEP": fail_step, "SETUP_NONINTERACTIVE": "1",
+            }
+            env.pop("IS_MACOS", None)
+            result = subprocess.run(
+                ["/bin/sh", str(script), option], cwd=directory,
+                env=env, text=True, capture_output=True,
+            )
+            return result, log.read_text().splitlines() if log.exists() else []
+
+    def test_removed_dashboard_route_does_not_dispatch(self):
+        result, effects = self.run_setup("dashboard")
+        self.assertEqual(126, result.returncode, result.stderr)
+        self.assertEqual([], effects)
+        self.assertIn("[services|11]", result.stdout)
+
+    def test_services_configures_dashboard_after_existing_services_without_startup(self):
+        for option in ("services", "11"):
+            for system in ("Linux", "Darwin"):
+                with self.subTest(option=option, system=system):
+                    result, effects = self.run_setup(option, system)
+                    expected = ["dotfiles"]
+                    if system == "Linux":
+                        expected += ["loginctl enable-linger test-user",
+                                     "systemctl --user daemon-reload",
+                                     "systemctl --user enable tmux.service"]
+                    expected += ["obsidian", "dashboard-policy"]
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    # Exact effects retain tmux's existing reload/enable and rule
+                    # out any additional Dashboard daemon/start/reload commands.
+                    self.assertEqual(expected, effects)
+
+    def test_services_preserves_each_failure_and_stops_before_later_effects(self):
+        steps = ["dotfiles", "loginctl enable-linger test-user",
+                 "systemctl --user daemon-reload", "systemctl --user enable tmux.service",
+                 "obsidian", "dashboard-policy"]
+        for index, step in enumerate(steps):
+            with self.subTest(failure=step):
+                result, effects = self.run_setup("services", fail_step=step)
+                self.assertEqual(31, result.returncode, result.stderr)
+                self.assertEqual(steps[:index + 1], effects)
+
+    def test_local_and_all_install_packages_without_dashboard_or_tailscale_configuration(self):
+        local = ["glide-install", "dragon-install", "glide-policy", "mise-install",
+                 "pi-install", "platform-bundles"]
+        for option, expected in (("local", local + ["python"]),
+                                 ("all", ["global"] + local +
+                                  ["basics", "shell", "python", "vim", "sandbox"])):
+            with self.subTest(option=option):
+                result, effects = self.run_setup(option)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(expected, effects)
+
+
 if __name__ == "__main__":
     unittest.main()

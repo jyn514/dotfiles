@@ -49,6 +49,22 @@ class PiWrapperTests(unittest.TestCase):
             with self.subTest(argument=argument):
                 self.assertEqual(["fixture-version"], self.run_wrapper(argument))
 
+    def test_dashboard_environment_does_not_touch_tmux_for_info_or_export(self) -> None:
+        record = self.root / "tmux-called"
+        fake = self.root / "tmux"
+        fake.write_text(f"#!/bin/sh\nprintf called > '{record}'\nexit 1\n")
+        fake.chmod(0o755)
+        self.environment.update(PI_DASHBOARD_SPAWN_TOKEN="browser-token",
+                                TMUX=str(self.root / "missing.sock") + ",1,0", TMUX_PANE="%0")
+        self.assertEqual(["fixture-version"], self.run_wrapper("--version"))
+        source = self.root / "session.jsonl"
+        source.write_text("Session content")
+        self.run_wrapper("--export", str(source), str(self.root / "export.html"))
+        self.assertFalse(record.exists())
+        # A failed source-server query is cosmetic, never a launcher fallback.
+        self.assertEqual(["prompt"], self.run_wrapper("prompt"))
+        self.assertTrue(record.exists())
+
     def test_version_with_other_arguments_still_uses_sandbox(self) -> None:
         self.assertEqual(["--version", "prompt"], self.run_wrapper("--version", "prompt"))
 

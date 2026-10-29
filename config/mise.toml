@@ -32,6 +32,9 @@ uv = "latest"
 "npm:marked" = { version = "18.1.2", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:vscode-langservers-extracted" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:obsidian-headless" = { version = "0.0.14", depends = ["node", "aqua:pnpm/pnpm"], allow_builds = ["better-sqlite3"] }
+# Keep the reviewed source patch in mise's owning installation lifecycle.
+# Dashboard's server requires SheetJS's published tarball subdependency.
+"npm:@blackbelt-technology/pi-agent-dashboard" = { version = "0.11.0", depends = ["node", "aqua:pnpm/pnpm"], pnpm_args = "--config.blockExoticSubdeps=false", allow_builds = ["@blackbelt-technology/pi-agent-dashboard", "@blackbelt-technology/pi-dashboard-server", "esbuild", "koffi", "node-pty"], postinstall = { run = 'python3 "{{vars.dotfiles_root}}/libexec/setup/setup_dashboard.py" postinstall', when = "always" } }
 "pipx:git-revise" = { version = "latest", depends = ["uv"] }
 "pipx:pylint" = { version = "latest", depends = ["uv"] }
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
