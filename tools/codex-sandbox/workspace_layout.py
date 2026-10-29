@@ -137,7 +137,11 @@ def discover_repository_metadata(host_root: Path, *, runner=None) -> RepositoryM
         git = Path(runner(["jj", "git", "root", "--ignore-working-copy"],
                           capture=True, cwd=root).stdout.strip()).resolve(strict=True)
         git_context = root if (root / ".git").exists() else git
-        lines = runner(["git", "-C", str(git_context), "rev-parse", "--path-format=absolute",
+        # -C does not override these inherited selectors. Authority belongs to
+        # host_root, not a caller's Git shell context; keep native linked-worktree
+        # discovery and the runner's process/stdio contract unchanged.
+        lines = runner(["env", "-u", "GIT_DIR", "-u", "GIT_COMMON_DIR",
+                        "git", "-C", str(git_context), "rev-parse", "--path-format=absolute",
                         "--git-dir", "--git-common-dir"], capture=True).stdout.splitlines()
         if len(lines) != 2:
             raise WorkspaceError("Git returned an invalid metadata layout")

@@ -15,7 +15,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from workspace_layout import (
-    WorkspaceError, WorkspaceLayout, discover_workspace, ensure_request_lock, workspace_guest_root,
+    WorkspaceError, WorkspaceLayout, discover_repository_metadata, discover_workspace,
+    ensure_request_lock, workspace_guest_root,
 )
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "codex-sandbox"
@@ -78,6 +79,48 @@ class WorkspaceLayoutTest(unittest.TestCase):
         self.assertNotEqual(layouts["main"].lock_file, layouts["git-linked"].lock_file)
         self.assertEqual(self.main / ".git/worktrees/git-linked", layouts["git-linked"].git_dir)
         self.assertEqual(self.main / ".git", layouts["git-linked"].common_dir)
+
+    def test_explicit_workspace_ignores_inherited_git_metadata_selection(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        other = git_fixture(self.home / "other")
+        linked_git = self.home / "src/team/git-linked"
+        native("git", "-C", str(self.main), "worktree", "add", "--quiet", "--detach", str(linked_git))
+        native("jj", "git", "init", "--colocate", str(linked_git), cwd=linked_git)
+        linked_jj = self.home / "outside/jj-linked"
+        linked_jj.parent.mkdir()
+        native("jj", "workspace", "add", "--no-colocate", str(linked_jj), cwd=self.main)
+        standalone = self.home / "standalone"
+        native("jj", "git", "init", "--no-colocate", str(standalone), cwd=self.home)
+        overrides = [
+            {"GIT_DIR": str(other / ".git")},
+            {"GIT_COMMON_DIR": str(other / ".git")},
+            {"GIT_DIR": str(other / ".git"), "GIT_COMMON_DIR": str(other / ".git")},
+            {"GIT_DIR": str(self.home / "missing"), "GIT_COMMON_DIR": str(self.home / "missing")},
+        ]
+        for root in (self.main, linked_git, linked_jj, standalone):
+            expected = discover_repository_metadata(root)
+            expected_layout = discover_workspace(root, Path("/src/selected"), self.home)
+            expected_plan = launcher["_workspace_mount_plan"](SimpleNamespace(workspaces=[expected_layout]))
+            for environment in overrides:
+                for runner in (None, launcher["run"]):
+                    with self.subTest(root=root.name, environment=environment, runner=runner), \
+                            mock.patch.dict(os.environ, environment):
+                        before = dict(os.environ)
+                        self.assertEqual(expected, discover_repository_metadata(root, runner=runner))
+                        layout = discover_workspace(root, Path("/src/selected"), self.home, runner=runner)
+                        self.assertEqual(expected_layout.proxy_authority(), layout.proxy_authority())
+                        self.assertEqual(expected_layout.metadata_mounts(), layout.metadata_mounts())
+                        self.assertEqual(expected_plan, launcher["_workspace_mount_plan"](
+                            SimpleNamespace(workspaces=[layout])))
+                        self.assertEqual(before, dict(os.environ))
+
+    def test_inherited_git_metadata_cannot_mask_broken_selected_workspace(self):
+        other = git_fixture(self.home / "other")
+        (self.main / ".git").rename(self.main / "missing-git")
+        with mock.patch.dict(os.environ, {"GIT_DIR": str(other / ".git"),
+                                          "GIT_COMMON_DIR": str(other / ".git")}):
+            with self.assertRaises(WorkspaceError):
+                discover_repository_metadata(self.main)
 
     def test_persisted_records_parse_after_host_checkout_is_gone(self):
         layout = discover_workspace(self.main, Path("/src/main"), self.home)
