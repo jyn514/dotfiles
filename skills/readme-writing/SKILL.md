@@ -7,7 +7,7 @@ description: Write, substantially revise, or review a repository, package, or to
 
 Write the account the reader needs, not an introduction attached to the old manual.
 The source supplies facts, not a requirement to reproduce every feature, section, or contract.
-For an introductory brief, select one useful operation or thought and develop it through the whole README.
+Fit the introduction to the reader's task: develop a focused use, or orient readers among independent uses.
 A shorter, self-contained replacement is valid; retaining the source's complete reference is not the default.
 
 This skill is sufficient to begin a README; do not load every broader writing workflow by default.
@@ -36,7 +36,10 @@ They show complete introductory development as well as sentence-level choices; t
 
 ## Build an explanation, then select the detail
 
-Choose a useful action or line of thought that develops the purpose.
+Choose the opening from the reader's task and the project's uses.
+For a focused tool or concept, develop one useful operation or line of thought.
+When readers need to choose among independent uses, introduce the common purpose and summarize which sections serve which tasks.
+Do not pick representative features merely to force a varied collection into a single-use explanation.
 Begin with that account rather than inheriting the source's section order.
 Keep effective existing prose when it already serves the reader.
 
@@ -57,8 +60,8 @@ Keep the project's appropriate voice; clear writing need not be chatty, cheerful
 Use concrete subjects and verbs, and retain specialized terms when they do precise work.
 Avoid making the reader pass through abstract classifications to reach an ordinary action.
 
-Select details by the use you chose, not by whether the source documents them.
-Keep the prerequisites, conditions, hazards, and limits needed for that use at the point of action.
+Select details by what readers need to understand or do, not by whether the source documents them.
+Keep the prerequisites, conditions, hazards, and limits needed for those tasks at the point of action.
 Preserve exact tokens in commands, interfaces, quoted output, and paths when you use them.
 Preserving product behavior means describing it accurately; it does not require documenting every other operation's contract here.
 Keep requirements from the human brief, even when they require a broader account.
@@ -91,6 +94,7 @@ Check that the opening's account continues through the body rather than disappea
 ## Review the README first, then its routes
 
 First judge the complete README as prose on its own, including retained reference sections and the ending.
+If the opening maps independent uses, can readers recognize their task and find the matching section?
 Does its chosen account develop understanding, or does it disappear beneath an inventory?
 Do not credit explanations that appear only in unseen linked pages.
 For independent source-blind prose review, supply the README without the source or drafting rationale; do not infer what unseen links contain.
