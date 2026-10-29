@@ -25,6 +25,10 @@ Reuse settled contracts; separate files alone do not establish independence.
 
 ## Give a self-contained assignment
 
+Prefer references to accessible canonical requirements, procedures and evidence over restating them.
+A self-contained assignment identifies what to read and supplies task-specific decisions, ownership, overrides and otherwise unavailable context;
+it need not reproduce the referenced material.
+
 Provide the worker with:
 
 - The governing question or outcome, why it advances the user's overall goal, acceptance condition, current evidence, and uncertainty.

@@ -25,7 +25,11 @@ Follow supplied repository context when you need to establish what the project d
 Resolve relative links from the original README location, not the storage location of a copied input.
 Keep the human's reader, purpose, and request; do not replace them with a more convenient brief.
 For an introduction with no stated audience, consider a project newcomer who has not read the related documentation.
-Do not make that reader learn the whole field, but do not assume familiarity with the project's private names.
+A project newcomer is not necessarily a domain beginner.
+Establish what the intended reader already understands.
+Introduce what this particular project offers, why it matters, and when someone would choose it.
+Explain the broader category only where that background helps the reader understand the project.
+Do not assume familiarity with the project's private names.
 
 Establish what someone wants to do, what they provide or choose, what the project supplies, and what happens as a result.
 Distinguish working behavior from plans and aspirations.

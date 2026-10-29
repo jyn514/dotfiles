@@ -36,7 +36,8 @@ Before attributing the problem upstream or proposing a change, trace the followi
 
 1. State the observed problem and required behavior separately from any preferred mechanism.
    Identify which constraints are governing requirements and which follow from a downstream design choice, including who chose it.
-   Keep that distinction explicit in the report; a directory layout chosen for a draft design is not an intrinsic upstream requirement.
+   A directory layout chosen for a draft design is not an intrinsic upstream requirement.
+   A heading or the surrounding explanation can establish whose choice it is; do not add a disclaimer when that is already clear.
 2. Check plausible existing solutions in the supported configuration and public APIs, and state what each workaround actually solves.
    Distinguish unchanged-tool capabilities from approaches requiring consumer patches, downstream forks, or upstream adoption.
    An existing library API does not by itself establish that an unmodified CLI exposes the same capability.
@@ -68,8 +69,8 @@ The writing, tightening, and delivery requirements apply only when a report or f
    retaining its headings, order, and required fields; omit template comments and
    metadata. If no template is available, tell the user.
    Follow the project's disclosure placement; otherwise put this skill's default disclosure before the first template heading.
-   Preserve the template's heading order and required fields. Lead with the installation or invocation and visible failure; include
-   reproduction, expected behavior, and output.
+   Preserve the template's heading order and required fields.
+   For a bug report, lead with the installation or invocation and visible failure; include reproduction, expected behavior, and output.
 2. Incorporate the user's latest corrections and reported experiments.
    Track whether each result came from the user, an agent-run check, or source inspection.
    Distinguish jyn's goals and reported experience from verification evidence.
@@ -96,17 +97,22 @@ The writing, tightening, and delivery requirements apply only when a report or f
 ## Write the report
 
 Organize the report around the maintainer's decision, not the investigation's chronology.
+Read the title and body together; preserve the specific request rather than replacing it with a broader problem description.
+For a change proposal, name the proposed change before the workaround, unless the required template specifies otherwise.
 Before opening any collapsed details, the maintainer should understand the failure, why it matters, the requested outcome,
 and why obvious workarounds fall short.
 Use supporting details to verify those points, not to introduce them.
-When a supported approach may already exist, ask a bounded question early rather than presenting an upstream change as the only answer.
-Invite the maintainer to identify that approach or consider support; follow required template fields rather than adding duplicate requests.
+When an existing supported approach might meet the need, ask about it without replacing a specific proposal with a general request for advice.
+Do not imply that such an approach exists or ask the maintainer to design one unless that is the intended request.
+A maintainer can recommend keeping the solution downstream without also supplying an alternative.
+Follow required template fields rather than adding duplicate requests.
+The [discussion contrast](../holistic-writing/references/reading-examples.md#state-the-request-before-the-workaround) shows how these choices affect reading.
 
 - Use complete sentences and ordinary issue prose, even when conversation uses IRC style.
   State jyn's goals and known experience accurately, without imitating her conversational voice or inventing familiarity, use, or personal verification.
   Distinguish intended use from current use: "I want to use ..." does not establish "I use ...".
-  Choose a title that names the general failure rather than one tool that exposes
-  it: "user-local Python" rather than "mise Python"; name mise in the body.
+  For a bug report, choose a title that names the general failure rather than one tool that exposes it:
+  "user-local Python" rather than "mise Python"; name mise in the body.
   Include facts that help the maintainer reproduce, diagnose, or fix the failure;
   omit investigation narration and redundant checks when a working control
   already establishes the relevant difference.

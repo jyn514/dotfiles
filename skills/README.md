@@ -77,6 +77,10 @@ For factual or technical prose, include the source material the agent must prese
 It keeps the requested outcome, permissions, evidence, and remaining work available as the run continues.
 It does not turn an ordinary request into an autonomous run.
 
+- [goal-to-issue-graph](goal-to-issue-graph/SKILL.md) — turn a brief goal into bounded tickets, justified dependencies and observable whole-goal acceptance.
+  Distinguish successful outcomes from diagnosed holds, and a ready plan from a completed product.
+  The goal can be selected while architecture or input facts remain unresolved.
+
 [Review](review/SKILL.md) needs a comparison target: a design against its requirements, an implementation against its specification,
 or completed work against the requested outcome.
 For a small, localized edit, a diff review and the appropriate native check can be enough.

@@ -70,6 +70,8 @@ Separate completion of the planning request from completion of the planned produ
 Choose the smallest useful deliverables with observable acceptance, not one ticket per file, implementation layer or failure message.
 Group failures under a shared invariant when one general correction addresses them.
 Leave low-risk mechanics to implementation; do not manufacture interfaces or exact file edits for unsettled designs.
+For implementation goals, define bounded cross-component outcomes that establish and extend a working end-to-end path.
+Do not merely reorder whole-subsystem tickets that still defer integration until every component is complete.
 
 When an early decision can materially change decomposition, distinguish ready assignments from provisional downstream work.
 Fully specify the decision and architecture-independent outcomes first; revise affected downstream tickets after the choice.
@@ -133,6 +135,8 @@ Do not sum concurrent allowances into an unsupported completion forecast.
 State the edge direction: `A → B` means A supplies something needed to close B.
 Explain that output or semantic prerequisite for every edge.
 Priority, shared files, a common author and convenient sequencing are not dependencies.
+Among ready implementation tasks, prioritize establishing or extending a consumer-visible result within governing milestone order.
+Record scheduling priority separately; do not invent dependency edges to express this preference.
 An unblocked ticket is not necessarily unowned or safe to edit concurrently; use `delegation` for actual assignments.
 
 Assign each ticket bounded acceptance evidence; identify fixtures where needed and reuse suitable shared fixtures.
@@ -148,8 +152,14 @@ When a required dependency becomes concrete during discovery, update the graph r
 
 Assign these checks to graph work; do not execute implementation or product acceptance without authorization.
 Reuse existing inspection and measurement evidence where valid.
+For implementation goals, plan the smallest supported end-to-end result as early as its genuine prerequisites allow, even with only basic features.
+Use the actual producer, intervening boundaries and final consumer; do not substitute hand-written intermediate outputs or bypass the boundary under test.
+Extend the working path through repeated integration as capability and scale increase, rather than postponing consumer checks until final convergence.
+If a working baseline already exists, exercise the changed path or next failing boundary instead of rebuilding a demonstration of unchanged behavior.
+An early limited delivery establishes a working path, not full goal acceptance; retain all required features, population and quality conditions.
 When independent components share semantics or materially increase resource use, place a useful combined checkpoint before final convergence.
-Specify an actual interacting path and its negative cases; require a measured larger delivery when small-fixture success cannot establish viability.
+Specify an actual interacting path and its negative cases; test consequential scale and interactions early enough to change the approach.
+Require a measured larger delivery when small-fixture success cannot establish viability.
 Do not impose a full-profile run per ticket or invent universal resource limits.
 Assign later interacting changes their affected cross-component regressions.
 
@@ -206,7 +216,8 @@ If access is unavailable, deliver the local handoff and name the blocked tracker
 
 For “index every document in the old archive and keep updates routine,” inventory the archive itself, not just formats today's extractor accepts.
 Separate successful ingestion from actual searchability.
-Plan format/input discovery, required support, an early mixed-format consumer check, whole-archive verification and a supported new-document update.
+Plan format/input discovery and required support around an initial supported archive document passing through actual ingestion and search.
+Expand that working path through mixed-format consumer checks, whole-archive verification and a supported new-document update.
 An unsupported PDF recorded as skipped is not a searchable document.
 An explicitly permitted alternative representation can satisfy coverage only when it works through the search consumer; it does not excuse missing required extractor behavior.
 
