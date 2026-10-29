@@ -68,7 +68,11 @@ main() {
 		*) set --;;
 	esac
 	if [ "$type_set" = true ]; then
-		set -- "$@" --type "$type"
+		case "$prog" in
+			# xclip calls the requested MIME atom a target, not a type.
+			xclip) set -- "$@" -target "$type";;
+			*) set -- "$@" --type "$type";;
+		esac
 	fi
 	case "$prog" in
 		xclip) set -- "$@" -selection "$selection";;

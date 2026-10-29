@@ -80,7 +80,7 @@ class NativeClipboardTest(unittest.TestCase):
         self.assertEqual(self.INPUT, self.stdin.read_bytes())
 
     def test_native_argv_preserves_optional_flags_and_literal_types(self) -> None:
-        # Native argv is the compatibility oracle: flags are separate values,
+        # Check argv boundaries, not native parser acceptance (see xclip_test.py):
         # absent flags add no empty values, and the supplied type stays literal.
         # Include both a standalone matching glob and whitespace plus metacharacters.
         types = (None, "", "image/png", "text/plain; charset=utf-8", "*", "*?[ab]",
@@ -105,7 +105,7 @@ class NativeClipboardTest(unittest.TestCase):
                             else:
                                 expected = []
                             if mime is not None:
-                                expected += ["--type", mime]
+                                expected += ["-target" if index == 0 else "--type", mime]
                             if index == 0:
                                 expected += ["-selection", selection]
                             elif index == 1:
