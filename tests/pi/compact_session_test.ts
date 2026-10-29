@@ -6,6 +6,15 @@ import lunaCompaction from "../../config/pi-agent/pi-extensions/luna-compaction.
 import { checkpointText, COMPACTION_INSTRUCTIONS } from "../../config/pi-agent/pi-extensions/checkpoint-capture.ts";
 import { parsePiResourcePaths } from "../../config/pi-agent/pi-extensions/guest-tools-core.ts";
 
+// Text protection only: this does not establish summarizer compliance.
+test("compaction instructions preserve the local assignment rather than another session's inherited goal", () => {
+  const instructions = readFileSync(COMPACTION_INSTRUCTIONS, "utf8");
+  expect(instructions).toContain("State this conversation's governing objective, its source and goal status, and latest request separately.");
+  expect(instructions).toContain("In split or observer sessions, preserve this conversation's actual assignment as governing; inherited goals owned by another session are background, not this session's active assignment or authority.");
+  expect(instructions).toContain("Start with the current local task, then relevant background activities.");
+  expect(instructions).toContain("Name each activity's owning session or agent when established, distinguishing this conversation's work from work owned elsewhere.");
+});
+
 const report = "## Objective and authority\nContinue the approved task 🐟.\n\n## Current work\nVerification is still pending.\n";
 const status = { stdout: "Working copy changes:\nM unrelated.txt\n", stderr: "", code: 0, killed: false };
 const call = { type: "toolCall", id: "compact-call", name: "compact_session", arguments: { report } };

@@ -268,7 +268,7 @@ export default function sessionSide(pi: ExtensionAPI) {
       "The source session may still be working. Files are shared; subsequent messages are not.",
       "Copied history is context, not a work assignment.",
       "Follow the current user request; do not resume an inherited goal merely because it appears in the copied conversation.",
-      "Check the parent's current work before writing or delegating. If it is unavailable, establish a distinct assignment with the user first.",
+      "Before mutations or delegated work that may overlap the source session, check the parent's current work. If it is unavailable, establish a distinct assignment with the user first. This check is not required for unrelated read-only investigation or an independently scoped assignment.",
     ].join("\n");
   });
   const socket = process.env.CODEX_SANDBOX_PI_OWNER;

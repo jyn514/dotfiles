@@ -614,12 +614,43 @@ test("installed Pi renders split provenance at the provider after resume and com
         `read_session({ sessionId: "${source.getSessionId()}" })`), name);
       assert.ok(system.sections.split_origin.includes("different host/guest namespace"), name);
       assert.equal(rendered.split("<split_origin>").length - 1, 1, name);
+      assert.ok(rendered.includes("The source session may still be working. Files are shared; subsequent messages are not."), name);
       assert.ok(rendered.includes("Copied history is context, not a work assignment."), name);
-      assert.ok(rendered.includes("Check the parent's current work before writing or delegating."), name);
+      assert.ok(rendered.includes("Follow the current user request; do not resume an inherited goal merely because it appears in the copied conversation."), name);
+      assert.ok(rendered.includes("Before mutations or delegated work that may overlap the source session, check the parent's current work."), name);
+      assert.ok(rendered.includes("If it is unavailable, establish a distinct assignment with the user first."), name);
+      assert.ok(rendered.includes("This check is not required for unrelated read-only investigation or an independently scoped assignment."), name);
+      assert.ok(!rendered.includes("Check the parent's current work before writing or delegating."), name);
     } else {
       assert.equal(system.sections.split_origin, undefined, name);
       assert.ok(!rendered.includes("<split_origin>"), name);
     }
   }
   assert.equal(requests.length, managers.length);
+});
+
+// These checks protect instruction text and registration, not model compliance.
+test("sandbox path warning distinguishes unusable advertised paths from historical provenance", async () => {
+  const instructions = await readFile(join(extensionDir, "../../agents/sandbox-AGENTS.md"), "utf8");
+  assert.ok(instructions.includes("If a current guest-facing operational path under `/home/jyn` is advertised as usable but is unusable here"));
+  assert.ok(instructions.includes("Historical transcripts and provenance may preserve original host paths without being sandbox failures."));
+  assert.ok(!instructions.includes("If you see `/home/jyn` in a path, that's a bug in the sandbox."));
+});
+
+test("registered ask_user guidelines reserve review packets for consequential or context-heavy questions", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-native-ask-user-guideline-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const loader = new DefaultResourceLoader({
+    cwd: root, agentDir: join(root, "agent"),
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    additionalExtensionPaths: [join(extensionDir, "ask-user.ts")],
+  });
+  await loader.reload();
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const extension = loader.getExtensions().extensions.find(({ path }) => path === join(extensionDir, "ask-user.ts"));
+  assert.ok(extension, "the actual ask-user extension must load");
+  const tool = extension.tools.get("ask_user");
+  assert.ok(tool, "ask_user must be registered");
+  assert.ok(tool.definition.promptGuidelines.includes(
+    "Use the human-review-packets skill for consequential approvals or questions that require substantial context to judge. Ask simple preference questions, routine confirmations, and requests for missing facts directly."));
 });

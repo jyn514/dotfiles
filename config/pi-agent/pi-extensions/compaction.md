@@ -66,7 +66,8 @@ Use these sections in order, omitting empty or inapplicable content; state neces
 
 ### Objective and authority
 
-State the governing objective, its source and goal status, and latest request separately.
+State this conversation's governing objective, its source and goal status, and latest request separately.
+In split or observer sessions, preserve this conversation's actual assignment as governing; inherited goals owned by another session are background, not this session's active assignment or authority.
 When no newer request is recorded, carry forward the last established user request instead of reporting only “no new request.”
 Resolve short follow-ups such as “review,” “fix,” or “implement” against the most recently selected task, not automatically against the ongoing goal or previous checkpoint.
 Preserve unrelated pauses and approval boundaries.
