@@ -4,26 +4,19 @@ import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type ContextFile = { path: string; content: string };
-type CacheEntry = { mtimeMs: number; size: number; content: string };
 
-const cache = new Map<string, CacheEntry>();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
 async function readUtf8(path: string): Promise<string> {
   const metadata = await stat(path);
   if (!metadata.isFile()) throw new Error(`instruction include is not a file: ${path}`);
 
-  const cached = cache.get(path);
-  if (cached?.mtimeMs === metadata.mtimeMs && cached.size === metadata.size) return cached.content;
-
-  let content: string;
+  // Files can change without changing size or mtime; reread on every expansion.
   try {
-    content = decoder.decode(await readFile(path));
+    return decoder.decode(await readFile(path));
   } catch (error) {
     throw new Error(`instruction include is not valid UTF-8: ${path}`, { cause: error });
   }
-  cache.set(path, { mtimeMs: metadata.mtimeMs, size: metadata.size, content });
-  return content;
 }
 
 function includesIn(content: string): string[] {

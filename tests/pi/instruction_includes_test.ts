@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import instructionIncludes, { expandInstructionIncludes } from "../../config/pi-agent/pi-extensions/pi-instruction-includes";
@@ -12,14 +12,38 @@ async function fixture(): Promise<string> {
   return path;
 }
 
+const updates = ["atomic replacement", "in-place write"] as const;
+type Update = typeof updates[number];
+
+async function initialGuidance(path: string): Promise<void> {
+  await writeFile(path, "Old guidance");
+  // Use an exactly representable time so restoring it does not round filesystem precision.
+  await utimes(path, 1_700_000_000, 1_700_000_000);
+}
+
+async function updateGuidance(path: string, update: Update): Promise<void> {
+  const before = await stat(path);
+  const destination = update === "atomic replacement" ? `${path}.replacement` : path;
+  await writeFile(destination, "New guidance");
+  await utimes(destination, before.atime, before.mtime);
+  if (update === "atomic replacement") await rename(destination, path);
+
+  const after = await stat(path);
+  expect(after.size).toBe(before.size);
+  expect(after.mtimeMs).toBe(before.mtimeMs);
+  if (update === "atomic replacement") expect(after.ino).not.toBe(before.ino);
+  else expect(after.ino).toBe(before.ino);
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
 });
 
 describe("instruction includes", () => {
-  test("updates include guidance without forcing the prompt and clears absent includes", async () => {
+  test.each(updates)("refreshes guidance after %s without forcing the prompt and clears absent includes", async (update) => {
     const root = await fixture();
-    await writeFile(join(root, "rules.md"), "Included rules");
+    const rules = join(root, "rules.md");
+    await initialGuidance(rules);
     const event = {
       systemPrompt: "Base instructions.",
       systemPromptOptions: {
@@ -42,12 +66,27 @@ describe("instruction includes", () => {
         other: "other guidance",
         instruction_includes: expect.stringContaining("## Expanded instruction includes\n\n"),
       });
-      expect(event.systemPromptOptions.sections.instruction_includes).toContain("Included rules");
+      expect(event.systemPromptOptions.sections.instruction_includes).toContain(turn === 0 ? "Old guidance" : "New guidance");
+      expect(event.systemPromptOptions.sections.instruction_includes).not.toContain(turn === 0 ? "New guidance" : "Old guidance");
+      if (turn === 0) await updateGuidance(rules, update);
     }
     event.systemPromptOptions.contextFiles = [];
     expect(await handler!(event)).toBeUndefined();
     expect(event.systemPrompt).toBe("Base instructions.");
     expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
+  });
+
+  test.each(updates)("reads current include content after %s with unchanged size and mtime", async (update) => {
+    const root = await fixture();
+    const rules = join(root, "rules.md");
+    await initialGuidance(rules);
+    const context = [{ path: join(root, "AGENTS.md"), content: "@rules.md" }];
+
+    expect(await expandInstructionIncludes(context, root)).toEqual([expect.stringContaining("Old guidance")]);
+    await updateGuidance(rules, update);
+    const expanded = await expandInstructionIncludes(context, root);
+    expect(expanded).toEqual([expect.stringContaining("New guidance")]);
+    expect(expanded[0]).not.toContain("Old guidance");
   });
 
   test("expands nested relative includes in declaration order", async () => {
@@ -77,7 +116,7 @@ describe("instruction includes", () => {
     await mkdir(shared, { recursive: true });
     await writeFile(join(shared, "shared.md"), "Shared");
     const content = await readFile(join(import.meta.dir, "../../config/pi-agent/AGENTS.md"), "utf8");
-    expect(content.trim()).toBe("@../../.agents/shared.md");
+    expect(content.split(/\r?\n/)).toContain("@../../.agents/shared.md");
 
     const result = await expandInstructionIncludes(
       [{ path: join(agent, "AGENTS.md"), content }],
