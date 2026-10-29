@@ -86,7 +86,7 @@ COPY ./config/pi-agent/settings.json /home/codex/.pi/agent/settings.json
 COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
 RUN node /opt/cache-pi-extensions.mjs install
 COPY ./config/pi-agent/pi-extensions /home/codex/.pi/agent/pi-extensions
-COPY ./tools/pi-link/index.ts ./tools/pi-link/identity.ts ./tools/pi-link/messaging.ts /home/codex/.pi/agent/pi-link/
+COPY ./tools/pi-link/index.ts ./tools/pi-link/identity.ts ./tools/pi-link/identity-format.mjs ./tools/pi-link/messaging.ts /home/codex/.pi/agent/pi-link/
 COPY ./tools/pi-link/skills /home/codex/.pi/agent/pi-link/skills
 RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 

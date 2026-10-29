@@ -62,7 +62,7 @@ async function network(t, names = ["hub", "alice", "bob"], { startup = false, di
   // Keep source overrides usable for historical single-file baselines, while
   // loading sibling production modules through the same native loader as index.
   for (const name of await readdir(dirname(sourcePath))) {
-    if (!name.endsWith(".ts")) continue;
+    if (!name.endsWith(".ts") && !name.endsWith(".mjs")) continue;
     const source = join(dirname(sourcePath), name);
     const copy = join(dirname(fixturePath), name);
     execFileSync("cp", [source, copy]);
@@ -328,7 +328,7 @@ test("image cache inputs load pi-link with its sibling modules", async (t) => {
     const destination = fields.at(-1);
     if (!destination.startsWith("/home/codex/.pi/agent/pi-link/")) continue;
     for (const source of fields.slice(1, -1)) {
-      if (!source.endsWith(".ts")) continue;
+      if (!source.endsWith(".ts") && !source.endsWith(".mjs")) continue;
       execFileSync("cp", [join(root, source), join(imageRoot, destination)]);
     }
   }

@@ -462,6 +462,8 @@ Default names are random 4-character hex IDs: `t-a1b2`, `t-c3d4`, etc.
 
 **Persistence:** accepted naming updates save `link-identity` entries with local name, group, per-field origins, and optional explicit-empty-suffix spelling.
 Legacy `link-name` entries remain readable and protect both components as user-owned.
+The extension and shell launcher share `identity-format.mjs` for naming-entry validation and spelling.
+Both apply valid current and legacy entries in file order; CLI list/resume discovery therefore follows the same saved identity as extension startup rather than retaining historical names as aliases.
 Startup naming (`pi-link <name>`, `pi --link-name <name>`) records manual ownership too.
 Hub-assigned variants such as `builder-2` do not replace the saved preference.
 On reconnect, a client requests the preferred name rather than its last runtime name.

@@ -445,6 +445,11 @@ Lookup is **scoped to the current cwd by default**; pass `--global` (`-g`) to co
 - **Multiple matches in scope** → prints candidates to stderr, exits 1
 - **Conflicting flags** (`--session`, `--continue`, `--resume`, `--fork`, etc.) → rejected with an error
 
+Lookup uses the latest valid saved identity, whether recorded as a current `link-identity` entry or a legacy `link-name` entry.
+Earlier names are not aliases.
+Without a saved identity, the Pi session name is the fallback.
+Malformed naming entries neither replace a valid identity nor make a session appear in `--list`.
+
 ### Discovering sessions
 
 `pi-link --list` shows pi-link sessions in the current cwd; `pi-link --list --global` (or `-g`) lists them across all directories. Sorted by last activity — starting a session with the same name it already has does not bump recency; only real activity (messages, tool calls, edits, name changes) does.
@@ -663,10 +668,11 @@ First follow the repository's [test dependency setup](../../dev/README.md#testin
 From the dotfiles repository root:
 
 ```bash
-dev/test-environment bun test tests/pi/pi_link_test.ts
+dev/test-environment bun test tests/pi/pi_link_identity_test.ts tests/pi/pi_link_messaging_test.ts tests/pi/pi_link_cli_test.ts tests/pi/pi_link_test.ts
 ```
 
 The suite is also discovered by the repository's `dev/test` command through `bun test tests/pi`.
-Tests use disposable copies and private WebSocket ports, not the live link on port 9900.
+CLI tests run the production list, resolve, and launcher paths with disposable session files and a fake Pi executable.
+Native extension tests use disposable copies and private WebSocket ports, not the live link on port 9900.
 Keep fork changes here rather than editing a Pi-installed package checkout.
 Bootstrap configuration and the installed upstream package are unchanged.

@@ -17,12 +17,7 @@ import { createInterface } from "readline";
 import { join } from "path";
 import { homedir } from "os";
 import { spawn } from "child_process";
-
-// Canonicalize a link/session name: trim + collapse internal whitespace.
-// Must match the extension's normalizeName (index.ts).
-function normalizeName(s) {
-  return s.trim().replace(/\s+/g, " ");
-}
+import { fullName, normalizeName, savedIdentity } from "../identity-format.mjs";
 
 // ── Pi config resolution ───────────────────────────────────────────────────
 // Match Pi's session-dir lookup order so list/resolve/<name> see what Pi sees.
@@ -75,9 +70,9 @@ function resolveSessionDir(cwd, agentDir) {
 // status, and message count. Returns null when `scopeCwd` is given and the
 // session's header names a different cwd.
 //
-// Name precedence: latest valid `link-name` custom entry wins as the
-// authoritative pi-link name. `session_info.name` is only a fallback for
-// sessions that never set a link-name. Historical link-names are not aliases.
+// Name precedence: latest valid saved identity wins, across current
+// `link-identity` and legacy `link-name` entries. `session_info.name` is only a
+// fallback without a saved identity. Historical link names are not aliases.
 //
 // A scoped scan only ever keeps sessions from `scopeCwd`, so a session whose
 // header names another cwd is abandoned there instead of being read to EOF for
@@ -91,7 +86,7 @@ async function getSessionMeta(filePath, scopeCwd) {
   let sessionName;
   let cwd;
   let id;
-  let hasLinkName = false;
+  let hasLinkIdentity = false;
   let messages = 0;
   const input = createReadStream(filePath, "utf-8");
   const rl = createInterface({ input, crlfDelay: Infinity });
@@ -111,11 +106,11 @@ async function getSessionMeta(filePath, scopeCwd) {
         if (typeof entry.id === "string") id = entry.id;
       } else if (entry.type === "session_info" && typeof entry.name === "string") {
         sessionName = normalizeName(entry.name) || undefined;
-      } else if (entry.type === "custom" && entry.customType === "link-name") {
-        hasLinkName = true;
-        if (entry.data && typeof entry.data.name === "string") {
-          const n = normalizeName(entry.data.name);
-          if (n) linkName = n;
+      } else if (entry.type === "custom") {
+        const identity = savedIdentity(entry);
+        if (identity) {
+          hasLinkIdentity = true;
+          linkName = fullName(identity);
         }
       } else if (entry.type === "message" || entry.type === "user" || entry.type === "assistant") {
         messages++;
@@ -124,7 +119,7 @@ async function getSessionMeta(filePath, scopeCwd) {
       // skip malformed lines (incl. partial last line of active sessions)
     }
   }
-  return { name: linkName ?? sessionName, cwd, id, hasLinkName, messages };
+  return { name: linkName ?? sessionName, cwd, id, hasLinkIdentity, messages };
 }
 
 function normalizePath(p) {
@@ -220,7 +215,7 @@ async function scanSessions(dir, isCustom, scopeCwd) {
 
 // Find sessions whose current display name matches `targetName`, restricted to
 // `scopeCwd` when given and searched across every cwd when not. Falls back to
-// `session_info.name` for sessions without a link-name (so `pi-link <name>`
+// `session_info.name` for sessions without a saved identity (so `pi-link <name>`
 // can attach link to a previously-unlinked named session).
 //
 // The cwd predicate is applied here as well as in the scan: a session whose
@@ -234,11 +229,11 @@ async function findSessionsByName(targetName, dir, isCustom, scopeCwd) {
     .sort((a, b) => b.modified.getTime() - a.modified.getTime());
 }
 
-// List pi-link sessions (those with at least one link-name entry), restricted
+// List pi-link sessions (those with at least one valid saved identity), restricted
 // to `scopeCwd` when given and covering every cwd when not.
 async function listSessions({ dir, isCustom, scopeCwd }) {
   return (await scanSessions(dir, isCustom, scopeCwd))
-    .filter((s) => s.hasLinkName)
+    .filter((s) => s.hasLinkIdentity)
     .filter((s) => scopeCwd === undefined || (s.cwd && normalizePath(s.cwd) === scopeCwd))
     .map((s) => ({
       name: s.name || "(unnamed)",

@@ -13,6 +13,7 @@
     "skills",
     "index.ts",
     "identity.ts",
+    "identity-format.mjs",
     "messaging.ts",
     "README.md",
     "design.md",
