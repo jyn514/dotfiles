@@ -42,6 +42,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
   Verify that the existing owner consistently uses its selected resource despite unrelated ambient changes, and that a new owner observes a new selection.
   Verify that intentionally dynamic inputs still change within the existing owner's lifetime.
   Exercise the binding through the subprocess or protocol boundary where the resource is actually used, when one exists.
+  For subprocess selection, vary inherited resource selectors as well as explicit arguments and working directory; they may override the apparent selection.
   Lookup-count assertions alone do not establish correct resource selection or freshness.
 - For content-freshness guarantees, replace a resource while retaining its path or selector and any metadata used as a proxy for content.
   Include feasible equal-size, equal-time replacements and check the content delivered to the consumer, not just cache invalidation counts.

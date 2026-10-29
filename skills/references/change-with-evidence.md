@@ -40,6 +40,7 @@ Run that old-launcher/new-connector regression against a disposable candidate be
 When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it. Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
 
 Add a regression test showing that changing the authority updates consumers without corresponding edits.
+For persisted representations, include independent readers such as launchers and discovery commands, and test their agreement on mixed old/new records.
 
 ## Logging
 
