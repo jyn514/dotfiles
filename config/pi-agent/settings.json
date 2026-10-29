@@ -11,6 +11,7 @@
   "defaultProjectTrust": "ask",
   "enableInstallTelemetry": false,
   "theme": "light/dark",
+  "defaultTools": ["+codemode"],
   "extensions": [
     "./pi-extensions/index.ts"
   ],
