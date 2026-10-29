@@ -155,6 +155,31 @@ class CommandIntegrationTests(unittest.TestCase):
                     "-C", str(checkout), "config", "--get", "remote.upstream.url",
                 ))
 
+    def test_personal_remote_preserves_ipv6_ssh_endpoints(self) -> None:
+        for index, (host, port) in enumerate((
+            ("2001:db8::1", None),
+            ("2001:db8::1", 22),
+            ("2001:db8::1", 2222),
+            ("2001:db8:1::2", 2200),
+        )):
+            with self.subTest(host=host, port=port):
+                authority = f"[{host}]" + (f":{port}" if port is not None else "")
+                upstream = f"ssh://git@{authority}/owner/repo.git"
+                self.local_remote(upstream)
+                if port is None:
+                    # Native jj serializes portless IPv6 URLs without brackets.
+                    # Rewrite that spelling too; Git still selects the same host.
+                    self.local_remote(f"ssh://git@{host}/owner/repo.git")
+                name = f"ipv6-{index}"
+                result = self.fork(upstream, name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(name + "\n", result.stdout)
+                checkout = self.directory / name
+                expected = (f"git@{host}", port)
+                self.assertEqual(expected, self.ssh_endpoint(checkout, upstream))
+                self.assertEqual(expected, self.ssh_endpoint(checkout, "upstream"))
+                self.assertEqual(expected, self.ssh_endpoint(checkout, "origin"))
+
     def test_invalid_ssh_port_is_diagnostic_without_creating_a_checkout(self) -> None:
         for port in ("ssh", "65536"):
             with self.subTest(port=port):

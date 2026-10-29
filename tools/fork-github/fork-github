@@ -83,8 +83,11 @@ def configure(
     if cloned.status:
         return cloned.status
 
-    if repository.ssh_port is not None:
-        origin = f"ssh://git@{repository.host}:{repository.ssh_port}/jyn514/{repository.name}.git"
+    if repository.ssh_port is not None or ":" in repository.host:
+        # IPv6 colons belong to the host, not scp's path or a URL's port.
+        host = f"[{repository.host}]" if ":" in repository.host else repository.host
+        port = f":{repository.ssh_port}" if repository.ssh_port is not None else ""
+        origin = f"ssh://git@{host}{port}/jyn514/{repository.name}.git"
     else:
         origin = f"git@{repository.host}:jyn514/{repository.name}.git"
     added = runner(["jj", "git", "remote", "add", "origin", origin], cwd=directory)
