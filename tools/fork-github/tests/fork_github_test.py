@@ -39,13 +39,27 @@ class ForkGithubTests(unittest.TestCase):
 
     def test_extracts_hosts_from_supported_clone_url_forms(self):
         cases = {
-            "https://example.test:8443/owner/repo.git": "example.test",
-            "ssh://git@example.test:2222/owner/repo.git": "example.test",
-            "git@example.test:owner/repo.git": "example.test",
+            "https://example.test:8443/owner/repo.git": ("example.test", None),
+            "ssh://git@example.test:2222/owner/repo.git": ("example.test", 2222),
+            "ssh://git@example.test/owner/repo.git": ("example.test", None),
+            "git@example.test:owner/repo.git": ("example.test", None),
         }
-        for url, host in cases.items():
+        for url, (host, port) in cases.items():
             with self.subTest(url=url):
-                self.assertEqual(fork_github.parse_repository(url).host, host)
+                repository = fork_github.parse_repository(url)
+                self.assertEqual(repository.host, host)
+                self.assertEqual(repository.ssh_port, port)
+
+    def test_invalid_repository_ports_fail_before_starting_effects(self):
+        for port in ("ssh", "65536"):
+            with self.subTest(port=port):
+                runner = mock.Mock()
+                with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    self.assertEqual(2, fork_github.fork(
+                        [f"ssh://git@example.test:{port}/owner/repo.git"], runner,
+                    ))
+                runner.assert_not_called()
+                self.assertIn("fork-github: invalid repository:", stderr.getvalue())
 
     def test_clone_and_remote_setup_failures_stop_without_publishing_directory(self):
         # Clone creates upstream directly; there is no rename to roll back.

@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 from typing import Callable
+from urllib.parse import urlsplit
 
 
 GITHUB_PAGE = re.compile(r"^(https://github\.com/[^/]+/[^/?#]+)")
@@ -26,6 +27,7 @@ class Repository:
     url: str
     name: str
     host: str
+    ssh_port: int | None = None
 
 
 def exit_status(returncode: int) -> int:
@@ -55,23 +57,19 @@ def repository_url(value: str) -> str:
     return f"https://github.com/{value}.git"
 
 
-def remote_host(url: str) -> str:
-    if url.startswith("https://"):
-        host = url[len("https://") :].split("/", 1)[0]
-    elif url.startswith("ssh://"):
-        host = url[len("ssh://") :].split("/", 1)[0].split("@", 1)[-1]
-    elif url.startswith("git@"):
-        host = url[len("git@") :].split(":", 1)[0]
-    else:
-        host = ""
-    return host.split(":", 1)[0]
-
-
 def parse_repository(value: str) -> Repository:
     url = repository_url(value)
     trimmed = url.removesuffix("/").removesuffix(".git")
     name = trimmed.rsplit("/", 1)[-1]
-    return Repository(url, name, remote_host(url))
+    if url.startswith("git@"):
+        host = url[len("git@") :].split(":", 1)[0]
+        ssh_port = None
+    else:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        # HTTPS ports select the web endpoint, not the personal SSH endpoint.
+        ssh_port = parsed.port if parsed.scheme == "ssh" else None
+    return Repository(url, name, host, ssh_port)
 
 
 def configure(
@@ -85,7 +83,10 @@ def configure(
     if cloned.status:
         return cloned.status
 
-    origin = f"git@{repository.host}:jyn514/{repository.name}.git"
+    if repository.ssh_port is not None:
+        origin = f"ssh://git@{repository.host}:{repository.ssh_port}/jyn514/{repository.name}.git"
+    else:
+        origin = f"git@{repository.host}:jyn514/{repository.name}.git"
     added = runner(["jj", "git", "remote", "add", "origin", origin], cwd=directory)
     return added.status
 
@@ -95,7 +96,11 @@ def fork(arguments: list[str], runner: Callable[..., Result] = run) -> int:
         print("usage: fork-github <repository> [directory]", file=sys.stderr)
         return 2
 
-    repository = parse_repository(arguments[0])
+    try:
+        repository = parse_repository(arguments[0])
+    except ValueError as error:
+        print(f"fork-github: invalid repository: {error}", file=sys.stderr)
+        return 2
     directory = Path(arguments[1] if len(arguments) == 2 else repository.name)
     status = configure(repository, directory, runner)
     if status:

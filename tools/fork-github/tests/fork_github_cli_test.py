@@ -1,7 +1,10 @@
+import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -90,10 +93,10 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assert_checkout("custom checkout", upstream, "git@github.com:jyn514/repository.git")
 
     def test_preserves_supported_clone_urls_and_personal_remote_host(self) -> None:
-        for index, upstream in enumerate((
-            "https://example.test:8443/owner/repo.git",
-            "ssh://git@example.test:2222/owner/repo.git",
-            "git@example.test:owner/repo.git",
+        for index, (upstream, origin) in enumerate((
+            ("https://example.test:8443/owner/repo.git", "git@example.test:jyn514/repo.git"),
+            ("ssh://git@example.test:2222/owner/repo.git", "ssh://git@example.test:2222/jyn514/repo.git"),
+            ("git@example.test:owner/repo.git", "git@example.test:jyn514/repo.git"),
         )):
             with self.subTest(url=upstream):
                 self.local_remote(upstream)
@@ -101,7 +104,66 @@ class CommandIntegrationTests(unittest.TestCase):
                 result = self.fork(upstream, name)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(name + "\n", result.stdout)
-                self.assert_checkout(name, upstream, "git@example.test:jyn514/repo.git")
+                self.assert_checkout(name, upstream, origin)
+
+    def ssh_endpoint(self, checkout: Path, remote: str) -> tuple[str, int | None]:
+        record = self.directory / "ssh-arguments.json"
+        record.unlink(missing_ok=True)
+        recorder = Path(__file__).with_name("fixtures") / "ssh_record.py"
+        result = subprocess.run(
+            ["git", "-c", "protocol.ssh.allow=always", "ls-remote", remote],
+            cwd=checkout,
+            env=self.environment | {
+                # Consume the actual remote, not the local clone rewrite.
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_SSH_COMMAND": shlex.join([sys.executable, str(recorder)]),
+                "GIT_SSH_VARIANT": "ssh",
+                "SSH_RECORD": str(record),
+            },
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertTrue(record.exists(), result.stderr)
+        arguments = json.loads(record.read_text())
+        self.assertTrue(arguments[-1].startswith("git-upload-pack "), arguments)
+        # None means Git leaves port selection to SSH's configuration/defaults.
+        port = int(arguments[arguments.index("-p") + 1]) if "-p" in arguments else None
+        return arguments[-2], port
+
+    def test_personal_remote_preserves_ssh_endpoint_but_not_https_port(self) -> None:
+        for index, (upstream, port) in enumerate((
+            ("ssh://git@example.test:2222/owner/repo.git", 2222),
+            ("ssh://git@example.test:22/owner/repo.git", 22),
+            ("ssh://git@example.test:2200/owner/repo.git", 2200),
+            ("ssh://git@example.test/owner/repo.git", None),
+            ("git@example.test:owner/repo.git", None),
+            ("https://example.test:8443/owner/repo.git", None),
+            ("https://github.com/owner/repo.git", None),
+        )):
+            with self.subTest(url=upstream):
+                self.local_remote(upstream)
+                name = f"endpoint-{index}"
+                result = self.fork(upstream, name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                checkout = self.directory / name
+                expected = ("git@github.com" if "github.com" in upstream else "git@example.test", port)
+                if not upstream.startswith("https://"):
+                    # Independent Git parsing confirms the admitted SSH endpoint.
+                    self.assertEqual(expected, self.ssh_endpoint(checkout, upstream))
+                self.assertEqual(expected, self.ssh_endpoint(checkout, "origin"))
+                self.assertEqual(upstream, self.git(
+                    "-C", str(checkout), "config", "--get", "remote.upstream.url",
+                ))
+
+    def test_invalid_ssh_port_is_diagnostic_without_creating_a_checkout(self) -> None:
+        for port in ("ssh", "65536"):
+            with self.subTest(port=port):
+                result = self.fork(f"ssh://git@example.test:{port}/owner/repo.git", "invalid")
+                self.assertEqual(2, result.returncode, result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertIn("fork-github: invalid repository:", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse((self.directory / "invalid").exists())
 
     def test_clone_failure_does_not_publish_a_checkout(self) -> None:
         upstream = "https://github.com/owner/missing.git"
