@@ -29,6 +29,7 @@ uv = "latest"
 "npm:bash-language-server" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:typescript-language-server" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:oxlint" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
+"npm:marked" = { version = "18.1.2", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:vscode-langservers-extracted" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:obsidian-headless" = { version = "0.0.14", depends = ["node", "aqua:pnpm/pnpm"], allow_builds = ["better-sqlite3"] }
 "pipx:git-revise" = { version = "latest", depends = ["uv"] }

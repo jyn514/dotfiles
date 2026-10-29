@@ -1,0 +1,22 @@
+body {
+  max-width: 85ch;
+  margin: 3em auto;
+  padding: 0 1em;
+  font: 17px/1.5 system-ui;
+}
+
+pre {
+  overflow: auto;
+  background: #eee;
+  padding: 1em;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+td, th {
+  padding: .4em;
+  text-align: left;
+  vertical-align: top;
+}

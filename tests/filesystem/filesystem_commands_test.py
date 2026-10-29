@@ -50,7 +50,7 @@ class CommandIntegrationTests(unittest.TestCase):
         existing_html.write_text("keep html")
         existing_svg.write_text("keep svg")
         opened = self.directory / "opened"
-        self.executable("pulldown-cmark", "cat\n")
+        self.executable("marked", 'cat "$3"\n')
         self.executable("dot", "cat\n")
         self.executable("sleep", "exit 0\n")
         self.executable("open", 'printf "%s\\n" "$1" >> "$OPENED"\n')

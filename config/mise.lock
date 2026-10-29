@@ -364,6 +364,11 @@ version = "5.8.1"
 backend = "npm:bash-language-server"
 specifiers = ["latest"]
 
+[[tools."npm:marked"]]
+version = "18.1.2"
+backend = "npm:marked"
+specifiers = ["18.1.2"]
+
 [[tools."npm:obsidian-headless"]]
 version = "0.0.14"
 backend = "npm:obsidian-headless"

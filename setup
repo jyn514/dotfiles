@@ -154,7 +154,7 @@ install_mise() {
 	mise_install_status=0
 	if exists apk; then
 		# Alpine supplies these itself, or has no compatible prebuilt release.
-		if env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:vscode-langservers-extracted,npm:obsidian-headless,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
+		if env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:marked,npm:vscode-langservers-extracted,npm:obsidian-headless,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
 			MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null; then
 			:
 		else
