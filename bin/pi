@@ -20,5 +20,8 @@ if [ -n "${PI_DASHBOARD_SPAWN_TOKEN:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_
 	script=$(realpath -- "$0") || exit
 	root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
 	python3 "$root/libexec/tmux/place-dashboard-pi.py"
+	# The Dashboard registers this wrapper by absolute checkout path. Keep its
+	# sandbox launcher in that checkout too; PATH may name another dotfiles tree.
+	exec "$root/bin/codex-sandbox" "$@"
 fi
 exec codex-sandbox "$@"

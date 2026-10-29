@@ -58,6 +58,21 @@ class HostPiWrapperTest(unittest.TestCase):
             "--mode", "rpc", "--no-extensions", "--session", "child.jsonl",
         ], native["arguments"])
 
+    def test_linked_checkout_reuses_installed_extension_bundle(self) -> None:
+        source = self.home / "installed-dotfiles/pi-extensions/index.ts"
+        source.parent.mkdir(parents=True)
+        source.write_text("fixture\n")
+        installed = self.home / ".pi/agent/pi-extensions/index.ts"
+        installed.parent.mkdir(parents=True)
+        installed.symlink_to(source)
+
+        result = self.run_wrapper("--mode", "rpc")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        native = json.loads(result.stdout)
+        self.assertEqual(["--extension", str(source.resolve())], native["arguments"][:2])
+        self.assertNotIn(str(ROOT / "config/pi-agent/pi-extensions/index.ts"), native["arguments"])
+
     def test_export_remains_native_without_inheriting_pane_control(self) -> None:
         result = self.run_wrapper("--export", "session.jsonl", "out.html")
         self.assertEqual(0, result.returncode, result.stderr)

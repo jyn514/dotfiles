@@ -389,7 +389,11 @@ def configure(core, install, home, bind_host=None):
 def setup():
     # mise owns installation and patch application. Never repair package source
     # here: a stale/failed patch must stop before exposing the bridge to Pi.
-    command('mise', 'install', '--yes', TOOL)
+    # `config_source` can resolve through the active global-config symlink even
+    # when this helper belongs to an isolated worktree. Carry the actual owner
+    # into the hook instead of letting mise select another checkout.
+    hook_env = os.environ | {'DOTFILES_DASHBOARD_ROOT': str(ROOT)}
+    command('mise', 'install', '--yes', TOOL, env=hook_env)
     install = Path(command('mise', 'where', TOOL)).resolve()
     # A fresh shell may not have activated mise yet. Resolve the installed
     # dependencies through their owner rather than requiring a shell reload.

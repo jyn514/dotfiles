@@ -426,6 +426,7 @@ class DashboardTests(unittest.TestCase):
                                                            '/native/pnpm/pnpm']) as command, \
                 patch.object(dashboard, 'configure') as configure:
             dashboard.setup()
+        self.assertEqual(str(ROOT), command.call_args_list[0].kwargs['env']['DOTFILES_DASHBOARD_ROOT'])
         self.assertEqual(['/native/node/bin', '/native/pnpm'], os.environ['PATH'].split(os.pathsep)[:2])
         self.assertEqual(('mise', 'which', 'node'), command.call_args_list[2].args)
         self.assertEqual(('mise', 'which', 'pnpm'), command.call_args_list[3].args)
@@ -435,7 +436,9 @@ class DashboardTests(unittest.TestCase):
         with patch.object(dashboard, 'command', side_effect=subprocess.CalledProcessError(1, 'mise')) as command:
             with self.assertRaises(subprocess.CalledProcessError):
                 dashboard.setup()
-        command.assert_called_once_with('mise', 'install', '--yes', dashboard.TOOL)
+        command.assert_called_once()
+        self.assertEqual(('mise', 'install', '--yes', dashboard.TOOL), command.call_args.args)
+        self.assertEqual(str(ROOT), command.call_args.kwargs['env']['DOTFILES_DASHBOARD_ROOT'])
         self.assertFalse((self.home / '.pi/dashboard').exists())
         self.assertFalse((self.home / '.pi/agent/pi-dashboard').exists())
 
