@@ -3,6 +3,29 @@
 Read this reference before arranging behavioral evidence about a prompt or skill change, including passive observation, or preparing paired behavioral or summarization trials.
 Skill edits and textual reviews do not require a trial by default.
 
+## Choose the claim and scope
+
+State which decision the trial should change and what observation would change it.
+Distinguish a useful answer, a changed research action, and reliable compliance; they require different evidence.
+For a failure-driven comparison, begin with the failure task and a nearby control before adding variants or domains.
+For a fresh paired comparison, run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
+If the baseline does not reproduce a failure, do not credit the revision with fixing it.
+Choose a bounded repeat, assess a different observed behavior explicitly, or stop with an inconclusive result.
+When the next decision depends on consistency, repeat the matched comparison before widening the task matrix.
+When it depends on transfer, add a task outside the originating domain instead.
+Repetition does not remove confounding from changing retrieval results, task state, or instruction exposure.
+
+## Match instruction exposure to the claim
+
+Test instructions through the delivery path whose behavior matters: startup injection, an explicit file read, or a task message.
+For claims about deployment in root sessions, use fresh or correctly reloaded root sessions with the normal startup path.
+Do not require root sessions when worker, continuation, or handoff behavior is the subject of the trial.
+Inspect the effective instructions in both conditions, including automatic context injection, before interpreting their outputs.
+A complete read result establishes exposure to that text, not exposure at system-instruction priority or automatic startup loading.
+Check that the baseline has not inherited the revised rule through another instruction source.
+If the deployment path cannot be tested, a bounded explicit-load or worker comparison can still provide useful observations.
+Label that substitution and limit the conclusion; do not describe it as a deployment test.
+
 ## Observe ongoing work
 
 When observing ongoing work to judge whether guidance helped, inspect the existing transcript, artifacts, and ordinary completion events.
@@ -28,7 +51,6 @@ Neither history preservation nor mutation isolation by itself requires reconstru
 Use current task state and report differences that could change the decision, or restore the relevant historical state.
 Choose according to the comparison question; these are alternatives, not sequential steps.
 Control relevant differences or disclose their limits on the comparison.
-For a fresh paired comparison, run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
 A bounded revised-only replay may use recorded earlier outputs for comparison; report it as a quality observation, not a controlled experiment.
 Do not block that replay solely because a fresh baseline is unavailable.
 Inspect actual actions and outputs; investigate a failed check before expanding the replay.
@@ -47,9 +69,15 @@ Removing tools can force extra delegation; manual result bridging can introduce 
 If isolation changes either, record the differences and do not attribute the resulting delegation or waiting to the guidance under test.
 
 For paired behavioral trials, fix the comparison question, outcome criteria, historical cut, model, and task inputs before generation;
-vary only the skill under test.
+vary only the instruction change under test.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
 Judge actual decisions and actions afterward, not just formatting or workflow compliance.
+For compound outcomes, distinguish evidence for individual causal links from evidence that the links occur together.
+Do not require one example to demonstrate every link when separate evidence could already change the assessment.
+Separate examples do not establish the combined outcome.
+Separate recorded actions from verified source support.
+Search queries and page-open records show research targeting, not everything retrieved or read.
+An independent post-run source check can support an answer's factual claims, but cannot establish that the worker performed the same investigation.
 
 For a failure-driven revision, use the inputs available at the recorded failure decision point.
 Include a nearby control that should retain its existing path.
