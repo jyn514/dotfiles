@@ -1,16 +1,123 @@
 # Agent skills
 
-These skills follow the Agent Skills directory format and are intentionally small and composable. Use them manually at first; automate only the sequences you actually repeat.
+This collection covers software design, testing, writing, and coordinating work among coding agents.
+Choose a section by the work you need:
 
-## Install
+- [Test code and assess tests](#test-code-and-assess-tests): write properties and generators, review existing tests, or check whether tests detect plausible implementation mistakes.
+- [Design and plan changes](#design-and-plan-changes): question the task's framing, compare designs, select improvements, or plan a chosen change.
+- [Write and revise](#write-and-revise): develop an explanation, polish prose, write documentation, or reorganize existing docs.
+- [Coordinate, review, and finish work](#coordinate-review-and-finish-work): divide work among agents, turn goals into tickets, review results, and close out a session.
+- [Specialized work](#specialized-work): investigate performance and crashes, review dependencies, work with Jujutsu history, and use project-specific tools.
 
-Install the repository through a supported harness, or copy an individual directory from `skills/` into that harness's skill directory.
+See [Install and use](#install-and-use) for setup and invocation.
+
+## Test code and assess tests
+
+[Property-based testing](property-based-testing/SKILL.md) helps write and review tests across a domain of inputs.
+Use it for parsers, serializers, validators, data structures, and other behavior where a few chosen examples leave important cases out.
+It covers choosing properties, generating valid inputs, and interpreting a reduced failing case.
+For existing tests, it asks whether the generator reaches the relevant cases and whether the assertions check the intended behavior.
+
+[Mutation testing](mutation-testing/SKILL.md) asks a different question: would the tests notice a plausible implementation mistake?
+It guides deliberate, bounded changes to the implementation and checks whether the intended tests fail.
+A surviving change can reveal a test gap, leave behavior unchanged, or remain inconclusive; those results need different explanations.
+Use it when test sensitivity is in question, not as an automatic extra step after every bug fix.
+
+Neither skill requires replacing the project's test framework.
+For both, provide the behavior the tests should protect and the implementation or tests to examine.
+Say whether you want an assessment, new tests, or implementation changes.
+
+## Design and plan changes
+
+[Architecture design](architecture-design/SKILL.md) starts with the existing implementation and the change you need.
+It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
+Use it to assess a proposed abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
+
+[Creative inquiry](creative-inquiry/SKILL.md) questions the framing of the task itself.
+Use it when exploring possibilities, examining assumptions, or asking whether the current approach solves the right problem.
+[Work selection](work-selection/SKILL.md) makes a more immediate comparison: whether another investigation, workaround, or prerequisite
+is a better next action than a smaller way to reach the requested outcome.
+
+Once a change is selected, [implementation planning](implementation-plan/SKILL.md) turns it into a repository-specific plan
+with affected files, tests, and logical commits.
+An architecture assessment does not automatically call for a plan, and a request for a plan does not authorize implementation.
+
+If you have not selected an improvement, [opportunity scan](opportunity-scan/SKILL.md) compares opportunities across the project.
+For an area already selected for cleanup, [cleanup triage](cleanup-triage/SKILL.md) prioritizes concrete work.
+[Pain axis](pain-axis/SKILL.md) examines recurring problems in history, issues, and tests before redesigning a failure-prone subsystem.
+
+For a new independently invoked tool or service, [new-tool development](new-tool-development/SKILL.md) coordinates the stages
+from a human-authored product brief through requirements and implementation handoff.
+[Requirements definition](requirements-definition/SKILL.md) drafts requirements from an approved brief.
+These are for developing a new tool, not prerequisites for every feature or script.
+
+## Write and revise
+
+[Holistic writing](holistic-writing/SKILL.md) works on the whole artifact: what it explains, how the explanation develops,
+and whether the prose is worth following.
+Use it for reports, essays, instructions, prompts, and substantial revisions.
+[Tighten prose](tighten-prose/SKILL.md) is for local wording, rhythm, repetition, and clarity when the surrounding explanation already works.
+
+[README writing](readme-writing/SKILL.md) introduces a project to someone deciding whether or how to use it.
+[Technical docs](technical-docs/SKILL.md) handles tutorials, how-to guides, references, and explanations,
+including prerequisites, warnings, and the routes readers need to complete a task.
+[Reorganize docs](reorganize-docs/SKILL.md) changes the arrangement of existing documentation: splits, consolidation, navigation, and archives.
+Choose by what needs changing, rather than sending every document through all three.
+
+For an upstream bug report, support question, or design discussion, use [issue reporting](issue-reporting/SKILL.md).
+For a new skill or a change to when and how one operates, use [skill authoring](skill-authoring/SKILL.md).
+
+Provide the draft, its intended readers, and what they need to understand or do.
+For factual or technical prose, include the source material the agent must preserve.
+
+## Coordinate, review, and finish work
+
+[Delegation](delegation/SKILL.md) helps divide work among agents, give each a usable assignment, and integrate the results.
+[Autonomous work](autonomous-work/SKILL.md) guides an explicitly authorized unattended run or active tracked goal.
+It keeps the requested outcome, permissions, evidence, and remaining work available as the run continues.
+It does not turn an ordinary request into an autonomous run.
+
+[Review](review/SKILL.md) needs a comparison target: a design against its requirements, an implementation against its specification,
+or completed work against the requested outcome.
+For a small, localized edit, a diff review and the appropriate native check can be enough.
+A review request does not authorize repairs.
+
+[Human review packets](human-review-packets/SKILL.md) explain a decision's concrete consequences for the person making it.
+[Commit quality](commit-quality/SKILL.md) groups changes into coherent commits and explains their purpose.
+[Session closeout](session-closeout/SKILL.md) checks the whole session for unfinished requirements, owned changes, and useful follow-ups
+before committing the session's work and ending it.
+
+## Specialized work
+
+| Task | Skill |
+| --- | --- |
+| Review a proposed dependency addition or update | [Dependency review](dependency-review/SKILL.md) |
+| Investigate slow execution or benchmark a change | [Performance investigation](performance-investigation/SKILL.md) |
+| Diagnose native-process crashes, hangs, or missing symbols | [Process debugging](process-debugging/SKILL.md) |
+| Inspect or reshape Jujutsu history | [JJ workflow](jj-workflow/SKILL.md) |
+| Compose Jujutsu conflict snapshots semantically | [JJ conflict resolution](jj-conflict-resolution/SKILL.md) |
+| Enforce an established rule while reducing existing violations | [Ratchet](ratchet/SKILL.md) |
+| Work with TicGit tickets | [TicGit](ticgit/SKILL.md) |
+| Read Rust Zulip discussions | [Zulip API](zulip-api/SKILL.md) |
+| Find and test Rust compiler diagnostic gaps | [Rustc diagnostic gap tests](rustc-diagnostic-gap-tests/SKILL.md) |
+| Write Typst markup or diagrams | [Typst](typst/SKILL.md), [Typst diagrams](typst-diagrams/SKILL.md) |
+| Review and rename past Pi sessions | [Session title curation](session-title-curation/SKILL.md) |
+
+## Install and use
 
 ### Pi
 
 ```sh
 pi install git:github.com/jyn514/dotfiles
 ```
+
+Ask for a task normally, or load a skill explicitly with `/skill:name` and put your request after it:
+
+```text
+/skill:holistic-writing revise the introduction in README.md
+```
+
+An explicit invocation loads the instructions rather than relying on the model to select them.
 
 ### Claude Code
 
@@ -21,54 +128,56 @@ claude plugin install judgement-yields-navigation@jyn-plugins
 
 ### Codex
 
-Once published, install the npm package through this repository's Codex marketplace:
+Once the npm package is published, install it through this repository's Codex marketplace:
 
 ```sh
 codex plugin marketplace add jyn514/dotfiles
 codex plugin add judgement-yields-navigation@jyn-plugins
 ```
 
-In `plugin@marketplace`, the suffix names the Codex marketplace; it is not an npm scope.
+The `@jyn-plugins` suffix names the marketplace, not an npm scope.
 
-### Other Agent Skills clients
+### Other clients and manual installation
 
-Copy or symlink the desired skill directories into the client's user or project skill directory. For clients that use the shared convention, install them under `~/.agents/skills/` or `.agents/skills/`.
+Copy or symlink the desired directories from `skills/` into your client's skill directory.
+Clients using the shared Agent Skills locations can load them from `~/.agents/skills/` or `.agents/skills/`.
+This repository's `./setup dotfiles` command links the complete directory to `~/.agents/skills/`.
 
-This repository's `./setup dotfiles` command links the complete `skills/` directory to `~/.agents/skills/`.
+When copying individual skills, keep their linked shared references, required companion skills, and bundled license notices.
+For example, `autonomous-work` also uses `work-selection` and `goal-to-issue-graph`.
+The `references/` directory supplies guidance used by skills and shared instructions; it is not a collection of additional skills.
 
-`references/` contains shared on-demand guidance, not registered skills.
-[Change with evidence](references/change-with-evidence.md) supplies code, configuration,
-and test standards when the shared agent instructions request it. Plain reference
-files add no startup skill descriptions. The sandbox's existing live skills mount
-makes reference changes readable without restarting its worker.
+## Maintenance
 
-`property-based-testing` is adapted from Trail of Bits with additional Hegel review
-checks. Its [attribution and license notice](property-based-testing/README.md)
-identifies the CC-BY-SA-4.0 material and MIT contribution; repository-owned skills
-remain under Unlicense. Keep the bundled license files when copying this skill.
+### Updating an installation
 
-`mutation-testing` is also adapted from Trail of Bits under CC-BY-SA-4.0. Its
-[attribution notice](mutation-testing/README.md) identifies the source and changes;
-keep its notice and license when copying the skill.
+Reload Pi or start a new client session to refresh the skill catalog after updating it.
+Older names such as `spec-review`, `audit-spec-against-impl`, and `double-check` now belong to [review](review/SKILL.md).
+Whole-artifact work formerly called `tighten-docs` belongs to [holistic writing](holistic-writing/SKILL.md);
+local polishing belongs to [tighten prose](tighten-prose/SKILL.md).
 
-## Publish a release
+Some former design skills are now on-demand references within [architecture design](architecture-design/SKILL.md)
+or the shared [change guidelines](references/change-with-evidence.md).
+The alternatives and independent-deliberation helpers under `architecture-design/references/` are supporting material,
+not standalone skills or slash commands.
 
-The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change. `dev/publish-skills` stages this file as the package-root `README.md` without changing the repository root README.
+### Publishing a release
 
-For packaging-only validation, run `dev/test-environment dev/publish-skills --check`.
-It packs offline with lifecycle scripts disabled, then checks the actual archive
-for the staged skills, license files, README, and generated plugin manifests.
-The temporary package and archive are removed afterward. This does not publish,
-check registry permissions, or require an unpublished version. `--check` accepts
-no publication arguments; `--dry-run` still means npm's publication dry-run.
+`dev/publish-skills` stages this file as the npm package's root README without changing the repository root README.
+The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`.
+Publish that version before pushing the marketplace change.
 
 1. Set the same new semantic version in `package.json`, `.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (`source.version`).
-2. Validate the metadata and npm archive:
+2. Validate the metadata and actual npm archive without publishing:
 
    ```sh
    dev/test-environment python3 tests/setup/agent_skills_package_test.py
    dev/test-environment dev/publish-skills --check
    ```
+
+   `--check` packs offline with lifecycle scripts disabled, checks the staged files, and removes the temporary package and archive.
+   It does not check registry permissions and accepts no publication arguments.
+   `--dry-run` is npm's publication dry-run, not the packaging-only check.
 
 3. Review and commit the release, then authenticate and publish:
 
@@ -78,7 +187,7 @@ no publication arguments; `--dry-run` still means npm's publication dry-run.
    dev/publish-skills --access public
    ```
 
-4. Verify the published version, then push the release commit:
+4. Verify the published version before pushing the release commit:
 
    ```sh
    npm view judgement-yields-navigation version
@@ -91,121 +200,14 @@ no publication arguments; `--dry-run` still means npm's publication dry-run.
    codex plugin add judgement-yields-navigation@jyn-plugins
    ```
 
-## Agent orchestration
+### Attribution and licenses
 
-Use [delegation](delegation/SKILL.md) when assigning work to agents, deciding whether to wait, or integrating their results.
-It applies to implementation, research, review, and writing.
+Repository-owned skills are under Unlicense.
+[Property-based testing](property-based-testing/README.md) and [mutation testing](mutation-testing/README.md)
+are adapted from Trail of Bits under CC-BY-SA-4.0.
+The property-based testing skill also incorporates MIT-licensed Hegel review guidance.
+Keep their attribution notices and bundled license files when copying them.
 
-Use [work-selection](work-selection/SKILL.md) to reassess supporting work and obtain an independent scout's recommendation within an interactive or autonomous task.
-It owns the reassessment trigger and next-action comparison; it grants no autonomous permission.
-
-When the problem's framing or approach is uncertain, use
-[creative-inquiry](creative-inquiry/SKILL.md) to question assumptions and discover
-possibilities. For comparing concrete software-design candidates, use
-[architecture-design](architecture-design/SKILL.md); its alternatives and independent-deliberation references are conditional, not a default workflow.
-
-`creative-inquiry` is imported from
+[Creative inquiry](creative-inquiry/SKILL.md) is imported from
 [`nia-e/rustc-project-skills`](https://github.com/nia-e/rustc-project-skills/tree/0fe6e4d11a99b8c62776048d13f59a4e5e4ff6ca/creative-inquiry),
-with a locally adapted trigger and routes to software-design references.
-
-Optional design techniques live under `architecture-design/references/` and add no startup skill descriptions.
-Read [alternatives](architecture-design/references/alternatives.md) only for a demonstrated unresolved choice.
-Use [independent deliberation](architecture-design/references/deliberation.md) only when the choice needs independent elaboration and critique.
-Its phase helpers preserve candidate isolation and explicit abstention; they are not slash commands or names for subagent skill preloading.
-When copying individual skills, preserve their linked shared references and required companion directories.
-
-### Focused new-tool workflow
-
-For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`.
-Product briefs are human-authored; agents may review them and add permitted TODO comments.
-Use `requirements-definition` for requirements and `technical-docs` for implementation-spec document form, reader tasks, ownership, and prerequisites.
-Use `holistic-writing` for whole-artifact explanation and reader experience, and [review's design mode](review/references/design.md) for maturity, upstream/downstream consistency, and stale invalidation review.
-
-## Design, planning, and review
-
-Start architecture work by tracing one real caller through its handler and effects.
-Recommend the existing path or smallest sufficient change before opening alternatives.
-Maintain one boundary contract and carry it into specifications, requested plans, and coupled-worker assignments; do not repeat a declaration phase at each handoff.
-[Boundary-contract questions](architecture-design/references/boundary-contracts.md) address only unresolved or changed guarantees.
-[Delegation's shared-contract check](delegation/references/shared-contracts.md) checks coupled assignments without requiring architecture analysis.
-
-Use `implementation-plan` only for a requested plan of a selected change.
-It consumes settled decisions and reopens only concrete unresolved choices or contradictory evidence.
-Architecture assessment alone does not require implementation tasks or commit sequencing.
-
-Use [review](review/SKILL.md) with one explicit comparison target:
-
-- a design or specification against its purpose, maturity, and governing constraints;
-- implementation and tests against a normative specification, bounded or whole-spec;
-- a completed substantial owned change against task acceptance.
-
-Review-only work does not authorize repair, specification edits, or issue filing.
-[Evidence standards](review/references/evidence.md) can be consulted without starting a completion audit.
-Implementation preferences live in [change guidelines](references/change-with-evidence.md#design-choices).
-Read [testing guidance](references/testing.md) for new or materially changed tests and uncertain test strategies or oracles.
-Use [complexity justification](references/complexity-justification.md) when a proposed mechanism's necessity or required variability remains unclear.
-These are on-demand references, not additional registered workflows.
-
-### Updating an existing installation
-
-Reload Pi or start a new harness session to refresh the skill catalog after installing this reorganization.
-The retired skill names have no forwarding entries:
-
-| Former skill | Current owner |
-| --- | --- |
-| `boundary-declaration` | Architecture's [boundary contracts](architecture-design/references/boundary-contracts.md); delegation's [assignment check](delegation/references/shared-contracts.md) |
-| `design-space-scout`, `design-deliberation` | Architecture's optional [alternatives](architecture-design/references/alternatives.md) and [deliberation](architecture-design/references/deliberation.md) references |
-| `second-user` | Shared [complexity justification](references/complexity-justification.md) |
-| `design-for-change` | Shared [change guidelines](references/change-with-evidence.md#design-choices) and [testing guidance](references/testing.md) |
-| `spec-review`, `audit-spec-against-impl`, `double-check` | [Review](review/SKILL.md), selecting design, conformance, or completion mode |
-| `tighten-docs` | [Holistic writing](holistic-writing/SKILL.md) for whole-artifact editing; [tighten-prose](tighten-prose/SKILL.md) for bounded local polishing |
-
-## Focused workflows
-
-Use these independently when their target is already selected:
-
-- `architecture-design` — assess, design, or choose a bounded architecture, reusing settled contracts and consulting alternatives only when needed.
-- [autonomous-work](autonomous-work/SKILL.md) — pursue explicitly authorized autonomous runs and active user-authorized goals.
-  Covers implementation, research, writing, planning, and review while preserving activity, acceptance order, independent progress, and resumable state.
-  Implementation testing, integration, audit, and commit procedures apply only when that activity and its effects are authorized.
-  Next-action selection delegates to `work-selection`; multi-outcome goals use `goal-to-issue-graph` for a current, minimal outcome graph.
-  Install those companions too when copying `autonomous-work` individually.
-- `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
-- `review` — select design, conformance, or completion review by its comparison target; use a diff review and native check for localized edits.
-- [property-based-testing](property-based-testing/SKILL.md) — design generators and independent properties, review weak oracles, and diagnose counterexamples using the project's existing test framework.
-- [mutation-testing](mutation-testing/SKILL.md) — challenge existing tests with bounded implementation changes, verify the tested consumer uses the mutation, and distinguish test gaps from equivalent or unresolved survivors; use project-compatible engines or an explicit manual pilot.
-- `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
-- [human-review-packets](human-review-packets/SKILL.md) — prepare human decisions with concrete examples, recommendations, and simple questions; keep technical evidence optional and deferred approvals out of the active queue.
-- `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
-
-`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill.
-Use [Documentation placement](technical-docs/references/placement.md) when a documentation owner or destination is unresolved.
-Routine additions to established sections need validation, not a placement or authoring workflow.
-Choose the writing workflow by the task, not a mandatory chain:
-
-- [Holistic writing](holistic-writing/SKILL.md) owns whole-artifact authoring, substantial revision, and reader experience across reports, essays, prompts, instructions, skills, and documentation.
-- [Technical docs](technical-docs/SKILL.md) owns documentation-specific forms, reader tasks, canonical owners, prerequisites, and routes.
-  It does not own general editorial review merely because an artifact contains technical prose.
-- [README writing](readme-writing/SKILL.md) is an independently usable workflow for introductory repository, package, or tool-entrypoint READMEs.
-  It is sufficient to begin that task; do not load all writing workflows by default.
-- [Tighten prose](tighten-prose/SKILL.md) owns local wording and cadence within an established explanation, not whole-artifact judgment.
-- [Reorganize docs](reorganize-docs/SKILL.md) owns actual multi-page movement, consolidation, splits, archives, and navigation changes.
-  Choosing where new content belongs uses the placement reference instead.
-
-## Minimal use
-
-You do not need the whole chain every time.
-
-- Small refactor: implement directly when ownership and invariants are clear; consult change/testing references for unresolved decisions and complexity justification only when added machinery lacks a concrete need.
-- Simple configuration edit: inspect the diff and validate with the native parser; no work-selection, design, or completion-audit skill is required.
-- Another substantive prerequisite, workaround, or diagnostic round: use [work-selection](work-selection/SKILL.md) before extending the current approach.
-- Architecture decision: use [architecture-design](architecture-design/SKILL.md) to trace the existing path and resolve the actual choice; alternatives and independent deliberation remain optional.
-- Legacy subsystem: start with `pain-axis` before scouting.
-- Explicit autonomous run or active user-authorized goal: start with [autonomous-work](autonomous-work/SKILL.md).
-  Preserve the requested activity and follow its conditional companion-skill routes.
-  A paused goal alone or an ordinary bounded request does not activate it.
-  Add `ratchet` only for unresolved enforcement-policy decisions about baselines, violation identity or counts, bounded exceptions, or replacing guarantees.
-
-## Important rule
-
-Treat model judgments as evidence, not verification. Prefer repository facts, tests, type checks, benchmarks, and historical evidence whenever they exist. `council-review` may return `ABSTAIN`; that is a valid result.
+with a locally adapted trigger and software-design references.
