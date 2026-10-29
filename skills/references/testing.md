@@ -37,6 +37,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 ## Consumer and integration boundaries
 
 - Validate the test oracle against the consumer's actual behavior. A mock accepting generated Docker arguments does not establish that Docker can mount them. Check equivalence and cardinality when relevant: distinct occurrences, objects, refs, paths, or owners must not collapse because normalized text or fingerprints match. If no reliable oracle is available, record that validation limit rather than claiming the invariant is protected.
+  When a consumer can fall back or serve the same bytes under several modes, check which mode or resource it selected; a successful round trip alone may hide the wrong selection.
 - When a change binds a discovered resource to an owner, test both sides of that lifetime.
   Verify that the existing owner consistently uses its selected resource despite unrelated ambient changes, and that a new owner observes a new selection.
   Verify that intentionally dynamic inputs still change within the existing owner's lifetime.
