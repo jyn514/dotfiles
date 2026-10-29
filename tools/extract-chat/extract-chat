@@ -40,6 +40,7 @@
   (println "Bare session UUIDs also use session lookup; existing file and directory paths take precedence.")
   (println "Paginated Codex history includes referenced ancestors up to their saved cutoffs.")
   (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
+  (println "With --extract-dir, output-name collisions between distinct sources fail before any exports; reruns still replace existing files.")
   (println "Empty scans report source paths on stderr and retain exit status 0.")
   (println "Pi Markdown includes saved goal changes, model switches, and assistant or shell cancellations.")
   (println "With --native, exports Pi sessions through pi --export to HTML; other formats stay Markdown.")
@@ -267,13 +268,9 @@
       (print out)
       (binding [*out* *err*] (print err)))))
 
-(defn- export-pi-session [extract-dir file]
-  (export-pi-file file (when extract-dir (session-output-path extract-dir file ".html"))))
-
-(defn- export-codex-branches [extract-dir file]
+(defn- export-codex-branches [file output]
   (let [temporary (fs/create-temp-dir {:prefix "extract-chat-codex-"})
-        converted (.toPath (io/file (str temporary) "session.jsonl"))
-        output (session-output-path (or extract-dir ".") file ".html")]
+        converted (.toPath (io/file (str temporary) "session.jsonl"))]
     (try
       (let [{:keys [exit err]} (shell/sh "python3" (str (io/file repository-root "bin/codex-to-pi"))
                                         (.getAbsolutePath (.toFile ^Path file)) "--branches"
@@ -284,27 +281,54 @@
       (export-pi-file converted output)
       (finally (fs/delete-tree temporary)))))
 
-(defn- export-native-session [extract-dir branches? {:keys [file pi? codex?]}]
+(defn- export-native-session [output-file branches? {:keys [file pi? codex?]}]
   (cond
-    pi? (export-pi-session extract-dir file)
-    (and branches? codex?) (export-codex-branches extract-dir file)
+    pi? (export-pi-file file output-file)
+    (and branches? codex?) (export-codex-branches file output-file)
     branches? (throw (ex-info "--branches --native requires a Codex or Pi session" {:file (str file)}))
     :else nil))
 
 (defn- print-session [final-only? native? branches? file]
   (let [{:keys [pi?] :as session} (read-session final-only? file)]
     (if (and native? (or pi? branches?))
-      (export-native-session nil branches? session)
+      (export-native-session (when-not pi? (session-output-path "." file ".html")) branches? session)
       (when-let [markdown (session-markdown session)]
         (print markdown)))))
 
-(defn- write-session [extract-dir native? branches? {:keys [file pi?] :as session}]
-  (if (and native? (or pi? branches?))
-    (export-native-session extract-dir branches? session)
-    (when-let [markdown (session-markdown session)]
-      (let [output-file (session-output-path extract-dir file ".md")]
-        (io/make-parents (.toFile output-file))
-        (spit (.toFile output-file) markdown)))))
+(defn- allocate-outputs [extract-dir native? branches? sessions]
+  ;; A basename is only unique within its source directory. Bind every destination
+  ;; and check the whole batch before writers or external exporters get to run.
+  (let [allocated (mapv (fn [{:keys [file pi? codex? messages] :as session}]
+                          (let [extension (if (and native? (or pi? branches?))
+                                            (if (or pi? codex?)
+                                              ".html"
+                                              (throw (ex-info "--branches --native requires a Codex or Pi session"
+                                                              {:file (str file)})))
+                                            (when (seq messages) ".md"))]
+                            (assoc session :output-file
+                                   (when extension (session-output-path extract-dir file extension)))))
+                        sessions)]
+    (reduce (fn [sources-by-output {:keys [file output-file]}]
+              (if-not output-file
+                sources-by-output
+                (let [source (.getCanonicalPath (.toFile ^Path file))
+                      destination (.getCanonicalPath (.toFile ^Path output-file))
+                      previous (get sources-by-output destination)]
+                  (when (and previous (not= previous source))
+                    (throw (ex-info (str "Export destination collision: " destination
+                                         " would be written by " previous " and " source)
+                                    {:output destination :sources [previous source]})))
+                  (assoc sources-by-output destination source))))
+            {} allocated)
+    allocated))
+
+(defn- write-session [native? branches? {:keys [output-file pi?] :as session}]
+  (when output-file
+    (if (and native? (or pi? branches?))
+      (export-native-session output-file branches? session)
+      (when-let [markdown (session-markdown session)]
+        (io/make-parents (.toFile ^Path output-file))
+        (spit (.toFile ^Path output-file) markdown)))))
 
 (defn- parse-args [args]
   (loop [opts {:paths []}
@@ -377,9 +401,10 @@
           (let [sessions (->> files
                               (map #(read-session final-only? %))
                               (sort-by (juxt :timestamp (comp str :file)))
-                              without-replayed-prefixes)]
+                              without-replayed-prefixes
+                              (allocate-outputs extract-dir native? branches?))]
             (doseq [session sessions]
-              (write-session extract-dir native? branches? session)))
+              (write-session native? branches? session)))
           (doseq [file files]
             (print-session final-only? native? branches? file)))))))
 

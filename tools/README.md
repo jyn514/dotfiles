@@ -86,6 +86,9 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
   A bare session UUID also implies `--session`, so `extract-chat ID --branches --native` works directly.
   Existing paths take precedence over UUID lookup, and positional UUIDs can be mixed with file or directory inputs.
+  With `--extract-dir`, output names retain the source basename with `.md` or `.html`.
+  Distinct sources targeting the same destination, including `.json`/`.jsonl` stem collisions, fail the whole batch before any exports or native calls.
+  Existing exports can still be replaced by rerunning a single source or a noncolliding batch.
 
   Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
   References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.

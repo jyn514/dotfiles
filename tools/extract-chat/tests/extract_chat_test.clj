@@ -1,6 +1,7 @@
 (ns tools.extract-chat-test
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
+            [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is run-tests]]))
@@ -689,6 +690,112 @@
                                                  (str session-file) (str session-file)]))))
       (is (= 1 (count @calls)))
       (is (empty? (fs/list-dir extract-dir)))
+      (finally (fs/delete-tree root)))))
+
+(defn- write-export-fixture [file text native?]
+  (io/make-parents file)
+  (spit file (str (when native?
+                    (str (json/generate-string {:type "session" :version 3 :id (str file)}) "\n"))
+                  (json/generate-string {:type "message" :message {:role "user" :content text}})
+                  "\n")))
+
+(defn- fixture-export-environment [root]
+  (let [bin (fs/file root "fixture-bin")
+        exporter (fs/file bin "pi")
+        calls (fs/file root "pi-calls")]
+    (fs/create-dirs bin)
+    ;; Exercise the real CLI subprocess boundary, not a replacement allocation or
+    ;; writer. The fixture implements only the intended explicit-output Pi API.
+    (spit exporter (str "#!/bin/sh\nset -eu\n"
+                       "printf '%s\\n' \"$@\" >> \"$EXTRACT_CHAT_PI_CALLS\"\n"
+                       "[ \"$#\" -eq 3 ]\n[ \"$1\" = '--export' ]\n"
+                       "printf '<html>fixture export</html>\\n' > \"$3\"\n"))
+    (.setExecutable exporter true)
+    (assoc (into {} (System/getenv))
+           "PATH" (str bin ":" (System/getenv "PATH"))
+           "EXTRACT_CHAT_PI_CALLS" (str calls))))
+
+(defn- run-export-cli [environment & args]
+  (apply shell/sh "bb" (str (fs/absolutize "bin/extract-chat"))
+         (concat (map str args) [:env environment])))
+
+(deftest extract-chat-cli-rejects-all-batch-collisions-before-any-writes
+  (doseq [native? [false true]
+          collision [:directories :extensions]]
+    (let [root (fs/create-temp-dir {:prefix "extract-chat-collision"})
+          output (fs/file root "exports")
+          earlier (fs/file root "00-earlier.jsonl")
+          first-source (fs/file root "a" (if (= collision :extensions) "same.json" "same.jsonl"))
+          second-source (fs/file root (if (= collision :extensions) "a" "b") "same.jsonl")
+          extension (if native? ".html" ".md")
+          unchanged (fs/file output (str "00-earlier" extension))]
+      (try
+        (let [environment (fixture-export-environment root)]
+          (doseq [file [earlier first-source second-source]]
+            (write-export-fixture file (str file) native?))
+          (fs/create-dirs output)
+          (spit unchanged "Existing export must not change")
+          (let [{:keys [exit out err]}
+                (apply run-export-cli environment
+                       (concat (when native? ["--native"])
+                               ["--extract-dir" output earlier]
+                               (if (= collision :directories)
+                                 [(fs/parent first-source) (fs/parent second-source)]
+                                 [first-source second-source])))]
+            (is (not (zero? exit)))
+            (is (= "" out))
+            (is (str/includes? err "Export destination collision:"))
+            (doseq [file [first-source second-source (fs/file output (str "same" extension))]]
+              (is (str/includes? err (str file))))
+            (is (= "Existing export must not change" (slurp unchanged)))
+            (is (= [(str "00-earlier" extension)] (map fs/file-name (fs/list-dir output))))
+            (is (not (fs/exists? (fs/file root "pi-calls"))))))
+        (finally (fs/delete-tree root))))))
+
+(deftest extract-chat-cli-preserves-successful-batch-names-and-single-source-reruns
+  (let [root (fs/create-temp-dir {:prefix "extract-chat-rerun"})
+        first-source (fs/file root "a" "first.jsonl")
+        second-source (fs/file root "b" "second.json")
+        output (fs/file root "exports")]
+    (try
+      (write-export-fixture first-source "First conversation" false)
+      (write-export-fixture second-source "Second conversation" false)
+      (let [environment (into {} (System/getenv))
+            result (run-export-cli environment "--extract-dir" output
+                                   (fs/parent first-source) (fs/parent second-source))]
+        (is (= 0 (:exit result)) (:err result))
+        (is (= ["first.md" "second.md"] (sort (map fs/file-name (fs/list-dir output)))))
+        (is (= (str "# " first-source "\n\n## User\n\nFirst conversation\n\n")
+               (slurp (fs/file output "first.md"))))
+        (let [second-export (slurp (fs/file output "second.md"))]
+          (write-export-fixture first-source "Updated conversation" false)
+          (let [rerun (run-export-cli environment "--extract-dir" output first-source)]
+            (is (= 0 (:exit rerun)) (:err rerun)))
+          (is (= (str "# " first-source "\n\n## User\n\nUpdated conversation\n\n")
+                 (slurp (fs/file output "first.md"))))
+          (is (= second-export (slurp (fs/file output "second.md"))))))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-cli-passes-allocated-paths-to-native-exporter
+  (let [root (fs/create-temp-dir {:prefix "extract-chat-native-paths"})
+        pi-source (fs/file root "a" "same.jsonl")
+        markdown-source (fs/file root "b" "same.json")
+        output (fs/file root "exports")]
+    (try
+      (let [environment (fixture-export-environment root)]
+        (write-export-fixture pi-source "Native conversation" true)
+        (write-export-fixture markdown-source "Markdown conversation" false)
+        ;; Matching stems with different actual output extensions do not collide.
+        (doseq [inputs [[pi-source markdown-source] [pi-source]]]
+          (let [result (apply run-export-cli environment
+                              (concat ["--native" "--extract-dir" output] inputs))]
+            (is (= 0 (:exit result)) (:err result))))
+        (is (= ["same.html" "same.md"] (sort (map fs/file-name (fs/list-dir output)))))
+        (is (= "<html>fixture export</html>\n" (slurp (fs/file output "same.html"))))
+        (is (str/includes? (slurp (fs/file output "same.md")) "Markdown conversation"))
+        (is (= (vec (mapcat identity
+                           (repeat 2 ["--export" (str pi-source) (str (fs/file output "same.html"))])))
+               (str/split-lines (slurp (fs/file root "pi-calls"))))))
       (finally (fs/delete-tree root)))))
 
 (let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
