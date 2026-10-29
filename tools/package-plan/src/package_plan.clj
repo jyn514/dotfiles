@@ -228,14 +228,14 @@
                                    "microsoft")
                     (some? (System/getenv "WSL_INTEROP")))})))))
 
-(defn selected-packages [policy {:keys [target wsl]}]
+(defn selected-packages [policy {:keys [target wsl]} pwsh?]
   (cond-> (vec (:common policy))
     (seq (get-in policy [:additions target]))
     (into (get-in policy [:additions target]))
     wsl (into (get-in policy [:additions :wsl]))
     (#{:debian :ubuntu :fedora :macos-arm64} target)
     (into (get-in policy [:additions :brew-fallback]))
-    (and (#{:debian :ubuntu} target) (not (command-exists? "pwsh")))
+    (and (#{:debian :ubuntu} target) (not pwsh?))
     (conj :powershell)
     (= :fedora target)
     (conj :onepassword)))
@@ -294,7 +294,7 @@
                 "package-plan" (str repositories)
                 "https://repo.chimera-linux.org/current/user"])})
 
-(defn resource-operations [{:keys [target release wsl]} sudo]
+(defn resource-operations [{:keys [target release wsl]} sudo pwsh?]
   (let [cache (str (or (System/getenv "XDG_CACHE_HOME")
                        (some-> (System/getenv "HOME") (str "/.cache"))
                        (str (System/getProperty "user.home") "/.cache"))
@@ -308,7 +308,7 @@
       (when (and (= target :ubuntu) (not (universe-enabled?)))
         [{:kind :repository :name :ubuntu-universe
           :argv (into sudo ["add-apt-repository" "-y" "universe"])}])
-      (when (and (#{:debian :ubuntu} target) (not (command-exists? "pwsh")))
+      (when (and (#{:debian :ubuntu} target) (not pwsh?))
         (let [deb (str cache "/packages-microsoft-prod.deb")
               distro (name target)]
           [{:kind :download :name :powershell-repository
@@ -346,9 +346,9 @@
           :argv (into sudo ["dnf" "install" "-y" "libavcodec-freeworld"
                             "h264enc" "x264" "x265" "openh264" "--allowerasing"])}])))))
 
-(defn package-operations [policy host sudo mise]
+(defn package-operations [policy host sudo mise pwsh?]
   (let [target (:target host)
-        selected (selected-packages policy host)
+        selected (selected-packages policy host pwsh?)
         dispositions (map #(assoc (disposition policy target %) :logical %) selected)
         skipped (filter #(= :skip (:kind %)) dispositions)
         grouped (group-by :manager (remove #(= :skip (:kind %)) dispositions))]
@@ -370,10 +370,12 @@
 
 (defn build-plan [policy host mise]
   (let [sudo (planned-sudo-prefix)
-        packages (package-operations policy host sudo mise)]
+        ;; Package selection and its repository prerequisite use the same observation.
+        pwsh? (and (#{:debian :ubuntu} (:target host)) (command-exists? "pwsh"))
+        packages (package-operations policy host sudo mise pwsh?)]
     {:host host
      :skipped (:skipped packages)
-     :operations (into (resource-operations host sudo) (:operations packages))}))
+     :operations (into (resource-operations host sudo pwsh?) (:operations packages))}))
 
 (defn printable-plan [plan]
   (doseq [{:keys [kind manager argv] operation-name :name} (:operations plan)]

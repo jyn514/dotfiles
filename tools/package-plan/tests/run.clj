@@ -48,7 +48,7 @@
 
 (deftest alpine-baseline-has-no-duplicate-requests
   (let [host {:target :alpine :release "test" :arch "x86_64" :wsl false}
-        operations (:operations (planner/package-operations policy host [] "/mise"))
+        operations (:operations (planner/package-operations policy host [] "/mise" false))
         packages (map #(clojure.string/replace % #"^apk:" "")
                       (mapcat #(drop 5 (:argv %)) operations))]
     (is (= (count packages) (count (distinct packages))))
@@ -57,7 +57,7 @@
 
 (deftest arch-performs-one-full-upgrade
   (let [host {:target :arch :release "test" :arch "x86_64" :wsl false}
-        operation (-> (planner/package-operations policy host ["sudo"] "/mise")
+        operation (-> (planner/package-operations policy host ["sudo"] "/mise" false)
                       :operations first)]
     (is (= ["sudo" "pacman" "--sync" "--refresh" "--sysupgrade"
             "--needed" "--"]
@@ -69,7 +69,7 @@
                              :arch :pacman :alpine :apk :chimera :apk
                              :macos-arm64 :brew}]
       (let [host {:target target :release "test" :arch "x86_64" :wsl false}
-            operations (:operations (planner/package-operations policy host [] "/mise"))
+            operations (:operations (planner/package-operations policy host [] "/mise" true))
             requests (mapcat (fn [{:keys [argv manager]}]
                                (if (= manager :pacman)
                                  (rest (drop-while #(not= "--" %) argv))
@@ -92,19 +92,55 @@
     (is (not-any? #(#{:ubuntu-universe :git-ppa} (:name %))
                   (planner/resource-operations
                    {:target :debian :release "13" :arch "x86_64" :wsl false}
-                   ["sudo"])))))
+                   ["sudo"] true)))))
 
 (deftest conditional-packages-follow-installed-state
   (let [debian {:target :debian :release "13" :arch "x86_64" :wsl false}]
-    (with-redefs [planner/command-exists? (constantly false)]
-      (is (some #{:powershell} (planner/selected-packages policy debian))))
-    (with-redefs [planner/command-exists? (constantly true)]
-      (is (not-any? #{:powershell} (planner/selected-packages policy debian)))))
+    (is (some #{:powershell} (planner/selected-packages policy debian false)))
+    (is (not-any? #{:powershell} (planner/selected-packages policy debian true))))
   (let [fedora {:target :fedora :release "42" :arch "x86_64" :wsl false}
         operations (:operations
-                    (planner/package-operations policy fedora ["sudo"] "/mise"))
+                    (planner/package-operations policy fedora ["sudo"] "/mise" false))
         dnf (first (filter #(= :dnf (:manager %)) operations))]
     (is (some #{"dnf:1password"} (:argv dnf)))))
+
+(deftest powershell-selection-and-repository-share-one-observation-per-plan
+  (doseq [target [:debian :ubuntu]
+          initially-installed? [false true]]
+    (let [observations (atom 0)
+          host {:target target :release "test" :arch "x86_64" :wsl false}]
+      (with-redefs [planner/root? (constantly true)
+                    planner/universe-enabled? (constantly true)
+                    planner/old-git? (constantly false)
+                    planner/command-exists?
+                    (fn [command]
+                      (if (= command "pwsh")
+                        (if (odd? (swap! observations inc))
+                          initially-installed?
+                          (not initially-installed?))
+                        true))]
+        ;; A changed observation must affect the next plan, never half of one plan.
+        (doseq [[plan-number installed?] [[1 initially-installed?]
+                                        [2 (not initially-installed?)]]]
+          (let [operations (:operations (planner/build-plan policy host "/mise"))
+                powershell? (boolean (some #(some #{"apt:powershell"} (:argv %))
+                                           operations))
+                repository-kinds (mapv :kind (filter #(= :powershell-repository (:name %))
+                                                    operations))]
+            (is (= plan-number @observations) (str target " probes once per plan"))
+            (is (= (not installed?) powershell?) (str target " package selection"))
+            (is (= (if installed? [] [:download :repository]) repository-kinds)
+                (str target " repository prerequisites"))))))))
+
+(deftest other-targets-do-not-probe-powershell
+  (doseq [target [:fedora :arch :alpine :chimera :macos-arm64]]
+    (with-redefs [planner/root? (constantly true)
+                  planner/command-exists?
+                  (fn [command]
+                    (is (not= "pwsh" command) (str target))
+                    true)]
+      (is (seq (:operations
+                (planner/build-plan policy {:target target :release "test"} "/mise")))))))
 
 (deftest fedora-repositories-precede-package-groups
   (with-redefs [planner/command-exists? (constantly true)
@@ -118,7 +154,7 @@
 (deftest fedora-codec-install-allows-erasing
   (let [operation (last (planner/resource-operations
                          {:target :fedora :release "42" :arch "x86_64" :wsl false}
-                         ["sudo"]))]
+                         ["sudo"] false))]
     (is (= "--allowerasing" (last (:argv operation))))))
 
 (deftest chimera-enables-user-and-refreshes-before-installing
