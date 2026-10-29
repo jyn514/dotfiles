@@ -11,6 +11,7 @@ tmp
 temp
 node_modules/
 target/
+work/
 *.swp
 *.kate-swp
 .koka/

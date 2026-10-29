@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "codex-sandbox"
@@ -109,6 +110,11 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                 self.assertEqual(command, launcher["agent_repository_mounts"](state),
                                  "a second consumer must reuse the one source view")
                 records = [item for item in command if item.startswith("type=bind,")]
+                work_volumes = {
+                    launcher["workspace_work_volume"](workspace)[0]
+                    for workspace in state.workspaces
+                }
+                self.assertEqual(len(state.workspaces), len(work_volumes))
                 for workspace in state.workspaces:
                     root_mount = [item for item in records if f"dst={workspace.guest_root}," in item]
                     self.assertEqual(1, len(root_mount))
@@ -118,7 +124,56 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                     policy = workspace.host_root / ".agents/sandbox"
                     if policy.is_dir():
                         self.assertIn(f"type=bind,src={policy},dst={workspace.guest_root}/.agents/sandbox,readonly", records)
+                    volume, _ = launcher["workspace_work_volume"](workspace)
+                    self.assertIn(
+                        f"type=volume,src={volume},dst={workspace.guest_root}/work",
+                        command,
+                    )
                 self.assertFalse((home / "src/dotfiles-2").exists(), "scaffolding must not mutate host sources")
+
+    def test_workspace_work_volume_is_stable_guest_storage_and_refuses_hidden_host_data(self):
+        from workspace_layout_test import git_fixture
+        from workspace_layout import discover_workspace
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            repo = git_fixture(home / "src/project")
+            workspace = discover_workspace(repo, Path("/src/project"), home)
+            state = SimpleNamespace(workspaces=[workspace], uid=501, gid=20)
+            launcher = runpy.run_path(str(LAUNCHER))
+            runtime = mock.Mock()
+            with mock.patch.dict(
+                    launcher["prepare_workspace_work_volumes"].__globals__,
+                    OUTER_RUNTIME=runtime):
+                launcher["prepare_workspace_work_volumes"](state)
+            volume, owner = launcher["workspace_work_volume"](workspace)
+            self.assertEqual(
+                mock.call(volume, 501, 20, owner, role="workspace-work"),
+                runtime.create_owned_volume.call_args,
+            )
+            self.assertEqual([], list((repo / "work").iterdir()))
+
+            (repo / "work/host-artifact").write_text("keep")
+            with mock.patch.dict(
+                    launcher["prepare_workspace_work_volumes"].__globals__,
+                    OUTER_RUNTIME=runtime), self.assertRaisesRegex(
+                        launcher["LauncherError"],
+                        "non-empty host work directory for active workspace"):
+                launcher["prepare_workspace_work_volumes"](state)
+            self.assertEqual(1, runtime.create_owned_volume.call_count)
+
+            dotfiles = git_fixture(home / "src/dotfiles")
+            dotfiles_workspace = discover_workspace(
+                dotfiles, Path("/src/dotfiles"), home)
+            (dotfiles / "work").mkdir()
+            (dotfiles / "work/host-artifact").write_text("keep")
+            state.workspaces = [workspace, dotfiles_workspace]
+            (repo / "work/host-artifact").unlink()
+            with mock.patch.dict(
+                    launcher["prepare_workspace_work_volumes"].__globals__,
+                    OUTER_RUNTIME=runtime), self.assertRaisesRegex(
+                        launcher["LauncherError"],
+                        "non-empty host work directory for launcher dotfiles workspace"):
+                launcher["prepare_workspace_work_volumes"](state)
 
     def test_one_authority_deduplicates_active_dotfiles_mounts(self):
         from workspace_layout_test import git_fixture

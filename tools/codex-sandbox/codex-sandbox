@@ -71,6 +71,7 @@ PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 # Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
 PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
 PROXY_IDLE_SECONDS = 300.0
+WORK_DIRECTORY = "work"
 
 
 STAGED_CONFIG = {
@@ -1758,6 +1759,28 @@ def _workspace_mount_plan(state: State) -> dict[Path, tuple[Path, bool]]:
     return mounts
 
 
+def workspace_work_volume(workspace: WorkspaceLayout) -> tuple[str, str]:
+    identity = hashlib.sha256(os.fsencode(workspace.host_root)).hexdigest()
+    return "codex-work-" + identity[:32], "codex-workspace:" + identity
+
+
+def prepare_workspace_work_volumes(state: State) -> None:
+    for index, workspace in enumerate(state.workspaces):
+        role = "active workspace" if index == 0 else "launcher dotfiles workspace"
+        mountpoint = workspace.host_root / WORK_DIRECTORY
+        if mountpoint.is_symlink() or (mountpoint.exists() and not mountpoint.is_dir()):
+            raise LauncherError(
+                f"Work mountpoint for {role} is not a directory: {mountpoint}")
+        mountpoint.mkdir(mode=0o700, exist_ok=True)
+        if any(mountpoint.iterdir()):
+            raise LauncherError(
+                f"Refusing to hide non-empty host work directory for {role}: {mountpoint}")
+        name, owner = workspace_work_volume(workspace)
+        OUTER_RUNTIME.create_owned_volume(
+            name, state.uid, state.gid, owner, role="workspace-work",
+        )
+
+
 def agent_repository_mounts(state: State) -> list[str]:
     """Assemble one source view, then writable roots and protected overlays."""
     cached = getattr(state, "repository_mount_arguments", None)
@@ -1780,6 +1803,12 @@ def agent_repository_mounts(state: State) -> list[str]:
             if readonly and source in {workspace.host_root for workspace in state.workspaces}:
                 options += "," + OUTER_RUNTIME.nonrecursive_bind
             result += ["--mount", f"type=bind,src={source},dst={target},{options}"]
+        for workspace in state.workspaces:
+            volume, _ = workspace_work_volume(workspace)
+            result += [
+                "--mount",
+                f"type=volume,src={volume},dst={workspace.guest_root / WORK_DIRECTORY}",
+            ]
         check_mount_destinations(result)
         state.repository_mount_arguments = result
         return list(result)
@@ -1835,6 +1864,7 @@ def build_agent_command(
     pi_extensions: Path,
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
+    project_work = state.container_repository / WORK_DIRECTORY
     command = [
         "docker", "run", "--name", state.codex_container,
         "--cap-drop=NET_RAW",
@@ -1846,6 +1876,10 @@ def build_agent_command(
         "--env", "JJ_AGENT=pi",
         "--env", "CODEX_SANDBOX_TOOL_WORKER=1",
         "--env", "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready",
+        "--env", f"CARGO_TARGET_DIR={project_work / 'cargo-target'}",
+        "--env", f"MYPY_CACHE_DIR={project_work / 'cache/mypy'}",
+        "--env", f"PYTHONPYCACHEPREFIX={project_work / 'cache/python-bytecode'}",
+        "--env", f"RUFF_CACHE_DIR={project_work / 'cache/ruff'}",
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
@@ -2253,13 +2287,14 @@ def execute(state: State) -> int:
         phase("policy binding", lambda: bind_repository_policy(state, manifest))
     phase("relay recovery", lambda: recover_relays(state))
     phase("skill staging", lambda: stage_skills(state))
-    if getattr(state, "workspaces", None):
-        phase("workspace mounts", lambda: agent_repository_mounts(state))
     if hasattr(state, "home"):
         phase("host Pi resources", lambda: prepare_host_pi_resources(state))
     if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
+    if getattr(state, "workspaces", None):
+        phase("workspace work volumes", lambda: prepare_workspace_work_volumes(state))
+        phase("workspace mounts", lambda: agent_repository_mounts(state))
     phase("tmux registration", lambda: register_tmux_pane(state))
     sidecar_selected = bool(
         getattr(state, "capabilities", {"nested-containers"}) - {'tic'}

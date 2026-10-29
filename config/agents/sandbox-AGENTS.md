@@ -32,7 +32,15 @@
 ## Behavior
 
 - jyn is in Central Europe (UTC+2 during daylight-savings-time).
-- jyn does not have easy access to the container; if you need to show them a temporary file, put it in an ignored local folder (e.g. target/ or notes/) rather than /tmp.
+- Use guest-only `work/` for caches, build trees, extracted data, and other high-cardinality intermediates.
+  The launcher preserves it across sandbox sessions for the same workspace, but it remains disposable with the VM or manual volume removal.
+  Cargo uses the active workspace's `work/cargo-target` automatically.
+  Python bytecode, mypy, and Ruff use the active workspace's `work/cache` automatically.
+- Use host-backed `target/` only for artifacts that host tools, other agents, or jyn must inspect.
+- Use host-backed `notes/` for compact unresolved findings that can change a future decision.
+  Do not use it for routine logs, session summaries, or information already owned by maintained documentation.
+- Never leave the only evidence for a reported result in `work/`.
+  Copy the necessary artifact to `target/` or preserve the decisive facts in `notes/`.
 - When a tool needed for authorized work or validation is missing, install it in the disposable sandbox and retry the blocked command.
   A guest-only tool installation is not a new host prerequisite and does not require separate approval.
   You may use `sudo` for guest-only tool installation.

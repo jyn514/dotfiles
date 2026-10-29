@@ -121,6 +121,12 @@ class AgentCommandTest(unittest.TestCase):
 
             self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", command)
             self.assertIn(
+                "CARGO_TARGET_DIR=/src/repository/work/cargo-target", command)
+            self.assertIn("MYPY_CACHE_DIR=/src/repository/work/cache/mypy", command)
+            self.assertIn(
+                "PYTHONPYCACHEPREFIX=/src/repository/work/cache/python-bytecode", command)
+            self.assertIn("RUFF_CACHE_DIR=/src/repository/work/cache/ruff", command)
+            self.assertIn(
                 "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready", command)
             session = next(item for item in command if item.startswith("PI_MODEL_SESSION_ID="))
             uuid.UUID(session.removeprefix("PI_MODEL_SESSION_ID="))
