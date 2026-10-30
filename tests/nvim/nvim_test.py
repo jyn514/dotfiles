@@ -72,7 +72,6 @@ class NeovimConfigTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
             return result
 
-    @unittest.skipUnless(shutil.which("fzf") and shutil.which("rg"), "fzf and ripgrep are required")
     def test_query_definition_follows_each_buffer_checkout_not_editor_cwd(self) -> None:
         self.run_nvim(
             Path(__file__).with_name("fixtures") / "query_definition.lua",
