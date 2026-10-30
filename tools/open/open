@@ -130,10 +130,10 @@ def join_line(parts: list[str]) -> list[str] | str:
     line = parts[1]
     column = parts[2] if len(parts) > 2 else ""
 
-    if EDITOR == "nvim":
+    if EDITOR_BASENAME == "nvim":
         return [f"+normal!{line}G{column}|", file]
 
-    if EDITOR == "kak":
+    if EDITOR_BASENAME == "kak":
         suffix = f":{column}" if len(parts) > 2 else ""
         return [file, f"+{line}{suffix}"]
 
@@ -160,8 +160,8 @@ def vim_fnameescape(value: str) -> str:
 
 
 def editor_commands(args: list[str]) -> list[str]:
-    command = "drop" if EDITOR == "nvim" else "open"
-    if EDITOR != "nvim":
+    command = "drop" if EDITOR_BASENAME == "nvim" else "open"
+    if EDITOR_BASENAME != "nvim":
         quoted = [json.dumps(arg) if arg else "" for arg in args]
         return [f": {command} {' '.join(quoted)}"]
 
@@ -197,7 +197,7 @@ def open_in_tmux_editor(args: list[str]) -> int:
                 "list-panes",
                 "-a",
                 "-f",
-                f"#{{&&:#{{==:#{{window_id}},{current_window}}},#{{==:#{{pane_current_command}},{EDITOR}}}}}",
+                f"#{{&&:#{{==:#{{window_id}},{current_window}}},#{{==:#{{pane_current_command}},{EDITOR_BASENAME}}}}}",
                 "-F",
                 "#{pane_id}",
             ],

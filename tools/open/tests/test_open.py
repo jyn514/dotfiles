@@ -7,6 +7,8 @@ import importlib.machinery
 import importlib.util
 import os
 import argparse
+import json
+import shutil
 from contextlib import chdir
 import subprocess
 import sys
@@ -142,6 +144,58 @@ class OpenScriptTest(unittest.TestCase):
             kak_module.join_line(["/tmp/note.txt", "4"]),
             ["/tmp/note.txt", "+4"],
         )
+
+    def test_editor_position_syntax_uses_executable_basename(self) -> None:
+        for name, expected in (
+            ("nvim", ["+normal!4G2|", "/tmp/note.txt"]),
+            ("kak", ["/tmp/note.txt", "+4:2"]),
+            ("hx", "/tmp/note.txt:4:2"),
+            ("micro", "/tmp/note.txt:4:2"),
+        ):
+            for editor in (name, str(self.root / name)):
+                with self.subTest(editor=editor):
+                    module = self.load_open_module(real_editor=editor)
+                    self.assertEqual(module.join_line(["/tmp/note.txt", "4", "2"]), expected)
+
+    @unittest.skipUnless(shutil.which("nvim"), "Neovim is not installed")
+    def test_editor_hax_native_nvim_opens_file_and_position_for_absolute_editor(self) -> None:
+        native = shutil.which("nvim")
+        editor = self.root / "nvim"
+        fixtures = Path(__file__).parent / "fixtures"
+        shutil.copyfile(fixtures / "headless-nvim.sh", editor)
+        editor.chmod(0o755)
+        entrypoint = self.root / "editor-hax"
+        entrypoint.symlink_to(IMPLEMENTATION)
+        target = self.root / "note.txt"
+        lines = ["one", "two", "three", "four"]
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        result_file = self.root / "result.json"
+        environment = {
+            **os.environ,
+            "PATH": f"{self.root}{os.pathsep}{os.environ['PATH']}",
+            "DOTFILES_TEST_NVIM_REAL": native,
+            "DOTFILES_TEST_NVIM_CAPTURE": str(fixtures / "capture-nvim.lua"),
+            "DOTFILES_TEST_NVIM_RESULT": str(result_file),
+        }
+        for key in ("TMUX", "DISPLAY", "WINDOWID", "NVIM", "NVIM_LISTEN_ADDRESS", "VIMINIT", "EXINIT"):
+            environment.pop(key, None)
+        # The adapter adds only headless startup and result capture; Neovim
+        # itself interprets the production entrypoint's file/position arguments.
+        for choice in ("nvim", str(editor)):
+            for suffix, cursor in (("", None), (":3", [3, 0]), (":3:2", [3, 1])):
+                with self.subTest(editor=choice, suffix=suffix):
+                    result_file.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [str(entrypoint), f"{target}{suffix}"],
+                        env={**environment, "REAL_EDITOR": choice},
+                        capture_output=True, text=True, timeout=15, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    actual = json.loads(result_file.read_text(encoding="utf-8"))
+                    self.assertEqual(actual["file"], self.real(target))
+                    self.assertEqual(actual["lines"], lines)
+                    if cursor is not None:
+                        self.assertEqual(actual["cursor"], cursor)
 
     def test_default_is_editor_uses_literal_editor_name(self) -> None:
         module = self.load_open_module(real_editor="a.n")
@@ -347,7 +401,7 @@ class OpenScriptTest(unittest.TestCase):
         ):
             self.assertEqual(module.xdgopen([f"{target}:10"]), 0)
 
-        tmux_open.assert_called_once_with([f"{self.real(target)}:10"])
+        tmux_open.assert_called_once_with(["+normal!10G|", self.real(target)])
 
     def test_editor_name_regex_metacharacters_do_not_match_unrelated_default(self) -> None:
         target = self.root / "note.txt"
@@ -755,6 +809,18 @@ class OpenScriptTest(unittest.TestCase):
             module.main([])
         execvp.assert_called_once_with(module.EDITOR, [module.EDITOR])
 
+    def test_editor_hax_executes_absolute_editor_without_rewriting_path(self) -> None:
+        editor = str(self.root / "nvim")
+        module = self.load_open_module(real_editor=editor)
+        target = self.root / "note.txt"
+        with (
+            mock.patch.object(module, "refresh_path_from_profile"),
+            mock.patch.object(module.sys, "argv", ["editor-hax"]),
+            mock.patch.object(module.os, "execvp") as execvp,
+        ):
+            module.main([f"{target}:3:2"])
+        execvp.assert_called_once_with(editor, [editor, "+normal!3G2|", self.real(target)])
+
     def test_editor_hax_rejects_multiple_args(self) -> None:
         module = self.load_open_module()
 
@@ -859,6 +925,32 @@ class OpenScriptTest(unittest.TestCase):
             run.mock_calls,
         )
 
+    def test_absolute_editor_matches_pane_basename_but_launches_selected_path(self) -> None:
+        editor = str(self.root / "nvim")
+        module = self.load_open_module(real_editor=editor)
+        for pane in ("%4\n", ""):
+            with (
+                self.subTest(pane=pane),
+                mock.patch.object(module, "run_stdout", side_effect=["@2\n", pane, "0\n"]) as query,
+                mock.patch.object(module, "activate_window_if_needed"),
+                mock.patch.object(module.subprocess, "run") as run,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(module.open_in_tmux_editor(["/tmp/note.txt"]), 0)
+                self.assertEqual(
+                    query.call_args_list[1].args[0],
+                    ["tmux", "list-panes", "-a", "-f",
+                     "#{&&:#{==:#{window_id},@2},#{==:#{pane_current_command},nvim}}",
+                     "-F", "#{pane_id}"],
+                )
+                if pane:
+                    run.assert_any_call(
+                        ["tmux", "send-keys", "-t", "%4", ": drop /tmp/note.txt", "Enter"],
+                        check=False,
+                    )
+                else:
+                    self.assertEqual(run.call_args.args[0][-2:], [editor, "/tmp/note.txt"])
+
     def test_hx_hax_cancels_tmux_mode_before_reusing_existing_pane(self) -> None:
         module = self.load_open_module(real_editor="hx")
 
@@ -896,17 +988,16 @@ class OpenScriptTest(unittest.TestCase):
         )
 
     def test_nvim_existing_pane_escapes_filename_and_restores_position(self) -> None:
-        module = self.load_open_module(real_editor="nvim")
         target = self.root / "space|armed.txt"
         escaped_target = self.real(target).replace(" ", "\\ ").replace("|", "\\|")
 
-        self.assertEqual(
-            [
-                f": drop {escaped_target}",
-                ": call cursor(11, 2)",
-            ],
-            module.editor_commands(["+normal!11G2|", self.real(target)]),
-        )
+        for editor in ("nvim", str(self.root / "nvim")):
+            with self.subTest(editor=editor):
+                module = self.load_open_module(real_editor=editor)
+                self.assertEqual(
+                    [f": drop {escaped_target}", ": call cursor(11, 2)"],
+                    module.editor_commands(["+normal!11G2|", self.real(target)]),
+                )
 
     def test_hx_hax_rejects_multiple_args(self) -> None:
         module = self.load_open_module(real_editor="hx")
