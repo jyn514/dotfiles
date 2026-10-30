@@ -17,6 +17,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Register automated suites with the repository's top-level test command, either by default or through a documented opt-in mode. Verify that the command discovers and executes them; a focused invocation alone does not prove reachability. Report missing prerequisites and skips distinctly from passing checks.
 - Use property tests when generators express the input space better than enumerated examples. When combinations or action sequences exceed a practical hand-written matrix, use bounded generated tests with requirement-derived or consumer-validated oracles. Record failing inputs for replay and reduce them to small regressions when practical. Use [property-based-testing](../property-based-testing/SKILL.md) for property-specific generator design and review.
 - Verify that executed generated cases contain the declared input classes and selected interactions, including after filtering or deduplication. Do not infer this from generator code alone. Include required cases explicitly when random generation cannot reliably exercise them; this check does not require an exhaustive cross-product.
+  For reports whose observed set may omit required items, see the [population example](testing-examples.md#coverage-and-required-populations).
 - Use golden tests with thoughtful fixtures at a consumer-meaningful layer; one shared check function should make cases easy to add and review.
 
 ## Expected behavior and regression evidence
@@ -38,6 +39,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 
 - Validate the test oracle against the consumer's actual behavior. A mock accepting generated Docker arguments does not establish that Docker can mount them. Check equivalence and cardinality when relevant: distinct occurrences, objects, refs, paths, or owners must not collapse because normalized text or fingerprints match. If no reliable oracle is available, record that validation limit rather than claiming the invariant is protected.
   When a consumer can fall back or serve the same bytes under several modes, check which mode or resource it selected; a successful round trip alone may hide the wrong selection.
+  For cancellation results that select the caller's next action, see the [timer example](testing-examples.md#cancellation-and-return-values).
 - For byte-stream consumers whose contract gives read-chunk boundaries no meaning, vary the partition of the same ordered bytes into legal chunks.
   Include splits within encoded characters or framing, where applicable, and multiple records in one chunk.
   Check contract-defined content, record order, and completion/error behavior without requiring identical callback batching or timing.

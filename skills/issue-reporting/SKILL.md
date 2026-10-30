@@ -70,7 +70,8 @@ The writing, tightening, and delivery requirements apply only when a report or f
    metadata. If no template is available, tell the user.
    Follow the project's disclosure placement; otherwise put this skill's default disclosure before the first template heading.
    Preserve the template's heading order and required fields.
-   For a bug report, lead with the installation or invocation and visible failure; include reproduction, expected behavior, and output.
+   For a bug report without a template-prescribed order, put **Expected behavior** before **Actual behavior**, then **Reproduction**.
+   Put the installation or invocation in the reproduction and collapse supporting output unless it is needed to understand the visible failure.
 2. Incorporate the user's latest corrections and reported experiments.
    Track whether each result came from the user, an agent-run check, or source inspection.
    Distinguish jyn's goals and reported experience from verification evidence.
@@ -110,9 +111,15 @@ The [discussion contrast](../holistic-writing/references/reading-examples.md#sta
 
 - Use complete sentences and ordinary issue prose, even when conversation uses IRC style.
   State jyn's goals and known experience accurately, without imitating her conversational voice or inventing familiarity, use, or personal verification.
+  When jyn supplies first-person experience, preserve direct wording such as "In my case" instead of recasting it as a formal observation.
+  Use the established platform or product term, such as "WebView", instead of replacing it with a longer circumlocution.
   Distinguish intended use from current use: "I want to use ..." does not establish "I use ...".
   For a bug report, choose a title that names the general failure rather than one tool that exposes it:
   "user-local Python" rather than "mise Python"; name mise in the body.
+  Treat exact UI labels and [improper nouns](https://siderea.dreamwidth.org/1773806.html) as terms of art.
+  An improper noun is a domain-specific term that looks like an ordinary description.
+  Quote them in titles when Markdown formatting is unavailable, format them distinctly in the body, and define unfamiliar terms on first use.
+  For example, write `shows “Offline” instead of “Request access”`, not `pair mode hides request access behind offline state`.
   Include facts that help the maintainer reproduce, diagnose, or fix the failure;
   omit investigation narration and redundant checks when a working control
   already establishes the relevant difference.
@@ -145,7 +152,7 @@ The [discussion contrast](../holistic-writing/references/reading-examples.md#sta
   if established. A report need not diagnose the bug; label hypotheses explicitly
   and keep the observed behavior useful even if the diagnosis is wrong. Put each
   bare GitHub permalink on its own line immediately after the claim it supports.
-- Consolidate exact versions, installation provenance, and runtime dependencies in one section at the end, unless the template specifies otherwise.
+- Consolidate exact versions, installation provenance, runtime dependencies, and source analysis in a `<details>` block at the end, unless the template requires those fields to remain visible.
   Repeat a version elsewhere only when needed to distinguish results from different versions.
   Include full development commit hashes and the tested invocation; do not repeat hashes in prose when source permalinks already identify them.
   Say "using commit ..." rather than narrating source comparisons.

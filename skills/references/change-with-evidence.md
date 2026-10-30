@@ -62,6 +62,16 @@ Before recommending reuse, verify that the actual component at its pinned versio
 A public API in an underlying library does not expose the tool's private modules.
 If reuse requires private-source integration, a downstream patch, or a fork, name that and its maintenance cost before recommending it.
 
+## Restricted execution contexts
+
+When an execution context already forbids allocation, blocking, or another operation, apply that restriction to the complete path.
+Include error handling, cleanup, indirect helpers, and first-use initialization.
+Check that a path intended to avoid forbidden work makes its decision before invoking helpers that can perform that work.
+Do not impose the same restrictions on ordinary contexts without a requirement.
+
+[Rust's panic repair](https://github.com/rust-lang/rust/pull/102460) moves the abort-only check before the thread-local counter access.
+The previous path accessed that counter before checking the mode; its first-use initialization could allocate in the restricted child process.
+
 ## Justify new mechanisms
 
 Require a current requirement, independent consumer, reproduced failure, or pre-existing hard constraint before adding machinery.

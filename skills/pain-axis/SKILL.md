@@ -27,9 +27,27 @@ Use `jj-workflow` for history operations and ordinary provenance questions, `arc
 `work-selection` when choosing the next investigation or application target, and `skill-authoring` before recording a lesson as guidance.
 Session-history research into whether agents followed instructions is a separate activity; code history alone does not establish compliance.
 
+## Select evidence for the question
+
+Choose available records for the open question, not a mandatory set of sources for every case.
+
+- **Rationale and alternatives:** inspect review conversations and rejected proposals.
+  Follow corrections to the diagnosis and reasons for keeping or rejecting an alternative, not only the accepted patch.
+- **Actual-use assumptions:** inspect integration attempts, support questions, and abandoned approaches.
+  Look for consumer obligations or difficulties missing from the author's intended usage.
+- **Maintainability over time:** inspect feature requests, migrations, and operational history when claiming a design accommodates change well.
+  Identify which changes stayed easy and which distinctions remained necessary.
+  One protected behavior alone does not establish successful evolution.
+- **Comparative design:** compare implementations of the same operation while establishing each one's requirements independently.
+  Expose differing contracts rather than requiring identical ones.
+  Explain where costs and obligations move before attributing a difference to a language, paradigm, or representation.
+
+Talks and papers can supply design arguments and leads to concrete cases; distinguish a speaker's explanation from inspected implementation evidence.
+Neither a polished account nor a review's acceptance establishes that its claims about behavior are correct.
+
 ## Reconstruct the case
 
-1. Use bug-fix commits, reverts, repeated refactors, issues, and coupled changes as leads.
+1. Use bug-fix commits, reverts, repeated refactors, issues, and coupled changes as leads where relevant to the question.
    Include successful optimizations and designs that preserve important distinctions, not only defects.
    Read the relevant patches, surrounding code, tests, and available discussions before accepting the stated diagnosis.
 2. Establish the actual before-and-after revisions and lineage, including renamed files or earlier repair attempts when relevant.
