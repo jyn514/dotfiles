@@ -43,15 +43,6 @@ def run(
     return Result(exit_status(completed.returncode), completed.stdout or b"")
 
 
-def strip_decoder_prefix(output: bytes) -> bytes:
-    """Implement `cut -d: -f2-` without decoding arbitrary QR payload bytes."""
-    lines = []
-    for line in output.splitlines(keepends=True):
-        _, separator, payload = line.partition(b":")
-        lines.append(payload if separator else line)
-    return b"".join(lines)
-
-
 def decode(
     runner: Callable[..., Result] = run,
     tty_path: Path = Path("/dev/tty"),
@@ -60,10 +51,10 @@ def decode(
     if image.status:
         return image.status
 
-    decoded = runner(["zbarimg", "-q", "-"], input_bytes=image.stdout)
+    decoded = runner(["zbarimg", "-q", "--raw", "-"], input_bytes=image.stdout)
     if decoded.status:
         return decoded.status
-    payload = strip_decoder_prefix(decoded.stdout)
+    payload = decoded.stdout
 
     try:
         with tty_path.open("wb", buffering=0) as terminal:
