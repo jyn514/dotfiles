@@ -73,6 +73,53 @@ class GitBackupTests(unittest.TestCase):
             (extracted / "master/file with spaces.txt").read_text(),
         )
 
+    def test_option_like_repository_name_is_a_literal_archive_operand(self) -> None:
+        name = "--add-file=."
+        source = self.directory / name
+        self.repository.rename(source)
+        expected_head = subprocess.check_output(
+            ["git", "-C", source, "rev-parse", "HEAD"]
+        ).strip()
+        for command in (COMMAND, COMPATIBILITY_COMMAND):
+            with self.subTest(command=command.name):
+                output = self.directory / command.name
+                result = subprocess.run(
+                    [command, source, output],
+                    cwd=self.directory,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                archive = Path(f"{output}.tar")
+                members = subprocess.check_output(["tar", "tf", archive]).splitlines()
+                self.assertEqual(
+                    {
+                        f"{name}/".encode(),
+                        f"{name}/{name}.bundle".encode(),
+                        f"{name}/master.tar.xz".encode(),
+                    },
+                    set(members),
+                )
+                extracted = self.directory / f"extracted-{command.name}"
+                extracted.mkdir()
+                subprocess.run(["tar", "xf", archive, "-C", extracted], check=True)
+                bundle = extracted / name / f"{name}.bundle"
+                heads = subprocess.check_output(["git", "bundle", "list-heads", bundle])
+                self.assertIn(expected_head + b" HEAD", heads.splitlines())
+                restored = self.directory / f"restored-{command.name}"
+                subprocess.run(["git", "clone", "-q", bundle, restored], check=True)
+                self.assertEqual(
+                    "backup contents\n", (restored / "file with spaces.txt").read_text()
+                )
+                subprocess.run(
+                    ["tar", "xf", extracted / name / "master.tar.xz", "-C", extracted],
+                    check=True,
+                )
+                self.assertEqual(
+                    "backup contents\n", (extracted / "master/file with spaces.txt").read_text()
+                )
+
     def test_explicit_repository_wins_over_inherited_repository_environment(self) -> None:
         expected_head = subprocess.check_output(
             ["git", "-C", self.repository, "rev-parse", "HEAD"]

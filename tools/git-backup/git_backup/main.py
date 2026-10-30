@@ -166,7 +166,7 @@ def backup(repository: bytes, destination: bytes) -> int:
 
         progress("generating backup file")
         archive = os.path.join(temporary, name + b".tar")
-        status = run([b"tar", b"cf", archive, name], cwd=temporary)
+        status = run([b"tar", b"cf", archive, b"--", name], cwd=temporary)
         if status:
             return fail_step(status)
         try:
