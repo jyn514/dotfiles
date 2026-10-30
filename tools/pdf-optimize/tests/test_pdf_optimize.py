@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -80,7 +81,7 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertIn(f"INFO: Using input file: {self.source}\n".encode(), result.stdout)
         self.assertIn(f"INFO: Using output file: {destination}\n".encode(), result.stdout)
         calls = self.calls.read_text()
-        self.assertIn(f"file <--brief> <--> <{self.source}>", calls)
+        self.assertIn(f"file <--brief> <--dereference> <--> <{self.source}>", calls)
         self.assertIn("gs <-sDEVICE=pdfwrite> <-dDetectDuplicateImages=true>", calls)
         self.assertIn(" <-o> ", calls)
         self.assertIn(f"du <-h> <{destination}>", calls)
@@ -174,6 +175,71 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertIn(b"INFO: Using input file: " + source + b"\n", result.stdout)
         self.assertIn(b"INFO: Using output file: " + destination + b"\n", result.stdout)
         self.assertEqual(b"%PDF-1.4\nsource\n", Path(os.fsdecode(destination)).read_bytes())
+
+
+@unittest.skipUnless(
+    all(shutil.which(command) for command in ("file", "gs", "du")),
+    "native PDF checks require file, Ghostscript, and du",
+)
+class NativePdfInputTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.source = self.directory / "document.pdf"
+        shutil.copyfile(Path(__file__).parent / "fixtures/one-page.pdf", self.source)
+        self.link = self.directory / "current.pdf"
+        self.link.symlink_to(self.source.name)
+
+    def run_command(self, *arguments: Path) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [COMMAND, *arguments],
+            cwd=self.directory,
+            env=os.environ | {"TMPDIR": str(self.directory)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    def test_direct_and_symlink_inputs_produce_readable_pdfs(self) -> None:
+        original = self.source.read_bytes()
+        for source in (self.source, self.link):
+            with self.subTest(source=source.name):
+                result = self.run_command(source)
+                destination = Path(f"{source}-optimized.pdf")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertTrue(destination.is_file())
+                parsed = subprocess.run(
+                    ["gs", "-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=nullpage", destination],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, parsed.returncode, parsed.stderr)
+        self.assertEqual(original, self.source.read_bytes())
+        self.assertTrue(self.link.is_symlink())
+        self.assertEqual(self.source.name, os.readlink(self.link))
+
+    def test_symlink_to_non_pdf_is_rejected_before_optimization(self) -> None:
+        self.source.write_text("not a PDF document\n")
+        result = self.run_command(self.link)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(b"does not seem to be a PDF", result.stderr)
+        self.assertFalse(Path(f"{self.link}-optimized.pdf").exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+
+    def test_symlink_input_does_not_allow_overwriting_a_destination_symlink(self) -> None:
+        destination = self.directory / "output.pdf"
+        destination.symlink_to("absent.pdf")
+        result = self.run_command(self.link, destination)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(b"output file already exists", result.stderr)
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual("absent.pdf", os.readlink(destination))
+        self.assertFalse((self.directory / "absent.pdf").exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
 
 
 if __name__ == "__main__":

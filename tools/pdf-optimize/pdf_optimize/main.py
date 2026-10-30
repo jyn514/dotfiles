@@ -71,7 +71,7 @@ def run(
 
 def is_pdf(file_command: bytes, source: bytes) -> tuple[int, bool]:
     result = run(
-        [file_command, b"--brief", b"--", source],
+        [file_command, b"--brief", b"--dereference", b"--", source],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
