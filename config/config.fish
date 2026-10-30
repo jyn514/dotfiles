@@ -352,11 +352,14 @@ if exists bat
 	function cat; bat -p $argv; end
 end
 function fork-github
-	set -l directory (command fork-github $argv)
-		or return
+	set -l directory (command fork-github $argv | string collect --no-trim-newlines)
+	set -l fork_status $pipestatus[1]
+	[ $fork_status -eq 0 ]; or return $fork_status
+	# Remove only the producer's final LF, not newlines in the path itself.
+	set directory (string split --right --max 1 \n -- "$directory")[1]
 	[ -n "$directory" ]
 		or return 1
-	cd $directory
+	cd -- "$directory"
 end
 function ip
 	functions --erase ip

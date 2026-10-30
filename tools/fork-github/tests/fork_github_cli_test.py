@@ -54,6 +54,77 @@ class CommandIntegrationTests(unittest.TestCase):
             stderr=subprocess.PIPE, env=self.environment, timeout=30,
         )
 
+    def fish_fork(self, *arguments: str) -> subprocess.CompletedProcess:
+        home = self.directory / "fish-home"
+        home.mkdir(exist_ok=True)
+        profile = home / ".profile"
+        if not profile.exists():
+            profile.symlink_to(ROOT / "config/profile")
+        environment = self.environment | {
+            "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local/share"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+            "SSH_AUTH_SOCK": "present", "TERM": "dumb", "TMUX": "",
+            "TMUX_PANE": "",
+            "PROFILE_FISH": str(ROOT / "config/config.fish"),
+            "FORK_START_DIRECTORY": str(self.directory),
+            "FORK_FISH_PROBE": str(Path(__file__).with_name("fixtures") / "fish_checkout.fish"),
+        }
+        environment.pop("KITTY_INSTALLATION_DIR", None)
+        return subprocess.run(
+            ["fish", "-i",
+             str(ROOT / "tests/setup/fixtures/profile_command.fish"),
+             'source "$FORK_FISH_PROBE" $argv', *arguments],
+            cwd=home, env=environment, text=True, capture_output=True, timeout=30,
+        )
+
+    @unittest.skipUnless(shutil.which("fish"), "fish is unavailable")
+    def test_fish_enters_exact_clone_destination(self) -> None:
+        upstream = "https://github.com/owner/repository.git"
+        self.local_remote(upstream)
+        for index, name in enumerate((
+            "inside\nname", "trailing\n", "trailing\n\n",
+            "spaces in name", "literal * ? [x] $value \\ name",
+        )):
+            with self.subTest(destination=repr(name)):
+                # Keep CLI and Fish clones independent, with the same path bytes.
+                cli_name = f"cli-{index}-{name}"
+                result = self.fork("owner/repository", cli_name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(cli_name + "\n", result.stdout)
+                self.assert_checkout(cli_name, upstream, "git@github.com:jyn514/repository.git")
+                result = self.fish_fork("owner/repository", name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(str(self.directory / name) + "\0", result.stdout)
+                self.assert_checkout(name, upstream, "git@github.com:jyn514/repository.git")
+
+    @unittest.skipUnless(shutil.which("fish"), "fish is unavailable")
+    def test_fish_clone_failure_keeps_cwd_and_status(self) -> None:
+        self.local_remote("https://github.com/owner/missing.git", self.directory / "missing-source")
+        cli = self.fork("owner/missing")
+        self.assertNotEqual(0, cli.returncode)
+        self.assertEqual("", cli.stdout)
+        result = self.fish_fork("owner/missing")
+        self.assertEqual(cli.returncode, result.returncode, result.stderr)
+        self.assertEqual(str(self.directory) + "\0", result.stdout)
+        self.assertFalse((self.directory / "missing").exists())
+
+    @unittest.skipUnless(shutil.which("fish"), "fish is unavailable")
+    def test_fish_empty_or_failed_producer_does_not_change_cwd(self) -> None:
+        wrappers = self.directory / "producer"
+        wrappers.mkdir()
+        producer = wrappers / "fork-github"
+        producer.symlink_to(Path(__file__).with_name("fixtures") / "fork_output.py")
+        destination = self.directory / "must not enter"
+        destination.mkdir()
+        self.environment["PROFILE_TEST_BIN"] = str(wrappers)
+        for output, status, expected in (("", 0, 1), ("", 23, 23), (str(destination) + "\n", 23, 23)):
+            with self.subTest(output=repr(output), status=status):
+                self.environment |= {"FORK_OUTPUT": output, "FORK_STATUS": str(status)}
+                result = self.fish_fork("owner/repository")
+                self.assertEqual(expected, result.returncode, result.stderr)
+                self.assertEqual(str(self.directory) + "\0", result.stdout)
+
     def assert_checkout(self, name: str, upstream: str, origin: str) -> None:
         checkout = self.directory / name
         self.assertTrue((checkout / ".jj").is_dir())
