@@ -679,6 +679,17 @@ From the dotfiles repository root:
 dev/test-environment bun test tests/pi/pi_link_identity_test.ts tests/pi/pi_link_messaging_test.ts tests/pi/pi_link_cli_test.ts tests/pi/pi_link_test.ts
 ```
 
+To run only native cases matching a regular expression, keep the same wrapper and set `PI_LINK_TEST_NAME_PATTERN`:
+
+```sh
+PI_LINK_TEST_NAME_PATTERN='managed child inherits' dev/test-environment bun test tests/pi/pi_link_test.ts
+```
+
+This filter reaches Node's native test runner, not Bun's outer test name.
+Filtered runs print the native results and fail if no tests match or the expression is invalid.
+The wrapper still clears `PI_PACKAGE_DIR` so the locked SDK uses its own theme assets.
+Without the filter, it runs and checks the complete native suite.
+
 The suite is also discovered by the repository's `dev/test` command through `bun test tests/pi`.
 CLI tests run the production list, resolve, and launcher paths with disposable session files and a fake Pi executable.
 Native extension tests use disposable copies and private WebSocket ports, not the live link on port 9900.
