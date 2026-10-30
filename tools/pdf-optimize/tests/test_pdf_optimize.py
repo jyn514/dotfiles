@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -81,7 +82,9 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertIn(f"INFO: Using input file: {self.source}\n".encode(), result.stdout)
         self.assertIn(f"INFO: Using output file: {destination}\n".encode(), result.stdout)
         calls = self.calls.read_text()
-        self.assertIn(f"file <--brief> <--dereference> <--> <{self.source}>", calls)
+        classified = re.search(r"file <--brief> <--dereference> <--> <(.*?)>gs", calls)
+        self.assertIsNotNone(classified, calls)
+        self.assertIn(f" <{classified.group(1)}>du", calls)
         self.assertIn("gs <-sDEVICE=pdfwrite> <-dDetectDuplicateImages=true>", calls)
         self.assertIn(" <-o> ", calls)
         self.assertIn(f"du <-h> <{destination}>", calls)
@@ -121,6 +124,33 @@ class PdfOptimizeTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn(b"does not seem to be a PDF", result.stderr)
+
+    def test_classification_failure_preserves_status_and_cleans_snapshot(self) -> None:
+        self.make_executable("file", "printf 'classification failed\\n' >&2\nexit 43\n")
+        self.make_executable("gs", "exit 99\n")
+        result = self.run_command(self.source)
+
+        self.assertEqual(43, result.returncode)
+        self.assertIn(b"classification failed\n", result.stderr)
+        self.assertFalse(Path(f"{self.source}-optimized.pdf").exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+
+    @unittest.skipUnless(os.name == "posix" and os.geteuid() != 0, "requires unprivileged POSIX permissions")
+    def test_unreadable_input_fails_without_traceback_or_leaked_snapshot(self) -> None:
+        self.successful_ghostscript()
+        self.source.chmod(0)
+        try:
+            result = self.run_command(self.source)
+        finally:
+            self.source.chmod(0o600)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(b"could not copy input", result.stderr)
+        self.assertNotIn(b"Traceback", result.stderr)
+        self.assertFalse(Path(f"{self.source}-optimized.pdf").exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
 
     def test_missing_ghostscript_is_a_dependency_error(self) -> None:
         (self.bin / "python3").symlink_to(sys.executable)
@@ -220,6 +250,67 @@ class NativePdfInputTests(unittest.TestCase):
         self.assertTrue(self.link.is_symlink())
         self.assertEqual(self.source.name, os.readlink(self.link))
 
+    def test_ghostscript_consumes_the_classified_snapshot_after_source_replacement(self) -> None:
+        original = self.source.read_bytes()
+        native_bin = self.directory / "bin"
+        native_bin.mkdir()
+        helper = Path(__file__).parent / "fixtures/replace-after-classification.py"
+        for command in ("file", "gs"):
+            wrapper = native_bin / command
+            shutil.copyfile(helper, wrapper)
+            wrapper.chmod(0o755)
+        # Native Ghostscript accepts this non-PDF input, so success alone is
+        # not an oracle for which document was validated and consumed.
+        replacement_document = self.directory / "replacement.ps"
+        replacement_document.write_bytes(b"%!PS\nshowpage\n")
+        environment = os.environ | {
+            "PATH": f"{native_bin}:{os.environ['PATH']}",
+            "TMPDIR": str(self.directory),
+            "NATIVE_FILE": shutil.which("file"),
+            "NATIVE_GS": shutil.which("gs"),
+        }
+        for source in (self.source, self.link):
+            with self.subTest(source=source.name):
+                self.source.write_bytes(original)
+                replacement = self.directory / "replacement"
+                if source == self.link:
+                    replacement.symlink_to(replacement_document.name)
+                else:
+                    shutil.copyfile(replacement_document, replacement)
+                consumed = self.directory / "consumed.pdf"
+                result = subprocess.run(
+                    [COMMAND, source],
+                    cwd=self.directory,
+                    env=environment | {
+                        "SELECTED_SOURCE": str(source),
+                        "REPLACEMENT": str(replacement),
+                        "CONSUMED_INPUT": str(consumed),
+                    },
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(replacement_document.read_bytes(), source.read_bytes())
+                self.assertEqual(original, consumed.read_bytes())
+                destination = Path(f"{source}-optimized.pdf")
+                parsed = subprocess.run(
+                    [environment["NATIVE_GS"], "-q", "-dBATCH", "-dNOPAUSE",
+                     "-dPDFSTOPONERROR", "-sDEVICE=nullpage", destination],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, parsed.returncode, parsed.stderr)
+                self.assertEqual(source == self.link, source.is_symlink())
+                # A separate invocation must classify the current source, not
+                # reuse the preceding operation's accepted snapshot.
+                next_destination = self.directory / "next-output.pdf"
+                next_result = self.run_command(source, next_destination)
+                self.assertEqual(1, next_result.returncode)
+                self.assertIn(b"does not seem to be a PDF", next_result.stderr)
+                self.assertFalse(next_destination.exists())
+
     def test_symlink_to_non_pdf_is_rejected_before_optimization(self) -> None:
         self.source.write_text("not a PDF document\n")
         result = self.run_command(self.link)
@@ -228,6 +319,7 @@ class NativePdfInputTests(unittest.TestCase):
         self.assertIn(b"does not seem to be a PDF", result.stderr)
         self.assertFalse(Path(f"{self.link}-optimized.pdf").exists())
         self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
 
     def test_symlink_input_does_not_allow_overwriting_a_destination_symlink(self) -> None:
         destination = self.directory / "output.pdf"

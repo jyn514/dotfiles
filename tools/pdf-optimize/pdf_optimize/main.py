@@ -135,34 +135,43 @@ def optimize(source: bytes, destination: bytes) -> int:
     if not os.path.isfile(source):
         emit(b"ERROR: input file does not exist or is not a file!", stderr=True)
         return 1
-    status, pdf = is_pdf(file_command, source)
-    if status:
-        return status
-    if not pdf:
-        emit(b"ERROR: input file does not seem to be a PDF", stderr=True)
-        return 1
-    if os.path.lexists(destination):
-        emit(b"ERROR: output file already exists!", stderr=True)
-        return 1
-
     temporary_root = os.environ.get("TMPDIR", tempfile.gettempdir())
-    descriptor, log_text = tempfile.mkstemp(
-        prefix="pdf-optimize-", suffix=".log", dir=temporary_root
-    )
-    os.close(descriptor)
-    log = os.fsencode(log_text)
-
-    emit(b"INFO: Using input file: " + source)
-    emit(b"INFO: Using output file: " + destination)
-    emit(b"INFO: Using gs command: " + ghostscript)
-    emit(b"INFO: Using gs options: " + b" ".join(GHOSTSCRIPT_OPTIONS))
-    emit(b"INFO: Log path: " + log)
-
     with tempfile.TemporaryDirectory(prefix="pdf-optimize.", dir=temporary_root) as directory_text:
         directory = os.fsencode(directory_text)
         temporary_input = os.path.join(directory, b"input.pdf")
         temporary_output = os.path.join(directory, b"output.pdf")
-        shutil.copyfile(source, temporary_input)
+        try:
+            shutil.copyfile(source, temporary_input)
+        except OSError as error:
+            emit(
+                b"pdf-optimize: could not copy input: " + os.fsencode(str(error)),
+                stderr=True,
+            )
+            return 1
+
+        # Classify the same private snapshot Ghostscript will consume. The
+        # caller-owned path may change after it has been copied.
+        status, pdf = is_pdf(file_command, temporary_input)
+        if status:
+            return status
+        if not pdf:
+            emit(b"ERROR: input file does not seem to be a PDF", stderr=True)
+            return 1
+        if os.path.lexists(destination):
+            emit(b"ERROR: output file already exists!", stderr=True)
+            return 1
+
+        descriptor, log_text = tempfile.mkstemp(
+            prefix="pdf-optimize-", suffix=".log", dir=temporary_root
+        )
+        os.close(descriptor)
+        log = os.fsencode(log_text)
+
+        emit(b"INFO: Using input file: " + source)
+        emit(b"INFO: Using output file: " + destination)
+        emit(b"INFO: Using gs command: " + ghostscript)
+        emit(b"INFO: Using gs options: " + b" ".join(GHOSTSCRIPT_OPTIONS))
+        emit(b"INFO: Log path: " + log)
 
         emit(b"STATUS: Optimizing pdf... ", end=b"", flush=True)
         started = time.monotonic()
