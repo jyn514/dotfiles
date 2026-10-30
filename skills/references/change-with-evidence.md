@@ -88,6 +88,13 @@ Do not turn a proposed mechanism into its own requirement.
 - Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
 - After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
 
+When choosing or rearranging a numerical calculation, check intermediate operations over the accepted input range.
+Algebraic equivalence does not establish equivalent behavior in the implementation's arithmetic.
+Trace cases where overflow, underflow, or cancellation could violate a required result or downstream decision.
+Choose the smallest formulation that preserves the contract.
+Do not narrow accepted inputs, clamp results, or widen tolerances merely to hide a failure.
+Non-finite intermediates or rounding differences are not defects by themselves when the required behavior remains valid.
+
 Before implementing parsing or validation, check whether an existing consumer can produce the authoritative result.
 Prefer inspecting that result over reproducing its rules.
 Explain why reuse is insufficient before implementing a custom parser or validator.
