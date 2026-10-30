@@ -17,6 +17,166 @@ import check_case_conflict  # noqa: E402
 
 
 class PreCommitTest(unittest.TestCase):
+    def test_git_environment_preserves_selected_path_identity(self) -> None:
+        for selector in ("GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"):
+            for raw in (b"relative/../selected-\xff\n", b"/absolute/selected-\xff\n", b""):
+                with self.subTest(selector=selector, raw=raw):
+                    with mock.patch.dict(os.environ, {}, clear=True):
+                        os.environ[selector] = os.fsdecode(raw)
+                        environment = pre_commit.git_environment(b"/original/.git", b"/original")
+                        key = os.fsencode(selector) if hasattr(os, "environb") else selector
+                        expected = b"/original/" + raw if raw and not os.path.isabs(raw) else raw
+                        actual = environment[key]
+                        self.assertEqual(expected, os.fsencode(actual))
+                        self.assertEqual(os.fsdecode(raw), os.environ[selector])
+        with mock.patch.dict(os.environ, {}, clear=True):
+            environment = pre_commit.git_environment(b"/original/.git", b"/original")
+            self.assertNotIn(b"GIT_INDEX_FILE", environment)
+            self.assertNotIn("GIT_INDEX_FILE", environment)
+
+    def test_git_environment_text_fallback_preserves_selected_paths(self) -> None:
+        inherited = {
+            "GIT_INDEX_FILE": os.fsdecode(b"relative/../index-\xff\n"),
+            "GIT_COMMON_DIR": "relative/common",
+            "GIT_OBJECT_DIRECTORY": "/absolute/objects",
+        }
+        text_os = mock.Mock(
+            spec=("environ", "fsdecode", "path"),
+            environ=inherited, fsdecode=os.fsdecode, path=os.path,
+        )
+        with mock.patch.object(pre_commit, "os", text_os):
+            environment = pre_commit.git_environment(b"/original/.git", b"/original")
+        self.assertEqual("/original/" + inherited["GIT_INDEX_FILE"], environment["GIT_INDEX_FILE"])
+        self.assertEqual("/original/relative/common", environment["GIT_COMMON_DIR"])
+        self.assertEqual("/absolute/objects", environment["GIT_OBJECT_DIRECTORY"])
+        self.assertEqual("/original/.git", environment["GIT_DIR"])
+        self.assertEqual("/original", environment["GIT_WORK_TREE"])
+        self.assertNotIn("GIT_DIR", inherited)
+
+    def test_native_commit_checks_selected_index_modes_and_commits_that_tree(self) -> None:
+        for selector in ("default", "relative", "absolute"):
+            for executable, content, diagnostic in (
+                (False, b"content\n", None),
+                (True, b"#!/bin/sh\n", None),
+                (True, b"content\n", b"Files marked executable but have no (or invalid) shebang:"),
+                (False, b"#!/bin/sh\n", b"has a shebang but is not marked executable!"),
+            ):
+                with (
+                    self.subTest(selector=selector, executable=executable, content=content),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    repository = Path(temporary) / "repository"
+                    repository.mkdir()
+                    environment = {
+                        key: value for key, value in os.environ.items()
+                        if not key.startswith("GIT_")
+                    } | {
+                        "GIT_CONFIG_NOSYSTEM": "1",
+                        "GIT_CONFIG_GLOBAL": os.devnull,
+                        "GIT_TERMINAL_PROMPT": "0",
+                        "TMPDIR": temporary,
+                    }
+
+                    def git(*args: str, env: dict[str, str] = environment) -> bytes:
+                        result = subprocess.run(
+                            ["git", *args], cwd=repository, env=env, capture_output=True,
+                        )
+                        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                        return result.stdout
+
+                    git("init", "-q", "--template=")
+                    for key, value in (
+                        ("user.name", "Test"),
+                        ("user.email", "test@example.invalid"),
+                        ("commit.gpgsign", "false"),
+                        ("core.fileMode", "true"),
+                        ("core.autocrlf", "false"),
+                        ("core.hooksPath", str(ROOT / "config/githooks")),
+                    ):
+                        git("config", key, value)
+                    (repository / "base").write_bytes(b"base\n")
+                    git("add", "--", "base")
+                    git("commit", "-qm", "base")
+                    base_head = git("rev-parse", "HEAD")
+                    default_environment = environment.copy()
+                    if selector != "default":
+                        alternate = repository / ".git/alternate-index"
+                        alternate.write_bytes((repository / ".git/index").read_bytes())
+                        # A different valid default-index selection must neither
+                        # enter the alternate commit nor be overwritten by it.
+                        (repository / "default-only").write_bytes(b"default only\n")
+                        git("add", "--", "default-only")
+                        environment["GIT_INDEX_FILE"] = (
+                            ".git/alternate-index" if selector == "relative" else str(alternate)
+                        )
+                    selected = repository / "selected"
+                    selected.write_bytes(content)
+                    selected.chmod(0o755 if executable else 0o644)
+                    git("add", "--", "selected")
+                    selected_index = git("ls-files", "--stage", "-z")
+                    default_index = git("ls-files", "--stage", "-z", env=default_environment)
+                    selected_tree = git("write-tree").strip()
+                    if selector != "default":
+                        self.assertNotEqual(selected_tree, git("write-tree", env=default_environment).strip())
+                    result = subprocess.run(
+                        ["git", "commit", "-m", "selected"],
+                        cwd=repository, env=environment, capture_output=True,
+                    )
+                    output = result.stdout + result.stderr
+                    self.assertEqual(0 if diagnostic is None else 1, result.returncode, output)
+                    self.assertNotIn(b"Traceback", output)
+                    self.assertEqual(selected_index, git("ls-files", "--stage", "-z"))
+                    self.assertEqual(
+                        default_index, git("ls-files", "--stage", "-z", env=default_environment),
+                    )
+                    if diagnostic is not None:
+                        self.assertIn(diagnostic, output)
+                        self.assertEqual(base_head, git("rev-parse", "HEAD"))
+                    else:
+                        self.assertEqual(selected_tree, git("rev-parse", "HEAD^{tree}").strip())
+                        self.assertEqual(content, git("show", "HEAD:selected"))
+                        tree_entry = git("ls-tree", "HEAD", "--", "selected")
+                        self.assertTrue(tree_entry.startswith(b"100755 " if executable else b"100644 "))
+                    self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
+
+    def test_native_commit_preserves_relative_common_and_object_directories(self) -> None:
+        for selector, value in (("GIT_COMMON_DIR", ".git"), ("GIT_OBJECT_DIRECTORY", ".git/objects")):
+            with self.subTest(selector=selector), tempfile.TemporaryDirectory() as temporary:
+                repository = Path(temporary) / "repository"
+                repository.mkdir()
+                environment = {
+                    key: value for key, value in os.environ.items()
+                    if not key.startswith("GIT_")
+                } | {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "TMPDIR": temporary}
+
+                def git(*args: str) -> bytes:
+                    result = subprocess.run(
+                        ["git", *args], cwd=repository, env=environment, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    return result.stdout
+
+                git("init", "-q", "--template=")
+                for key, setting in (
+                    ("user.name", "Test"),
+                    ("user.email", "test@example.invalid"),
+                    ("commit.gpgsign", "false"),
+                    ("core.hooksPath", str(ROOT / "config/githooks")),
+                ):
+                    git("config", key, setting)
+                environment[selector] = value
+                # Isolate the adjacent selector from the relative-index defect.
+                environment["GIT_INDEX_FILE"] = str(repository / ".git/index")
+                (repository / "valid").write_bytes(b"content\n")
+                git("add", "--", "valid")
+                selected_index = git("ls-files", "--stage", "-z")
+                selected_tree = git("write-tree").strip()
+                git("commit", "-qm", "valid")
+                self.assertEqual(selected_tree, git("rev-parse", "HEAD^{tree}").strip())
+                self.assertEqual(selected_index, git("ls-files", "--stage", "-z"))
+                self.assertEqual(b"content\n", git("show", "HEAD:valid"))
+                self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
+
     def test_case_policy_normalizes_unicode_and_full_case(self) -> None:
         self.assertEqual(
             check_case_conflict.normalized_name("Caf\N{LATIN SMALL LETTER E WITH ACUTE}"),

@@ -68,14 +68,27 @@ def absolute_directory(raw: bytes, working_directory: bytes) -> bytes:
 def git_environment(
     git_directory: bytes, work_tree: bytes
 ) -> dict[bytes, bytes] | dict[str, str]:
+    # Native commit supplies even the default index as a relative path.
+    # Bind inherited selectors before checkers change cwd to the snapshot;
+    # joining (not resolving symlinks or '..') preserves Git's selected paths.
+    selectors = ("GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
     if hasattr(os, "environb"):
         environment = os.environb.copy()
         environment[b"GIT_DIR"] = git_directory
         environment[b"GIT_WORK_TREE"] = work_tree
+        for selector in selectors:
+            key = os.fsencode(selector)
+            raw = environment.get(key)
+            if raw and not os.path.isabs(raw):
+                environment[key] = os.path.join(work_tree, raw)
         return environment
     environment = os.environ.copy()
     environment["GIT_DIR"] = os.fsdecode(git_directory)
     environment["GIT_WORK_TREE"] = os.fsdecode(work_tree)
+    for selector in selectors:
+        raw = environment.get(selector)
+        if raw and not os.path.isabs(raw):
+            environment[selector] = os.path.join(os.fsdecode(work_tree), raw)
     return environment
 
 
