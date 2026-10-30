@@ -1,6 +1,8 @@
 """Exercise the installed-style command with synthetic, non-private chat text."""
 
 from pathlib import Path
+import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -91,6 +93,48 @@ class CleanDiscordTests(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
             self.assertTrue(link.is_symlink())
             self.assertEqual(path.read_text(), "[10:00] <Ada> hello\n")
+
+    def test_in_place_keeps_selected_target_when_input_symlink_is_retargeted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / "original.txt"
+            following = root / "following.txt"
+            link = root / "link.txt"
+            marker = root / "retargeted.txt"
+            original.write_text("[10:00]\nAda\n:\noriginal\n")
+            following_text = "[11:00]\nLin\n:\nfollowing\n"
+            following.write_text(following_text)
+            original.chmod(0o640)
+            following.chmod(0o600)
+            link.symlink_to(original.name)
+            preload = Path(__file__).with_name("retarget_after_read.clj")
+            environment = os.environ.copy()
+            environment.update({
+                "BABASHKA_PRELOADS": environment.get("BABASHKA_PRELOADS", "")
+                + f"\n(load-file {json.dumps(str(preload))})",
+                "CLEAN_DISCORD_TEST_LINK": str(link),
+                "CLEAN_DISCORD_TEST_ORIGINAL": str(original),
+                "CLEAN_DISCORD_TEST_NEXT": following.name,
+                "CLEAN_DISCORD_TEST_MARKER": str(marker),
+            })
+            result = subprocess.run([str(COMMAND), "-i", str(link)],
+                                    text=True, capture_output=True, env=environment)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+            self.assertEqual(marker.read_text(), "retargeted after read\n")
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.readlink(), Path(following.name))
+            self.assertEqual(following.read_text(), following_text)
+            self.assertEqual(original.read_text(), "[10:00] <Ada> original\n")
+            self.assertEqual(original.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(following.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(set(root.iterdir()), {original, following, link, marker})
+
+            # A new invocation must follow the symlink's new selection.
+            result = self.run_command("", "-i", link)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+            self.assertEqual(following.read_text(), "[11:00] <Lin> following\n")
+            self.assertEqual(original.read_text(), "[10:00] <Ada> original\n")
+            self.assertTrue(link.is_symlink())
 
     def test_in_place_parse_failure_leaves_original_bytes_untouched(self):
         with tempfile.TemporaryDirectory() as directory:

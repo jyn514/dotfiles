@@ -50,11 +50,10 @@
                        prefix (str "[" (:time message) "] <" (:name message) "> ")]]
              (apply str (map #(str prefix % "\n") (format-body body)))))))
 
-(defn rewrite! [file text]
-  (let [target (fs/real-path file)
-        temporary (fs/create-temp-file {:dir (fs/parent target) :prefix ".clean-discord-"})]
+(defn rewrite! [target text]
+  (let [temporary (fs/create-temp-file {:dir (fs/parent target) :prefix ".clean-discord-"})]
     (try
-      ;; Retain file permissions; resolve symlinks so the link itself survives.
+      ;; Retain the selected file's permissions.
       (fs/copy target temporary {:replace-existing true :copy-attributes true})
       (spit (str temporary) text)
       (fs/move temporary target {:replace-existing true :atomic-move true})
@@ -70,9 +69,15 @@
     (do (binding [*out* *err*] (println usage)) (System/exit 2))
     :else
     (try
-      (let [text (clean (slurp (if (or (empty? args) (= args ["-"])) *in* (first args))))]
+      ;; Select once before reading: preserve the symlink without publishing
+      ;; bytes read from its old target into a newly selected target.
+      (let [input (cond
+                    in-place? (str (fs/real-path (first args)))
+                    (or (empty? args) (= args ["-"])) *in*
+                    :else (first args))
+            text (clean (slurp input))]
         (if in-place?
-          (rewrite! (first args) text)
+          (rewrite! input text)
           (print text)))
       (catch Exception error
         (binding [*out* *err*] (println "clean-discord:" (.getMessage error)))
