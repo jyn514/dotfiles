@@ -4,7 +4,7 @@
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is run-tests]]))
+            [clojure.test :refer [deftest is run-tests testing]]))
 
 (load-file "tools/extract-chat/extract-chat")
 (alias 'extract-chat 'tools.extract-chat)
@@ -628,6 +628,8 @@
       (is (str/includes? (slurp (fs/file extract-dir "claude.md")) "Pour tea."))
       (finally (fs/delete-tree root)))))
 
+;; Delegation compatibility only: Pi's unknown default destination remains held,
+;; not certified source-safe by the known-destination preflight.
 (deftest extract-chat-native-without-output-dir-uses-pi-default-output
   (let [root (fs/create-temp-dir {:prefix "flower-extract-native-default"})
         session-id "test-native-session"
@@ -702,6 +704,7 @@
 (defn- fixture-export-environment [root]
   (let [bin (fs/file root "fixture-bin")
         exporter (fs/file bin "pi")
+        converter (fs/file bin "python3")
         calls (fs/file root "pi-calls")]
     (fs/create-dirs bin)
     ;; Exercise the real CLI subprocess boundary, not a replacement allocation or
@@ -711,13 +714,19 @@
                        "[ \"$#\" -eq 3 ]\n[ \"$1\" = '--export' ]\n"
                        "printf '<html>fixture export</html>\\n' > \"$3\"\n"))
     (.setExecutable exporter true)
+    (fs/copy "tools/extract-chat/tests/fixtures/converter-spy.sh" converter)
+    (.setExecutable converter true)
     (assoc (into {} (System/getenv))
            "PATH" (str bin ":" (System/getenv "PATH"))
-           "EXTRACT_CHAT_PI_CALLS" (str calls))))
+           "EXTRACT_CHAT_PI_CALLS" (str calls)
+           "EXTRACT_CHAT_CONVERTER_CALLS" (str (fs/file root "converter-calls"))
+           "EXTRACT_CHAT_PYTHON" (str (fs/which "python3")))))
 
 (defn- run-export-cli [environment & args]
   (apply shell/sh "bb" (str (fs/absolutize "bin/extract-chat"))
-         (concat (map str args) [:env environment])))
+         (concat (map str args) [:env environment]
+                 (when-let [directory (get environment "EXTRACT_CHAT_CWD")]
+                   [:dir directory]))))
 
 (deftest extract-chat-cli-rejects-all-batch-collisions-before-any-writes
   (doseq [native? [false true]
@@ -797,6 +806,137 @@
                            (repeat 2 ["--export" (str pi-source) (str (fs/file output "same.html"))])))
                (str/split-lines (slurp (fs/file root "pi-calls"))))))
       (finally (fs/delete-tree root)))))
+
+(defn- export-tree-state [root]
+  (into (sorted-map)
+        (for [file (fs/glob root "**" {:hidden true})]
+          [(str (fs/relativize root file))
+           (cond
+             (fs/sym-link? file) [:symlink (str (fs/read-link file))
+                                 (vec (java.nio.file.Files/readAllBytes (fs/path file)))]
+             (fs/directory? file) [:directory]
+             :else [:file (vec (java.nio.file.Files/readAllBytes (fs/path file)))])])))
+
+(defn- preservation-source [inputs label index]
+  (fs/file inputs (str "rollout-" label "-10000000-0000-4000-8000-"
+                       (format "%012d" index) ".jsonl")))
+
+(defn- write-preservation-source [route file index no-output?]
+  (if (#{:codex-native :codex-default} route)
+    (write-paginated-rollout file (str "10000000-0000-4000-8000-" (format "%012d" index))
+                             nil [(str "Disposable source " index)])
+    (if no-output?
+      (spit file (str (json/generate-string {:type "session" :id "tool-only"}) "\n"
+                      (json/generate-string {:type "message"
+                                            :message {:role "toolResult" :content "No transcript"}})
+                      "\n"))
+      (write-export-fixture file (str "Disposable source " index) true))))
+
+(defn- preservation-output [output source native?]
+  (fs/file output (str (str/replace (str (fs/file-name source)) #"\.jsonl$" "")
+                       (if native? ".html" ".md"))))
+
+(defn- preservation-args [route output inputs]
+  (concat (when (not= :markdown route) ["--native"])
+          (when (#{:codex-native :codex-default} route) ["--branches"])
+          (when (not= :codex-default route) ["--extract-dir" (str output)])
+          [(str inputs)]))
+
+(defn- create-preservation-link [kind output target]
+  (case kind
+    :symlink (fs/create-sym-link output target)
+    :hardlink (java.nio.file.Files/createLink (fs/path output) (fs/path target))))
+
+(deftest extract-chat-rejects-output-aliases-to-every-batch-input-before-effects
+  ;; The independent early output makes late rejection observably insufficient.
+  ;; The tool-only input intentionally has no Markdown destination of its own.
+  (doseq [route [:markdown :pi-native :codex-native :codex-default]
+          kind [:symlink :hardlink]
+          victim (if (= :markdown route) [:self :other :other-no-output] [:self :other])]
+    (testing (str route " " kind " " victim)
+      (let [root (fs/create-temp-dir {:prefix "extract-chat-input-preservation"})]
+        (try
+          (let [inputs (fs/file root "inputs")
+                output (fs/file root "output")
+                early (preservation-source inputs "a-early" 1)
+                source (preservation-source inputs "z-source" 2)
+                other (preservation-source inputs "zz-other" 3)
+                no-output? (= :other-no-output victim)
+                native? (not= :markdown route)]
+            (fs/create-dirs inputs)
+            (fs/create-dirs output)
+            (doseq [[file index] [[early 1] [source 2] [other 3]]]
+              (write-preservation-source route file index (and (= file other) no-output?)))
+            (spit (preservation-output output early native?) "Existing independent early output")
+            (when-not no-output?
+              (spit (preservation-output output other native?) "Existing other output"))
+            (let [target (if (= :self victim) source other)
+                  destination (preservation-output output source native?)
+                  _ (create-preservation-link kind destination target)
+                  environment (assoc (fixture-export-environment root)
+                                     "EXTRACT_CHAT_CWD" (str output))
+                  before (export-tree-state root)
+                  {:keys [exit out err]} (apply run-export-cli environment
+                                               (preservation-args route output inputs))]
+              (is (not= 0 exit))
+              (is (str/blank? out))
+              (is (str/includes? err "Export destination overlaps input:"))
+              (is (str/includes? err (if (= :codex-default route)
+                                       (str "./" (fs/file-name destination))
+                                       (str destination))))
+              (is (str/includes? err (str target)))
+              (is (= before (export-tree-state root)))
+              (is (fs/same-file? destination target))
+              (is (not (fs/exists? (get environment "EXTRACT_CHAT_PI_CALLS"))))
+              (is (not (fs/exists? (get environment "EXTRACT_CHAT_CONVERTER_CALLS"))))))
+          (finally
+            (fs/delete-tree root)))))))
+
+(deftest extract-chat-preserves-independent-overwrites-and-output-links
+  ;; Output links remain links and retain their existing write-through behavior.
+  (doseq [route [:markdown :pi-native :codex-native :codex-default]
+          kind [:regular :symlink :hardlink]]
+    (testing (str route " " kind)
+      (let [root (fs/create-temp-dir {:prefix "extract-chat-independent-output"})]
+        (try
+          (let [inputs (fs/file root "inputs")
+                output (fs/file root "output")
+                source (preservation-source inputs "source" 1)
+                native? (not= :markdown route)
+                destination (preservation-output output source native?)
+                backing (fs/file root "unrelated-backing")]
+            (fs/create-dirs inputs)
+            (fs/create-dirs output)
+            (write-preservation-source route source 1 false)
+            (spit backing "Old unrelated output")
+            (if (= :regular kind)
+              (spit destination "Old independent output")
+              (create-preservation-link kind destination backing))
+            (let [environment (assoc (fixture-export-environment root)
+                                     "EXTRACT_CHAT_CWD" (str output))
+                  before (slurp source)]
+              (dotimes [_ 2]
+                (let [{:keys [exit err]} (apply run-export-cli environment
+                                              (preservation-args route output inputs))]
+                  (is (zero? exit) err)
+                  (is (= before (slurp source)))
+                  (is (str/includes? (slurp destination)
+                                     (if native? "fixture export" "Disposable source 1")))
+                  (when (not= :regular kind)
+                    (is (fs/same-file? destination backing))
+                    (is (= (slurp destination) (slurp backing))))))
+              (is (= (= :symlink kind) (fs/sym-link? destination)))
+              (if native?
+                (is (= 2 (count (filter #{"--export"}
+                                       (str/split-lines
+                                         (slurp (get environment "EXTRACT_CHAT_PI_CALLS")))))))
+                (is (not (fs/exists? (get environment "EXTRACT_CHAT_PI_CALLS")))))
+              (if (#{:codex-native :codex-default} route)
+                (is (= ["convert" "convert"]
+                       (str/split-lines (slurp (get environment "EXTRACT_CHAT_CONVERTER_CALLS")))))
+                (is (not (fs/exists? (get environment "EXTRACT_CHAT_CONVERTER_CALLS")))))))
+          (finally
+            (fs/delete-tree root)))))))
 
 (let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
   (when (pos? (+ fail error))

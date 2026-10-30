@@ -288,12 +288,30 @@
     branches? (throw (ex-info "--branches --native requires a Codex or Pi session" {:file (str file)}))
     :else nil))
 
-(defn- print-session [final-only? native? branches? file]
-  (let [{:keys [pi?] :as session} (read-session final-only? file)]
-    (if (and native? (or pi? branches?))
-      (export-native-session (when-not pi? (session-output-path "." file ".html")) branches? session)
-      (when-let [markdown (session-markdown session)]
-        (print markdown)))))
+(defn- print-session [native? branches? {:keys [pi? output-file] :as session}]
+  (if (and native? (or pi? branches?))
+    (export-native-session output-file branches? session)
+    (when-let [markdown (session-markdown session)]
+      (print markdown))))
+
+(defn- reject-input-overlaps [sessions]
+  ;; Include inputs without an export. Canonical names catch symlinks; the
+  ;; filesystem comparison also catches distinct names for hardlinked files.
+  (let [inputs-by-canonical (into {} (map (fn [{:keys [file]}]
+                                         [(.getCanonicalPath (.toFile ^Path file)) file])
+                                       sessions))]
+    (doseq [{:keys [output-file]} sessions
+            :when output-file
+            :let [source (or (get inputs-by-canonical
+                                 (.getCanonicalPath (.toFile ^Path output-file)))
+                             (when (fs/exists? output-file)
+                               (some (fn [{:keys [file]}]
+                                       (when (fs/same-file? file output-file) file))
+                                     sessions)))]
+            :when source]
+      (throw (ex-info (str "Export destination overlaps input: " output-file " selects " source)
+                      {:output (str output-file) :source (str source)}))))
+  sessions)
 
 (defn- allocate-outputs [extract-dir native? branches? sessions]
   ;; A basename is only unique within its source directory. Bind every destination
@@ -320,7 +338,7 @@
                                     {:output destination :sources [previous source]})))
                   (assoc sources-by-output destination source))))
             {} allocated)
-    allocated))
+    (reject-input-overlaps allocated)))
 
 (defn- write-session [native? branches? {:keys [output-file pi?] :as session}]
   (when output-file
@@ -405,8 +423,21 @@
                               (allocate-outputs extract-dir native? branches?))]
             (doseq [session sessions]
               (write-session native? branches? session)))
-          (doseq [file files]
-            (print-session final-only? native? branches? file)))))))
+          (if (and native? branches?)
+            ;; Codex branch exports have explicit destinations even without
+            ;; --extract-dir. Default Pi exports still delegate naming to Pi;
+            ;; their unknown destinations are not covered by this preflight.
+            (let [sessions (->> files
+                                (map #(read-session final-only? %))
+                                (mapv (fn [{:keys [file pi?] :as session}]
+                                        (assoc session :output-file
+                                               (when-not pi?
+                                                 (session-output-path "." file ".html")))))
+                                reject-input-overlaps)]
+              (doseq [session sessions]
+                (print-session native? branches? session)))
+            (doseq [file files]
+              (print-session native? branches? (read-session final-only? file)))))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))
