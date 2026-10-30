@@ -137,6 +137,7 @@ Separate resource selection from admission checks and observations of mutable st
 Reuse a selection only for its established lifetime; do not remove fresh checks merely because they share the discovery path.
 Check which values must remain dynamic within that lifetime, including caller identity, credentials, and resource contents.
 For cache designs involving ordered discovery, see the [unsuccessful-lookup example](references/caching-examples.md).
+For proposed reuse, invalidation, or equality changes, read [Reuse and invalidation](references/design-risks.md#reuse-and-invalidation).
 
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.

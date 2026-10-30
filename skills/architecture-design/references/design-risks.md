@@ -13,6 +13,7 @@ Several sections may apply to the same interaction.
 | Queued work, external effects, persistence, or multi-step publication | [Partial failure and recovery](#partial-failure-and-recovery) |
 | Asynchronous work, callbacks, queues, or cancellation | [Runtime progress](#runtime-progress) |
 | Input size, concurrency, or fan-out can grow, or latency, memory, or cost limits matter | [Resource bounds](#resource-bounds) |
+| Proposed changes to reuse, invalidation, or equality/projection boundaries | [Reuse and invalidation](#reuse-and-invalidation) |
 | Data or operations cross trust or privilege boundaries | [Trust and authority](#trust-and-authority) |
 | Independently deployed consumers or persisted formats | [Deployment and evolution](#deployment-and-evolution) |
 | A user or operator must diagnose or recover an operation | [Diagnosability](#diagnosability) |
@@ -75,6 +76,25 @@ Establish the applicable bounds and behavior at capacity: backpressure, rejectio
 Check that cancellation and cleanup release the resources attributed to each operation.
 Use known workload evidence or a bounded estimate first; request measurement only when it can change the design.
 Do not add a benchmark campaign, cache, queue, or configurable limit merely because this section applies.
+
+## Reuse and invalidation
+
+Apply when the proposed design introduces or changes reuse, invalidation, or an equality/projection boundary.
+Name the input distinctions ignored by the key or comparison and the consumer work it can suppress.
+For a relevant ignored distinction, construct a change that leaves the compared value equal but could change a required observation.
+Trace that change through affected consumers, including helpers, diagnostics, and error paths that can observe it.
+Check both the data a consumer receives when it runs and the dependency or change signal that causes it to run.
+Keeping complete data upstream does not refresh a consumer whose result stays cached.
+
+For example, moving an unchanged broken link within source can leave emitted HTML unchanged but move a warning's source location.
+If the checker depends only on the HTML projection, equal HTML can leave a cached warning at the old location.
+Reusing emitted bytes can be correct while reusing the warning is not.
+The warning needs a valid refresh path: for example, retain its full dependency, use an existing source-location update, or invalidate it conservatively.
+Do not classify a consumer as content-only from its final bytes; check whether its helpers or error paths can also emit diagnostics.
+
+When equivalence for affected consumers is unproven, preserve the distinctions in the key/comparison or invalidate conservatively.
+This check does not require finer projections.
+Add comparison or dependency machinery only when workload evidence shows that saved work justifies its cost.
 
 ## Trust and authority
 
