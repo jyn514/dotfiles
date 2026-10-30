@@ -120,7 +120,6 @@
 (defn candidates
   [{:keys [refs match]}]
   (->> (commit-records refs)
-       (filter (fn [{:keys [message]}] (str/includes? message "Co-Authored-By:")))
        (keep (fn [{:keys [commit author message]}]
                (when-let [person (matching-coauthor match message)]
                  (when (not= author person)
