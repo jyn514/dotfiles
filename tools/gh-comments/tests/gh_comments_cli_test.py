@@ -1,10 +1,13 @@
+import http.server
 import json
 import os
 from pathlib import Path
 import signal
+import socketserver
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 
 
@@ -21,6 +24,103 @@ class CommandIntegrationTests(unittest.TestCase):
         path = self.directory / name
         path.write_text("#!/bin/sh\n" + contents)
         path.chmod(0o755)
+
+    def test_native_gh_capture_disables_internal_pager_but_keeps_final_less(self) -> None:
+        gh = shutil.which("gh")
+        less = shutil.which("less")
+        if gh is None or less is None:
+            self.skipTest("native gh and less are required")
+        # This is a native gh integration, not the printing-shell gh used below.
+        version = subprocess.run([gh, "--version"], capture_output=True, text=True)
+        if version.returncode or not version.stdout.startswith("gh version "):
+            self.skipTest("gh on PATH is not the native GitHub CLI")
+        comments = {
+            "nodes": [{
+                "author": {"login": "fixture-commenter"},
+                "authorAssociation": "NONE",
+                "body": "\n".join(f"Native comment line {i}" for i in range(100)),
+                "createdAt": "2026-01-01T00:00:00Z",
+            }],
+            "totalCount": 1,
+            "pageInfo": {"hasNextPage": False, "endCursor": ""},
+        }
+        issue = {
+            "id": "fixture-issue", "number": 123, "title": "Offline fixture title",
+            "body": "Offline fixture body", "state": "OPEN",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "author": {"login": "fixture-author"}, "comments": comments,
+            "url": "https://github.com/fixture/owned/issues/123",
+        }
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if "IssueByNumber" in body["query"]:
+                    data = {"repository": {"hasIssuesEnabled": True, "issue": issue}}
+                elif "CommentsForIssue" in body["query"]:
+                    data = {"node": {"comments": comments}}
+                else:
+                    self.send_error(400)
+                    return
+                encoded = json.dumps({"data": data}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, *_):
+                pass
+
+        socket = self.directory / "http.sock"
+        server = socketserver.UnixStreamServer(str(socket), Handler)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        config = self.directory / "gh-config"
+        config.mkdir()
+        environment = os.environ.copy()
+        for key in (
+            "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+            "GH_CONFIG_DIR", "GH_HOST", "GH_REPO", "GH_PAGER", "PAGER", "GH_FORCE_TTY",
+            "CLICOLOR_FORCE", "FORCE_COLOR", "LESS", "LESSOPEN", "LESSCLOSE", "LESSHISTFILE",
+        ):
+            environment.pop(key, None)
+        environment.update({
+            "GH_CONFIG_DIR": str(config), "GH_TOKEN": "owned-disposable-not-a-credential",
+            "TERM": "dumb", "NO_COLOR": "1", "GH_SPINNER_DISABLED": "1",
+            "GH_PROMPT_DISABLED": "1",
+        })
+        for selector in ("GH_PAGER", "PAGER", "config"):
+            with self.subTest(selector=selector):
+                output = self.directory / selector
+                output.mkdir()
+                (config / "config.yml").write_text(
+                    f"http_unix_socket: {socket}\n" +
+                    (f"pager: {less}\n" if selector == "config" else "")
+                )
+                child = subprocess.Popen(
+                    [str(ROOT / "bin/gh-comments"), issue["url"]], cwd=output,
+                    env=environment | ({selector: less} if selector != "config" else {}),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                )
+                try:
+                    stdout, stderr = child.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.communicate()
+                    self.fail("native gh internal pager waited for input during capture")
+                self.assertEqual(0, child.returncode, stderr)
+                text = (output / "123.txt").read_bytes()
+                for expected in (
+                    b"Offline fixture title", b"Offline fixture body", b"Native comment line 99",
+                    b"View this issue on GitHub: https://github.com/fixture/owned/issues/123",
+                ):
+                    self.assertIn(expected, text)
+                self.assertIn(text, stdout)  # The final real less displays the complete artifact.
+                self.assertIn(b"saved 123.txt and 123.json", stdout)
+                exported = json.loads((output / "123.json").read_bytes())
+                self.assertEqual(comments["nodes"][0]["body"], exported["comments"][0]["body"])
 
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"

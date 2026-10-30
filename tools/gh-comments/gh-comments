@@ -104,6 +104,8 @@ def capture_terminal(arguments: list[str], output: BinaryIO) -> int:
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
+                # Keep gh's terminal rendering, but leave paging to the final less.
+                env=os.environ | {"GH_PAGER": "cat"},
                 close_fds=True,
             )
         except OSError as error:
