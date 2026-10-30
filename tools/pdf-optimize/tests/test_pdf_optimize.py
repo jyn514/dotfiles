@@ -297,6 +297,38 @@ class NativePdfInputTests(unittest.TestCase):
         self.assertTrue(self.link.is_symlink())
         self.assertEqual(self.source.name, os.readlink(self.link))
 
+    def test_percent_tmpdir_parents_produce_one_readable_page_and_clean_snapshot(self) -> None:
+        original = self.source.read_bytes()
+        for index, name in enumerate(
+            ("ordinary", "literal-%d", "literal-%%", "literal-%x", "literal-%plain")
+        ):
+            with self.subTest(tmpdir=name):
+                temporary_root = self.directory / name
+                temporary_root.mkdir()
+                destination = self.directory / f"optimized-{index}.pdf"
+                result = subprocess.run(
+                    [COMMAND, self.source, destination],
+                    cwd=self.directory,
+                    env=os.environ | {"TMPDIR": str(temporary_root)},
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertTrue(destination.is_file())
+                pages = self.directory / f"pages-{index}"
+                pages.mkdir()
+                parsed = subprocess.run(
+                    ["gs", "-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pnggray", "-r10",
+                     f"-sOutputFile={pages}/page-%d.png", str(destination)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, parsed.returncode, parsed.stderr)
+                self.assertEqual(1, len(list(pages.glob("page-*.png"))))
+                logs = list(temporary_root.glob("pdf-optimize-*.log"))
+                self.assertEqual(1, len(logs))
+                self.assertEqual(logs, list(temporary_root.iterdir()))
+                self.assertEqual([], list(self.directory.glob(f".{destination.name}.*.tmp")))
+                self.assertEqual(original, self.source.read_bytes())
+
     def test_symlink_parent_source_selects_the_native_document(self) -> None:
         actual = self.directory / "actual"
         (actual / "child").mkdir(parents=True)

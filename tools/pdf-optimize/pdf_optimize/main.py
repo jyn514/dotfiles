@@ -185,7 +185,9 @@ def optimize(source: bytes, destination: bytes) -> int:
                     ghostscript,
                     *GHOSTSCRIPT_OPTIONS,
                     b"-o",
-                    temporary_output,
+                    # Ghostscript formats the entire output path, including
+                    # TMPDIR parents; %% represents a literal percent byte.
+                    temporary_output.replace(b"%", b"%%"),
                     temporary_input,
                 ],
                 stdout=output.fileno(),
