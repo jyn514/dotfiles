@@ -94,6 +94,9 @@ Historical awkwardness can protect a real constraint; simplification is not suff
 
 For transfer, identify another consumer whose operations exercise the relevant distinction and inspect its contract and safeguards independently.
 A resemblance suggests a question, not a defect or a new preservation requirement.
+When applying research to a current design question, verify its status against later decisions and the owning specification.
+State whether the example rules out an option, changes a recommendation, adds a discriminating acceptance case, or explains an existing choice.
+Distinguish that contribution from what remains unresolved.
 When applicability is weak, compare changing the application target with changing the idea using `work-selection`.
 Do not require each source to yield a bug or scan every repository before drawing a bounded conclusion.
 
