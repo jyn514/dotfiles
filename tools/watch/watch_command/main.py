@@ -55,15 +55,33 @@ def status(returncode: int) -> int:
 
 
 def run(
-    arguments: list[str], *, capture: bool = False, merge_stderr: bool = False
+    arguments: list[str],
+    *,
+    capture: bool = False,
+    merge_stderr: bool = False,
+    watch_cancellation: bool = False,
 ) -> subprocess.CompletedProcess[bytes] | None:
     try:
-        return subprocess.run(
+        if not watch_cancellation:
+            return subprocess.run(
+                arguments,
+                check=False,
+                stdout=subprocess.PIPE if capture else None,
+                stderr=subprocess.STDOUT if merge_stderr else None,
+            )
+        with subprocess.Popen(
             arguments,
-            check=False,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.STDOUT if merge_stderr else None,
-        )
+        ) as process:
+            try:
+                stdout, stderr = process.communicate()
+            except KeyboardInterrupt:
+                # The opted-in PTY owner also receives terminal SIGINT. Keep
+                # draining its output until it reaps and restores the terminal.
+                process.communicate()
+                raise
+            return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
     except OSError as error:
         print(f"watch: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
         return None
@@ -85,6 +103,8 @@ def main(arguments: list[str]) -> int:
 
     print(f"{options.interval} {options.shell} {options.command}", file=sys.stderr)
     runner = os.environ.get("WATCH_RUNNER", str(DEFAULT_RUNNER))
+    watch_cancellation = "WATCH_RUNNER" not in os.environ
+    runner_argv = [runner, "--watch-cancellation"] if watch_cancellation else [runner]
     terminal("tput", "smcup", ignore_failure=True)
     try:
         clear_status = terminal("clear")
@@ -92,9 +112,10 @@ def main(arguments: list[str]) -> int:
             return clear_status
         while True:
             command = run(
-                [runner, options.shell, "-c", options.command],
+                [*runner_argv, options.shell, "-c", options.command],
                 capture=True,
                 merge_stderr=True,
+                watch_cancellation=watch_cancellation,
             )
             if command is None:
                 output = b""

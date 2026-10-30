@@ -37,16 +37,18 @@ class CommandIntegrationTests(unittest.TestCase):
         for case, expected in (("TERM", 143), ("INT", 130), ("0", 0), ("7", 7), ("241", 241)):
             with self.subTest(case=case):
                 command = ["/bin/sh", str(fixtures / "native_status.sh"), "pty", case]
-                direct = subprocess.run(
-                    [str(ROOT / "libexec/runinpty.py"), *command],
-                    env=environment,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    timeout=10,
-                    check=False,
-                )
-                self.assertEqual(expected, direct.returncode, direct.stderr)
-                self.assertEqual(b"native output\n", direct.stdout)
+                for mode in ([], ["--watch-cancellation"]):
+                    with self.subTest(mode=mode):
+                        direct = subprocess.run(
+                            [str(ROOT / "libexec/runinpty.py"), *mode, *command],
+                            env=environment,
+                            stdin=subprocess.DEVNULL,
+                            capture_output=True,
+                            timeout=10,
+                            check=False,
+                        )
+                        self.assertEqual(expected, direct.returncode, direct.stderr)
+                        self.assertEqual(b"native output\n", direct.stdout)
                 watched = subprocess.run(
                     [str(ROOT / "bin/watch"), "-x", "/bin/sh", shlex.join(command)],
                     env=environment,
