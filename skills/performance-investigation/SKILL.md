@@ -44,6 +44,11 @@ Check the output path under relevant stop conditions and user limits; name condi
 
 ### Timing and attribution scope
 
+Before measuring an operation, establish how production invokes it: in a fresh process or inside an already-initialized caller.
+For added latency or overhead, measure at that production call site; do not charge the operation for initialization the caller already performs.
+Measure full-command latency separately.
+A standalone helper benchmark that includes runtime or dependency loading measures startup-inclusive cost, not incremental overhead.
+
 State whether subprocess counts cover direct launches or all descendants, and whether threads are included.
 Label timings as inclusive or exclusive.
 Do not sum overlapping parent/child durations or report reductions between differently scoped counts.
