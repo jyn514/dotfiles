@@ -95,6 +95,20 @@ export function sessionShutdownEvent(
   return { type: "session_shutdown", reason };
 }
 
+/**
+ * Register the real goal extension against an in-memory Pi test double.
+ * Starts with empty session entries; options control the simulated host, not saved goal state.
+ * To seed a saved goal, push a full custom session entry into `entries`, then await `reloadSession()`.
+ *
+ * `reloadExtension()` registers a fresh extension without emitting lifecycle events.
+ * `reloadSession()` also emits `session_start` to reconstruct state from the current entries.
+ * `snapshot()` returns `{ goal, hasGoal }` reconstructed from persisted entries, not live controller state.
+ * Runtime usage that has not been persisted is therefore absent from the snapshot.
+ *
+ * `emit()` invokes registered handlers; it does not simulate the host's full lifecycle or append messages.
+ * Use `appendMessage()` when a scenario needs a message in the session branch.
+ * Sent messages are captured in `sentMessages` / `sentUserMessages`, not executed as model turns.
+ */
 export function createRuntimeHarness(options: {
   editor?: ExtensionCommandContext["ui"]["editor"];
   hasUI?: boolean;
