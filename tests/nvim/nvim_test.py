@@ -103,6 +103,18 @@ assert(not nonfile_ok and nonfile_error:match('file buffer'))
 """
         )
 
+    def test_move_comment_up_uses_python_syntax_to_skip_strings(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "move_comment.lua", case="python")
+
+    def test_move_comment_up_preserves_multiline_context_outside_range(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "move_comment.lua", case="python-boundary")
+
+    def test_move_comment_up_uses_c_syntax_to_skip_strings(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "move_comment.lua", case="c")
+
+    def test_move_comment_up_preserves_commentstring_only_fallback(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "move_comment.lua", case="fallback")
+
     def test_move_comment_up_supports_block_comments(self) -> None:
         self.run_nvim(
             """

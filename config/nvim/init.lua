@@ -778,9 +778,47 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	if not prefix or prefix == '' then return end
 
 	local buf = vim.api.nvim_get_current_buf()
+	local parser = vim.treesitter.get_parser(buf, nil, { error = false })
+	if parser then
+		-- Inspection reads highlight captures; refresh them after edits, including injections.
+		parser:parse({ math.max(info.line1 - 2, 0), 0, info.line2, 0 })
+	end
+	local function classification_at(row, col)
+		local highlights = vim.inspect_pos(buf, row, col, {
+			extmarks = false, semantic_tokens = false,
+		})
+		local groups = #highlights.treesitter > 0 and highlights.treesitter or highlights.syntax
+		local is_comment, is_string = false, false
+		for _, group in ipairs(groups) do
+			if group.capture then
+				is_comment = is_comment or group.capture == 'comment' or group.capture:match('^comment%.') ~= nil
+				is_string = is_string or group.capture == 'string' or group.capture:match('^string%.') ~= nil
+			else
+				local names = (group.hl_group .. ' ' .. group.hl_group_link):lower()
+				is_comment = is_comment or names:find('comment', 1, true) ~= nil
+				is_string = is_string or names:find('string', 1, true) ~= nil
+			end
+		end
+		return is_comment, is_string, #groups > 0
+	end
+	local changes = {}
 	for line_number = info.line2, info.line1, -1 do
 		local line = vim.api.nvim_buf_get_lines(buf, line_number - 1, line_number, false)[1]
 		local comment_start = line:find(prefix, 1, true)
+		if comment_start and line_number > 1 then
+			local previous = vim.api.nvim_buf_get_lines(buf, line_number - 2, line_number - 1, false)[1]
+			local in_comment, in_string = classification_at(line_number - 2, #previous)
+			-- Moving above a closer would insert into the region spanning this newline.
+			-- Inspect the preceding EOL, not an opener at the start of this line.
+			if in_comment or in_string then comment_start = nil end
+		end
+		while comment_start do
+			local is_comment, _, classified = classification_at(line_number - 1, comment_start - 1)
+			-- Without a native classification, preserve commentstring-only usage.
+			-- This fallback cannot distinguish a comment marker from one in a string.
+			if not classified or is_comment then break end
+			comment_start = line:find(prefix, comment_start + #prefix, true)
+		end
 		if comment_start then
 			local body = line:sub(1, comment_start - 1):gsub('%s+$', '')
 			local comment = line:sub(comment_start)
@@ -794,14 +832,15 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 			local comment_ends_line = suffix_end and not comment:sub(suffix_end + 1):find('%S')
 			if body:find('%S') and comment_ends_line then
 				local indent = line:match('^%s*')
-				vim.api.nvim_buf_set_lines(buf, line_number - 1, line_number, false, {
-					indent .. comment,
-					body,
-				})
+				table.insert(changes, { line_number = line_number, lines = { indent .. comment, body } })
 			end
 		end
 	end
 
+	-- Classify the original range before changing any parser or syntax positions.
+	for _, change in ipairs(changes) do
+		vim.api.nvim_buf_set_lines(buf, change.line_number - 1, change.line_number, false, change.lines)
+	end
 	vim.fn.winrestview(view)
 end, { range = true, desc = "Move comment to line above", force = true })
 
