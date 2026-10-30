@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import sys
 import time
@@ -22,11 +23,11 @@ def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def window_for_pid(output: bytes, pid: int) -> bytes | None:
+def window_for_pid(output: bytes, pid: int, client_machine: bytes) -> bytes | None:
     expected = str(pid).encode()
     for line in output.splitlines():
         fields = line.split(None, 4)
-        if len(fields) >= 3 and fields[2] == expected:
+        if len(fields) >= 4 and fields[2] == expected and fields[3] == client_machine:
             return fields[0]
     return None
 
@@ -43,7 +44,9 @@ def raise_dialog(pid: int) -> None:
         return
     if listed.returncode:
         return
-    window = window_for_pid(listed.stdout, pid)
+    # GTK's X11 backend sets WM_CLIENT_MACHINE via Xlib to the local hostname.
+    # A PID alone can also identify an unrelated client on another machine.
+    window = window_for_pid(listed.stdout, pid, socket.gethostname().encode())
     if window is None:
         return
     try:

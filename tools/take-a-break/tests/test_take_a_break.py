@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,13 +37,34 @@ class TakeABreakTests(unittest.TestCase):
     def environment(self) -> dict[str, str]:
         return os.environ | {
             "CALLS": str(self.calls),
+            "CLIENT_MACHINE": take_a_break.socket.gethostname(),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
         }
 
-    def test_pid_parser_uses_the_pid_column_only(self) -> None:
-        output = b"0xwrong 0 999 host title-42\n0xright 0 42 host title\n"
-        self.assertEqual(b"0xright", take_a_break.window_for_pid(output, 42))
-        self.assertIsNone(take_a_break.window_for_pid(output, 7))
+    def test_pid_parser_requires_the_client_machine_and_pid_columns(self) -> None:
+        output = (
+            b"0xremote 0 42 remote title\n"
+            b"0xwrong 0 999 local title-42\n"
+            b"0xright 0 42 local title\n"
+        )
+        self.assertEqual(b"0xright", take_a_break.window_for_pid(output, 42, b"local"))
+        self.assertEqual(b"0xremote", take_a_break.window_for_pid(output, 42, b"remote"))
+        self.assertIsNone(take_a_break.window_for_pid(output, 7, b"local"))
+        self.assertIsNone(take_a_break.window_for_pid(output, 42, b"other"))
+
+    def test_pid_parser_does_not_infer_a_missing_or_partial_client_machine(self) -> None:
+        for output in (b"0xmissing 0 42\n", b"0xpartial 0 42 local.example title\n"):
+            with self.subTest(output=output):
+                self.assertIsNone(take_a_break.window_for_pid(output, 42, b"local"))
+
+    def test_interrupt_terminates_and_reaps_the_owned_dialog(self) -> None:
+        dialog = Mock()
+        with patch.object(take_a_break.subprocess, "Popen", return_value=dialog), patch.object(
+            take_a_break.time, "sleep", side_effect=KeyboardInterrupt
+        ):
+            self.assertEqual(130, take_a_break.main([]))
+        dialog.terminate.assert_called_once_with()
+        dialog.wait.assert_called_once_with()
 
     def test_passes_exact_dialog_and_window_arguments(self) -> None:
         pid_file = self.directory / "pid"
@@ -57,7 +79,8 @@ class TakeABreakTests(unittest.TestCase):
             "wmctrl",
             'if [ "$1" = -l ]; then\n'
             f'  pid=$(cat "{pid_file}")\n'
-            '  printf "0xright 0 %s host title\\n" "$pid"\n'
+            '  printf "0xremote 0 %s remote.example title\\n" "$pid"\n'
+            '  printf "0xright 0 %s %s title\\n" "$pid" "$CLIENT_MACHINE"\n'
             "else\n"
             '  printf "wmctrl" >> "$CALLS"\n'
             '  for value in "$@"; do printf " <%s>" "$value" >> "$CALLS"; done\n'
@@ -96,6 +119,28 @@ class TakeABreakTests(unittest.TestCase):
         )
 
         self.assertEqual(17, result.returncode)
+
+    def test_missing_wmctrl_does_not_replace_the_dialog_status(self) -> None:
+        dialog = Mock()
+        dialog.wait.return_value = 17
+        with patch.object(take_a_break.subprocess, "Popen", return_value=dialog), patch.object(
+            take_a_break.subprocess, "run", side_effect=FileNotFoundError("wmctrl")
+        ), patch.object(take_a_break.time, "sleep"), patch.object(take_a_break.sys, "stderr"):
+            self.assertEqual(17, take_a_break.main([]))
+        dialog.wait.assert_called_once_with()
+
+    def test_failed_window_update_does_not_replace_the_dialog_status(self) -> None:
+        self.executable("zenity", 'printf "%s\\n" "$$" > "$CALLS"\nexit 17\n')
+        self.executable(
+            "wmctrl",
+            'if [ "$1" = -l ]; then\n'
+            '  printf "0xright 0 %s %s title\\n" "$(cat "$CALLS")" "$CLIENT_MACHINE"\n'
+            'else\n'
+            '  exit 29\n'
+            'fi\n',
+        )
+        result = subprocess.run([COMMAND], env=self.environment(), capture_output=True)
+        self.assertEqual(17, result.returncode, result.stderr)
 
     def test_missing_zenity_is_a_dependency_error(self) -> None:
         (self.directory / "python3").symlink_to(sys.executable)
