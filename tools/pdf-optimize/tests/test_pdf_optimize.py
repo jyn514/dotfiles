@@ -144,6 +144,55 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertIn(f"du <-h> <{source}>", calls)
         self.assertIn(f"du <-h> <{self.directory / '-output.pdf'}>", calls)
 
+    def test_input_size_failure_stops_before_snapshot_or_transformation(self) -> None:
+        self.successful_ghostscript()
+        self.make_executable("du", "printf 'cannot measure input\\n' >&2\nexit 44\n")
+        destination = self.directory / "failed.pdf"
+        result = self.run_command(self.source, destination)
+
+        self.assertEqual(44, result.returncode)
+        self.assertIn(b"cannot measure input\n", result.stderr)
+        self.assertFalse(destination.exists())
+        self.assertFalse(self.calls.exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+
+    def test_missing_du_stops_before_transformation_or_publication(self) -> None:
+        self.successful_ghostscript()
+        (self.bin / "du").unlink()
+        (self.bin / "python3").symlink_to(sys.executable)
+        environment = self.environment() | {"PATH": str(self.bin)}
+        destination = self.directory / "failed.pdf"
+        result = subprocess.run(
+            [COMMAND, self.source, destination], cwd=self.directory, env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(127, result.returncode)
+        self.assertIn(b"du was not found", result.stderr)
+        self.assertFalse(destination.exists())
+        self.assertFalse(self.calls.exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+
+    def test_output_size_failure_preserves_native_status_after_publication(self) -> None:
+        self.successful_ghostscript()
+        self.make_executable(
+            "du",
+            'if [ "$2" = "$SELECTED_SOURCE" ]; then printf "7.0K\\t%s\\n" "$2"; '
+            'else printf "cannot measure output\\n" >&2; exit 45; fi\n',
+        )
+        destination = self.directory / "output.pdf"
+        result = subprocess.run(
+            [COMMAND, self.source, destination], cwd=self.directory,
+            env=self.environment() | {"SELECTED_SOURCE": str(self.source)},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(45, result.returncode)
+        self.assertIn(b"cannot measure output\n", result.stderr)
+        self.assertEqual(self.source.read_bytes(), destination.read_bytes())
+
     def test_ghostscript_failure_leaves_no_output_and_preserves_log(self) -> None:
         self.make_executable("gs", "printf 'partial log\\n'\nexit 42\n")
         destination = self.directory / "failed.pdf"
@@ -278,14 +327,32 @@ class NativePdfInputTests(unittest.TestCase):
             check=False,
         )
 
-    def test_direct_and_symlink_inputs_produce_readable_pdfs(self) -> None:
+    def test_regular_symlink_and_sparse_inputs_keep_native_disk_usage(self) -> None:
         original = self.source.read_bytes()
-        for source in (self.source, self.link):
+        sparse = self.directory / "sparse.pdf"
+        sparse.write_bytes(original)
+        with sparse.open("ab") as stream:
+            stream.truncate(8 * 1024 * 1024)
+        for source in (self.source, self.link, sparse):
             with self.subTest(source=source.name):
+                measured = subprocess.run(
+                    ["du", "-h", source], stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, measured.returncode, measured.stderr)
+                expected_size = measured.stdout.split(b"\t", 1)[0]
                 result = self.run_command(source)
                 destination = Path(f"{source}-optimized.pdf")
+                self.assertIn(b"Input file size: " + expected_size + b"\n", result.stdout)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertTrue(destination.is_file())
+                output_usage = subprocess.run(
+                    ["du", "-h", destination], stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, output_usage.returncode, output_usage.stderr)
+                expected_output = output_usage.stdout.split(b"\t", 1)[0]
+                self.assertIn(b"Output file size: " + expected_output + b"\n", result.stdout)
                 parsed = subprocess.run(
                     ["gs", "-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=nullpage", destination],
                     stdout=subprocess.PIPE,
@@ -395,7 +462,7 @@ class NativePdfInputTests(unittest.TestCase):
         # Native Ghostscript accepts this non-PDF input, so success alone is
         # not an oracle for which document was validated and consumed.
         replacement_document = self.directory / "replacement.ps"
-        replacement_document.write_bytes(b"%!PS\nshowpage\n")
+        replacement_document.write_bytes(b"%!PS\nshowpage\n%" + b"x" * (2 * 1024 * 1024))
         environment = os.environ | {
             "PATH": f"{native_bin}:{os.environ['PATH']}",
             "TMPDIR": str(self.directory),
@@ -411,6 +478,12 @@ class NativePdfInputTests(unittest.TestCase):
                 else:
                     shutil.copyfile(replacement_document, replacement)
                 consumed = self.directory / "consumed.pdf"
+                measured = subprocess.run(
+                    ["du", "-h", source], stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, measured.returncode, measured.stderr)
+                expected_size = measured.stdout.split(b"\t", 1)[0]
                 result = subprocess.run(
                     [COMMAND, source],
                     cwd=self.directory,
@@ -424,6 +497,7 @@ class NativePdfInputTests(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn(b"Input file size: " + expected_size + b"\n", result.stdout)
                 self.assertEqual(replacement_document.read_bytes(), source.read_bytes())
                 self.assertEqual(original, consumed.read_bytes())
                 destination = Path(f"{source}-optimized.pdf")
@@ -443,6 +517,81 @@ class NativePdfInputTests(unittest.TestCase):
                 self.assertEqual(1, next_result.returncode)
                 self.assertIn(b"does not seem to be a PDF", next_result.stderr)
                 self.assertFalse(next_destination.exists())
+
+    def test_native_du_failure_stops_before_transformation_or_publication(self) -> None:
+        native_du = shutil.which("du")
+        native_bin = self.directory / "bin"
+        native_bin.mkdir()
+        failing_du = native_bin / "du"
+        failing_du.write_text(
+            '#!/bin/sh\nrm -- "$SELECTED_SOURCE"\nexec "$NATIVE_DU" "$@"\n'
+        )
+        failing_du.chmod(0o755)
+        destination = self.directory / "output.pdf"
+        result = subprocess.run(
+            [COMMAND, self.source, destination], cwd=self.directory,
+            env=os.environ | {
+                "PATH": f"{native_bin}:{os.environ['PATH']}",
+                "TMPDIR": str(self.directory), "NATIVE_DU": native_du,
+                "SELECTED_SOURCE": str(self.source),
+            },
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        native_failure = subprocess.run(
+            [native_du, "-h", self.source], stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        self.assertNotEqual(0, native_failure.returncode)
+        self.assertEqual(native_failure.returncode, result.returncode)
+        self.assertEqual(native_failure.stderr, result.stderr)
+        self.assertFalse(destination.exists())
+        self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+        self.assertEqual([], list(self.directory.glob("pdf-optimize-*.log")))
+
+    def test_source_removal_after_classification_keeps_published_success(self) -> None:
+        original = self.source.read_bytes()
+        native_bin = self.directory / "bin"
+        native_bin.mkdir()
+        helper = Path(__file__).parent / "fixtures/replace-after-classification.py"
+        for command in ("file", "gs"):
+            wrapper = native_bin / command
+            shutil.copyfile(helper, wrapper)
+            wrapper.chmod(0o755)
+        environment = os.environ | {
+            "PATH": f"{native_bin}:{os.environ['PATH']}",
+            "TMPDIR": str(self.directory),
+            "NATIVE_FILE": shutil.which("file"),
+            "NATIVE_GS": shutil.which("gs"),
+            "REMOVE_SELECTED_SOURCE": "1",
+        }
+        for source in (self.source, self.link):
+            with self.subTest(source=source.name):
+                self.source.write_bytes(original)
+                measured = subprocess.run(
+                    ["du", "-h", source], stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, measured.returncode, measured.stderr)
+                expected_size = measured.stdout.split(b"\t", 1)[0]
+                consumed = self.directory / "consumed.pdf"
+                result = subprocess.run(
+                    [COMMAND, source], cwd=self.directory,
+                    env=environment | {"SELECTED_SOURCE": str(source), "CONSUMED_INPUT": str(consumed)},
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertFalse(source.exists())
+                self.assertEqual(original, consumed.read_bytes())
+                self.assertIn(b"Input file size: " + expected_size + b"\n", result.stdout)
+                destination = Path(f"{source}-optimized.pdf")
+                parsed = subprocess.run(
+                    [environment["NATIVE_GS"], "-q", "-dBATCH", "-dNOPAUSE",
+                     "-dPDFSTOPONERROR", "-sDEVICE=nullpage", destination],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, parsed.returncode, parsed.stderr)
+                self.assertEqual([], list(self.directory.glob("pdf-optimize.*")))
+                self.assertEqual([], list(self.directory.glob(f".{destination.name}.*.tmp")))
 
     def test_symlink_to_non_pdf_is_rejected_before_optimization(self) -> None:
         self.source.write_text("not a PDF document\n")

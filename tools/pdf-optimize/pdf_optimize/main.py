@@ -139,6 +139,17 @@ def optimize(source: bytes, destination: bytes) -> int:
     if not os.path.isfile(source):
         emit(b"ERROR: input file does not exist or is not a file!", stderr=True)
         return 1
+    du_command = executable("du")
+    if du_command is None:
+        emit(b"ERROR: du was not found on this system", stderr=True)
+        return 127
+    # Retain caller-path allocated usage at admission, not the copied
+    # snapshot's allocation or a later replacement at the same pathname.
+    # This measurement and the following copy are not an atomic capture.
+    input_status, input_size = disk_size(du_command, source)
+    if input_status:
+        return input_status
+
     temporary_root = os.environ.get("TMPDIR", tempfile.gettempdir())
     with tempfile.TemporaryDirectory(prefix="pdf-optimize.", dir=temporary_root) as directory_text:
         directory = os.fsencode(directory_text)
@@ -220,13 +231,6 @@ def optimize(source: bytes, destination: bytes) -> int:
             return 1
 
     emit(b"INFO: GhostScript log written to: " + log)
-    du_command = executable("du")
-    if du_command is None:
-        emit(b"ERROR: du was not found on this system", stderr=True)
-        return 127
-    input_status, input_size = disk_size(du_command, source)
-    if input_status:
-        return input_status
     output_status, output_size = disk_size(du_command, destination)
     if output_status:
         return output_status
