@@ -7,7 +7,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types tests/*.test.ts"
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@atproto/api": "0.20.42",
