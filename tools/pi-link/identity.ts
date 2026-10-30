@@ -1,4 +1,4 @@
-import { normalizeName, savedIdentity, splitName, type LinkIdentity } from "./identity-format.mjs";
+import { fullName, normalizeName, savedIdentity, splitName, type LinkIdentity } from "./identity-format.mjs";
 
 // Keep the extension's existing import surface; the Node CLI uses the same decoder.
 export { fullName, groupOf, normalizeName } from "./identity-format.mjs";
@@ -79,6 +79,27 @@ export function applyAgentIdentity(
         : {}),
     },
   };
+}
+
+/**
+ * The manager inherits this snapshot and supplies PI_SUBAGENT_PARENT_SESSION_ID.
+ * Match that ID so an ordinary nested terminal cannot inherit a worker default.
+ * Missing, stale, or malformed handoffs keep the independent random default.
+ */
+export function generatedName(suffix: string, parentSessionId?: string, parentIdentity?: string): string {
+  const fallback = `t-${suffix}`;
+  if (!parentSessionId || !parentIdentity) return fallback;
+  let value: unknown;
+  try { value = JSON.parse(parentIdentity); } catch { return fallback; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return fallback;
+  const snapshot = value as Record<string, unknown>;
+  if (snapshot.version !== 1 || snapshot.sessionId !== parentSessionId || typeof snapshot.name !== "string") return fallback;
+  const combined = normalizeName(snapshot.name);
+  if (!combined) return fallback;
+  const parent = splitName(combined);
+  if (!parent.name) return fallback;
+  const prefix = parent.name.startsWith("t-") ? parent.name : `t-${parent.name}`;
+  return fullName({ ...parent, name: `${prefix}-subagent-${suffix}`, nameOrigin: "generated", groupOrigin: "generated" });
 }
 
 /** Resolve CLI > environment > latest saved naming entry > session > generated. */

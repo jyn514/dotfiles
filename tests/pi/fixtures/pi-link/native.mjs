@@ -794,6 +794,9 @@ test("collision assignment stays in the preferred group and reports actual assig
   assert.equal(settled.details.assignedName, "shared-2@review");
   assert.equal(settled.details.pending, false);
   assert.equal(settled.details.connectionState, "client");
+  assert.deepEqual(JSON.parse(process.env.PI_LINK_PARENT_IDENTITY), {
+    version: 1, sessionId: alice.sessionManager.getSessionId(), name: "shared-2@review",
+  }, "children inherit the hub-assigned collision name, not the unsuffixed preference");
   const id = messageId(await send(alice, { broadcast: true }, "collision peer still in review"));
   assert.ok(text(await received(hub, "collision peer still in review")).includes(id));
   await noDelivery([alice, outsider], "collision peer still in review");
@@ -987,6 +990,9 @@ test("hub collision assignment remains stable when an unchanged preferred group 
   const first = await tool(hub, "link_set_identity", { name: "shared", group: "review" });
   assert.equal(first.details.error, undefined);
   assert.equal(first.details.assignedName, "shared-2@review");
+  assert.deepEqual(JSON.parse(process.env.PI_LINK_PARENT_IDENTITY), {
+    version: 1, sessionId: hub.sessionManager.getSessionId(), name: "shared-2@review",
+  });
   await named(client, "shared-2@review");
   const repeated = await tool(hub, "link_set_identity", { group: "review" });
   assert.equal(repeated.details.error, undefined);
@@ -1087,6 +1093,59 @@ test("installed root bridge discovers per operation and transports worker replie
   stopChild();
   await pause(300);
   assert.ok(!providerText(author).includes("must not retry on endpoint"));
+});
+
+test("managed child inherits the assigned parent name across a real process boundary", async (t) => {
+  const previous = process.env.PI_LINK_PARENT_IDENTITY;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_LINK_PARENT_IDENTITY;
+    else process.env.PI_LINK_PARENT_IDENTITY = previous;
+  });
+  const { peers: [parent] } = await network(t, ["ghost-coordinator@review"]);
+  const parentId = parent.sessionManager.getSessionId();
+  const childFixture = fileURLToPath(new URL("./identity-child.mjs", import.meta.url));
+  const child = (parentSessionId = parentId, handoff = process.env.PI_LINK_PARENT_IDENTITY) => {
+    // Match the manager's launch environment: copy it, remove wrapper naming,
+    // and set the immediate parent and child ownership marker.
+    const env = { ...process.env, PI_SUBAGENT_OWNER_TOKEN: "fixture-owner", PI_SUBAGENT_PARENT_SESSION_ID: parentSessionId };
+    delete env.PI_LINK_NAME;
+    if (handoff === null) delete env.PI_LINK_PARENT_IDENTITY;
+    else env.PI_LINK_PARENT_IDENTITY = handoff;
+    const result = spawnSync(process.execPath, [childFixture, sourcePath], { encoding: "utf8", timeout: 15_000, env });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}\n${result.error ?? ""}`);
+    return JSON.parse(result.stdout.trim());
+  };
+  const first = child();
+  assert.match(first.preferred.name, /^t-ghost-coordinator-subagent-[a-f0-9]{4}$/);
+  assert.equal(first.preferred.group, "review");
+  assert.equal(first.preferred.nameOrigin, "generated");
+  assert.equal(first.preferred.groupOrigin, "generated");
+  assert.equal(first.sessionName, undefined, "generated link names must not seed the session title");
+  assert.equal(first.handoff.name, `${first.preferred.name}@review`, "the child publishes its own name for grandchildren");
+  assert.notEqual(first.handoff.sessionId, parentId);
+  assert.equal(first.connectionState, "disconnected");
+  const grandchild = child(first.handoff.sessionId, JSON.stringify(first.handoff));
+  assert.equal(grandchild.preferred.name.slice(0, -4), `${first.preferred.name}-subagent-`);
+  assert.equal(grandchild.preferred.group, "review");
+  const oldParent = child(parentId, null);
+  assert.match(oldParent.preferred.name, /^t-[a-f0-9]{4}$/);
+  assert.equal(oldParent.preferred.group, "");
+
+  await command(parent, "link-name", "renamed@other@nested");
+  const second = child();
+  assert.match(second.preferred.name, /^t-renamed-subagent-[a-f0-9]{4}$/);
+  assert.equal(second.preferred.group, "other@nested");
+  const unrelated = child("not-this-parent");
+  assert.match(unrelated.preferred.name, /^t-[a-f0-9]{4}$/);
+  assert.equal(unrelated.preferred.group, "");
+
+  await command(parent, "link-disconnect");
+  await command(parent, "link-name", "offline@");
+  const offline = child();
+  assert.match(offline.preferred.name, /^t-offline-subagent-[a-f0-9]{4}$/);
+  assert.equal(offline.preferred.explicitGroup, true);
+  await parent.session.extensionRunner.emit({ type: "session_shutdown" });
+  assert.equal(process.env.PI_LINK_PARENT_IDENTITY, undefined, "shutdown removes this runtime's published handoff");
 });
 
 test("managed child loading the configured package registers ordinary link tools and hooks", async () => {

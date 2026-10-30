@@ -610,7 +610,15 @@ The bundled skill tells agents not to repeat those messages in their ordinary re
 
 **Name normalization:** Link names are normalized — leading/trailing whitespace removed and internal whitespace runs collapsed to a single space. `/link-name "build   lead"` saves and shows as `build lead`.
 
-**Name precedence:** `pi --link-name` > `pi-link <name>` > saved `/link-name` > Pi session name > random `t-xxxx`. _(The `pi-link` wrapper itself does not accept `--link-name`; pick one or the other.)_
+**Name precedence:** `pi --link-name` > `pi-link <name>` > saved link identity > Pi session name > generated default. _(The `pi-link` wrapper itself does not accept `--link-name`; pick one or the other.)_
+
+Root defaults are random names such as `t-a3f9`.
+Managed subagents inherit the parent's current local link name and group: `ghost-coordinator@review` produces `t-ghost-coordinator-subagent-d8b7@review`.
+A parent name already starting with `t-` keeps that prefix without adding another: `t-b2c5` produces `t-b2c5-subagent-d8b7`.
+The suffix is four random hex characters; normal collision handling still applies.
+The child saves its own generated identity, so later parent renames do not rename existing children or change their names on reload/resume.
+Explicit or saved child names still take precedence, and generated link names do not set Pi session titles.
+Parents must load this version before spawning children; without a matching parent handoff, children keep the independent random default.
 
 `/link-connect` and `/link-disconnect` save their intent to the session — resume later and the connection state is restored without needing the flag. Explicit user intent takes precedence over `--link`.
 

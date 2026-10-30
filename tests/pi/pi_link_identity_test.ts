@@ -3,6 +3,7 @@ import {
   applyAgentIdentity,
   applyUserIdentity,
   fullName,
+  generatedName,
   groupOf,
   initialIdentity,
   normalizeName,
@@ -89,6 +90,47 @@ describe("identity startup precedence and persisted boundary", () => {
       expect(applyAgentIdentity(identity, { name: "reviewer" })).toMatchObject({ ok: false, protectedFields: ["name"] });
     }
     expect(accepted(fresh(), { name: "reviewer" }).nameOrigin).toBe("agent");
+  });
+});
+
+describe("parent-derived generated names", () => {
+  const snapshot = (name: string, sessionId = "parent") => JSON.stringify({ version: 1, sessionId, name });
+
+  test("uses the parent's local name and preserves the separate group", () => {
+    for (const [parent, expected] of [
+      ["ghost-coordinator", "t-ghost-coordinator-subagent-d8b7"],
+      ["ghost-coordinator@review", "t-ghost-coordinator-subagent-d8b7@review"],
+      ["ghost-coordinator@a@b", "t-ghost-coordinator-subagent-d8b7@a@b"],
+      ["ghost-coordinator@", "t-ghost-coordinator-subagent-d8b7@"],
+      ["t-b2c5", "t-b2c5-subagent-d8b7"],
+      ["t-b2c5@review", "t-b2c5-subagent-d8b7@review"],
+      ["t-parent-subagent-abcd@review", "t-parent-subagent-abcd-subagent-d8b7@review"],
+      ["Zoë 翼@review", "t-Zoë 翼-subagent-d8b7@review"],
+    ]) {
+      expect(generatedName("d8b7", "parent", snapshot(parent))).toBe(expected);
+    }
+  });
+
+  test("missing, mismatched, or malformed parent handoffs keep the root default", () => {
+    expect(generatedName("d8b7")).toBe("t-d8b7");
+    expect(generatedName("d8b7", undefined, snapshot("ghost"))).toBe("t-d8b7");
+    expect(generatedName("d8b7", "parent", snapshot("ghost", "other"))).toBe("t-d8b7");
+    for (const value of [undefined, "", "{", "null", "[]", "42", "{}",
+      JSON.stringify({ version: 2, sessionId: "parent", name: "ghost" }),
+      JSON.stringify({ version: 1, sessionId: "parent", name: 42 }), snapshot("  "), snapshot("@group")]) {
+      expect(generatedName("d8b7", "parent", value)).toBe("t-d8b7");
+    }
+  });
+
+  test("is a generated fallback, not an override or a user ownership claim", () => {
+    const generated = generatedName("d8b7", "parent", snapshot("ghost@review"));
+    const first = initialIdentity({ generatedName: generated, entries: [] });
+    expect(first).toEqual({ name: "t-ghost-subagent-d8b7", group: "review", nameOrigin: "generated", groupOrigin: "generated" });
+    expect(initialIdentity({ generatedName: "t-renamed-subagent-1234", entries: [saved(first)] })).toEqual(first);
+    for (const override of [{ cliName: "chosen" }, { envName: "chosen" }, { sessionName: "chosen" }, { entries: [legacy("chosen")] }]) {
+      expect(fullName(initialIdentity({ generatedName: generated, entries: [], ...override }))).toBe("chosen");
+    }
+    expect(accepted(first, { name: "reviewer", group: "elsewhere" })).toMatchObject({ nameOrigin: "agent", groupOrigin: "agent" });
   });
 });
 

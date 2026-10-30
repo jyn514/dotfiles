@@ -25,7 +25,7 @@ import * as os from "node:os";
 
 import { WebSocket, WebSocketServer } from "ws";
 import {
-  applyAgentIdentity, applyUserIdentity, fullName, groupOf, initialIdentity,
+  applyAgentIdentity, applyUserIdentity, fullName, generatedName, groupOf, initialIdentity,
   normalizeName, type LinkIdentity,
 } from "./identity.js";
 import { LinkMessaging, MESSAGING_VERSION, type LinkDelivery, type LinkWorkerIntegration, type LinkWorkerAddress, type LinkResult } from "./messaging.js";
@@ -233,11 +233,11 @@ export default function (pi: ExtensionAPI) {
   // ── State ────────────────────────────────────────────────────────────────
 
   let role: "hub" | "client" | "disconnected" = "disconnected";
-  let terminalName = `t-${crypto.randomUUID().slice(0, 4)}`;
+  let terminalName = generatedName(crypto.randomUUID().slice(0, 4),
+    process.env.PI_SUBAGENT_PARENT_SESSION_ID, process.env.PI_LINK_PARENT_IDENTITY);
+  let publishedParentIdentity: string | undefined;
   let preferredName: string | null = null;
-  let identity: LinkIdentity = {
-    name: terminalName, group: "", nameOrigin: "generated", groupOrigin: "generated",
-  };
+  let identity: LinkIdentity = initialIdentity({ generatedName: terminalName, entries: [] });
   // True between a client `/link-name` close and the next welcome/promotion.
   // Lets `startHub` adopt the requested name if it wins promotion before welcome.
   let pendingClientRename = false;
@@ -481,6 +481,16 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   }
 
+  function setTerminalName(name: string) {
+    terminalName = name;
+    const sessionId = ctx?.sessionManager.getSessionId();
+    if (!sessionId) return;
+    // The subagent manager copies process.env at each launch. Publish assigned
+    // names (including hub collision suffixes), without claiming user ownership.
+    publishedParentIdentity = JSON.stringify({ version: 1, sessionId, name });
+    process.env.PI_LINK_PARENT_IDENTITY = publishedParentIdentity;
+  }
+
   function persistIdentity() {
     if (JSON.stringify(latestCustomData("link-identity")) !== JSON.stringify(identity)) {
       pi.appendEntry("link-identity", identity);
@@ -519,7 +529,7 @@ export default function (pi: ExtensionAPI) {
     if (role === "hub") {
       if (terminalName === assigned) return true;
       const old = terminalName;
-      terminalName = assigned;
+      setTerminalName(assigned);
       const list = terminalList();
       connectedTerminals = list;
       updateStatus();
@@ -536,7 +546,7 @@ export default function (pi: ExtensionAPI) {
         ws?.close();
       }
     } else {
-      terminalName = requested;
+      setTerminalName(requested);
     }
     return true;
   }
@@ -544,7 +554,7 @@ export default function (pi: ExtensionAPI) {
   function cancelPendingIdentityChange() {
     // Keep the requested preference for a later explicit connection, including
     // promotion to hub, but stop reporting an assignment that is no longer pending.
-    if (pendingClientRename && preferredName) terminalName = preferredName;
+    if (pendingClientRename && preferredName) setTerminalName(preferredName);
     pendingClientRename = false;
   }
 
@@ -947,7 +957,7 @@ export default function (pi: ExtensionAPI) {
         if (msg.messagingVersions) {
           for (const [name, version] of Object.entries(msg.messagingVersions)) terminalMessagingVersions.set(name, version);
         }
-        terminalName = msg.name;
+        setTerminalName(msg.name);
         pendingClientRename = false;
         connectedTerminals = msg.terminals;
         terminalStatuses.clear();
@@ -1290,7 +1300,7 @@ export default function (pi: ExtensionAPI) {
         // this terminal is now establishing hub identity, so honor that pending
         // request. Otherwise keep the last hub-assigned identity — don't replay
         // a stale `preferredName` that may already have been deduped.
-        if (pendingClientRename && preferredName) terminalName = preferredName;
+        if (pendingClientRename && preferredName) setTerminalName(preferredName);
         pendingClientRename = false;
         role = "hub";
         connectedTerminals = [terminalName];
@@ -1551,6 +1561,9 @@ export default function (pi: ExtensionAPI) {
     disposed = true;
     // disconnect() cancels the attempt in flight, including the startup timer.
     disconnect();
+    if (publishedParentIdentity !== undefined && process.env.PI_LINK_PARENT_IDENTITY === publishedParentIdentity) {
+      delete process.env.PI_LINK_PARENT_IDENTITY;
+    }
     ctx = undefined;
     // Full teardown: clear inbox and both timers. The compaction deadline runs to
     // 300s, so it would otherwise outlive the extension and fire after teardown.
@@ -1602,7 +1615,7 @@ export default function (pi: ExtensionAPI) {
       sessionName: pi.getSessionName(),
     });
     preferredName = fullName(identity);
-    terminalName = preferredName;
+    setTerminalName(preferredName);
     // Persist provenance even on same-text manual assignment and first generated
     // startup. Reload must neither remove user ownership nor invent it.
     persistIdentity();
