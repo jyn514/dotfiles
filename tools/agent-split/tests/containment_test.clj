@@ -46,9 +46,8 @@
                      (with-redefs [process/shell
                                    (fn [opts & args]
                                      (apply shell opts
-                                            (concat (take 2 args)
-                                                    [(str "--unified=" context)]
-                                                    (drop 2 args))))]
+                                            (map #(if (str/starts-with? % "--unified=")
+                                                    (str "--unified=" context) %) args)))]
                        ((production 'normalize-diff-paths)
                         ((production 'diff-output) left tree) left tree)))
               original-diff (diff right)

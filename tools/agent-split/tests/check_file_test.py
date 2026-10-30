@@ -310,13 +310,15 @@ class CheckFileTest(unittest.TestCase):
         self.assert_unusable(self.check("now regular\nmore\n", path="kind.txt",
                                            state=actual("now regular\n"), revision=revision))
 
-    def test_invalid_parent_utf8_and_quoted_paths_are_unusable(self):
-        # Git quotes this UTF-8 filename in canonical headers. The shared parser
-        # does not support that encoding; it must not silently claim no diff.
+    def test_invalid_parent_utf8_and_unicode_paths(self):
+        # The canonical producer fixes quotePath=false. Unicode paths therefore
+        # use the same unquoted framing as ASCII; do not silently lose the diff.
         (self.repo / "é.txt").write_text("revision\n")
         revision = self.capture_revision()
-        self.assert_unusable(self.check("replacement\n", path="é.txt",
-                                           state=actual("revision\n"), revision=revision))
+        self.assertEqual("would-lose", self.check("replacement\n", path="é.txt",
+                                           state=actual("revision\n"), revision=revision)["status"])
+        self.assertEqual("preserved", self.check("revision\n", path="é.txt",
+                                           state=actual("revision\n"), revision=revision)["status"])
         (self.repo / "invalid.txt").write_bytes(b"invalid\xffparent")
         self.jj("commit", "-m", "malformed parent")
         (self.repo / "invalid.txt").write_text("regular now\n")

@@ -514,7 +514,7 @@ fn execute_with_runtime(
     }
     if let Some(split) = &request.agent_split {
         command.args([
-            "split", "--tool", "agent-split", "-m", split.message.as_str(),
+            "split", "--tool", "agent-split", &format!("--message={}", split.message),
             "-r", split.revision.as_str(),
         ]);
     } else {
@@ -1089,12 +1089,13 @@ mod tests {
             let patch = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "diff", "--git", "root:split-selected"]);
             let project_before_split = native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]);
             let mut split_request = request_for("relocated", &[]);
-            split_request.agent_split = Some(AgentSplit { patch, message: "private dotfiles split".into(), revision: "@".into() });
+            split_request.agent_split = Some(AgentSplit { patch, message: "--private dotfiles split".into(), revision: "@".into() });
             let response = execute_with_runtime(&split_request, &policy, source.as_raw_fd(), &workspaces,
                 root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), None);
             assert_eq!(0, response.exit, "{}", response.stderr);
             assert_eq!(project_before_split, native(&jj, &root, &["-R", root.join("project").to_str().unwrap(), "--ignore-working-copy", "op", "log", "--no-graph", "-T", "id"]));
             let revision = "description(substring:\"private dotfiles split\")";
+            assert_eq!("--private dotfiles split\n", native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "log", "--no-graph", "-r", revision, "-T", "description"]));
             assert_eq!("Agent selector", native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "log", "--no-graph", "-r", revision, "-T", "author.name()"]));
             let files = native(&jj, &root, &["-R", root.join("relocated").to_str().unwrap(), "diff", "--from", &format!("({revision})-"), "--to", revision, "--summary"]);
             assert!(files.contains("split-selected")); assert!(!files.contains("unrelated"));

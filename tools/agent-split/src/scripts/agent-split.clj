@@ -91,19 +91,30 @@
   nil)
 
 (defn- usage! []
-  (fail! "Usage" "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [-m <message> ...] [revision]"))
+  (fail! "Usage" (str "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [-m <message> ...] [revision]"
+                      "\n       bb agent-split list [--json] [--path <literal-path>]... [revision]"
+                      "\n       bb agent-split --from <full-source-commit-id> --hunks <ids> -m <message> [revision]"
+                      "\nRequire both --from and --hunks, without a patch-file operand.")))
 
 (defn- print-help! []
   (println "Usage: bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [-m <message> ...] [revision]")
-  (println "Splits the selected Git-style patch from a Jujutsu revision; revision defaults to @.")
-  (println "The patch paths and hunks define the fileset to select and must be contained in the revision's diff.")
+  (println "       bb agent-split list [--json] [--path <literal-path>]... [revision]")
+  (println "       bb agent-split --from <full-source-commit-id> --hunks <ids> -m <message> [revision]")
+  (println "Whole-hunk workflow: run list, inspect the complete hunks, then select IDs with --from and --hunks.")
+  (println "--from requires the full immutable source commit ID printed by list, not a change ID or abbreviation.")
+  (println "--hunks selects whole modified-text hunks, e.g. 2,5-8,12; require --from and --hunks together, without a patch file.")
+  (println "list --path filters literal workspace-relative paths without renumbering global hunk IDs.")
+  (println "Use a patch file for partial hunks and unsupported file operations where the patch-file interface supports them.")
+  (println "Listing reports unsupported changes by path and kind without selectable IDs.")
+  (println "Splits selected changes from a Jujutsu revision; both revision operands default to @.")
+  (println "Patch-file paths and hunks define the fileset to select and must be contained in the revision's diff.")
   (println "The patch and helper artifacts must be outside the visible workspace or under ignored target/jj-split/.")
   (println "Runs jj split with the repository's non-interactive jj-agent-split-editor, then verifies both resulting revisions.")
   (println "The split changes workspace history; preflight failures return before invoking jj split or the editor.")
   (println "Exit status 1 means preflight failure, 2 means jj split failure, and 3 means post-split verification failure.")
   (println "Verification failures leave the split intact and report all known resulting revision IDs.")
   (println "bb agent-split --check-file reads one JSON request on stdin and returns a read-only containment result.")
-  (println "--json suppresses human progress output and prints full selected and remaining change IDs as JSON.")
+  (println "--json: list prints the source commit and complete hunk catalog; split prints full selected and remaining change IDs.")
   (println "--remaining-message describes the remaining commit before verification completes.")
   (println "Repeat -m to join message paragraphs with a blank line; each value is literal text.")
   (println "Use -- to stop recognizing wrapper options; arguments after -- are validated as operands."))
@@ -118,9 +129,10 @@
         (= "--" arg) [options (into operands more)]
         (#{"-h" "--help"} arg) (recur more (assoc options :help? true) operands)
         (= "--json" arg) (recur more (assoc options :json? true) operands)
-        (= "--remaining-message" arg)
+        (#{"--from" "--hunks" "--remaining-message"} arg)
         (if-let [message (first more)]
-          (recur (rest more) (assoc options :remaining-message message) operands)
+          (recur (rest more) (assoc options (get {"--from" :from "--hunks" :hunks
+                                                   "--remaining-message" :remaining-message} arg) message) operands)
           (usage!))
         (= "-m" arg)
         (if-let [message (first more)]
@@ -130,11 +142,12 @@
 
 (defn- parse-args [args]
   (let [[options operands] (parse-wrapper-options args)
-        [patch & tail] operands]
+        [patch & tail] (if (or (:from options) (:hunks options))
+                         (cons nil operands) operands)]
     (when (:help? options)
       (print-help!)
       (System/exit 0))
-    (when (nil? patch)
+    (when (and (nil? patch) (not (and (:from options) (:hunks options))))
       (usage!))
     (loop [[arg message & more :as remaining] tail
            messages []]
@@ -240,15 +253,13 @@
 (defn- tree-entry-index
   ([revision] (tree-entry-index revision []))
   ([revision paths]
-   (let [template "path ++ \"\\t\" ++ file_type ++ \"\\t\" ++ executable ++ \"\\n\""
+   ;; Paths can themselves contain tabs and newlines. NUL cannot occur in a
+   ;; filesystem path, so framing stays unambiguous before format support checks.
+   (let [template "path ++ \"\\0\" ++ file_type ++ \"\\0\" ++ executable ++ \"\\0\""
          out (:out (apply run-jj-read "preflight" "file" "list" "-r" revision "-T" template paths))]
-     (into {}
-           (keep (fn [line]
-                   (let [[path type executable] (str/split line #"\t")]
-                     (when (seq path)
-                       [path {:type type
-                              :executable? (= "true" executable)}]))))
-           (str/split-lines out)))))
+     (into {} (map (fn [[path type executable]]
+                     [path {:type type :executable? (= "true" executable)}]))
+           (partition 3 (str/split out #"\u0000"))))))
 
 (defn- literal-file-fileset [path]
   ;; `--` stops option parsing, not JJ's fileset parser. Root-relative exact
@@ -323,13 +334,12 @@
          "git" "apply" "--recount" "--unsafe-paths" (str patch))))
 
 (defn- diff-output [left right]
-  (let [result (process/shell {:dir (git-tool-dir)
-                               :out :bytes
-                               :err :string
-                               :shutdown *child-shutdown*
-                               :continue true}
-                              "git" "diff" "--no-index" "--binary" "--no-renames"
-                              "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right))]
+  (let [result (apply process/shell {:dir (git-tool-dir)
+                                     :out :bytes
+                                     :err :string
+                                     :shutdown *child-shutdown*
+                                     :continue true}
+                      ((ns-resolve 'scripts.containment 'diff-command) left right))]
     (when-not (#{0 1} (:exit result))
       (fail! "preflight" (str "could not diff temporary trees\n" (:err result))))
     (or ((ns-resolve 'scripts.containment 'decode-utf8) (:out result))
@@ -453,7 +463,7 @@
                    "--config" program-config
                    "--config" args-config
                    "--tool" "agent-split"
-                   "-m" message
+                   (str "--message=" message)
                    "-r" revision])
         result (apply process/shell {:out :string
                                      :err :string
@@ -570,7 +580,7 @@
         :input-revision input}))))
 
 (defn- describe-revision! [revision message]
-  (run "verify" "jj" "describe" "-r" revision "-m" message))
+  (run "verify" "jj" "describe" "-r" revision (str "--message=" message)))
 
 (defn- revision-matches-selected-tree?
   [{:keys [selected-paths expected-selected-tree]} revision helper-root]
@@ -683,17 +693,166 @@
   (doseq [[file hunks] (sort (hunk-summary patch-text))]
     (println (str "  " file " (" hunks " hunk" (when-not (= 1 hunks) "s") ")"))))
 
+;; Catalogs are reconstructed from immutable trees, never a moving diff or a
+;; persistent registry. Keep file framing separate from exact hunk payloads.
+(defn- full-commit-id? [value]
+  (boolean (and value (re-matches #"[0-9a-f]{40}" value))))
+
+(defn- catalog-hunks [diff path]
+  (mapv (fn [text]
+          (let [[_ old-start old-count new-start new-count]
+                (re-find #"^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@" text)]
+            (when-not old-start
+              (fail! "listing" (str "could not parse hunk for " path)))
+            {:path path
+             :parent_range {:start (parse-long old-start) :count (parse-long (or old-count "1"))}
+             :source_range {:start (parse-long new-start) :count (parse-long (or new-count "1"))}
+             :text text}))
+        (rest (str/split diff #"(?m)(?=^@@ )"))))
+
+(defn- source-catalog! [revision require-full?]
+  (when (and require-full? (not (full-commit-id? revision)))
+    (fail! "listing" "--from requires the full source commit ID printed by list"))
+  (let [commit (revision-commit-id revision)]
+    (when-not (and (full-commit-id? commit)
+                   (or (not require-full?) (= commit revision)))
+      (fail! "listing" "expected one source revision; use the full source commit ID printed by list"))
+    (let [parents (parent-commit-ids commit)]
+      (when-not (= 1 (count parents))
+        (fail! "listing" "source must have exactly one parent"))
+      (let [parent (first parents)
+            before (tree-entry-index parent)
+            after (tree-entry-index commit)
+            paths (sort (set/union (set (keys before)) (set (keys after))))
+            changed (changed-paths commit)
+            helper (fs/create-temp-dir {:dir (temp-root) :prefix "jj-split-catalog"})]
+        (try
+          (let [records
+                (keep
+                 (fn [path]
+                   (let [a (get before path) b (get after path)
+                         kind (cond (nil? a) "creation"
+                                    (nil? b) "deletion"
+                                    (not= (:type a) (:type b)) "kind-change"
+                                    (not= "file" (:type a)) "non-regular"
+                                    (not= (:executable? a) (:executable? b)) "mode-change")
+                         ;; Use JJ's authoritative diff only to find changed paths;
+                         ;; canonical hunk boundaries come from the Git producer.
+                         left (fs/file helper "left") right (fs/file helper "right")]
+                     (if kind
+                       {:path path :kind kind}
+                       (do
+                         (doseq [tree [left right]]
+                           (fs/delete-tree tree)
+                           (fs/create-dirs tree))
+                         (write-file-from-revision! parent path (fs/file left path) false)
+                         (write-file-from-revision! commit path (fs/file right path) false)
+                         (let [decode (ns-resolve 'scripts.containment 'decode-utf8)
+                               bytes #(java.nio.file.Files/readAllBytes (fs/path %))
+                               a-bytes (bytes (fs/file left path))
+                               b-bytes (bytes (fs/file right path))]
+                           (cond
+                             (java.util.Arrays/equals a-bytes b-bytes) nil
+                             (or (nil? (decode a-bytes)) (nil? (decode b-bytes))
+                                 (some zero? a-bytes) (some zero? b-bytes))
+                             {:path path :kind "binary"}
+                             :else (let [diff (normalize-diff-paths (diff-output left right) left right)]
+                                     (if (= [path path] (split-diff-paths (first (str/split-lines diff))))
+                                       {:path path :hunks (catalog-hunks diff path)}
+                                       {:path path :kind "path-encoding"}))))))))
+                 ;; Unchanged special entries are not unsupported changes. Inventory
+                 ;; differences also retain rename sources: JJ name-only output
+                 ;; can report only the rename destination. For newline paths,
+                 ;; ask the same authoritative diff with an exact literal fileset:
+                 ;; nonempty raw output proves a change without parsing its lines.
+                 (filter #(or (not (contains? before %)) (not (contains? after %))
+                              (contains? changed %)
+                              (and (re-find #"[\r\n]" %)
+                                   (seq (:out (run-jj-read "listing" "diff" "-r" commit
+                                                          "--name-only" "--"
+                                                          (literal-file-fileset %)))))) paths))
+                hunks (vec (map-indexed #(assoc %2 :id (inc %1)) (mapcat :hunks records)))]
+            {:version 1 :source_commit commit :source_change (revision-change-id commit)
+             :parent parent :hunks hunks :unsupported (vec (filter :kind records))})
+          (finally (fs/delete-tree helper)))))))
+
+(defn- select-hunks! [catalog selector]
+  (let [available (set (map :id (:hunks catalog)))
+        selected
+        (reduce
+         (fn [ids part]
+           (let [[_ lo hi] (re-matches #"([0-9]+)(?:-([0-9]+))?" part)
+                 lo (when lo (parse-long lo)) hi (if hi (parse-long hi) lo)]
+             (when-not (and lo hi (pos? lo) (<= lo hi) (contains? available lo)
+                            (contains? available hi))
+               (fail! "selection" (str "invalid or unknown hunk IDs: " part
+                                        "; use selectable IDs in the source catalog from list")))
+             (reduce (fn [ids id]
+                       (when (contains? ids id)
+                         (fail! "selection" (str "duplicate or overlapping hunk ID: " id)))
+                       (conj ids id)) ids (range lo (inc hi)))))
+         #{} (str/split selector #"," -1))
+        hunks (filter #(contains? selected (:id %)) (:hunks catalog))]
+    (apply str
+           (for [group (partition-by :path hunks)
+                 :let [path (:path (first group))]]
+             (str "diff --git a/" path " b/" path "\n"
+                  "--- a/" path "\n+++ b/" path "\n"
+                  (apply str (map :text group)))))))
+
+(defn- list-options [args]
+  (loop [[arg & more] args options {:json? false :paths []} operands []]
+    (cond
+      (nil? arg) (do
+                   (when (> (count operands) 1) (usage!))
+                   (assoc options :revision (or (first operands) "@")))
+      (= arg "--") (recur nil options (into operands more))
+      (= arg "--json") (recur more (assoc options :json? true) operands)
+      (= arg "--path") (if-let [path (first more)]
+                          (recur (rest more) (update options :paths conj path) operands)
+                          (usage!))
+      (str/starts-with? arg "-") (usage!)
+      :else (recur more options (conj operands arg)))))
+
+(defn- execute-list [args]
+  (let [{:keys [revision json? paths]} (list-options args)
+        route (split-route)]
+    (binding [*read-backend* (:backend route)]
+      (when-not (full-commit-id? revision) (snapshot-workspace!))
+      (let [catalog (source-catalog! revision false)
+            known (set (concat (map :path (:hunks catalog)) (map :path (:unsupported catalog))))]
+        (doseq [path paths]
+          (when (or (unsafe-path? path) (not (contains? known path)))
+            (fail! "listing" (str "--path is outside the workspace or absent from the source diff: " path))))
+        (let [visible? #(or (empty? paths) (contains? (set paths) (:path %)))
+              output (-> catalog (dissoc :parent)
+                         (assoc :paths paths)
+                         (update :hunks #(vec (filter visible? %)))
+                         (update :unsupported #(vec (filter visible? %))))]
+          (if json?
+            (println (json/generate-string output))
+            (do
+              (println (str "source commit: " (:source_commit output)))
+              (println (str "change: " (:source_change output)))
+              (doseq [{:keys [id path text]} (:hunks output)]
+                (println (str "\n[hunk " id "] " path))
+                (print text))
+              (doseq [{:keys [path kind]} (:unsupported output)]
+                (println (str "\n[unsupported " kind "] " path "; use the patch-file interface"))))))))))
+
 (defn- execute-main [args]
-  (let [{:keys [patch message revision json? remaining-message]} (parse-args args)
-        patch (fs/canonicalize patch)
-        patch-text (if (fs/regular-file? patch)
+  (let [{:keys [patch message revision json? remaining-message from hunks]} (parse-args args)
+        patch (when patch (fs/canonicalize patch))
+        patch-text (when patch (if (fs/regular-file? patch)
                      (slurp (str patch))
-                     (fail! "preflight" (str "patch file does not exist: " patch)))
+                     (fail! "preflight" (str "patch file does not exist: " patch))))
         route (split-route)]
     ;; Resolve once, including workspace-root queries. Inspection mode is scoped
     ;; to each read child, not snapshots, structured splits or descriptions.
     (binding [*read-backend* (:backend route)]
-      (let [;; Establish one authoritative preflight snapshot.
+      (let [catalog (when from (source-catalog! from true))
+        selected-patch (when catalog (select-hunks! catalog hunks))
+        ;; Establish one authoritative preflight snapshot.
         _ (snapshot-workspace!)
         repo-root (or (:workspace route)
                       (str/trim-newline (:out (run-jj-read "snapshot safety" "workspace" "root"))))
@@ -701,15 +860,23 @@
         artifact-root (fs/file repo-root "target" "jj-split")
         _ (fs/create-dirs artifact-root)
         helper-root (fs/create-temp-dir {:dir (temp-root)
-                                         :prefix "jj-split-patch"})]
+                                         :prefix "jj-split-patch"})
+        generated (when catalog (fs/create-temp-dir {:dir artifact-root :prefix "hunks-"}))
+        patch (if generated (fs/file generated "selected.patch") patch)
+        patch-text (or selected-patch patch-text)]
     (try
       (check-artifact-root-ignored! repo-root)
+      (when generated (spit patch patch-text))
       (let [original-commit (revision-commit-id revision)
             selected-change-id (revision-change-id original-commit)
             original-parents (parent-commit-ids original-commit)
             preflight (binding [*preflight-revision* {:revision revision
                                                      :commit original-commit
                                                      :parents original-parents}]
+                        (when (and catalog
+                                   (or (not= selected-change-id (:source_change catalog))
+                                       (not= original-parents #{(:parent catalog)})))
+                          (fail! "preflight" "target change or parent differs from --from; list the target again"))
                         (let [preflight (preflight! patch-text original-commit helper-root)]
                           (check-snapshot-safety! repo-root artifact-root patch helper-root)
                           (reject-already-applied! preflight original-commit message helper-root)
@@ -770,7 +937,8 @@
                     (println (str "selected revision: " (:selected split-revisions)))
                     (println (str "remaining revision: " (:remaining split-revisions))))))))))
       (finally
-        (fs/delete-tree helper-root)))))))
+        (fs/delete-tree helper-root)
+        (when generated (fs/delete-tree generated))))))))
 
 ;; The advisory API deliberately shares the splitter's read route, producer and
 ;; containment engine. Only its temporary trees are written during a file check.
@@ -918,7 +1086,9 @@
 
 (defn- split-main [args]
   ;; Defer process exit until execute-main's artifact cleanup has run.
-  (let [result (capture-failure #(execute-main args))]
+  (let [result (capture-failure #(if (= "list" (first args))
+                                    (execute-list (rest args))
+                                    (execute-main args)))]
     (if-let [status (:status result)]
       (do
         (binding [*out* *err*] (println (:error result)))

@@ -42,9 +42,7 @@
                     (str "\n" (:err result))))))
     result))
 
-(defn- diff-command [left right]
-  ["git" "diff" "--no-index" "--binary" "--no-renames"
-   "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right)])
+(def diff-command (ns-resolve 'scripts.containment 'diff-command))
 
 (defn- diff-output [left right]
   (let [result (apply process/shell

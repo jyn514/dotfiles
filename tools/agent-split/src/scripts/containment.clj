@@ -2,6 +2,17 @@
   (:require [clojure.string :as str]
             [clojure.set :as set]))
 
+(defn diff-command
+  "Canonical producer shared by listing, preflight, the editor and file checks."
+  [left right]
+  ["git" "-c" "core.quotePath=false" "-c" "core.attributesFile=/dev/null"
+   "-c" "diff.suppressBlankEmpty=false" "diff" "--no-index" "--binary" "--no-renames"
+   "--no-ext-diff" "--no-textconv" "--no-color" "--no-relative"
+   "--diff-algorithm=myers" "--no-indent-heuristic"
+   "--unified=3" "--inter-hunk-context=0"
+   "--output-indicator-new=+" "--output-indicator-old=-" "--output-indicator-context= "
+   "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right)])
+
 (defn decode-utf8
   "Return text only when decoding is lossless. A replacement character may be
    legitimate UTF-8, but malformed bytes must never alias that character."

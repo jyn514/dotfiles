@@ -518,16 +518,28 @@
           (is (not (str/blank? (:out (shell! repo "jj" "log" "-r" "description(substring:\"selected\")"
                                             "--no-graph" "-T" "commit_id"))))))))))
 
+(defn- selection-args!
+  ([repo input-mode patch] (selection-args! repo input-mode patch nil))
+  ([repo input-mode patch env]
+  (if (= input-mode "patch")
+    [(str patch)]
+    (let [result (if env (run-mounted repo env script "list" "--json")
+                         (shell! repo "bb" script "list" "--json"))
+          catalog (json/parse-string (:out result) true)]
+      (is (= [1 2] (mapv :id (:hunks catalog))))
+      ["--from" (:source_commit catalog) "--hunks" "1"]))))
+
 (deftest ^:needs/bb ^:needs/git ^:needs/jj concurrent-unselected-edits-survive-preflight-and-verification
   ;; The writer changes both another file and an unselected hunk in the same
   ;; file. A real JJ snapshot runs on each side of the split boundary.
-  (doseq [phase ["before" "after"]]
+  (doseq [phase ["before" "after"] input-mode ["patch" "numbered"]]
     (with-repo*
       (fn [{:keys [repo]}]
         (let [patch (fs/file repo "target/jj-split/selected.patch")
               _ (write-file! patch selected-patch)
               driver (str (fs/canonicalize "tools/agent-split/tests/fixtures/concurrent_split.clj"))
-              result (run repo "bb" driver script phase "unrelated" (str patch) "--json" "-m" "selected" "@")]
+              result (apply run repo "bb" driver script phase "unrelated"
+                            (concat (selection-args! repo input-mode patch) ["--json" "-m" "selected" "@"]))]
           (is (zero? (:exit result)) (:err result))
           (when (zero? (:exit result))
             (let [{:keys [selected remaining]} (json/parse-string (:out result) true)]
@@ -566,17 +578,19 @@
                                           "--no-graph" "-T" "commit_id")))))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj concurrent-selected-source-change-is-rejected-without-losing-the-writer
-  (with-repo*
+  (doseq [input-mode ["patch" "numbered"]]
+   (with-repo*
     (fn [{:keys [repo]}]
       (let [patch (fs/file repo "target/jj-split/selected.patch")
             _ (write-file! patch selected-patch)
             driver (str (fs/canonicalize "tools/agent-split/tests/fixtures/concurrent_split.clj"))
-            result (run repo "bb" driver script "before" "selected" (str patch) "-m" "selected" "@")]
+            result (apply run repo "bb" driver script "before" "selected"
+                          (concat (selection-args! repo input-mode patch) ["-m" "selected" "@"]))]
         (is (= 2 (:exit result)) (:err result))
         (is (str/includes? (:err result) "not contained in original diff"))
         (is (str/includes? (slurp (str (fs/file repo "note.txt"))) "DIFFERENT TWO"))
         (is (str/blank? (:out (shell! repo "jj" "log" "-r" "description(substring:\"selected\")"
-                                     "--no-graph" "-T" "commit_id"))))))))
+                                     "--no-graph" "-T" "commit_id")))))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj protected-structured-split-uses-public-wrapper-and-never-native-recovery
   (with-repo*
@@ -620,7 +634,7 @@
   ;; Exercise the actual protected shell editor with path relocation only. It
   ;; applies the patch without native containment, so wrapper revalidation is
   ;; required when another writer changes selected source after preflight.
-  (doseq [mutation ["unrelated" "selected"]]
+  (doseq [mutation ["unrelated" "selected"] input-mode ["patch" "numbered"]]
     (with-repo*
       (fn [{:keys [root repo]}]
         (let [env (mounted-proxy-env! root)
@@ -641,14 +655,20 @@
               _ (spit editor (-> (slurp editor)
                                  (str/replace "#!/trusted/bin/sh" "#!/bin/sh")
                                  (str/replace "patch=/tmp/jj-config/agent-split.patch"
-                                              (str "patch=" patch))))
+                                              "patch=$STRUCTURED_JJ_REQUEST_PATCH")))
               _ (.setExecutable (fs/file editor) true)
               env (assoc env "PATH" (str bin ":" (get env "PATH"))
                          "JJ_PROXY_REPO" (str repo) "STRUCTURED_JJ_WORKSPACE" (str repo)
                          "STRUCTURED_JJ_LOG" (str calls) "CALLER_MARKER" "preserved"
                          "STRUCTURED_JJ_EDITOR" (str editor) "STRUCTURED_JJ_SPLIT_RUN" mutation)
-              result (run-mounted repo env script (str patch) "--json" "-m" "selected" "@")
+              selection (selection-args! repo input-mode patch env)
+              result (apply run-mounted repo env script (concat selection ["--json" "-m" "selected" "@"]))
               requests (map #(json/parse-string % true) (str/split-lines (slurp calls)))]
+          (when-let [evidence (System/getenv "AGENT_SPLIT_EVIDENCE")]
+            (fs/create-dirs evidence)
+            (spit (fs/file evidence (str "protected-" input-mode "-" mutation ".json"))
+                  (json/generate-string {:requests requests :exit (:exit result)
+                                         :stdout (:out result) :stderr (:err result)} {:pretty true})))
           (is (some #(and (= "evolog" (first (:args %))) (:inspect %)) requests))
           (is (not-any? #(= "op" (first (:args %))) requests) "no native recovery through a proxy")
           (if (= mutation "selected")

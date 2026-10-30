@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`agent-split` selects patch-level changes for `jj split` without an interactive diff editor. The operator supplies a Git-style patch; the wrapper preflights it, runs the repository-supported editor, and verifies both resulting trees.
+`agent-split` selects patch-level changes for `jj split` without an interactive diff editor. The operator selects numbered whole hunks or supplies a Git-style patch; the wrapper preflights it, runs the repository-supported editor, and verifies both resulting trees.
 
 ## Prerequisites and setup
 
@@ -17,6 +17,8 @@ Check dispatch and snapshot safety:
 bb agent-split --help
 git check-ignore -q target/jj-split/.probe
 ```
+
+For whole modified-text hunks, use the [numbered workflow](#numbered-hunk-workflow) below. For finer selections and file operations, keep the patch-file interface.
 
 From the revision's current Git-format diff, create each patch at a fresh path under `target/jj-split/`:
 
@@ -63,6 +65,44 @@ Symlink materialization uses documented `jj git root` and `jj log -T commit_id`,
 `jj file show` excludes symlinks on the tested JJ version, so it is not a target-byte API.
 This repair was verified with native JJ 0.45.1 and Git 2.49.1 in colocated Git-backend repositories.
 Non-Git backends, older JJ versions lacking these commands, and protected proxy access to Git blobs are not established by the native tests.
+
+## Numbered-hunk workflow
+
+List complete hunks, inspect their content, then select their IDs from the immutable source commit printed by that listing:
+
+```sh
+bb agent-split list @
+bb agent-split list --json --path src/example.clj @
+bb agent-split --from <full-source-commit-id> --hunks 2,5-8,12 \
+  -m 'Extract focused change' --json @
+```
+
+Both revision operands default to `@`. `--from` requires the full commit ID, not a change ID, abbreviation, or moving selector.
+`--hunks` accepts comma-separated positive IDs and inclusive ranges. Unknown IDs, empty elements, reversed ranges, and duplicate or overlapping selections fail before splitting.
+Selections run in catalog order, regardless of argument order; there is no implicit select-all.
+Do not combine a patch-file operand with `--from`/`--hunks`.
+The existing message options and success JSON (`selected` and `remaining` change IDs) apply to either selection mode.
+A legacy patch file named `list` is addressed as `./list`.
+
+Listing shows every displayed hunk's ranges, context, additions, removals, and terminal-newline markers without truncation.
+Repeatable `--path` filters are literal workspace-relative paths, not filesets or globs. They reduce output without renumbering global IDs.
+An absent or outside-workspace path is an error. The JSON catalog contains `version`, `source_commit`, `source_change`, active `paths`, `hunks`, and `unsupported`.
+Each hunk has `id`, `path`, `parent_range`, `source_range`, and full `text`; each range has `start` and `count`. The parent is derived internally, not printed separately.
+An empty catalog is valid but cannot produce a split.
+
+The first version selects whole hunks in modified regular UTF-8 text files with unchanged mode and kind. Nearby edits grouped into one hunk are selected together.
+Creations, deletions, mode/kind changes, binary/non-UTF-8 changes, and unsupported path encodings appear by path and kind without hunk IDs.
+Renames are shown as deletion and creation, following the canonical producer's no-renames representation.
+The shared parser does not handle Git-quoted path headers (for example, filenames containing a literal double quote); these are reported as `path-encoding` rather than offered as selectable text.
+Spaces, Unicode, and glob/operator characters are literal supported paths.
+Use the legacy patch-file interface for unsupported operations where its existing format support permits them.
+
+A moving listing takes one authoritative workspace snapshot; listing a full immutable commit uses inspection reads only. Neither listing form edits files or splits history, and neither stores a persistent catalog.
+Selection reconstructs the inspected catalog before its one preflight snapshot and uses the originally selected bytes.
+New unselected edits can proceed if dry-run and containment succeed, but a different target change or parent requires a new listing.
+Selected-source races retain the existing native rejection and protected post-split verification behavior; failures do not silently retry against a new catalog or roll back history.
+Producer options that affect hunk boundaries are fixed independently of user diff configuration. After changing the diff engine version, list again before selecting IDs.
+Generated patches use fresh ignored `target/jj-split/` directories and are cleaned up after success or failure.
 
 ## Common commands
 
@@ -231,6 +271,7 @@ A real-repository regression adds unrelated new and modified files, verifies unc
 The tests cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection.
 Repositories are disposable and outside the source repository; test artifacts remain ignored.
 `tests/run.clj` registers these tests and is invoked by `dev/test`.
+The numbered CLI suite starts with two files/four hunks and checks exact selected and remainder trees for nonadjacent IDs. It also covers filtered IDs, configuration independence, ranges, invalid input modes, literal paths, repeated lines, grouped context, terminal-newline markers, changed target identity/parents, stale selected source, unsupported operations, and snapshot/artifact counts. Native and protected concurrency fixtures exercise both patch-file and numbered selections.
 The Python suites check wrapper dispatch and executable resolution, plus the
 advisory check through the real CLI in disposable JJ repositories. Advisory
 cases cover reorganization/extraction warnings, already-lost baselines, repeated

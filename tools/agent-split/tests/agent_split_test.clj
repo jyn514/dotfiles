@@ -109,6 +109,17 @@
       (is (= 1 exit))
       (is (str/includes? err "Usage:")))))
 
+(deftest help-explains-numbered-discovery-and-patch-fallback
+  (let [help (with-out-str ((ns-resolve 'scripts.jj-split-patch 'print-help!)))]
+    (doseq [topic ["agent-split list" "Whole-hunk workflow:"
+                   "full immutable source commit ID printed by list"
+                   "without renumbering global hunk IDs"
+                   "patch file for partial hunks"
+                   "unsupported changes by path and kind"
+                   "list prints the source commit and complete hunk catalog"
+                   "split prints full selected and remaining change IDs"]]
+      (is (str/includes? help topic) topic))))
+
 (deftest jj-split-patch-help-recognition-stops-at-double-dash
   (let [{:keys [exit err]}
         (captured-failure
@@ -350,7 +361,7 @@
     (is (= '("preflight" {:out "tree" :extra-env {"MARKER" "kept" "JJ_PROXY_INSPECT" "1"}}
                         "jj" "file" "show" "-r" "@-" "note.txt") (nth @calls 3)))
     (is (= '("snapshot safety" "jj" "status" "--no-pager") (nth @calls 4)))
-    (is (= '("verify" "jj" "describe" "-r" "remaining" "-m" "message") (nth @calls 5)))))
+    (is (= '("verify" "jj" "describe" "-r" "remaining" "--message=message") (nth @calls 5)))))
 
 (deftest ^:needs/git preflight-copies-the-parent-once-with-independent-bytes-modes-and-links
   (let [root (fs/create-temp-dir {:prefix "agent-split-parent-copy"})
@@ -429,3 +440,19 @@
           (is (= 4 (count @blobs)))
           (is (every? #(= ["git" "--git-dir=/git-store" "cat-file" "blob"] (subvec % 0 4)) @blobs))))
       (finally (fs/delete-tree root)))))
+
+(deftest numbered-selector-preserves-every-selected-payload-in-catalog-order
+  ;; Exhaust every subset of a bounded catalog, reversing caller order. The
+  ;; authored payloads include deletion/addition/context and newline framing.
+  (let [select! (ns-resolve 'scripts.jj-split-patch 'select-hunks!)
+        hunks (mapv (fn [id] {:id id :path (if (< id 4) "a" "b")
+                              :text (str "@@ -" id ",1 +" id ",1 @@\n-old " id
+                                         "\n+new " id "\n\\ No newline at end of file\n")})
+                    (range 1 7))]
+    (doseq [mask (range 1 64)]
+      (let [selected (filterv #(bit-test mask (dec (:id %))) hunks)
+            patch (select! {:hunks hunks} (str/join "," (reverse (map :id selected))))]
+        (is (= (count (distinct (map :path selected)))
+               (count (re-seq #"(?m)^diff --git " patch))))
+        (doseq [hunk hunks]
+          (is (= (contains? (set selected) hunk) (str/includes? patch (:text hunk)))))))))

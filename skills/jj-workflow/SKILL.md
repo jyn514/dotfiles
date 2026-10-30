@@ -90,15 +90,22 @@ jj log -r CHANGE_ID --no-graph \
 Prefer splitting when separating work. Restore only changes that should be discarded and are clearly yours, or when explicitly asked.
 
 - Whole-file boundary: use path-limited `jj split -r REV <paths...> -m "Message"`.
-- Partial-file or hunk boundary: always use `bb agent-split target/jj-split/<name>.patch -m "Message"`.
+- Whole-hunk boundary in modified regular text files: run `bb agent-split list [REV]`, inspect the complete hunks, then select their IDs with `bb agent-split --from COMMIT_ID --hunks 2,5-8 -m "Message" [REV]`.
+- Partial-hunk boundary or an operation marked unsupported by the listing: use `bb agent-split target/jj-split/<name>.patch -m "Message"` where the patch-file interface supports that operation.
 - Never use `jj split --interactive`, `jj split --tool :builtin`, or another interactive split editor in this repository.
 
-Build selection patches from the revision's generated diff rather than hand-writing headers and context.
-Preserve unchanged context; if selecting within a mixed-ownership hunk, keep its line counts accurate and use the helper's preflight.
+For numbered selection, use the full immutable source commit ID printed by the listing, not a change ID or abbreviation.
+Both revision operands default to `@`.
+`list --path <literal-path>` filters workspace-relative paths without renumbering global hunk IDs.
+Use `list --json` for a machine-readable catalog and `bb agent-split --help` for option and failure details.
 
-`bb agent-split` preflights the Git-style patch under ignored `target/jj-split/`, commits through a trusted path boundary, restores the remainder, and verifies both revisions. Failures retain recovery snapshots and print their location.
+For patch-file selection, build the patch from the revision's generated diff rather than hand-writing headers and context.
+Preserve unchanged context; the helper recalculates hunk line counts and preflights the selection.
 
-After either split, inspect selected and remaining changes with `jj status` and focused `jj diff -r CHANGE_ID` / `jj diff -r @`.
+`bb agent-split` preflights either selection, commits through a trusted path boundary, restores the remainder, and verifies both revisions.
+Follow its recovery instructions if the split or verification fails.
+
+After any split, inspect selected and remaining changes with `jj status` and focused `jj diff -r CHANGE_ID` / `jj diff -r @`.
 
 ## Rebase and abandon
 

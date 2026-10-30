@@ -36,8 +36,7 @@ It wraps the existing diff-editor protocol with a deterministic tool.
 A diff-editor shim applies that patch to Jujutsu's left tree and replaces Jujutsu's right tree with the result.
 Jujutsu then performs the split exactly as if a human had edited the right side by hand.]
 
-#status[implemented as the repository-supported `jj-agent-split-editor` executable.
-Higher-level workflow documentation for agents is still expected to live outside this low-level diff-editor shim.
+#status[The patch-file splitter and its containment, execution, verification, and recovery paths are implemented. Numbered-hunk listing and selection in @agent-jj-split-numbered-hunks are implemented alongside the patch-file interface.
 Containment includes the local-rotation retry in @agent-jj-split-repeated-lines.
 Unsupported alignment changes can still be rejected.]
 
@@ -289,8 +288,9 @@ boundary retirement, and the actual write.
 
 For the normal agent workflow, use the repository wrapper described here; the diff-editor invocation above is the lower-level primitive it drives.
 
-The agent workflow is a controlled sequence.
+The patch-file agent workflow is a controlled sequence.
 Each step is mechanical except the judgment of which hunks belong together.
+@agent-jj-split-numbered-hunks specifies an additional way to construct that patch by selecting complete numbered hunks; it does not replace this workflow or change its execution and verification contracts.
 
 #requirement[Before splitting, the agent inspects `jj diff --git -r <revision>` and identifies the behavioral boundary of the desired selected commit.]
 
@@ -356,6 +356,166 @@ It must not silently continue with a bad history boundary.]
 
 #requirement[If the requested patch and message already describe the selected revision, the wrapper rejects the duplicate split before mutation.
 When that revision has exactly one child, the diagnostic names it as the possible continuation without assuming that the child is semantically the original remainder.]
+
+== Numbered-hunk listing and selection <agent-jj-split-numbered-hunks>
+
+This interface lets an agent inspect complete numbered diff hunks and select them by ID, without hand-editing a patch or writing a selection script.
+Selection constructs an ordinary patch and then enters the existing preflight, split, verification, routing, and recovery workflow.
+It does not determine authorship or whether selected edits are behaviorally coherent.
+
+#status[Numbered-hunk listing and selection are implemented and exercised in disposable native repositories and the structured protected-backend fixture.
+The existing patch-file command and `--check-file` API remain available.
+Canonical path encodings unsupported by the shared patch parser are reported without selectable IDs.]
+
+=== Listing
+
+```sh
+bb agent-split list [--json] [--path <literal-path>]... [revision]
+```
+
+The revision defaults to `@` and must resolve to one revision supported by the existing splitter.
+Resolve it through the existing native/protected router.
+For a moving selector such as `@`, take the existing authoritative workspace snapshot once before resolving the source commit.
+An explicit full immutable commit ID uses inspection reads without a workspace snapshot.
+Listing may update recorded working-copy state, but does not edit source files or split a change.
+
+Each listing identifies the full immutable source commit ID and its change ID, then displays numbered hunks with complete unified-diff content: ranges, unchanged context, additions, and removals.
+Global IDs follow canonical path order and source hunk order.
+Repeatable `--path` filters take literal workspace-relative paths; they filter displayed output, not numbering or source identity.
+A path outside the workspace or absent from the source diff is an error.
+An empty revision yields an empty catalog and cannot produce a split.
+Listing creates no persistent catalog file.
+
+`--json` emits a structured catalog with `version`, `source_commit`, `source_change`, `hunks`, and `unsupported`.
+Hunk records include global `id`, literal `path`, parent and source ranges, and full hunk text; top-level fields identify active display filters.
+The parent is derived from the source commit and is not a separate listing or JSON field.
+Use stderr for progress and diagnostics, with no ANSI or prose mixed into JSON.
+
+=== Complete interaction
+
+The following illustrative excerpt shows two complete hunks from a filtered listing; other hunks are omitted, so the IDs may have gaps.
+
+```text
+source commit: <full immutable commit ID>
+change: <full change ID>
+
+[hunk 12] config/agents/shared-agents.md
+@@ -125,6 +125,13 @@ Before selecting a substantial approach
+ An agent choice in a spec is not new approval.
+ Ask only about unresolved trade-offs or context that could change the approach; routine choices within the authorized task do not require a discovery interview.
+ 
++### Before expanding repeated work
++
++Before repeating an uncertain approach across many items, complete a small representative case and check its result against the intended outcome.
++Choose a case that can expose weaknesses in the approach, not merely the easiest case.
++Use that feedback to decide whether to expand, revise, or stop.
++Reuse applicable evidence when the approach is already established; do not add a pilot or human approval step by default.
++
+ ### Before changing behavior or scope
+ 
+ Check for additional missing context when a decision changes behavior, scope, ownership, or preservation requirements.
+
+[hunk 37] skills/work-selection/SKILL.md
+@@ -42,6 +42,17 @@ Keep feedback fast
+ Aim for actionable development feedback within about two minutes unless the user or task establishes another budget.
+ This is a threshold for reconsidering the approach, not a universal command timeout or permission to weaken acceptance.
+ 
++### Test an uncertain approach before expanding
++
++When an uncertain approach will be repeated across many items, identify the assumption that could make repeating it wasteful or wrong.
++Choose the smallest representative case whose result can challenge that assumption.
++Before starting, state which results would justify expanding, revising, or stopping the approach.
++Check the result against the intended outcome, not merely whether the prescribed steps completed.
++Use existing applicable evidence instead of repeating an established check.
++
++For example, before migrating many callers, try one that exercises the uncertain compatibility behavior and check it through its intended consumer.
++For a prose rewrite, have a fresh reader follow one complete workflow; easier scanning alone does not establish that the explanation works.
++
+ ### Reassess choices in flight
+ 
+ Apply this reassessment to work already underway, not only proposed work.
+```
+
+Select both hunks from the immutable source commit shown by the listing.
+
+```sh
+bb agent-split --from <full-source-commit-id> --hunks 12,37 \
+  -m 'Check uncertain approaches before expanding repeated work' --json @
+```
+
+The illustrative result retains the existing selected/remaining JSON shape.
+
+```json
+{"selected":"<selected change ID>","remaining":"<remaining change ID>"}
+```
+
+=== Selection
+
+```sh
+bb agent-split --from <full-source-commit-id> --hunks <ids> \
+  -m <message> [-m <message> ...] [revision]
+```
+
+`--from` is the full immutable source commit ID printed by the listing, not a view token, catalog digest, change ID, abbreviation, bookmark, or moving revision expression.
+It binds the inspected tree and its parent; derive the parent internally.
+The final optional revision is the target to split now and defaults to `@`.
+
+`--hunks` accepts comma-separated positive decimal IDs and inclusive ranges, such as `2,5-8,12`.
+Reject zero, unknown IDs, empty elements, reversed ranges, and duplicate or overlapping selections.
+Normalize valid selections to catalog order.
+Require both `--from` and `--hunks`; do not combine them with a patch-file operand.
+Preserve `--json`, `--remaining-message`, repeated message paragraphs, the revision default, and `--` termination.
+Validate arguments and resolve the source before invoking a split.
+There is no implicit select-all, automatic retry against a newer source, or ownership inference.
+
+Dispatch `list` only as that exact command token; a legacy patch file named `list` remains addressable as `./list`.
+Successful selection retains the current success JSON (`selected` and `remaining` change IDs); existing consumers need no migration.
+
+=== Supported selection and source changes
+
+The first version selects complete hunks in ordinary modified UTF-8 regular files with unchanged file mode and kind.
+Nearby edits grouped into one hunk are selected together, and the full hunk shown in the listing makes that boundary visible.
+List creations, deletions, mode changes, binary changes, renames, and other unsupported file operations explicitly by path and kind, without selectable hunk IDs.
+Do not silently omit them or partially select their text; direct callers to the existing patch-file interface.
+Sub-hunk IDs, whole-file operation IDs, and automatic ownership selection are not first-version requirements.
+
+Build numbering from the same materialized parent/source data and canonical Git diff producer used by containment, with producer options that affect hunk boundaries fixed rather than inherited from user diff configuration.
+Retain exact parsed headers and payloads; listing and selection use the same producer and numbering rules.
+Numbering compatibility across arbitrary future diff-engine versions is not promised: after changing the diff-producing tool version, list the source commit again before selecting IDs.
+
+Reconstruct the source catalog without rereading moving selectors, then take the existing preflight snapshot and resolve the requested target.
+Require its change ID and parent commit to match the source commit's change and parent.
+If the target has been committed or rebased, refuse and request a new listing.
+The target commit ID need not equal the source commit ID: new unselected edits may proceed if generated selection passes existing dry-run and containment checks.
+Always use the originally selected bytes, never similarly numbered latest hunks.
+
+The preflight check does not make the operation atomic.
+Preserve existing native-editor and protected-proxy behavior: validate the actual split input, verify the selected tree and complete remainder, and report concurrent changes.
+A protected execution may detect a selected-source race only after splitting, return exit 3, and leave the split intact.
+This extension adds no lock, polling, automatic rollback, or stronger concurrency guarantee.
+
+=== Diagnostics and implementation boundary
+
+Listing and preflight errors use exit 1; split and verification failures retain exits 2 and 3.
+Preserve existing known-revision and recovery diagnostics.
+Errors identify the failed decision and next action—for example, unknown IDs refer to selectable IDs in the source catalog, and an invalid `--from` directs the caller to the full source commit ID printed by `list`.
+A changed target parent directs the caller to list the target again.
+A failed reconstruction or mismatch must not fall back to a fresh moving diff.
+
+Add a catalog producer and whole-hunk selector alongside the existing `execute-main` → `preflight!` → `run-split!` → split discovery and `verify!` path in `tools/agent-split/src/scripts/agent-split.clj`.
+The producer returns source identities and exact diff records; the selector emits an ordinary patch with each selected file header once and selected hunks in order, retaining context and newline markers needed by existing checks.
+Do not copy unselected hunk payloads, stale whole-blob index metadata, or file-operation headers that imply unsupported selection.
+
+Refactor only enough orchestration to accept either an existing patch path or a generated patch.
+Generated artifacts use a fresh ignored path under `target/jj-split/` and existing snapshot-safety and artifact lifecycle behavior.
+Do not recursively invoke the public wrapper and take a second snapshot.
+No new daemon, proxy protocol, dependency, persistent selection registry, or change to the edit-boundary adapter is required.
+Listing may read every changed path for global IDs; path filters initially reduce output only.
+Do not add a cache before measuring that cost against a simpler scoped-catalog design.
+
+First delivery should establish the interface in a disposable repository with two text files and four hunks: list once, select two nonadjacent IDs, and verify the selected tree contains exactly those hunks while the complete remainder preserves everything else.
+Then test repeated lines, overlapping context, missing terminal newlines, earlier unselected edits changing line counts, literal paths, stable filtered IDs, invalid selectors and input modes, consistent numbering under different user diff configuration, unrelated versus selected concurrent edits, committed/rebased targets, native and protected post-preflight races, visible unsupported operations, and unchanged legacy patch, message, JSON, and `--check-file` behavior.
+Use existing unit, real-repository integration, structured proxy, and containment fixtures under `tools/agent-split/tests/`.
 
 == Worked two-hunk example <agent-jj-split-worked-example>
 

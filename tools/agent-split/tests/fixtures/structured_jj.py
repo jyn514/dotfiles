@@ -35,13 +35,14 @@ if arguments[:1] == ["--agent-split"]:
     subprocess.run([os.environ["JJ_REAL"], "status"], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     _, patch, message, revision = arguments
+    os.environ["STRUCTURED_JJ_REQUEST_PATCH"] = patch
     # The test relocates the real protected shell editor, not its behavior.
     editor = os.environ["STRUCTURED_JJ_EDITOR"]
     sys.exit(subprocess.call([
         os.environ["JJ_REAL"], "split", "--tool", "agent-split",
         "--config", "merge-tools.agent-split.program=" + json.dumps(editor),
         "--config", 'merge-tools.agent-split.edit-args=["$left","$right"]',
-        "-m", message, "-r", revision,
+        "--message=" + message, "-r", revision,
     ]))
 
 if arguments[:1] == ["status"]:
