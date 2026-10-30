@@ -167,7 +167,7 @@ class GlideTests(unittest.TestCase):
             name = mimetypes.glide_mail_desktop(False)
         mail = applications / name
         self.assertIn(
-            f"Exec={self.data}/dotfiles/open-fastmail %u\n",
+            f'Exec="{self.data}/dotfiles/open-fastmail" %u\n',
             mail.read_text(),
         )
         self.assertIn("MimeType=x-scheme-handler/mailto;\n", mail.read_text())
@@ -180,6 +180,16 @@ class GlideTests(unittest.TestCase):
                 [validator, str(mail)], text=True, capture_output=True
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_mail_launcher_escapes_literal_percent_field_syntax(self):
+        data = self.data / "field%u%f%k%%"
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
+             mock.patch.object(mimetypes, "command_exists", return_value=False):
+            name = mimetypes.glide_mail_desktop(False)
+        self.assertIn(
+            f'Exec="{self.data}/field%%u%%f%%k%%%%/dotfiles/open-fastmail" %u\n',
+            (data / "applications" / name).read_text(),
+        )
 
     def test_mail_launcher_encodes_the_complete_mailto_uri(self):
         self.assertEqual(
@@ -194,45 +204,55 @@ class GlideTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("gio"), "gio is not installed")
     def test_desktop_runtime_passes_mailto_to_fastmail_launcher(self):
-        with tempfile.TemporaryDirectory(prefix="glide-mail-") as temporary:
-            directory = Path(temporary)
-            data = directory / "data"
-            applications = data / "applications"
-            applications.mkdir(parents=True)
-            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
-                 mock.patch.object(mimetypes, "command_exists", return_value=False):
-                name = mimetypes.glide_mail_desktop(False)
-            binaries = directory / "bin"
-            binaries.mkdir()
-            recorder = ROOT / "tests/setup/fixtures/xdg-open-recorder.py"
-            xdg_open = binaries / "xdg-open"
-            xdg_open.symlink_to(recorder)
-            log = directory / "xdg-open.json"
-            mailto = "mailto:friend@example.com?subject=two%20words"
-            environment = dict(
-                os.environ,
-                PATH=f"{binaries}:{os.environ['PATH']}",
-                XDG_OPEN_TEST_LOG=str(log),
-            )
-            result = subprocess.run(
-                ["gio", "launch", str(applications / name), mailto],
-                env=environment,
-                text=True,
-                capture_output=True,
-            )
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            deadline = time.monotonic() + 2
-            while not log.exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertTrue(log.exists(), "desktop launcher did not invoke xdg-open")
-            self.assertEqual(
-                [
-                    str(xdg_open),
-                    "https://app.fastmail.com/mail/compose?mailto="
-                    "mailto%3Afriend%40example.com%3Fsubject%3Dtwo%2520words",
-                ],
-                json.loads(log.read_text()),
-            )
+        components = (
+            "data",
+            "custom data",
+            "quote\"and'single",
+            r"back\slash",
+            "$dollar`tick",
+            "#hash;semi&(paren)*?<>|~",
+            "tab\tline\nreturn\r",
+        )
+        for component in components:
+            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="glide-mail-") as temporary:
+                directory = Path(temporary)
+                data = directory / component
+                applications = data / "applications"
+                applications.mkdir(parents=True)
+                with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
+                     mock.patch.object(mimetypes, "command_exists", return_value=False):
+                    name = mimetypes.glide_mail_desktop(False)
+                binaries = directory / "bin"
+                binaries.mkdir()
+                recorder = ROOT / "tests/setup/fixtures/xdg-open-recorder.py"
+                xdg_open = binaries / "xdg-open"
+                xdg_open.symlink_to(recorder)
+                log = directory / "xdg-open.json"
+                mailto = "mailto:friend@example.com?subject=two%20words"
+                environment = dict(
+                    os.environ,
+                    PATH=f"{binaries}:{os.environ['PATH']}",
+                    XDG_OPEN_TEST_LOG=str(log),
+                )
+                result = subprocess.run(
+                    ["gio", "launch", str(applications / name), mailto],
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                deadline = time.monotonic() + 2
+                while not log.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(log.exists(), "desktop launcher did not invoke xdg-open")
+                self.assertEqual(
+                    [
+                        str(xdg_open),
+                        "https://app.fastmail.com/mail/compose?mailto="
+                        "mailto%3Afriend%40example.com%3Fsubject%3Dtwo%2520words",
+                    ],
+                    json.loads(log.read_text()),
+                )
 
     def test_browser_registration_restores_html_after_editor_defaults(self):
         calls = []

@@ -291,13 +291,20 @@ def glide_mail_desktop(dry_run: bool) -> str:
         launcher.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "libexec/setup/open_fastmail.py", launcher)
         launcher.chmod(0o755)
+        # Desktop values are unescaped before Exec arguments are unquoted.
+        escaped = str(launcher).replace("\\", "\\\\\\\\")
+        for character in ('"', '$', '`'):
+            escaped = escaped.replace(character, "\\\\" + character)
+        escaped = escaped.replace("%", "%%")
+        for character, replacement in (("\n", "\\n"), ("\t", "\\t"), ("\r", "\\r")):
+            escaped = escaped.replace(character, replacement)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=Fastmail in Glide\n"
             "NoDisplay=true\n"
-            f"Exec={launcher} %u\n"
+            f'Exec="{escaped}" %u\n'
             f"MimeType={MAIL_SCHEME};\n"
         )
         if command_exists("update-desktop-database"):
