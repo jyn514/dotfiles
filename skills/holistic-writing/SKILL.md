@@ -1,6 +1,6 @@
 ---
 name: holistic-writing
-description: Author, substantially revise, or editorially review whole prose artifacts, including reports, essays, prompts, instructions, skills, and documentation. Use whenever creating a new standalone prose artifact, regardless of length, and for selection, explanatory development, causal relationships, diction, rhythm, voice, factual fidelity, or the complete reading experience. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing; use the relevant owner or tighten-prose.
+description: Author, substantially revise, or editorially review whole prose artifacts, including reports, essays, prompts, instructions, skills, and documentation. Use also for documentation usability or correctness reviews. Use whenever creating a new standalone prose artifact, regardless of length, and for selection, explanatory development, causal relationships, diction, rhythm, voice, factual fidelity, or the complete reading experience. May combine with more specific documentation skills; reuse established decisions rather than restarting their workflows. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing; use the relevant owner or tighten-prose.
 ---
 
 # Holistic writing
@@ -18,16 +18,19 @@ For review-only work, report findings, evidence, consequences, and the smallest 
 For authoring with no named artifact, establish the intended reader, purpose, and deliverable before drafting.
 Ask when missing context would materially change the result rather than inventing its audience or authority.
 
+May combine with more specific documentation skills; reuse established decisions rather than restarting their workflows.
+For documentation-specific reader tasks, forms, prerequisites, commands, links, and workflow checks, use [Documentation](references/documentation.md).
+For placement alone, use [Documentation placement](../references/documentation-placement.md); a small addition or new heading does not require this whole-artifact workflow.
+
 Use adjacent owners only for their tasks, not as compulsory stages of this pass:
 
-- `technical-docs` owns documentation-specific authoring decisions.
 - `readme-writing` owns introductory README writing and review, not every file named README.
 - `reorganize-docs` owns existing documentation trees, page splits, renames, consolidation, and navigation.
 - `new-tool-development` owns its tool lifecycle and human-authored product briefs.
   Agents may review those briefs and add only the TODO comments it permits, not write or rewrite brief prose.
 - `requirements-definition` owns requirements authoring from an approved product brief.
 - `human-review-packets` owns selection and framing of human decision questions and approval handoffs.
-- [Design review](../review/references/design.md) owns review-only consistency and completeness analysis of designs or specifications.
+- [Spec review](../spec-review/SKILL.md) audits specification contracts for consistency, traceability, unsupported restrictions, and stage-appropriate completeness.
 - `skill-authoring` owns skill behavior, discovery, and procedure; this skill owns written presentation without silently changing those decisions.
 - `typst` owns Typst syntax; use it when the artifact needs that markup, not for every prose review.
 - `tighten-prose` owns bounded sentence- and paragraph-level polishing within an established explanation.
@@ -47,6 +50,8 @@ Choose the entry path from the work already done:
   Inspect additional sources when a claim lacks support or the artifact contradicts the brief or evidence.
 
 For creation, inspect the material the new artifact must explain and any established destination or form.
+Keep operative rules and procedures in their canonical owners; link to them from relevant starting points rather than reproducing them.
+When changing boundaries between human documentation, agent instructions, and skills, consult [Process engineering](https://ai-maintainers.jyn.dev/general/process-engineering.html) for rationale, not a replacement for those procedural owners.
 For an editorial pass, retain the destination unless relocation is requested.
 Do not force essays, reports, or instructions into documentation forms.
 

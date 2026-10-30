@@ -12,7 +12,7 @@ const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "ut
 const { DefaultResourceLoader, formatSkillsForPrompt, SettingsManager } = await import(
   pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
 
-test("shared discovery exposes consolidated skills, not optional references, and reflects description changes", async t => {
+test("shared discovery exposes task-specific skills, not optional references, and reflects description changes", async t => {
   const home = await mkdtemp(join(tmpdir(), "work-selection-discovery-"));
   const previousHome = process.env.HOME;
   process.env.HOME = home;
@@ -36,7 +36,9 @@ test("shared discovery exposes consolidated skills, not optional references, and
   await loader.reload();
   let { skills, diagnostics } = loader.getSkills();
   assert.deepEqual(diagnostics, []);
-  for (const name of ["work-selection", "autonomous-work", "creative-inquiry", "architecture-design", "implementation-plan", "review"]) {
+  const reviewSkills = ["spec-review", "audit-spec-against-impl", "completion-audit"];
+  for (const name of ["work-selection", "autonomous-work", "creative-inquiry", "architecture-design", "implementation-plan",
+    "holistic-writing", "readme-writing", ...reviewSkills]) {
     const matches = skills.filter(skill => skill.name === name);
     assert.equal(matches.length, 1, `expected one normally discovered ${name}`);
     assert.equal(matches[0].disableModelInvocation, false);
@@ -44,28 +46,42 @@ test("shared discovery exposes consolidated skills, not optional references, and
   }
 
   for (const retired of ["boundary-declaration", "design-space-scout", "design-deliberation", "second-user",
-    "design-for-change", "double-check", "audit-spec-against-impl", "spec-review"]) {
+    "design-for-change", "double-check", "review", "technical-docs"]) {
     assert.equal(skills.some(skill => skill.name === retired), false, `${retired} must not remain registered`);
   }
 
-  // Descriptions come from the installed authority, not a caller's copied policy.
-  const path = join(installed, "work-selection/SKILL.md");
-  const original = await readFile(path, "utf8");
-  const changed = original.replace(/^(description: .+)$/m, "$1 Discovery change fixture.");
-  assert.notEqual(changed, original);
-  await writeFile(path, changed);
-  await loader.reload();
-  ({ skills, diagnostics } = loader.getSkills());
-  assert.deepEqual(diagnostics, []);
-  assert.ok(skills.find(skill => skill.name === "work-selection")?.description
-    .endsWith("Discovery change fixture."));
-  assert.ok(formatSkillsForPrompt(skills).includes("Discovery change fixture."));
+  // Shared checks and documentation guidance ship without becoming skills.
+  for (const reference of ["references/review-evidence.md", "holistic-writing/references/documentation.md"]) {
+    const path = join(installed, reference);
+    assert.ok((await readFile(path, "utf8")).startsWith("# "));
+    assert.equal(skills.some(skill => skill.filePath === path), false);
+  }
 
-  // A likely discovery regression is observable even if the body still exists.
+  // Descriptions come from each installed authority, not a caller's copied policy.
+  for (const name of ["work-selection", ...reviewSkills]) {
+    const path = join(installed, name, "SKILL.md");
+    const original = await readFile(path, "utf8");
+    const fixture = `Discovery change fixture for ${name}.`;
+    const changed = original.replace(/^(description: .+)$/m, `$1 ${fixture}`);
+    assert.notEqual(changed, original);
+    await writeFile(path, changed);
+    await loader.reload();
+    ({ skills, diagnostics } = loader.getSkills());
+    assert.deepEqual(diagnostics, []);
+    assert.ok(skills.find(skill => skill.name === name)?.description.endsWith(fixture));
+    assert.ok(formatSkillsForPrompt(skills).includes(fixture));
+    await writeFile(path, original);
+  }
+
+  // A missing description drops that task, not the other independently discovered audits.
+  const path = join(installed, "spec-review/SKILL.md");
+  const original = await readFile(path, "utf8");
   await writeFile(path, original.replace(/^description: .+\n/m, ""));
   await loader.reload();
   ({ skills, diagnostics } = loader.getSkills());
-  assert.equal(skills.some(skill => skill.name === "work-selection"), false);
+  assert.equal(skills.some(skill => skill.name === "spec-review"), false);
   assert.ok(diagnostics.some(diagnostic => diagnostic.path === path));
-  assert.ok(skills.some(skill => skill.name === "autonomous-work"));
+  for (const name of ["audit-spec-against-impl", "completion-audit", "autonomous-work"]) {
+    assert.ok(skills.some(skill => skill.name === name));
+  }
 });

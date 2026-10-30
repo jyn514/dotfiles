@@ -102,7 +102,7 @@ Use [performance-investigation](../performance-investigation/SKILL.md) to decide
 Inspect returned work against the governing requirement and agreed boundaries, not only the worker's local criteria.
 For implementation, inspect the actual diff and acceptance evidence from the required checks through the intended interfaces.
 For research and review, inspect the supporting sources or raw evidence and distinguish observation from inference.
-Use [review evidence standards](../review/references/evidence.md) to inspect underlying evidence, decide what needs rerunning, and report local-only, integrated, or blocked results.
+Use [review evidence standards](../references/review-evidence.md) to inspect underlying evidence, decide what needs rerunning, and report local-only, integrated, or blocked results.
 Consulting those standards does not start the full audit.
 Make parent verification address the remaining uncertainty: inspect the changed work and applicability of existing evidence, rather than repeat the worker's investigation.
 Record the acceptance decision and any new reconciliation in the canonical result; link to supporting evidence instead of retelling it.

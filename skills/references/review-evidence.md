@@ -1,8 +1,21 @@
 # Evidence standards
 
-These standards define what checks prove during implementation and at completion; consulting them early does not start the full audit.
-[Testing](../../references/testing.md) owns test construction.
-[Autonomous-work](../../autonomous-work/SKILL.md) applies these standards to implementation milestone readiness during explicitly authorized autonomous work.
+Use these standards when supporting specification-review findings, conformance findings, or completion claims, and when interpreting checks during implementation.
+Consulting them does not start an audit.
+
+## Scope and findings
+
+Establish the artifact, governing requirements, and inspected scope before assessing it.
+Separate observed defects, assumptions, unresolved questions, and optional improvements.
+For each finding, identify its location, evidence, consequence, and smallest useful correction.
+Report exclusions, deferrals, and unavailable validation; silence does not establish completeness.
+Loading this reference grants no permission to repair artifacts or write issues.
+Apply task-specific permissions and stopping conditions from the applicable skill.
+
+## What checks establish
+
+[Testing](testing.md) owns test construction.
+[Autonomous-work](../autonomous-work/SKILL.md) applies these standards to implementation milestone readiness during explicitly authorized autonomous work.
 
 A worker report, aggregate test count, correct helper, or atomic commit is not evidence that the assembled path works. Distinguish:
 

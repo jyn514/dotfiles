@@ -120,7 +120,7 @@ Recommend the smallest distinguishing tests. If permanent test changes are autho
 use [testing guidance](../references/testing.md) for contracts, regression/valid-change evidence, and test
 reachability; use `property-based-testing` when a whole input domain needs coverage.
 After adding tests, rerun the unchanged baseline and relevant mutations in a fresh,
-separately identified run. Use [completion review](../review/references/completion.md) only for its declared completion-audit
+separately identified run. Use [completion review](../completion-audit/SKILL.md) only for its declared completion-audit
 scope, not as a required campaign phase.
 
 Finish with the target and selection method, execution-path evidence, outcome counts

@@ -1,4 +1,11 @@
-# Conformance review
+---
+name: audit-spec-against-impl
+description: Compare implementation and tests with the current normative specification for missing or partial implementation, undocumented intentional behavior, spec lag, and obsolete requirements. Use for bounded or whole-spec conformance audits and bidirectional drift. A review request authorizes findings only; reconcile specification text or file issues only when requested. Do not implement fixes. Not for critiquing a specification's design or auditing completion of an owned change.
+---
+
+# Audit specification against implementation
+
+Use [evidence standards](../references/review-evidence.md) to support findings and state what each check establishes.
 
 ## Establish scope and authority
 
@@ -16,7 +23,7 @@ If the specification is missing or ambiguous, or the tracker is unavailable, rep
 
 Start with files, sections, symbols, tests, commands, or revisions named by the request.
 For a named revision, inspect its changes first; treat a spec-changing revision as the requirement delta and audit the current tree against the resulting specification.
-Only when the request gives no narrower scope, audit the current specification using [Whole-spec audit](whole-spec-audit.md).
+Only when the request gives no narrower scope, audit the current specification using [Whole-spec audit](references/whole-spec-audit.md).
 Use the current specification and issue history as the gap ledger.
 
 A review-only request authorizes findings, not specification edits or issue writes.

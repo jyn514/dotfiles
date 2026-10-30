@@ -1,11 +1,17 @@
 ---
 name: skill-authoring
-description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route; changing when another prompt, instruction, or skill invokes it (even if the target skill is unchanged); or diagnosing failures caused by ambiguous guidance, bad routing, or missing decision rules. Do not use for an isolated missed instruction or for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use review; for whole-artifact editorial review use holistic-writing; for bounded local polishing use tighten-prose.
+description: Create or evaluate portable agent skills, including existing or proposed discovery triggers, scope, workflows, and supporting package structure. Use for substantive skill changes, skill critique, replacing instructions with a skill route, changing when a caller invokes a skill, or diagnosing ambiguous guidance, bad routing, and missing decision rules. Not for an isolated missed instruction or localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. Use holistic-writing for whole-artifact editorial review and tighten-prose for bounded local polishing.
 ---
 
 # Skill authoring
 
-Create skills that change action reliably without burdening every prompt.
+Create or evaluate skills that change action reliably without burdening every prompt.
+
+For review, inspect the existing or proposed guidance and its callers, then apply §6's discovery and procedure checks.
+Use §1's provenance checks when assessing a proposed correction.
+Report supported findings and the smallest useful corrections; a review request does not authorize edits or creation of a replacement skill.
+Consult the [non-narrowing check](../spec-review/SKILL.md#non-narrowing-check) when a concrete question concerns supported cases or governing authority, not as another full review.
+For creation or substantive changes, follow the workflow below.
 
 ## 1. Justify the skill
 
@@ -121,7 +127,7 @@ Keep the main skill sufficient to choose and begin the workflow.
 Refer to owning skills by name rather than copying their procedures; links to specific sections are optional.
 Say when to read or run each reference, and distinguish its scope from local work.
 Preserve referenced triggers and phase boundaries.
-For example, consult [review evidence standards](../review/references/evidence.md) before work without invoking its completion audit.
+For example, consult [review evidence standards](../references/review-evidence.md) before work without invoking its completion audit.
 
 Keep `SKILL.md` procedural and short.
 Move bulky examples or variant detail to directly linked references, read only when needed.

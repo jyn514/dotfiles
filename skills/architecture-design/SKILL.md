@@ -1,14 +1,20 @@
 ---
 name: architecture-design
-description: "Design, assess, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Use also when authoring or revising a design/specification requires choosing an approach or introducing or changing guarantees, supported cases, or failure behavior, even when the request is framed as updating documentation. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, recording already-settled decisions, prose-only edits, routine local edits with settled boundaries, or current-change review."
+description: "Design, critique, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Use also when authoring or revising a design/specification requires choosing an approach or introducing or changing guarantees, supported cases, or failure behavior, even when the request is framed as updating documentation. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, recording already-settled decisions, prose-only edits, routine local edits with settled boundaries, or current-change review."
 ---
 
 # Architecture Design
 
-Design or assess one selected subsystem and decide whether changing it is worth the churn.
+Design or critique one selected subsystem and decide whether changing it is worth the churn.
 Produce a falsifiable recommendation, not a diagram justified by file size.
 Trace one real caller → handler → effect path before proposing a replacement; for greenfield work, trace the closest existing primitive or integration caller.
 Recommend the smallest sufficient change; when evidence is missing, propose a decision-changing check rather than a larger architecture.
+
+For critique, evaluate the supplied candidate using the relevant caller trace, principles, and boundary or risk checks.
+Report supported findings, their consequences, and the smallest useful corrections.
+A review request does not authorize edits or require developing a replacement architecture.
+Use the design procedure below when developing or comparing approaches is requested.
+For a concrete question about whether the proposed contract narrows governing requirements, consult the [non-narrowing check](../spec-review/SKILL.md#non-narrowing-check), not another full review.
 
 ## Read First
 
@@ -77,6 +83,8 @@ Examples:
 - Turning an in-memory cache into a disk cache changes the boundary because persistence and recovery behavior change.
 
 ## Principles
+
+Use these principles for both design and critique; consulting them does not start the full design procedure.
 
 Avoid unnecessary coupling.
 Interfaces should expose the caller’s intent without requiring knowledge of the callee’s implementation.

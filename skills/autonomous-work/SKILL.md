@@ -84,7 +84,7 @@ For implementation work, use these companion procedures when their conditions ap
 
 - Use [change guidelines](../references/change-with-evidence.md#design-choices) for unresolved modeling, interface, ownership, or invariant decisions, and [testing guidance](../references/testing.md) for test-strategy choices.
   For an established pattern, follow the surrounding code and tests without another design procedure.
-- [Review evidence standards](../review/references/evidence.md) distinguish local/component checks, integration, and required real-input evidence.
+- [Review evidence standards](../references/review-evidence.md) distinguish local/component checks, integration, and required real-input evidence.
   Consult them for milestone readiness; run the full audit only after substantial owned implementation is complete.
   A routine localized change needs a diff review and appropriate native checks, not a full audit.
 - For a new independently invoked tool, use [new-tool-development](../new-tool-development/SKILL.md) to check readiness.
@@ -164,7 +164,7 @@ Declare the whole run blocked only when no meaningful authorized progress remain
 
 At completion, compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
 Require concrete evidence for every explicit requirement and no required work remaining.
-For completed implementation, apply the review threshold above and [completion review](../review/references/completion.md) when required.
+For completed implementation, apply the review threshold above and [completion review](../completion-audit/SKILL.md) when required.
 For research, writing, planning, and review, verify the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.
 
 If only externally blocked obligations remain, report partial completion, exact blockers, and the next possible action.

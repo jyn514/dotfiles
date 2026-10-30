@@ -1,6 +1,13 @@
-# Design review
+---
+name: spec-review
+description: Audit a supplied specification for internal consistency, traceability to governing requirements, unsupported restrictions, and completeness appropriate to its declared stage. Subject-specific design critique stays with the relevant subject skill; use this skill when the requested result is an assessment of the specification's contract. Not for comparing implementation with a specification or auditing completed work.
+---
 
-Review the requested artifact against its purpose and project constraints.
+# Specification review
+
+Use [evidence standards](../references/review-evidence.md) to support findings and state what each check establishes.
+
+Audit the specification's contract: its declared requirements, supported cases, ownership, interfaces, failure behavior, and verification obligations.
 Report findings; revise the artifact only when requested, except for the TODO comments that `new-tool-development` permits agents to add to human-authored product briefs.
 
 ## Read First
@@ -10,10 +17,9 @@ Report findings; revise the artifact only when requested, except for the TODO co
 - Establish maturity: an exploratory sketch, a selected design, or an
   implementation-ready specification. Use its stated scope and open questions
   to set the review threshold.
-- Before endorsing a general interface, inspect representative real consumers
-  and their existing ownership contracts. Do not infer their requirements solely
-  from the subsystem being redesigned; flag conflicts with responsibilities they
-  already own.
+- Inspect representative consumers when needed to establish whether the declared
+  inputs, effects, ownership, and guarantees match governing requirements.
+  Do not infer consumer requirements solely from the specification being audited.
 
 ## Maturity-specific review for new-tool artifacts
 
@@ -74,16 +80,10 @@ specifications for responsibilities still assigned to the old owner.
 
 ## Necessity
 
-Ask who uses each feature and whether its implementation and maintenance costs
-are justified. Identify the concrete consumer or constraint behind each mechanism;
-flag machinery supported only by hypothetical needs. Consider whether the same
-requirement can be met by an existing primitive or a narrower interface.
-
-Trace each mechanism to the upstream outcome it is needed to satisfy;
-flag unsupported constraints before evaluating simplifications or alternatives.
-
-Before recommending parser or component reuse, apply the
-[supported-interface rule](../../references/change-with-evidence.md#distinguish-guarantees-from-details).
+Trace each required feature, restriction, and prescribed mechanism to a governing outcome or constraint.
+Flag obligations supported only by hypothetical needs or by the draft's own assertions.
+Distinguish an approved implementation choice from an unsupported product requirement.
+A mechanism appearing in the specification does not establish that upstream requirements demand it.
 
 ## Duplication
 
@@ -102,9 +102,9 @@ Look for missing inputs, results, failure behavior, lifecycle ownership, and
 acceptance evidence where they affect the design's claims. Do not demand a full
 API catalog or implementation plan from a high-level sketch.
 
-Use the [design-risk applicability scan](../../architecture-design/references/design-risks.md#applicability)
-to select checks for the proposed behavior, including runtime progress for asynchronous lifecycles.
-Match findings to the artifact's maturity; these checks do not authorize redesign or require new mechanisms.
+For a concrete question about a declared lifecycle, effect, or failure guarantee, consult the corresponding
+[design-risk check](../architecture-design/references/design-risks.md#applicability).
+Use only checks relevant to the contract and artifact's maturity; they do not require a separate design workflow or new mechanisms.
 
 ## Rationale and principles
 
@@ -115,27 +115,15 @@ explain a decision or prevent a known failure.
 
 ## Orthogonality
 
-Before flagging overlapping interfaces, trace whether they lower to one primitive
-or maintain separate semantics. A configuration shorthand that expands to an
-existing operation need not be a competing mechanism.
-
-Independent implementations with overlapping semantics need a concrete reason.
-A rule such as "X wins over Y" warrants checking whether two mechanisms could
-share one owner; it is not proof of a defect. Preserve intentional language
-bindings, aliases, and scoped overrides with documented precedence.
+Check whether separately named operations or options make distinct promises or restate the same contract.
+A documented alias or shorthand need not be a competing operation.
+Flag contradictory ownership or precedence rules, not multiple names alone.
+Preserve intentional language bindings, aliases, and scoped overrides with documented precedence.
 
 ## Findings
 
-For each finding, identify the location and evidence, the consequence for a
-consumer or implementer, and the smallest useful correction. Separate defects
-from open questions and optional improvements; prioritize design consequences
-over typos and wording. Cite canonical sections or concrete counterexamples
-rather than relying on preference.
-
-Apply the "Principles" section of `architecture-design` when evaluating corrections; use its full procedure when proposing changes to subsystem ownership or interfaces.
-When proposing a new mechanism, first show why deleting a requirement,
-narrowing an existing mechanism, or moving responsibility to its existing owner
-is insufficient.
+Use the shared evidence standards for finding structure and checked-scope reporting.
+Prioritize design consequences over typos and wording; cite canonical sections or concrete counterexamples rather than preference.
 
 If no material issue is supported, say so and name the review's limits. Do not
 manufacture findings to fill categories or prescribe a rewrite when a local

@@ -74,11 +74,12 @@ Draft only the implementation specification when explicitly requested and the ap
 
 Use these normal contributors:
 
-- **`technical-docs`** owns implementation-spec document form, reader tasks, ownership, and prerequisites.
+- [Documentation checks](../holistic-writing/references/documentation.md) cover reader tasks, prerequisites, and operational correctness.
+  Use [design-document guidance](../holistic-writing/references/design-documents.md) for implementation-spec document form.
 - **`holistic-writing`** owns whole-artifact explanation and reader experience after substantial drafting.
 - [Change guidelines](../references/change-with-evidence.md#design-choices) cover ordinary code, API, and schema choices.
 - [Testing guidance](../references/testing.md) covers test strategy.
-- **[Design review](../review/references/design.md)** reviews the completed specification.
+- **[Specification audit](../spec-review/SKILL.md)** checks the completed specification's contract against governing requirements.
 
 #### Conditional contributors — use only when the trigger holds
 

@@ -118,5 +118,5 @@ When reviewing a system and its tests, check both directions: required behavior 
 
 Use [ratchet](../ratchet/SKILL.md) for unresolved enforcement-policy decisions about existing violations, baseline updates, bounded exceptions, or replacing guarantees. A new regression test or a better oracle alone does not need that workflow.
 
-Use [review evidence standards](../review/references/evidence.md) to determine what the checks prove; use the [completion audit](../review/references/completion.md) only after substantial owned edits are complete and its scope applies.
+Use [review evidence standards](review-evidence.md) to determine what the checks prove; use the [completion audit](../completion-audit/SKILL.md) only after substantial owned edits are complete and its scope applies.
 For explicitly authorized autonomous work, [autonomous-work](../autonomous-work/SKILL.md) owns run continuity and acceptance order, not test construction.

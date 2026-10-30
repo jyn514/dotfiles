@@ -200,7 +200,7 @@ Restore only when continued work would endanger unrelated changes or jyn asks.
 ## Documentation
 
 Use the canonical documentation owner.
-When the owner or destination is not already established, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md).
+When the owner or destination is not already established, read [Documentation placement](~/.agents/skills/references/documentation-placement.md).
 
 Choose documentation skills by their catalog scopes.
 Routine additions to an established section do not require a full authoring workflow.

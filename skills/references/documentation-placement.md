@@ -1,6 +1,6 @@
 # Documentation placement
 
-Placement alone does not require the `technical-docs` authoring workflow.
+Placement alone does not require a whole-artifact writing workflow.
 Restructuring existing pages or navigation belongs to `reorganize-docs`.
 
 When changing behavior, update affected documentation, including code comments, in the same change.
@@ -34,11 +34,11 @@ internal capture timeout belongs in a README only if readers need it to diagnose
 or operate the system.
 
 For a small addition to an established section, validate the changed text and links.
-A new heading alone does not require the authoring skill.
-Use [technical-docs](../SKILL.md) for documentation-specific authoring decisions
-or an explicit documentation usability/correctness review.
-Use `readme-writing` for an introductory README without requiring the full
-technical-docs workflow.
-Use [holistic-writing](../../holistic-writing/SKILL.md) for general whole-artifact
-prose authoring, substantial revision, or editorial review of explanation and the
-reading experience, including prose outside documentation.
+A new heading alone does not require a whole-artifact workflow.
+Use [holistic-writing](../holistic-writing/SKILL.md) for whole-artifact authoring,
+substantial revision, or editorial review, including documentation usability or
+correctness reviews and prose outside documentation.
+Its [documentation reference](../holistic-writing/references/documentation.md)
+covers documentation-specific reader tasks, forms, prerequisites, and workflow checks.
+Use `readme-writing` independently for an introductory README; no sequence of writing
+skills is required.

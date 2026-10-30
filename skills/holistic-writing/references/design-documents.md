@@ -2,7 +2,7 @@
 
 Use this reference when documenting an already selected design or writing an implementation spec.
 It does not select a design, author requirements, or replace a specialized lifecycle or design-review owner.
-Use `new-tool-development` for its tool lifecycle and brief restrictions, `requirements-definition` for requirements from an approved brief, and [design review](../../review/references/design.md) for review-only design analysis.
+Use `new-tool-development` for its tool lifecycle and brief restrictions, `requirements-definition` for requirements from an approved brief, and [spec review](../../spec-review/SKILL.md) for auditing the specification's contract.
 
 ## Explain before machinery
 

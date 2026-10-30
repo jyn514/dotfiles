@@ -78,7 +78,8 @@ class AgentSkillsPackageTest(unittest.TestCase):
             shutil.copytree(ROOT / "skills", home / ".claude/skills")
             descriptions = {
                 name: f"Review {name} fixture artifacts. Preserve this second-sentence discovery trigger."
-                for name in ("review", "jj-workflow", "skill-authoring", "delegation", "holistic-writing")
+                for name in ("spec-review", "audit-spec-against-impl", "completion-audit",
+                             "jj-workflow", "skill-authoring", "delegation", "holistic-writing")
             }
             for name, description in descriptions.items():
                 skill = home / f".claude/skills/{name}/SKILL.md"
@@ -94,7 +95,8 @@ class AgentSkillsPackageTest(unittest.TestCase):
             for name, description in descriptions.items():
                 with self.subTest(skill=name):
                     self.assertIn(f"- {name}: {description}\n", result.stdout)
-            self.assertNotIn("- double-check:", result.stdout)
+            for retired in ("review", "double-check", "technical-docs"):
+                self.assertNotIn(f"- {retired}:", result.stdout)
 
     def test_package_readme_relocates_only_supported_inline_links(self) -> None:
         relocate = runpy.run_path(str(ROOT / "dev/publish-skills"))["package_readme"]

@@ -31,7 +31,7 @@ Say whether you want an assessment, new tests, or implementation changes.
 
 [Architecture design](architecture-design/SKILL.md) starts with the existing implementation and the change you need.
 It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
-Use it to assess a proposed abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
+Use it to critique a proposed architecture or abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
 
 [Creative inquiry](creative-inquiry/SKILL.md) questions the framing of the task itself.
 Use it when exploring possibilities, examining assumptions, or asking whether the current approach solves the right problem.
@@ -59,13 +59,13 @@ Use it for reports, essays, instructions, prompts, and substantial revisions.
 [Tighten prose](tighten-prose/SKILL.md) is for local wording, rhythm, repetition, and clarity when the surrounding explanation already works.
 
 [README writing](readme-writing/SKILL.md) introduces a project to someone deciding whether or how to use it.
-[Technical docs](technical-docs/SKILL.md) handles tutorials, how-to guides, references, and explanations,
-including prerequisites, warnings, and the routes readers need to complete a task.
+For tutorials, how-to guides, references, and explanations, consult the [documentation checks](holistic-writing/references/documentation.md)
+for prerequisites, warnings, and the routes readers need to complete a task.
 [Reorganize docs](reorganize-docs/SKILL.md) changes the arrangement of existing documentation: splits, consolidation, navigation, and archives.
-Choose by what needs changing, rather than sending every document through all three.
+Choose by what needs changing; documentation checks are a reference, not another writing workflow.
 
 For an upstream bug report, support question, or design discussion, use [issue reporting](issue-reporting/SKILL.md).
-For a new skill or a change to when and how one operates, use [skill authoring](skill-authoring/SKILL.md).
+For creating or evaluating a skill's behavior, triggers, and procedures, use [skill authoring](skill-authoring/SKILL.md).
 
 Provide the draft, its intended readers, and what they need to understand or do.
 For factual or technical prose, include the source material the agent must preserve.
@@ -81,8 +81,10 @@ It does not turn an ordinary request into an autonomous run.
   Distinguish successful outcomes from diagnosed holds, and a ready plan from a completed product.
   The goal can be selected while architecture or input facts remain unresolved.
 
-[Review](review/SKILL.md) needs a comparison target: a design against its requirements, an implementation against its specification,
-or completed work against the requested outcome.
+[Specification review](spec-review/SKILL.md) audits a specification's contract for consistency, requirement traceability, unsupported restrictions, and stage-appropriate completeness.
+[Specification/implementation audit](audit-spec-against-impl/SKILL.md) finds disagreements between the specification, implementation, and tests.
+[Completion audit](completion-audit/SKILL.md) checks completed substantial owned work against the requested outcome and acceptance conditions.
+They share [evidence standards](references/review-evidence.md), not a mandatory sequence of reviews.
 For a small, localized edit, a diff review and the appropriate native check can be enough.
 A review request does not authorize repairs.
 
@@ -156,7 +158,10 @@ The `references/` directory supplies guidance used by skills and shared instruct
 ### Updating an installation
 
 Reload Pi or start a new client session to refresh the skill catalog after updating it.
-Older names such as `spec-review`, `audit-spec-against-impl`, and `double-check` now belong to [review](review/SKILL.md).
+The former `review` entry point is split into [spec-review](spec-review/SKILL.md),
+[audit-spec-against-impl](audit-spec-against-impl/SKILL.md), and [completion-audit](completion-audit/SKILL.md).
+The former `double-check` task belongs to completion-audit.
+The former `technical-docs` skill is now a [documentation reference](holistic-writing/references/documentation.md) within holistic-writing.
 Whole-artifact work formerly called `tighten-docs` belongs to [holistic writing](holistic-writing/SKILL.md);
 local polishing belongs to [tighten prose](tighten-prose/SKILL.md).
 

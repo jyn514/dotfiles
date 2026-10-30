@@ -22,7 +22,7 @@ Otherwise, raise the idea only as a non-normative suggestion.
 Use other sources only when the requester or governing product documentation identifies them as authoritative.
 Do not infer approval from a draft, discussion, ticket, request for ideas, or implementation task.
 
-This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to [design review](../review/references/design.md). Any later request for an implementation specification returns through `new-tool-development`, not [design review](../review/references/design.md).
+This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to [design review](../spec-review/SKILL.md). Any later request for an implementation specification returns through `new-tool-development`, not [design review](../spec-review/SKILL.md).
 
 If the brief is missing, approval is unclear, or the request is not explicit, stop and report the missing prerequisite instead of drafting.
 
@@ -100,7 +100,7 @@ Preserve the source's distinction between rule derivation and its other permitte
 
 **Resolve unsettled evidence.**
 If sources leave evidence unsettled and plausible readings would accept different cases, do not choose a new burden to make the evidence look complete.
-Record `NEEDS_PRODUCT_DECISION` and apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check), including its eligibility-ambiguity procedure.
+Record `NEEDS_PRODUCT_DECISION` and apply [design review's Non-narrowing check](../spec-review/SKILL.md#non-narrowing-check), including its eligibility-ambiguity procedure.
 
 Choose evidence that could show the requirement was not met, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one.
 If defining such evidence would require inventing behavior, do not fill the gap in the requirement or its acceptance evidence.
@@ -136,7 +136,7 @@ Before presenting the draft, verify:
 
 - no requirement lacks authoritative traceability;
 - every brief goal and supported constraint appears in coverage;
-- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check) to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
+- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply [design review's Non-narrowing check](../spec-review/SKILL.md#non-narrowing-check) to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
 - non-goals are not accidentally restated as scope;
 - material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;
@@ -148,7 +148,7 @@ Report inspected sources, excluded or unresolved items, and any ambiguity that p
 
 ### 7. Require approval and stop
 
-Present the requirements as a draft requiring explicit human approval. Route the draft and review questions to [design review](../review/references/design.md), then stop pending explicit human approval. Do not proceed to implementation specification or implementation from this skill. If a later implementation-spec request arrives, return it through `new-tool-development`; [design review](../review/references/design.md) does not own implementation-spec progression. Approval of the requirements is not approval of an implementation.
+Present the requirements as a draft requiring explicit human approval. Route the draft and review questions to [design review](../spec-review/SKILL.md), then stop pending explicit human approval. Do not proceed to implementation specification or implementation from this skill. If a later implementation-spec request arrives, return it through `new-tool-development`; [design review](../spec-review/SKILL.md) does not own implementation-spec progression. Approval of the requirements is not approval of an implementation.
 
 ## Output rules
 

@@ -22,7 +22,7 @@ A request such as “anything we forgot?” or “do you suggest changes to docs
 Reuse an existing completion audit if its requirements, implementation, and validation conditions are unchanged.
 If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
 
-For work not covered by an existing audit, use [completion review](../review/references/completion.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
+For work not covered by an existing audit, use [completion review](../completion-audit/SKILL.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
 
 - each explicit requirement and later correction;
 - the final implementation or document state;
@@ -103,7 +103,8 @@ Use that assessment to decide whether process improvements are warranted.
 
 For each suggestion, name the affected owner and the failure it would prevent.
 Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible.
-Route documentation-specific authoring to `technical-docs`, whole-artifact explanation and reader experience to `holistic-writing`, skill behavior to `skill-authoring`, and cleanup to `cleanup-triage` or another owning skill rather than duplicating its procedure here.
+Route whole-artifact explanation and reader experience to `holistic-writing`, consulting its [documentation checks](../holistic-writing/references/documentation.md) for documentation-specific work.
+Route skill behavior to `skill-authoring`, and cleanup to `cleanup-triage` or another owning skill rather than duplicating its procedure here.
 
 If the session contains concrete friction, report at least one improvement; otherwise state why none was warranted.
 Do not make up an improvement simply to satisfy this skill; "things are in good shape" is an acceptable answer.
