@@ -14,40 +14,54 @@ Use [documentation placement](../technical-docs/references/placement.md) to choo
 Use `holistic-writing` for whole-artifact authoring and reader experience.
 It does not grant implementation or approval authority.
 
-## 1. Find the decision or consequence to explain
+## 1. Resolve what needs human judgment
 
-- **Read the context.** Read the current request, previous answers, authoritative sources, and affected examples. Distinguish settled decisions, deferred decisions, and genuinely unanswered questions.
-- **Resolve retrievable facts.** Resolve factual or procedural issues you can investigate yourself. Do not ask a human to troubleshoot a tool, inspect records, or supply evidence you can retrieve.
-- **Check apparent contradictions.** Before declaring a contradiction, read the surrounding explanation, related requirements, and examples. Check directly documented behavior before inventing elaborate explanations or case-specific exceptions. An apparent omission may be explained elsewhere. Separate explicit statements from your reconstruction; a plausible explanation is not source authority.
-- **Trace category provenance.** Audit the premises of the apparent conflict. A label or category can come from an authoritative source while its application to a particular case comes from an unreviewed agent assessment. Identify both origins; do not treat the assessment as an established source fact. If a requirement's applicability depends on it, state that uncertainty.
-- **Check applicable units.** Before presenting “rule A versus rule B,” identify each rule's applicable unit, such as a word, syllable, stroke, record, or batch.
-  Investigate whether a rule was applied outside that unit or the implementation crossed its boundary.
-  Do not ask the human to resolve an unexamined scope assumption.
-- **Check applicability before precedence.** Before asking about rule precedence, use contrasting cases to test whether the rules apply to the same situation.
-  For example, in thumb, b is silent; in stumble, b starts the second syllable.
-  The same written letters do not necessarily make the same rule applicable.
-  Use the contrast to resolve applicability before asking about any remaining precedence decision.
-- **Ask only for missing judgment.** Ask only for judgment or intent that remains missing. If applicable authoritative guidance settles the issue, handle it as agent work within existing authorization, with the required checks—not a new approval question.
-- **Show why the choice matters.** Establish why the choice matters: what changes in behavior, effort, cost, risk, access, or the evidence people can rely on?
-  When alternatives can be tested, compare them with unrelated variables fixed and show the actual difference.
-  Otherwise, use a concrete case and state what remains unverified.
-  Distinguish adding an option from replacing an existing result.
-  A successful test does not establish that an alternative is supported by the requirements.
-  If a change affects only explanation or internal bookkeeping, say so; do not claim it fixes observable behavior.
-- **Trace a claimed harm.** For a claimed bug, show a reachable sequence: the relevant state before the action, what the action changes, and the resulting harm.
-  For a claimed safeguard, show the harmful sequence it prevents and where it intervenes.
-  Check how that state arises, whether it can still exist when the action runs, and which existing checks or cleanup already prevent the harm.
-  For example, clearing a retry timer loses an expected retry only if that timer is still pending; clearing an already-empty timer does not demonstrate a bug.
-  Distinguish a reproduced failure, a source-backed trace, and a hypothetical risk with explicit assumptions.
-  Do not invent extra events or bypass existing checks to make the example work.
-  If no harmful consequence is established, withdraw the bug claim or mark the risk unverified and reassess the proposed mechanism.
-  A name such as “accounting state” or “recovery state” is not evidence that resetting it loses useful work.
-- **Separate work from decisions.** Separate remaining work from decisions needed now. Evidence gathering, licensing investigation, mechanical repairs, and validation are not blanket approvals to request from the human. When no concrete human choice is ready, say none is needed now and continue authorized work; that is not approval of the work or later acceptance. Bring a narrow question when the evidence exposes one; keep later acceptance reviews separate.
-- **Respect settled and deferred choices.** Do not reopen a settled choice or requeue a deferred approval without a new reason. Keep deferred material outside the active reading list.
+Start with the current request and the decisions already made.
+Read previous answers, authoritative sources, and affected examples.
+Separate settled decisions, deferred decisions, and questions that are still open.
+
+### Resolve facts and scope first
+
+Investigate factual or procedural questions you can answer yourself.
+Do not ask a human to troubleshoot a tool, inspect records, or provide evidence you can retrieve.
+
+Before calling something a contradiction, check the relevant sources and examples.
+If the decision depends on how a rule or category applies to a case, follow [Rule scope and applicability](references/rule-scope.md) before asking a human to resolve it.
+
+### Establish the consequence
+
+Explain why the choice matters: what changes in behavior, effort, cost, risk, access, or the evidence people can rely on?
+When alternatives can be tested, compare them with other variables fixed and show the actual difference.
+Otherwise, give a concrete case and say what remains unverified.
+Distinguish adding an option from replacing an existing result.
+A successful test does not prove that requirements support the alternative.
+If a change affects only explanation or internal bookkeeping, say so; do not claim it fixes observable behavior.
+
+For a claimed bug, trace a reachable sequence: the relevant state before the action, what the action changes, and the resulting harm.
+For a claimed safeguard, show the harmful sequence it prevents and where it intervenes.
+Check how the state arises, whether it can still exist when the action runs, and which existing checks or cleanup already prevent the harm.
+For example, clearing a retry timer loses an expected retry only if the timer is pending; clearing an empty timer does not demonstrate a bug.
+Distinguish reproduced failures, source-backed traces, and hypothetical risks, and state assumptions explicitly.
+Do not invent extra events or bypass existing checks to make the example work.
+If no harm is established, withdraw the bug claim or mark the risk unverified and reassess the proposed mechanism.
+A name such as “accounting state” or “recovery state” does not prove that resetting it loses useful work.
+
+### Ask only for the unresolved decision
+
+Ask only for judgment or intent that remains missing.
+If authoritative guidance settles the issue, handle it as agent work within existing authorization and perform the required checks; do not ask for new approval.
+
+Separate work from decisions needed now.
+Evidence gathering, licensing investigation, mechanical repairs, and validation are not blanket approvals to request.
+When no concrete human choice is ready, say that no decision is needed now and continue authorized work; this does not approve that work or later acceptance.
+Ask a narrow question when evidence exposes one, and keep later acceptance reviews separate.
+
+Do not reopen a settled choice or requeue a deferred approval without a new reason.
+Keep deferred material outside the active reading list.
 
 Default to one decision or consequence per explanation and the smallest useful batch.
-Identify what the answer would change and what it would not authorize.
-If that scope is unclear, resolve it before drafting.
+State what the answer would change and what it would not authorize.
+Resolve unclear scope before drafting.
 
 ## 2. Write the human-facing page
 
