@@ -1,14 +1,12 @@
 ---
 name: reorganize-docs
-description: "Restructure existing project documentation or navigation, or review its organization and routes without editing. Use for information architecture, consolidation, splits, renames, archives, and linked-document navigation assessment. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site build/rendering correctness; new-content placement uses the technical-docs placement reference, not the authoring skill."
+description: "Restructure existing project documentation or navigation, or review its organization and routes without editing. Use for information architecture, consolidation, splits, renames, archives, and linked-document navigation assessment. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site build/rendering correctness."
 ---
 
 # Reorganize Documentation
 
 Improve how readers find and use documentation without losing policy, rationale, examples, or historical evidence needed by its readers.
 
-Use the [documentation placement reference](../technical-docs/references/placement.md)
-to choose where new content belongs, without loading the authoring skill.
 Do not invoke this workflow merely to add a paragraph or section to an existing owner.
 For review-only work, follow Read first, Observe, Diagnose, Verify, and Report within the selected documentation scope.
 Skip Plan, Edit, and verification of changes not made; a review request does not authorize file changes.

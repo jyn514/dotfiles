@@ -12,7 +12,6 @@ A shorter, self-contained replacement is valid; retaining the source's complete 
 
 This skill is sufficient to begin a README; do not load every broader writing workflow by default.
 Use `holistic-writing` for general whole-artifact reading guidance and `tighten-prose` for bounded local polish.
-Use [documentation placement](../technical-docs/references/placement.md) to choose owners for new documentation.
 Use `reorganize-docs` when extracting or moving existing material, or judging navigation and the documentation set.
 Those routes do not expand the task's write permission.
 

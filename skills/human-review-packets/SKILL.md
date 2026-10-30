@@ -10,7 +10,6 @@ Use this workflow for consequential approvals or explanations that need substant
 Ask simple preference questions, routine confirmations, and requests for missing facts directly.
 This skill owns selection and framing of human review questions and explanations, not the underlying investigation or design selection.
 Use the owning investigation or design skill for that work.
-Use [documentation placement](../technical-docs/references/placement.md) to choose a documentation owner and destination.
 Use `holistic-writing` for whole-artifact authoring and reader experience.
 It does not grant implementation or approval authority.
 

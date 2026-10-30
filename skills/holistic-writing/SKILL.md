@@ -12,8 +12,6 @@ Use the same editorial criteria when writing and reviewing: prose that needs rev
 
 ## Scope and authority
 
-For a routed editorial pass, use the established reader, purpose, requirements, and factual evidence.
-Review the artifact rather than restarting its investigation, design, or authoring workflow.
 Specialized owners decide its substance; an editorial pass does not expand permission to change it.
 A review request does not authorize prose edits.
 For review-only work, report findings, evidence, consequences, and the smallest useful corrections.
@@ -22,7 +20,7 @@ Ask when missing context would materially change the result rather than inventin
 
 Use adjacent owners only for their tasks, not as compulsory stages of this pass:
 
-- `technical-docs` owns documentation-specific authoring decisions; placement alone uses its [placement reference](../technical-docs/references/placement.md).
+- `technical-docs` owns documentation-specific authoring decisions.
 - `readme-writing` owns introductory README writing and review, not every file named README.
 - `reorganize-docs` owns existing documentation trees, page splits, renames, consolidation, and navigation.
 - `new-tool-development` owns its tool lifecycle and human-authored product briefs.
@@ -38,10 +36,18 @@ If an owner is unavailable, preserve its boundaries, state the limitation, and d
 
 ## 1. Read the artifact and establish its authority
 
-Read the complete current artifact, its relevant entry points, authoritative inputs, and representative uses.
+Read the complete current artifact.
+Choose the entry path from the work already done:
+
+- **Direct authoring or review:** establish any missing reader, purpose, requirements, and factual evidence.
+  Use the brief, relevant entry points, authoritative inputs, and representative uses.
+- **Editorial pass following another procedure:** reuse the established reader, purpose, requirements, and factual evidence.
+  Do not reconstruct the investigation or reopen settled design decisions.
+  Check the artifact against those inputs.
+  Inspect additional sources when a claim lacks support or the artifact contradicts the brief or evidence.
+
 For creation, inspect the material the new artifact must explain and any established destination or form.
 For an editorial pass, retain the destination unless relocation is requested.
-Use the placement reference when the documentation owner or destination is not already established.
 Do not force essays, reports, or instructions into documentation forms.
 
 ### Encounter the reading experience
@@ -71,7 +77,7 @@ A low-effort impression concerns the presentation; it does not establish who wro
 
 ### Establish the reader and purpose
 
-Identify the reader's task, assumed background, and the understanding or action the artifact must support.
+Use the established reader's task, assumed background, and intended understanding or action; identify any that remain unspecified.
 Make its title and opening intelligible without session context.
 Define named proposals or policies rather than relying on their labels.
 Explain unfamiliar specialist terms before consequential use while preserving precise established domain terms.
