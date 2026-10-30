@@ -64,6 +64,14 @@ Add only the missing distinction, reasoning step, or worked example; a research 
 
 ### Require recurring use and place discovery
 
+When reviewing or changing routing, first identify what the target harness exposes at the decision point.
+Separate always-loaded instructions and descriptions from on-demand skill bodies and references; verify the actual loading model.
+Trace how the agent chooses the next resource using only information already available.
+An applicability statement inside an unloaded reference cannot make that reference discoverable.
+
+Reuse an existing visible trigger when it already covers the task instead of adding a parallel caller route or a new skill.
+Keep a separate route when it supplies a distinct task-specific decision or serves callers that do not receive the existing trigger.
+
 Require a concrete repeated use, second consumer, or hard constraint.
 Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
 
