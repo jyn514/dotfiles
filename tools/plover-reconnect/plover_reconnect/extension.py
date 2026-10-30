@@ -28,6 +28,7 @@ class Extension:
         self._lock = threading.RLock()
         self._timer: threading.Timer | None = None
         self._generation = 0
+        self._registration: object | None = None
         self._started = False
 
     def start(self) -> None:
@@ -38,8 +39,9 @@ class Extension:
                 return
             self._generation += 1
             generation = self._generation
+            registration = object()
             try:
-                usb.on_connected(self._connected)
+                usb.on_connected(lambda device: self._connected(device, registration))
                 usb.get_devices()
             except BaseException:
                 try:
@@ -47,12 +49,14 @@ class Extension:
                 except BaseException:
                     log.warning("unable to unregister failed USB reconnect watcher", exc_info=True)
                 raise
+            self._registration = registration
             self._started = True
             log.debug("USB reconnect watcher started (generation %d)", generation)
 
     def stop(self) -> None:
         with self._lock:
             self._started = False
+            self._registration = None
             self._generation += 1
             timer, self._timer = self._timer, None
             if timer is not None:
@@ -66,7 +70,7 @@ class Extension:
                 except BaseException:
                     log.warning("unable to unregister USB reconnect watcher", exc_info=True)
 
-    def _connected(self, device: Any) -> None:
+    def _connected(self, device: Any, registration: object) -> None:
         try:
             fingerprint = read(config_path())
         except (OSError, ValueError, TypeError, UnicodeError) as error:
@@ -75,7 +79,8 @@ class Extension:
         if not fingerprint.matches(device):
             return
         with self._lock:
-            if not self._started:
+            # A retained callback must not acquire authority from a later start().
+            if not self._started or registration is not self._registration:
                 return
             # Cancellation cannot revoke a callback already waiting for this lock.
             # Invalidate superseded work before attempting to cancel it.

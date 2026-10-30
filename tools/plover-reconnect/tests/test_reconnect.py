@@ -1,7 +1,9 @@
 import sys
 import tempfile
+import threading
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -57,13 +59,16 @@ class ReconnectTest(unittest.TestCase):
         result.timer_factory = FakeTimer
         return result
 
+    def connected(self, device):
+        self.usb.on_connected.call_args.args[0](device)
+
     def test_start_enumeration_and_unrelated_device_do_not_reset(self):
         watcher = self.extension()
         with mock.patch.object(extension, "usb", self.usb), mock.patch.object(
             extension, "config_path", return_value=self.path
         ):
             watcher.start()
-            watcher._connected(Device(9, 9))
+            self.connected(Device(9, 9))
         self.engine.reset_machine.assert_not_called()
         self.usb.get_devices.assert_called_once_with()
 
@@ -74,9 +79,9 @@ class ReconnectTest(unittest.TestCase):
             extension, "config_path", return_value=self.path
         ):
             watcher.start()
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
             first = FakeTimer.instances[-1]
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
             second = FakeTimer.instances[-1]
             second.fire()
         self.assertTrue(first.cancelled)
@@ -94,9 +99,9 @@ class ReconnectTest(unittest.TestCase):
                         extension, "config_path", return_value=self.path
                     ), mock.patch.object(extension.log, "warning") as warning:
                         watcher.start()
-                        watcher._connected(Device(1, 2))
+                        self.connected(Device(1, 2))
                         old_timer = FakeTimer.instances[-1]
-                        watcher._connected(Device(1, 2))
+                        self.connected(Device(1, 2))
                         current_timer = FakeTimer.instances[-1]
                         self.assertTrue(current_timer.started)
                         self.assertEqual(warning.call_count, int(fail_cancel))
@@ -118,7 +123,7 @@ class ReconnectTest(unittest.TestCase):
             extension, "config_path", return_value=self.path
         ):
             watcher.start()
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
             timer = FakeTimer.instances[-1]
             watcher.stop()
             timer.fire()
@@ -132,7 +137,7 @@ class ReconnectTest(unittest.TestCase):
             extension, "config_path", return_value=self.path
         ), self.assertLogs(extension.log, "WARNING"):
             watcher.start()
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
             FakeTimer.fail_cancel = True
             watcher.stop()
             watcher.stop()
@@ -145,12 +150,84 @@ class ReconnectTest(unittest.TestCase):
             extension, "config_path", return_value=self.path
         ):
             watcher.start()
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
             old_timer = FakeTimer.instances[-1]
             watcher.stop()
             watcher.start()
             old_timer.fire()
         self.engine.reset_machine.assert_not_called()
+
+    def test_old_registered_callback_cannot_replace_fresh_timer_after_restart(self):
+        write(self.path, DeviceFingerprint(1, 2))
+        watcher = self.extension()
+        with mock.patch.object(extension, "usb", self.usb), mock.patch.object(
+            extension, "config_path", return_value=self.path
+        ):
+            watcher.start()
+            old_callback = self.usb.on_connected.call_args.args[0]
+            watcher.stop()
+            watcher.start()
+            self.connected(Device(1, 2))
+            current_timer = FakeTimer.instances[-1]
+            old_callback(Device(1, 2))
+            self.assertEqual(len(FakeTimer.instances), 1)
+            self.assertFalse(current_timer.cancelled)
+            current_timer.fire()
+        self.engine.reset_machine.assert_called_once_with()
+
+    def test_callback_reading_configuration_cannot_enter_restarted_lifecycle(self):
+        write(self.path, DeviceFingerprint(1, 2))
+        watcher = self.extension()
+        reading = threading.Event()
+        resume = threading.Event()
+
+        def delayed_read(path):
+            fingerprint = read(path)
+            if not reading.is_set():
+                reading.set()
+                if not resume.wait(5):
+                    raise RuntimeError("configuration read was not released")
+            return fingerprint
+
+        with mock.patch.object(extension, "usb", self.usb), mock.patch.object(
+            extension, "config_path", return_value=self.path
+        ), mock.patch.object(extension, "read", side_effect=delayed_read), ThreadPoolExecutor(
+            max_workers=1
+        ) as pool:
+            watcher.start()
+            old_callback = self.usb.on_connected.call_args.args[0]
+            delivery = pool.submit(old_callback, Device(1, 2))
+            try:
+                self.assertTrue(reading.wait(5))
+                watcher.stop()
+                watcher.start()
+                self.connected(Device(1, 2))
+                current_timer = FakeTimer.instances[-1]
+            finally:
+                resume.set()
+                delivery.result(timeout=5)
+            self.assertEqual(len(FakeTimer.instances), 1)
+            self.assertFalse(current_timer.cancelled)
+            current_timer.fire()
+        self.engine.reset_machine.assert_called_once_with()
+
+    def test_selection_changes_apply_to_next_attachment_not_pending_reset(self):
+        write(self.path, DeviceFingerprint(1, 2))
+        watcher = self.extension()
+        with mock.patch.object(extension, "usb", self.usb), mock.patch.object(
+            extension, "config_path", return_value=self.path
+        ):
+            watcher.start()
+            self.connected(Device(1, 2))
+            pending_timer = FakeTimer.instances[-1]
+            write(self.path, DeviceFingerprint(3, 4))
+            pending_timer.fire()
+            self.engine.reset_machine.assert_called_once_with()
+            self.connected(Device(1, 2))
+            self.assertEqual(len(FakeTimer.instances), 1)
+            self.connected(Device(3, 4))
+            FakeTimer.instances[-1].fire()
+        self.assertEqual(self.engine.reset_machine.call_count, 2)
 
     def test_failed_start_unregisters_callback(self):
         self.usb.get_devices.side_effect = RuntimeError("monitor failed")
@@ -167,7 +244,7 @@ class ReconnectTest(unittest.TestCase):
             extension, "config_path", return_value=self.path
         ):
             watcher.start()
-            watcher._connected(Device(1, 2))
+            self.connected(Device(1, 2))
         self.engine.reset_machine.assert_not_called()
 
     def test_configuration_round_trips_optional_labels(self):
