@@ -44,7 +44,7 @@ Check whether the design fulfills the practical purpose of the user's request, n
 What should the user or caller be able to know, decide, or do because of it?
 Compare a simpler approach against that purpose before preserving obligations inferred by the proposal.
 Ground your interpretation of intent in the request; distinguish it from explicit requirements, and do not silently override those requirements.
-For worked comparisons of added guarantees and operation scope, see the [contrasting examples](references/simplicity-examples.md).
+For worked comparisons of added guarantees, operation scope, and representations, see the [contrasting examples](references/simplicity-examples.md).
 
 When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
 
@@ -117,6 +117,7 @@ Check actual producer and consumer deployment lifetimes rather than assuming a s
 Separate resource selection from admission checks and observations of mutable state.
 Reuse a selection only for its established lifetime; do not remove fresh checks merely because they share the discovery path.
 Check which values must remain dynamic within that lifetime, including caller identity, credentials, and resource contents.
+For cache designs involving ordered discovery, see the [unsuccessful-lookup example](references/caching-examples.md).
 
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.

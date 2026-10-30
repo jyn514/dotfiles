@@ -1,6 +1,7 @@
-# Testing examples: required populations and cancellation results
+# Testing examples: populations, cancellation, and reference behavior
 
-Read the relevant example when a report may omit required items, or a cancellation result controls the caller's next action.
+Read the relevant example when a report may omit required items, a cancellation result controls the caller's next action,
+or an unoptimized implementation is proposed as the test oracle.
 These cases illustrate existing [testing guidance](testing.md), not new acceptance requirements for every project.
 
 ## Coverage and required populations
@@ -44,6 +45,37 @@ No execution of this historical repair is claimed here.
 The [OpenTelemetry discussion][otel-discussion] supplies consumer context.
 It distinguishes a corrected diagnosis from a separate older timer-contract violation.
 
+## Reference behavior and remembered renames
+
+An unoptimized implementation can be a useful comparison without defining every correct result.
+Git's [remembered-renames rationale][rename-rationale] gives a concrete counterexample.
+During a sequence of merges, an earlier clean merge establishes a file correspondence that fresh similarity detection can later miss.
+
+Start with `numbers` containing lines 11–30.
+Upstream renames it to `sequence` and prepends lines 1–10.
+A topic commit keeps only lines 11–13; merging that commit onto upstream produces `sequence` containing lines 1–13.
+The next topic commit immediately reverts the deletion.
+At the default similarity threshold, fresh detection no longer pairs the short `numbers` with `sequence`, producing a modify/delete conflict.
+Remembering their correspondence permits a three-way content merge that restores lines 1–30 in `sequence`.
+The optimization changes which current files are merged together; it does not return cached file contents.
+
+The author explicitly accepts that behavioral difference rather than requiring equivalence to fresh detection.
+Reuse checks that the next merge's trees continue the previous operation, and user interruption discards the in-memory cache.
+This is not permanent file identity or permission to reuse arbitrary earlier results.
+It is also not a claim about every `git rebase`: the [activation commit][rename-activation] explains that the ordinary sequencer discards
+this state between picks, while the original example uses `test-tool fast-rebase`.
+
+For another optimization, establish whether the governing requirement is exact parity or a result that a heuristic comparison may fail to find.
+If parity is required, keep the differential check.
+If a behavioral change is authorized, test that requirement independently and record the intended divergence instead of treating all differences as defects.
+This example does not authorize changing requirements to accommodate an optimization.
+
+**Evidence:** the original rationale, activation patch, and before/after test were inspected as source; no execution is claimed.
+The immediate-revert test checks successful replay and rename-detection count, not the final file contents.
+The expected contents above follow the described three-way merge and the author's rationale, not a separately reproduced result.
+
 [coverage-talk]: https://www.youtube.com/watch?v=P9lmSc4oLFs
 [timer-repair]: https://github.com/golang/go/commit/3b2e846e11d0c31a556b198f6c700745de5c9780
 [otel-discussion]: https://github.com/open-telemetry/opentelemetry-go/issues/5868
+[rename-rationale]: https://github.com/git/git/commit/64aceb6d738394130a6e215dc6de51d8452313e0
+[rename-activation]: https://github.com/git/git/commit/25e65b6dd52c987056f1cac00fe6073fbf8ea237

@@ -1,6 +1,7 @@
 # Simplify before elaborating
 
-These contrasting examples show how to distinguish requested behavior from added guarantees and inspect the operation's actual scope.
+These examples distinguish requested behavior from added guarantees, inspect the operation's actual scope,
+and separate required distinctions from their existing representation.
 They illustrate the skill's requirement-to-mechanism comparison, not permission to drop user requirements or a separate exercise for every design.
 
 ## An added guarantee creates the machinery
@@ -76,3 +77,28 @@ Remove duplicated enforcement, not its safety requirements.
 A dependency trace may settle the choice; otherwise test the narrower representation before building the broader one.
 Match the claim to the inspected scope instead of maintaining broader state solely to support an unrequested promise.
 Do not generalize file independence to operations whose decisions depend on several files together.
+
+## Preserve the distinction, not its machinery
+
+**Problem:** Ninja must distinguish an input learned from dependency metadata from an input explicitly named in the build manifest.
+If a metadata-only input is missing and has no known producer, planning must not reject it as a missing source file; a missing manifest input with no producer still requires an error.
+The older representation gave a dependency-discovered input a synthetic `phony` producer edge to obtain that behavior.
+
+**Concrete trace:** In Ninja's `DyndepBuildDiscoverOutputAndDepfileInput` regression test, `out.d` first names `tmp.imp` as an input of `out`, creating a synthetic producer for `tmp.imp`.
+Later, a dynamic-dependency file identifies `tmp.imp` as another output of the real command that produces `tmp`.
+The synthetic producer made this look like two rules generating the same file.
+The [2021 repair](https://github.com/ninja-build/ninja/commit/fa577b6d5364d103e57784ba5d6efa973b96a5c3) marked dependency-loader edges and allowed the real producer to replace only that synthetic edge.
+It did not permit replacing a genuine competing producer, including a manifest-authored `phony` rule.
+
+**Smaller representation:** The [2023 simplification](https://github.com/ninja-build/ninja/commit/a744eea2b6c9b37024b12e749e61170e5c87d171) removed those synthetic edges and their special replacement path.
+A node flag retained the distinction needed by missing-input handling, and manifest insertion cleared that flag even when the node already existed.
+Planning checked the flag directly when a missing node had no producer.
+In the revised regression test, `tmp.imp` has no producer after loading `out.d`; the dynamic-dependency file then supplies its real producer without a replacement exception.
+The test still expects the commands to build the dependency file, produce `tmp` and `tmp.imp`, and finally build `out`, in that order.
+
+**Limits and transfer:** The distinction remained necessary; representing it as a producer did not.
+The patch retained the multiple-producer error, and tests still specify rejection of genuine competing producers and missing manifest inputs.
+This account rests on patch and test-source inspection, not an executed reproduction.
+This bounded representation change does not show that all build-graph complexity is unnecessary.
+For a similar refactor, compare the required behavior with the proposed representation: this case removed placeholder lifecycle and reconciliation while preserving the information their consumers actually needed.
+A replacement that merely deleted the edges without retaining missing-input provenance would not preserve the requirement.

@@ -23,6 +23,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 ## Expected behavior and regression evidence
 
 - For ports or parity-preserving rewrites, identify the reference implementation or pinned test revision and compare both implementations on the same cases. Keep reference expectations separate from candidate-generated output. Record intended divergences against the governing requirements; ask only when accepting a divergence would change those requirements. Treat formatting normalization separately from changes to values, error behavior, or case eligibility.
+- When an unoptimized implementation is proposed as an oracle, see the [remembered-renames example](testing-examples.md#reference-behavior-and-remembered-renames).
 - Establish expected behavior before using a passing test as evidence of correctness.
   Identify the concrete source for each expectation: a governing requirement, external specification, reviewed fixture, or independent consumer.
   Existing tests, docstrings, snapshots, and current output can repeat the same defect; agreement alone is not independent confirmation.
