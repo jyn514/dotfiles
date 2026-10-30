@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-import re
 import shlex
 import subprocess
 import sys
@@ -13,12 +13,36 @@ import tempfile
 from typing import Callable
 
 
-EDGE = re.compile(rb'"[^"\r\n]+" -> "[^"\r\n]+"')
+EDGE_PROGRAM = Path(__file__).resolve().parents[1] / "libexec/callgraph-edges.gvpr"
 
 
 def edge_bytes(path: Path) -> bytes:
-    edges = sorted(set(EDGE.findall(path.read_bytes())))
-    return b"\n".join(edges)
+    completed = subprocess.run(
+        ["gvpr", "-f", str(EDGE_PROGRAM)],
+        input=path.read_bytes(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.stderr:
+        sys.stderr.write(completed.stderr.decode("utf-8", errors="replace"))
+    completed.check_returncode()
+    # gvpr can report a trailing DOT syntax error but still exit successfully.
+    if completed.stderr:
+        raise ValueError("Graphviz reported diagnostics")
+
+    # libcgraph names are C strings, so NUL cannot occur inside an endpoint.
+    names = completed.stdout.split(b"\0")
+    if names.pop() != b"" or len(names) % 2:
+        raise ValueError("malformed Graphviz edge stream")
+    edges = sorted(set(zip(names[::2], names[1::2])))
+    # JSON pairs keep arbitrary endpoint bytes and line breaks unambiguous.
+    return b"\n".join(
+        json.dumps(
+            [name.decode("utf-8", errors="surrogateescape") for name in edge]
+        ).encode("ascii")
+        for edge in edges
+    )
 
 
 def exit_status(returncode: int) -> int:
@@ -47,8 +71,11 @@ def compare(
     try:
         left_edges = edge_bytes(left_graph)
         right_edges = edge_bytes(right_graph)
-    except OSError as error:
-        print(f"callgraph-cmp: could not read graph: {error}", file=sys.stderr)
+    except subprocess.CalledProcessError as error:
+        print(f"callgraph-cmp: Graphviz could not parse graph: {error}", file=sys.stderr)
+        return exit_status(error.returncode)
+    except (OSError, ValueError) as error:
+        print(f"callgraph-cmp: could not read graph edges: {error}", file=sys.stderr)
         return 1
 
     try:

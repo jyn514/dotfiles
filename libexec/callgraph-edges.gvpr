@@ -1,0 +1,7 @@
+// Accept one directed graph; an empty graph emits an empty edge stream.
+BEGIN { int graphs = 0; }
+BEG_G {
+    if (++graphs > 1 || !$G.directed) exit(1);
+}
+E { printf("%s%c%s%c", $.tail.name, 0, $.head.name, 0); }
+END { if (graphs == 0) exit(1); }

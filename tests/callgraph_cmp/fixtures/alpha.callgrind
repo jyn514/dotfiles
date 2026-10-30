@@ -1,0 +1,14 @@
+version: 1
+creator: owned minimal Callgrind fixture
+positions: line
+events: Ir
+fl=example.c
+fn=main
+1 10
+cfl=example.c
+cfn=alpha
+calls=1 2
+1 90
+fl=example.c
+fn=alpha
+2 90

@@ -1,0 +1,9 @@
+digraph {
+	tooltip=" "
+	graph [fontname=Arial, nodesep=0.125, ranksep=0.25];
+	node [fontcolor=white, fontname=Arial, height=0, shape=box, style=filled, width=0];
+	edge [fontname=Arial];
+	alpha [color="#f06102", fontcolor="#ffffff", fontsize="10.00", label="alpha\n90.00%\n(90.00%)\n1×"];
+	main [color="#ff0000", fontcolor="#ffffff", fontsize="10.00", label="main\n100.00%\n(10.00%)\n0×"];
+	main -> alpha [arrowsize="0.95", color="#f06102", fontcolor="#f06102", fontsize="10.00", label="90.00%\n1×", labeldistance="3.60", penwidth="3.60"];
+}

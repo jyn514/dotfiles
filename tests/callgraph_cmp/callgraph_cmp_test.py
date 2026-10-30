@@ -1,7 +1,10 @@
 import importlib.machinery
 import importlib.util
 import io
+import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +12,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 MODULE_PATH = ROOT / "bin/callgraph-cmp"
 LOADER = importlib.machinery.SourceFileLoader("callgraph_cmp", str(MODULE_PATH))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
@@ -18,7 +22,8 @@ sys.modules[SPEC.name] = callgraph_cmp
 LOADER.exec_module(callgraph_cmp)
 
 
-class CallgraphComparisonTests(unittest.TestCase):
+@unittest.skipUnless(shutil.which("gvpr"), "Graphviz gvpr is unavailable")
+class NativeGraphvizTests(unittest.TestCase):
     def test_extracts_unique_sorted_edges_as_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             graph = Path(temporary) / "graph.dot"
@@ -29,21 +34,65 @@ class CallgraphComparisonTests(unittest.TestCase):
 
             self.assertEqual(
                 callgraph_cmp.edge_bytes(graph),
-                b'"z" -> "a"\n"\xff" -> "b"',
+                b'["z", "a"]\n["\\udcff", "b"]',
             )
+
+    def test_uses_node_identities_with_subgraphs_and_ignores_attributes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            graph = Path(temporary) / "graph.dot"
+            graph.write_text(
+                'digraph { graph [layout="not_an_engine"];\n'
+                'subgraph cluster_calls { "main" -> "alpha_beta"; }\n'
+                'main -> alpha; "main" -> "alpha" [label="different cost"];\n'
+                'main -> main;\n'
+                'unused [label="\\\"phantom\\\" -> \\\"edge\\\""]; }\n'
+            )
+
+            self.assertEqual(
+                callgraph_cmp.edge_bytes(graph),
+                b'["main", "alpha"]\n["main", "alpha_beta"]\n["main", "main"]',
+            )
+
+    def test_endpoint_framing_preserves_empty_names_and_embedded_delimiters(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            graph = Path(temporary) / "graph.dot"
+            graph.write_bytes(
+                b'digraph { "" -> "";\n'
+                b'"line\nbreak" -> "quote\\\"slash\\\\name"; }'
+            )
+
+            edges = [
+                json.loads(line) for line in callgraph_cmp.edge_bytes(graph).splitlines()
+            ]
+            self.assertEqual(edges, [["", ""], ["line\nbreak", 'quote"slash\\\\name']])
+
+    def test_native_producer_graphs_have_distinct_edges(self):
+        # Captured from gprof2dot 2025.4.14 -f callgrind, not handwritten DOT.
+        self.assertEqual(
+            callgraph_cmp.edge_bytes(FIXTURES / "alpha.dot"), b'["main", "alpha"]'
+        )
+        self.assertEqual(
+            callgraph_cmp.edge_bytes(FIXTURES / "beta.dot"), b'["main", "beta"]'
+        )
+        self.assertEqual(
+            json.loads(callgraph_cmp.edge_bytes(FIXTURES / "escaped.dot")),
+            ["main", 'alpha"beta'],
+        )
 
     def test_stages_both_edge_sets_and_returns_diff_status(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             left = directory / "left.dot"
             right = directory / "right.dot"
-            left.write_text('"b" -> "c";\n"a" -> "b";\n')
+            left.write_text('digraph { "b" -> "c";\n"a" -> "b"; }\n')
             right.write_text('digraph {}\n')
             calls = []
 
             def runner(arguments):
                 calls.append(arguments)
-                self.assertEqual(Path(arguments[-2]).read_bytes(), b'"a" -> "b"\n"b" -> "c"')
+                self.assertEqual(
+                    Path(arguments[-2]).read_bytes(), b'["a", "b"]\n["b", "c"]'
+                )
                 self.assertEqual(Path(arguments[-1]).read_bytes(), b"")
                 return 1
 
@@ -52,6 +101,37 @@ class CallgraphComparisonTests(unittest.TestCase):
         self.assertEqual(calls[0][:3], ["diff", "--color=always", "--"])
         self.assertFalse(Path(calls[0][-2]).exists())
 
+    @unittest.skipUnless(shutil.which("gprof2dot"), "gprof2dot is unavailable")
+    def test_native_callgrind_producer_to_comparison(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            profile = (FIXTURES / "alpha.callgrind").read_bytes()
+            graphs = []
+            for name in ("alpha", "beta"):
+                source = directory / f"{name}.callgrind"
+                source.write_bytes(profile.replace(b"alpha", name.encode()))
+                produced = subprocess.run(
+                    ["gprof2dot", "-f", "callgrind", str(source)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+                graph = directory / f"{name}.dot"
+                graph.write_bytes(produced.stdout)
+                graphs.append(graph)
+
+            result = subprocess.run(
+                [str(MODULE_PATH), *(str(graph) for graph in graphs)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(b'["main", "alpha"]', result.stdout)
+            self.assertIn(b'["main", "beta"]', result.stdout)
+
+
+class CallgraphComparisonTests(unittest.TestCase):
     def test_read_failure_does_not_invoke_diff(self):
         runner = mock.Mock()
         with tempfile.TemporaryDirectory() as temporary, mock.patch(
@@ -61,7 +141,20 @@ class CallgraphComparisonTests(unittest.TestCase):
             status = callgraph_cmp.compare(missing, missing, runner)
 
         self.assertEqual(status, 1)
-        self.assertIn("could not read graph", stderr.getvalue())
+        self.assertIn("could not read graph edges", stderr.getvalue())
+        runner.assert_not_called()
+
+    def test_graphviz_failure_preserves_status_and_does_not_invoke_diff(self):
+        runner = mock.Mock()
+        with mock.patch.object(
+            callgraph_cmp,
+            "edge_bytes",
+            side_effect=subprocess.CalledProcessError(42, "gvpr"),
+        ), mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = callgraph_cmp.compare(Path("left.dot"), Path("right.dot"), runner)
+
+        self.assertEqual(status, 42)
+        self.assertIn("Graphviz could not parse graph", stderr.getvalue())
         runner.assert_not_called()
 
     def test_missing_diff_returns_shell_compatible_status(self):
