@@ -2,20 +2,23 @@ import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { appendDisplayHistory, CodexClient, convertMessages, loadPi, readSession } from "../pi-to-codex.mjs";
+import { appendDisplayHistory, CodexClient, convertMessages, loadPi, loadPiPackage, readSession } from "../pi-to-codex.mjs";
+
+import { piBuildIdentity } from "../compatibility.mjs";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, "../../..");
 const command = join(root, "bin/pi-to-codex");
 const sdk = await loadPi();
 const execute = promisify(execFile);
+const nativeFeatures = "[features]\nplugins = false\napps = false\n";
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const user = text => ({ role: "user", content: text, timestamp: 1 });
@@ -25,15 +28,17 @@ const call = (id, args = {}) => ({ type: "toolCall", id, name: "read", arguments
 const result = (id, text, isError = false) => ({ role: "toolResult", toolCallId: id, toolName: "read",
   content: [{ type: "text", text }], isError, timestamp: 3 });
 
-async function fixture(t, native = false) {
+async function fixture(t, native = false, { cleanup = true } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "pi-to-codex-test-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  if (cleanup) t.after(() => rm(dir, { recursive: true, force: true }));
   const home = join(dir, "codex");
   const bin = join(dir, "bin");
   const temp = join(dir, "temporary");
   await Promise.all([mkdir(home), mkdir(bin), mkdir(temp)]);
   await writeFile(join(home, "dotfiles.config.toml"), "");
   if (native) {
+    // Native fixtures do not need optional marketplace clones or app services.
+    await writeFile(join(home, "config.toml"), nativeFeatures);
     await symlink(native, join(bin, "codex"));
   } else await symlink(join(directory, "fixtures/codex.mjs"), join(bin, "codex"));
   const manager = sdk.SessionManager.create(dir, join(dir, "pi-sessions"));
@@ -44,8 +49,8 @@ async function fixture(t, native = false) {
     env: { ...process.env, HOME: dir, CODEX_HOME: home, TMPDIR: temp, PATH: `${bin}:${process.env.PATH}` } };
 }
 
-function launch(f, args = [f.source], extra = {}) {
-  const child = spawn(process.execPath, [command, ...args], { env: { ...f.env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+function launch(f, args = [f.source], extra = {}, { cwd } = {}) {
+  const child = spawn(process.execPath, [command, ...args], { env: { ...f.env, ...extra }, cwd, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", bytes => { stdout += bytes; });
@@ -339,7 +344,7 @@ test("imported threads use the dotfiles profile instead of base approval default
   const native = nativeCodex();
   if (!native) { t.skip("native Codex is not installed"); return; }
   const f = await fixture(t, native);
-  await writeFile(join(f.home, "config.toml"), 'approvals_reviewer = "user"\nmodel = "base-model"\n');
+  await writeFile(join(f.home, "config.toml"), 'approvals_reviewer = "user"\nmodel = "base-model"\n' + nativeFeatures);
   for (const reviewer of ["auto_review", "user"]) {
     await writeFile(join(f.home, "dotfiles.config.toml"),
       `approvals_reviewer = "${reviewer}"\nmodel = "profile-model"\n`);
@@ -422,7 +427,7 @@ test("real Codex terminal UI displays imported messages", { timeout: 20000 }, as
   const f = await fixture(t, native);
   await writeFile(join(f.home, "config.toml"), `model = "gpt-5.4"
 model_provider = "fixture"
-[model_providers.fixture]
+${nativeFeatures}[model_providers.fixture]
 name = "fixture"
 base_url = "http://127.0.0.1:1/v1"
 wire_api = "responses"
@@ -457,7 +462,23 @@ trust_level = "trusted"
 test("real Codex retains selected compacted context and visible history without an import-time model request", { timeout: 45000 }, async t => {
   const native = nativeCodex();
   if (!native) { t.skip("native Codex is not installed"); return; }
-  const f = await fixture(t, native);
+  const f = await fixture(t, native, { cleanup: false });
+  let active;
+  let server;
+  // Node skips later after-hooks when one fails. Close the client before its
+  // provider and storage, and still attempt all cleanup if any step fails.
+  t.after(async () => {
+    const failures = [];
+    try { if (active) await active.close(); } catch (error) { failures.push(error); }
+    try {
+      if (server?.listening) {
+        server.closeAllConnections();
+        await new Promise((resolveClose, rejectClose) => server.close(error => error ? rejectClose(error) : resolveClose()));
+      }
+    } catch (error) { failures.push(error); }
+    try { await rm(f.dir, { recursive: true, force: true }); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, "retained-context fixture cleanup failed");
+  });
   const sm = f.manager;
   const kept = sm.appendMessage(user("KEPT_USER"));
   sm.appendMessage(assistant([{ type: "text", text: "same" }]));
@@ -480,7 +501,7 @@ test("real Codex retains selected compacted context and visible history without 
   const expectedText = expectedMessages.filter(item => item.role === "user" || item.role === "assistant")
     .flatMap(item => typeof item.content === "string" ? [item.content] : item.content.filter(block => block.type === "text").map(block => block.text));
   const requests = [];
-  const server = createServer(async (request, response) => {
+  server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     assert.ok(!request.headers["content-encoding"], "request compression disabled in test config");
@@ -495,21 +516,18 @@ test("real Codex retains selected compacted context and visible history without 
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  t.after(() => new Promise(resolveClose => server.close(resolveClose)));
   await writeFile(join(f.home, "config.toml"), `model = "gpt-5.4"
 model_provider = "fixture"
 approval_policy = "never"
 sandbox_mode = "read-only"
-[features]
-enable_request_compression = false
+${nativeFeatures}enable_request_compression = false
 [model_providers.fixture]
 name = "fixture"
 base_url = "http://127.0.0.1:${server.address().port}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 `);
-  const active = new CodexClient({ command: native, env: f.env });
-  t.after(() => active.close());
+  active = new CodexClient({ command: native, env: f.env });
   await active.initialize();
   const live = await active.request("thread/start", { cwd: f.dir });
   await active.request("thread/inject_items", { threadId: live.thread.id,
@@ -580,4 +598,235 @@ requires_openai_auth = false
   assert.notEqual(other, id);
   assert.equal((await active.request("thread/read", { threadId: other })).thread.cwd, f.home);
   assert.equal(requests.length, 1, "reimport also makes no provider request");
+});
+
+async function compatibilityFixture(t) {
+  const f = await fixture(t);
+  f.env.XDG_CACHE_HOME = join(f.dir, "cache");
+  f.cache = join(f.env.XDG_CACHE_HOME, "pi-to-codex/compatibility.json");
+  f.audit = join(f.dir, "audit.jsonl");
+  const packageInfo = await loadPiPackage();
+  const alias = join(f.dir, "pi-install/node/node_modules/@earendil-works/pi-coding-agent");
+  await mkdir(dirname(alias), { recursive: true });
+  await symlink(packageInfo.directory, alias);
+  f.revision = join(f.dir, "pi-install/node/.source-revision");
+  await writeFile(f.revision, "a".repeat(40) + "\n");
+  f.env.PI_PACKAGE_DIR = alias;
+  const original = await readFile(join(directory, "fixtures/codex.mjs"), "utf8");
+  await rm(join(f.dir, "bin/codex"));
+  f.install = async (mode = "normal", version = "fixture-1") => {
+    const audit = `appendFileSync(${JSON.stringify(f.audit)}, JSON.stringify({ event: "start", pid: process.pid,
+      argv: process.argv.slice(2), cwd: process.cwd(), home: process.env.HOME, codexHome: process.env.CODEX_HOME,
+      sqliteHome: process.env.CODEX_SQLITE_HOME, configHome: process.env.XDG_CONFIG_HOME,
+      envKeys: Object.keys(process.env) }) + "\\n");\n`;
+    const auditRequest = `appendFileSync(${JSON.stringify(f.audit)}, JSON.stringify({ event: "request",
+      home: process.env.HOME, ...request }) + "\\n");\n`;
+    const script = original.replace('if (process.argv.includes("--version"))', audit + 'if (process.argv.includes("--version"))')
+      .replace('codex-cli fixture-1', `codex-cli ${version}`)
+      .replace('const mode = process.env.PI_IMPORT_FIXTURE_MODE;', `const mode = ${JSON.stringify(mode)};`)
+      .replace('if (request.method === undefined) return;', 'if (request.method === undefined) return;\n' + auditRequest);
+    await writeFile(join(f.dir, "bin/codex"), script, { mode: 0o755 });
+  };
+  await f.install();
+  return f;
+}
+
+async function audit(f) { return existsSync(f.audit) ? readLines(f.audit) : []; }
+
+async function noCompatibilityChildren(f) {
+  for (const row of (await audit(f)).filter(row => row.event === "start")) {
+    assert.throws(() => process.kill(row.pid, 0), { code: "ESRCH" });
+    if (row.home !== f.dir) assert.equal(existsSync(dirname(row.home)), false, "disposable compatibility home removed");
+  }
+}
+
+test("compatibility preflight imports once privately, captures local context, and skips probe startup on cache hits", async t => {
+  const f = await compatibilityFixture(t);
+  await writeFile(join(f.home, "dotfiles.config.toml"), 'model = "REAL_PROFILE_MUST_NOT_REACH_PROBE"\n');
+  Object.assign(f.env, { OPENAI_API_KEY: "PRIVATE_AUTH", OPENAI_BASE_URL: "http://invalid.invalid",
+    CODEX_SQLITE_HOME: join(f.dir, "real-sqlite"), HTTP_PROXY: "http://invalid.invalid" });
+  const first = await launch(f).done;
+  assert.equal(first.code, 0, first.stderr);
+  assert.match(first.stderr, /Checking Pi\/Codex compatibility/);
+  const receipt = await readFile(f.cache);
+  assert.equal(JSON.parse(receipt).pi.revision, "a".repeat(40));
+  const cold = await audit(f);
+  const privateStarts = cold.filter(row => row.event === "start" && row.home !== f.dir);
+  assert.ok(privateStarts.some(row => row.argv[0] === "app-server"));
+  assert.equal(privateStarts.filter(row => row.argv[0] === "--version").length, 1);
+  for (const row of privateStarts) {
+    for (const forbidden of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "HTTP_PROXY"]) assert.ok(!row.envKeys.includes(forbidden));
+    assert.notEqual(row.codexHome, f.home);
+    assert.notEqual(row.sqliteHome, f.env.CODEX_SQLITE_HOME);
+    assert.equal(row.cwd, dirname(row.home));
+  }
+  const privateRequests = cold.filter(row => row.event === "request" && row.home !== f.dir);
+  assert.equal(privateRequests.filter(row => row.method === "thread/resume" && row.params.history).length, 1);
+  assert.equal(privateRequests.filter(row => row.method === "turn/start").length, 1);
+  assert.equal(privateRequests.filter(row => row.method === "thread/start").length, 0);
+  assert.ok(!JSON.stringify(privateRequests).includes("REAL_PROFILE_MUST_NOT_REACH_PROBE"));
+  const realRequests = cold.filter(row => row.event === "request" && row.home === f.dir);
+  assert.equal(realRequests.filter(row => row.method === "thread/resume" && row.params.history).length, 1);
+  assert.equal(realRequests.filter(row => row.method === "turn/start").length, 0);
+  const priorMtime = (await stat(f.cache, { bigint: true })).mtimeNs;
+  const second = await launch(f).done;
+  assert.equal(second.code, 0, second.stderr);
+  assert.ok(!second.stderr.includes("Checking Pi/Codex compatibility"));
+  const warm = (await audit(f)).slice(cold.length);
+  assert.equal(warm.filter(row => row.event === "start" && row.home !== f.dir && row.argv[0] === "--version").length, 1);
+  assert.equal(warm.filter(row => row.event === "start" && row.home !== f.dir && row.argv[0] === "app-server").length, 0);
+  assert.deepEqual(await readFile(f.cache), receipt);
+  assert.equal((await stat(f.cache, { bigint: true })).mtimeNs, priorMtime);
+  await noCompatibilityChildren(f);
+});
+
+test("public preflight and publication traverse the repository Codex wrapper without generating interactive config", async t => {
+  const f = await compatibilityFixture(t);
+  f.env.PATH = `${join(root, "bin")}:${f.env.PATH}`;
+  const result = await launch(f).done;
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Imported 2 history items into Codex thread/);
+  const rows = await audit(f);
+  assert.ok(rows.some(row => row.event === "start" && row.home !== f.dir && row.argv[0] === "--version"));
+  assert.ok(rows.some(row => row.event === "start" && row.home !== f.dir && row.argv[0] === "app-server"));
+  assert.ok(rows.some(row => row.event === "start" && row.home === f.dir && row.argv[0] === "app-server"));
+  assert.equal(existsSync(f.cache), true);
+  assert.equal(existsSync(join(f.home, "config.toml")), false, "wrapper must not generate interactive configuration");
+  assert.equal(existsSync(join(f.home, "rules")), false, "wrapper must not generate interactive permission rules");
+  await noCompatibilityChildren(f);
+});
+
+test("publication preserves launch cwd while its thread uses the destination cwd and the probe uses private root", async t => {
+  const f = await compatibilityFixture(t);
+  const launchCwd = join(f.dir, "launch");
+  const destinationCwd = join(f.dir, "destination");
+  await Promise.all([mkdir(launchCwd), mkdir(destinationCwd)]);
+  const result = await launch(f, [f.source, "--cwd", destinationCwd], {}, { cwd: launchCwd }).done;
+  assert.equal(result.code, 0, result.stderr);
+  const rows = await audit(f);
+  const realStarts = rows.filter(row => row.event === "start" && row.home === f.dir);
+  assert.ok(realStarts.length > 0);
+  assert.ok(realStarts.every(row => row.cwd === launchCwd), "real app-servers inherit the CLI launch cwd");
+  const publication = rows.find(row => row.event === "request" && row.home === f.dir &&
+    row.method === "thread/resume" && row.params.history);
+  assert.equal(publication.params.cwd, destinationCwd, "thread destination remains independent of startup cwd");
+  assert.notEqual(destinationCwd, launchCwd);
+  const probeStarts = rows.filter(row => row.event === "start" && row.home !== f.dir && row.argv[0] === "app-server");
+  assert.ok(probeStarts.length > 0);
+  assert.ok(probeStarts.every(row => row.cwd === dirname(row.home)), "all probe app-servers start in the private root");
+  await noCompatibilityChildren(f);
+});
+
+test("Codex version and recorded Pi revision invalidate cache independently of Pi semver; corrupt receipts rerun", async t => {
+  const f = await compatibilityFixture(t);
+  const run = async () => {
+    const before = (await audit(f)).length;
+    const result = await launch(f).done;
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal((await audit(f)).slice(before).filter(row => row.event === "request" && row.home !== f.dir &&
+      row.method === "thread/resume" && row.params.history).length, 1);
+    return JSON.parse(await readFile(f.cache, "utf8"));
+  };
+  const original = await run();
+  await writeFile(f.revision, "b".repeat(40) + "\n");
+  const piChanged = await run();
+  assert.equal(piChanged.pi.version, original.pi.version);
+  assert.equal(piChanged.pi.revision, "b".repeat(40));
+  await f.install("normal", "fixture-2");
+  const codexChanged = await run();
+  assert.equal(codexChanged.codex, "codex-cli fixture-2");
+  assert.deepEqual(codexChanged.pi, piChanged.pi);
+  await writeFile(f.cache, "{corrupt");
+  await run();
+  await writeFile(f.cache, JSON.stringify({ ...codexChanged, format: 0 }));
+  await run();
+  await noCompatibilityChildren(f);
+});
+
+test("failed compatibility checks preserve older receipts and cannot publish into the real Codex home", async t => {
+  for (const mode of ["missing-index", "missing-display", "bad-context", "turn-malformed", "turn-eof"]) await t.test(mode, async t => {
+    const f = await compatibilityFixture(t);
+    assert.equal((await launch(f).done).code, 0);
+    const receipt = await readFile(f.cache);
+    const realBefore = await readLines(join(f.home, "fixture-requests.jsonl"));
+    const source = await readFile(f.source);
+    await f.install(mode, "incompatible-version");
+    const failed = await launch(f).done;
+    assert.notEqual(failed.code, 0, failed.stdout);
+    assert.equal(failed.stdout, "");
+    assert.deepEqual(await readFile(f.cache), receipt);
+    assert.deepEqual(await readFile(f.source), source);
+    assert.deepEqual(await readLines(join(f.home, "fixture-requests.jsonl")), realBefore);
+    await noCompatibilityChildren(f);
+  });
+});
+
+test("cancelled cold compatibility checks leave no receipt, real thread, or owned process", { timeout: 15000 }, async t => {
+  const f = await compatibilityFixture(t);
+  await f.install("stall");
+  const running = launch(f);
+  const deadline = Date.now() + 10000;
+  let reached = false;
+  while (Date.now() < deadline) {
+    if ((await audit(f)).some(row => row.event === "request" && row.method === "thread/resume")) { reached = true; break; }
+    await new Promise(resolveWait => setTimeout(resolveWait, 20));
+  }
+  assert.equal(reached, true, "cold probe reached injection before cancellation");
+  running.child.kill("SIGINT");
+  const result = await running.done;
+  assert.equal(result.code, 130, result.stderr);
+  assert.equal(existsSync(f.cache), false);
+  assert.equal(existsSync(join(f.home, "fixture-pids.jsonl")), false);
+  await noCompatibilityChildren(f);
+});
+
+test("Pi overrides without recorded provenance remain supported but cannot reuse a durable compatibility receipt", async t => {
+  const f = await compatibilityFixture(t);
+  const installed = await loadPiPackage();
+  const override = join(f.dir, "unrecorded-sdk");
+  await mkdir(override);
+  await writeFile(join(override, "package.json"), JSON.stringify({ name: installed.manifest.name,
+    version: installed.manifest.version, type: "module", exports: { ".": { import: "./index.mjs" } } }));
+  await writeFile(join(override, "index.mjs"), `export * from ${JSON.stringify(pathToFileURL(join(installed.directory, installed.manifest.exports["."].import)).href)};\n`);
+  f.env.PI_PACKAGE_DIR = override;
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const result = await launch(f).done;
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /no usable recorded build revision/);
+    assert.equal(existsSync(f.cache), false);
+  }
+  await noCompatibilityChildren(f);
+});
+
+test("Pi build identity reads recorded lexical install, source-install, and guest authorities without consulting Git", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-build-identity-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (const [name, packagePath, markerPath] of [
+    ["installed", "node/node_modules/@earendil-works/pi-coding-agent", "node/.source-revision"],
+    ["source", "source/packages/coding-agent", "node/.source-revision"],
+    ["guest", "src/packages/coding-agent", "REVISION"],
+  ]) {
+    const root = join(dir, name);
+    const path = join(root, packagePath);
+    await mkdir(path, { recursive: true });
+    await mkdir(dirname(join(root, markerPath)), { recursive: true });
+    await writeFile(join(root, markerPath), "c".repeat(40));
+    const identity = await piBuildIdentity({ sdk: { VERSION: "1.3.0" }, manifest: { version: "1.3.0" },
+      directory: path, installedDirectory: path });
+    assert.equal(identity.revision, "c".repeat(40), name);
+  }
+});
+
+test("real input, cwd, and profile rejection happen before compatibility lookup or probe startup", async t => {
+  for (const mode of ["input", "cwd", "profile"]) await t.test(mode, async t => {
+    const f = await compatibilityFixture(t);
+    let args;
+    if (mode === "input") await writeFile(f.source, "not a Pi session\n");
+    if (mode === "cwd") args = [f.source, "--cwd", join(f.dir, "missing-directory")];
+    if (mode === "profile") await writeFile(join(f.home, "dotfiles.config.toml"), "invalid = [");
+    const result = await launch(f, args).done;
+    assert.notEqual(result.code, 0);
+    assert.deepEqual(await audit(f), []);
+    assert.equal(existsSync(f.cache), false);
+  });
 });

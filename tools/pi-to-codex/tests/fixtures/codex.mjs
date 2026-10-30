@@ -5,6 +5,11 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
+if (process.argv.includes("--version")) {
+  console.log("codex-cli fixture-1");
+  process.exit(0);
+}
+
 const home = process.env.CODEX_HOME;
 mkdirSync(home, { recursive: true });
 const mode = process.env.PI_IMPORT_FIXTURE_MODE;
@@ -12,7 +17,7 @@ const state = join(home, "fixture-thread.json");
 appendFileSync(join(home, "fixture-pids.jsonl"), JSON.stringify(process.pid) + "\n");
 const lines = createInterface({ input: process.stdin });
 let diagnosticChunks;
-lines.on("line", line => {
+lines.on("line", async line => {
   const request = JSON.parse(line);
   if (request.method === undefined) return;
   appendFileSync(join(home, "fixture-requests.jsonl"), JSON.stringify(request) + "\n");
@@ -38,7 +43,7 @@ lines.on("line", line => {
     if (mode === "malformed") { process.stdout.write("not json\n"); return; }
     if (mode === "stall") { setInterval(() => {}, 1000); return; }
     if (request.params.history) {
-      const thread = { id: randomUUID(), path: join(home, "owned-rollout.jsonl"), indexed: false };
+      const thread = { id: randomUUID(), path: join(home, "owned-rollout.jsonl"), indexed: false, config: request.params.config };
       const records = [{ type: "session_meta", ordinal: 0,
         payload: { id: mode === "bad-rollout" ? "different-thread" : thread.id, history_mode: "paginated" } },
       ...request.params.history.map((payload, index) => ({ type: "response_item", ordinal: index + 1, payload }))];
@@ -57,9 +62,30 @@ lines.on("line", line => {
   } else if (request.method === "thread/read") {
     const thread = JSON.parse(readFileSync(state));
     const records = readFileSync(thread.path, "utf8").trim().split("\n").map(line => JSON.parse(line));
-    const items = records.filter(record => record.payload?.type === "item_completed")
-      .map(record => ({ id: record.payload.item.id }));
-    reply({ thread: { ...thread, turns: mode === "missing-display" ? [] : [{ items }] } });
+    const items = records.filter(record => record.payload?.type === "item_completed").map(record => {
+      const item = record.payload.item;
+      if (item.type === "UserMessage") return { id: item.id, type: "userMessage", content: item.content };
+      if (item.type === "AgentMessage") return { id: item.id, type: "agentMessage", text: item.content.map(block => block.text).join("") };
+      return { id: item.id, type: "dynamicToolCall", tool: item.tool, arguments: item.arguments,
+        success: item.success, contentItems: item.content_items };
+    });
+    reply({ thread: { ...thread, turns: mode === "missing-display" ? [] : [{ status: "completed", items }] } });
+  } else if (request.method === "turn/start") {
+    const thread = JSON.parse(readFileSync(state));
+    const records = readFileSync(thread.path, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    const input = records.filter(record => record.type === "response_item").map(record => record.payload);
+    input.push({ type: "message", role: "user", content: [{ type: "input_text", text: request.params.input[0].text }] });
+    if (mode === "bad-context") input.splice(0, 1);
+    const config = thread.config;
+    const provider = config.model_providers[config.model_provider];
+    reply({ turn: { id: "fixture-turn", status: "inProgress" } });
+    if (mode === "turn-malformed") { process.stdout.write("not-json\n"); return; }
+    if (mode === "turn-eof") process.exit(1);
+    const response = await fetch(`${provider.base_url}/responses`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: config.model, input }) });
+    await response.text();
+    process.stdout.write(JSON.stringify({ method: "turn/completed", params: { threadId: thread.id,
+      turn: { id: "fixture-turn", status: response.ok ? "completed" : "failed" } } }) + "\n");
   } else if (request.method === "thread/list") {
     const thread = JSON.parse(readFileSync(state));
     reply(request.params.cursor ? { data: thread.indexed ? [thread] : [], nextCursor: null } :

@@ -3,7 +3,8 @@
 `pi-to-codex` creates a new Codex thread from a Pi session's selected branch, including text tool calls and its current compacted context.
 The thread appears in Codex's resume picker.
 Its retained messages and tool results appear in Codex's transcript.
-The command prints its ID and a resume command; it does not launch an interactive session or make a model request.
+The command prints its ID and a resume command; it does not launch an interactive session or send your conversation to a model.
+Its compatibility preflight uses only a synthetic session and a local fake provider; it makes no hosted-provider requests.
 
 ```sh
 pi-to-codex /path/to/pi-session.jsonl
@@ -41,6 +42,32 @@ Native acceptance tests cover Pi 1.3.0 with Codex 0.162.1 and 0.165.0.
 Codex labels the history-injection parameter `[UNSTABLE] FOR CODEX CLOUD - DO NOT USE`.
 The visibility update also depends on its internal paginated JSONL rollout format.
 These interfaces can change across Codex upgrades; unsupported headers and ordinals fail rather than receive a guessed update.
+
+### Automatic compatibility preflight
+
+Before publishing your conversation, the CLI checks the installed Pi/Codex combination using disposable storage.
+It imports one tiny synthetic Pi session, including a tool call and result, through the same importer.
+It then verifies the persisted resume index and displayed transcript, and continues that same thread against a localhost fake provider to inspect the retained model context.
+No tools are replayed, no unrelated thread is created, and no hosted provider is contacted.
+The check uses private HOME, XDG, and Codex directories without your configuration, credentials, MCP servers, or hooks.
+Even `codex --version` runs with private homes, because a CLI wrapper may otherwise update configuration.
+Your input and destination profile are validated first; a failed or cancelled preflight leaves the destination Codex home unchanged.
+
+A successful check is cached atomically in `$XDG_CACHE_HOME/pi-to-codex/compatibility.json`, or `~/.cache/pi-to-codex/compatibility.json` when XDG_CACHE_HOME is unset.
+The receipt is written only after the check's processes, local provider, and temporary storage have been cleaned up.
+Cache hits perform cheap installed-build identity lookup and `codex --version`; they start no probe app-server or provider.
+Caching skips only the synthetic check, not loading the Pi SDK or starting Codex processes to publish and verify your conversation.
+When measuring cache overhead, separate SDK loading and normal import work from the compatibility check itself.
+A changed Codex version string, Pi package/SDK version, or Pi recorded build revision triggers another check, as does a missing or corrupt receipt.
+Pi's normal installer records the build revision in `~/.local/share/pi/node/.source-revision`; the sandbox supplies its corresponding build marker.
+A `PI_PACKAGE_DIR` override without a usable recorded revision still works, but is checked on every invocation instead of reusing a durable receipt.
+To force a fresh check, remove just the receipt file, not your Codex history.
+Failed checks preserve any older successful receipt and do not publish your conversation.
+
+The exported `importSession(source, { env, childCwd, ...options })` remains a lower-level, preflight-free API for isolated callers.
+App-servers inherit the caller's working directory unless `childCwd` explicitly selects another startup directory, as the disposable check does.
+This does not change the imported thread's destination cwd.
+The CLI checks compatibility between input preparation and destination publication.
 
 ## What is preserved
 
@@ -112,3 +139,4 @@ The native test binds a localhost mock provider; it needs local socket permissio
 When native tmux is installed, a separate test opens Codex in a private terminal and checks that imported text renders.
 Conversion tests cover seeded JSON arguments, repeated messages, and parallel-result permutations.
 CLI tests cover source preservation, migrations, rejection before publication, partial failures, cancellation, and child-process cleanup.
+Preflight regressions cover private single-sample imports, local retained-context capture, warm-path startup avoidance, version/revision invalidation, malformed receipts, failure/cancellation preservation, and unrecorded SDK overrides.
