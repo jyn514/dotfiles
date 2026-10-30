@@ -168,11 +168,12 @@ def generate(file_argument: str, start: int, end: int) -> tuple[int, bytes | Non
         status, revision_output = checked(
             # Bind candidate refs to the repository used in the emitted URL,
             # while retaining all of that remote's branches and the HEAD range.
+            # Qualify HEAD so a local branch or tag cannot replace that range.
             git(
                 directory,
                 b"rev-list",
                 b"--remotes=" + remote + b"/*",
-                remote + b"/HEAD~^!",
+                b"refs/remotes/" + remote + b"/HEAD~^!",
                 b"--max-count=1",
             )
         )

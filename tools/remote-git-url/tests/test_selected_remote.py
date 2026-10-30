@@ -19,7 +19,15 @@ class SelectedRemoteTests(unittest.TestCase):
                 with self.subTest(selected=selected, match=match):
                     self.check_selected_remote(selected, match)
 
-    def check_selected_remote(self, selected: str, match: str) -> None:
+    def test_remote_head_range_ignores_local_branch_and_tag_collisions(self) -> None:
+        for selected in ("origin", "upstream"):
+            for namespace in ("heads", "tags"):
+                with self.subTest(selected=selected, namespace=namespace):
+                    self.check_selected_remote(selected, "main", namespace)
+
+    def check_selected_remote(
+        self, selected: str, match: str, collision_namespace: str | None = None,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             # Native Git must use only these private repositories/configurations,
@@ -87,6 +95,14 @@ class SelectedRemoteTests(unittest.TestCase):
             git(checkout, "fetch", "-q", str(foreign), f"refs/heads/main:refs/remotes/{other}/main")
             git(checkout, "update-ref", f"refs/remotes/{selected}-extra/main", foreign_revision.decode())
             local_source = checkout / "file"
+            if collision_namespace:
+                local_source.write_text("local one\nlocal two\nneedle\n")
+                git(checkout, "add", "file")
+                git(checkout, "commit", "-qm", "local-only contents", day=5)
+                # For a collision at this child, HEAD~^! adds its local-only
+                # parent and excludes the actual remote tip from consideration.
+                git(checkout, "commit", "--allow-empty", "-qm", "local child", day=6)
+                git(checkout, "update-ref", f"refs/{collision_namespace}/{selected}/HEAD", "HEAD")
             local_source.write_text("needle\n")
             result = subprocess.run(
                 [str(ROOT / "bin/remote-git-url"), str(local_source), "1"],
