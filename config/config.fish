@@ -356,6 +356,9 @@ end
 if exists bat
 	function cat; bat -p $argv; end
 end
+function mkcd
+	mkdir -p $argv; and cd "$argv[1]"
+end
 function fork-github
 	set -l directory (command fork-github $argv | string collect --no-trim-newlines)
 	set -l fork_status $pipestatus[1]
