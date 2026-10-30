@@ -143,12 +143,14 @@ Use history as evidence when useful, but do not equate churn with pain. Check wh
 
 ### 2. Challenge the hardest part and decide whether design is needed
 
+Start with one complete caller-to-result interaction using existing commands, identifiers, and defaults.
+Before introducing another input, identifier, persistent record, or protocol step, show a concrete case where that interaction fails a governing requirement.
+Distinguish required behavior from optional guarantees introduced by the proposal.
 Name the hardest part of the proposed approach and the guarantee, distinction, or coordination that makes it hard.
-Ask whether the hard part can be made unnecessary before working out how to implement it.
-Construct the smallest complete caller-to-result path without it, keeping the required behavior, timing, and coverage fixed.
-Compare that alternative against the governing requirements: which required behavior fails, and where?
-If none fails, remove the hard part instead of elaborating its machinery.
+Ask whether the hard part can be removed while keeping required behavior, timing, and coverage fixed.
+If the simpler interaction meets the governing requirements, remove the extra mechanism instead of elaborating it.
 Otherwise retain it or find another approach; do not weaken the requirement without approval.
+Keep speculative hardening outside the recommended interface.
 Make the decisive comparison visible in the recommendation, not just a claim that the chosen design is simpler.
 
 If an existing primitive or local change meets the governing requirements, report it as a complete recommendation and stop before subsystem mapping or boundary design.
