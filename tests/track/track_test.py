@@ -73,6 +73,71 @@ class TrackTests(unittest.TestCase):
         config = json.loads((self.fixture / "install.conf.json").read_text())
         return next(directive["link"] for directive in config if "link" in directive)
 
+    def inventory(self) -> dict[str, tuple[object, ...]]:
+        """Capture links without following them, plus every file's exact bytes."""
+        base = Path(self.tempdir.name)
+        inventory = {}
+        for path in base.rglob("*"):
+            relative = path.relative_to(base).as_posix()
+            mode = path.lstat().st_mode
+            if path.is_symlink():
+                inventory[relative] = (mode, "symlink", os.readlink(path))
+            elif path.is_dir():
+                inventory[relative] = (mode, "directory")
+            else:
+                inventory[relative] = (mode, "file", path.read_bytes())
+        return inventory
+
+    def test_rejects_selected_symlinks_without_changing_any_files(self) -> None:
+        # Adoption must reject the leaf itself, not resolve it into another input.
+        # Exercise both routing branches and dry-run, including dangling links.
+        system = Path(self.tempdir.name) / "system"
+        system.mkdir()
+        for parent in (self.home, system):
+            for target_kind in ("file", "directory", "missing"):
+                for absolute in (False, True):
+                    for dry_run in (False, True):
+                        case = f"{parent.name}-{target_kind}-{absolute}-{dry_run}"
+                        with self.subTest(case=case):
+                            target = parent / f"actual-{case}"
+                            if target_kind == "file":
+                                target.write_bytes(b"owned settings\x00\xff\n")
+                            elif target_kind == "directory":
+                                target.mkdir()
+                                (target / "settings").write_bytes(b"owned settings\x00\xff\n")
+                            source = parent / f".selected-{case}"
+                            source.symlink_to(target if absolute else target.name)
+                            before = self.inventory()
+
+                            arguments = ["--dry-run"] if dry_run else []
+                            selected = (
+                                os.path.relpath(source, self.fixture)
+                                if absolute else str(source)
+                            )
+                            result = self.run_track(*arguments, selected)
+
+                            self.assertNotEqual(0, result.returncode)
+                            self.assertIn("symlink", result.stderr)
+                            self.assertIn(source.name, result.stderr)
+                            self.assertEqual("", result.stdout)
+                            self.assertEqual(before, self.inventory())
+
+    def test_tracks_file_beneath_symlinked_parent(self) -> None:
+        actual = self.home / "actual"
+        actual.mkdir()
+        parent = self.home / "selected-parent"
+        parent.symlink_to(actual, target_is_directory=True)
+        source = parent / "settings"
+        source.write_text("configuration\n")
+
+        result = self.run_track(str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(parent.is_symlink())
+        self.assertTrue(source.is_symlink())
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertEqual("config/settings", self.links()["$HOME/actual/settings"])
+
     def test_tracks_home_file_by_moving_it_and_linking_it_back(self) -> None:
         source = self.home / ".example"
         source.write_text("configuration\n")
@@ -112,6 +177,22 @@ class TrackTests(unittest.TestCase):
         self.assertFalse(source.is_symlink())
         self.assertEqual("configuration\n", source.read_text())
         self.assertFalse((self.fixture / "config/example").exists())
+        self.assertNotIn("$HOME/.example", self.links())
+
+    def test_untracks_existing_relative_link_to_tracked_file(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        self.assertEqual(0, self.run_track(str(source)).returncode)
+        tracked = self.fixture / "config/example"
+        source.unlink()
+        source.symlink_to(os.path.relpath(tracked, source.parent))
+
+        result = self.run_track("--untrack", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertFalse(tracked.exists())
         self.assertNotIn("$HOME/.example", self.links())
 
     def test_untracks_home_directory(self) -> None:
@@ -198,6 +279,18 @@ class TrackTests(unittest.TestCase):
         self.assertFalse((self.fixture / "config/example").exists())
         self.assertEqual(original_config, (self.fixture / "install.conf.json").read_text())
         self.assertIn("move", result.stdout)
+
+    def test_dry_run_does_not_move_or_modify_home_directory(self) -> None:
+        source = self.home / ".example"
+        source.mkdir()
+        (source / "settings").write_bytes(b"configuration\x00\xff\n")
+        before = self.inventory()
+
+        result = self.run_track("--dry-run", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("move", result.stdout)
+        self.assertEqual(before, self.inventory())
 
     def test_rejects_duplicate_destination_before_moving_file(self) -> None:
         source = self.home / ".bashrc"

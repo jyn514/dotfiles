@@ -196,6 +196,10 @@ def main() -> int:
     arguments = parser.parse_args()
 
     source = arguments.source.absolute()
+    # Check the selected leaf before resolving it, including dangling links.
+    # Untracking deliberately consumes the symlink created by track_home.
+    if not arguments.untrack and source.is_symlink():
+        parser.exit(1, f"track: source is a symlink; refusing to track: {source}\n")
     if not source.exists():
         parser.error(f"source does not exist: {source}")
     try:
