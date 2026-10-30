@@ -935,6 +935,14 @@ bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
 bind('gqd', function()
+	local filename = vim.api.nvim_buf_get_name(0)
+	-- x.py marks the Rust checkout, unlike a compiler crate's Cargo.toml.
+	local root = filename ~= '' and vim.fs.root(filename, 'x.py')
+	local compiler = root and vim.fs.joinpath(root, 'compiler')
+	if not compiler or vim.fn.isdirectory(compiler) == 0 then
+		vim.notify("gqd: buffer is not in a Rust checkout with a compiler directory", vim.log.levels.ERROR)
+		return
+	end
 	local query = vim.fn.expand("<cword>")
 	pickers.live_grep({
 		search = '('
@@ -942,7 +950,7 @@ bind('gqd', function()
 				.. '|^\\s*' .. query .. [[(,|: ([a-z_:,]+$|\|.*\|))]]
 				.. '|Providers .* ' .. query
 				.. ')',
-		cwd = 'compiler',
+		cwd = compiler,
 		no_esc = true,
 		rg_opts = '--case-sensitive -g "!rustc_span/src/symbol.rs"'
 				.. ' --column --no-heading --line-number --color=always --max-columns=4096',

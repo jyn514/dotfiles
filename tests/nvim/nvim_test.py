@@ -28,7 +28,9 @@ class NeovimConfigTests(unittest.TestCase):
         # Lazy can write plugin metadata; never point it at installed checkouts.
         shutil.copytree(PLUGINS, cls.plugins, ignore=shutil.ignore_patterns(".git"))
 
-    def run_nvim(self, lua: str | Path, *, case: str = "") -> None:
+    def run_nvim(
+        self, lua: str | Path, *, case: str = "", startup_commands: tuple[str, ...] = ()
+    ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config = root / "config/nvim"
@@ -55,6 +57,7 @@ class NeovimConfigTests(unittest.TestCase):
                     "--headless",
                     "--cmd",
                     "let g:fzf_lua_server = 'disabled-in-tests'",
+                    *(arg for command in startup_commands for arg in ("--cmd", command)),
                     "-c",
                     f"luafile {Path(__file__).with_name('fixtures') / 'run_test.lua'}",
                     "-c",
@@ -67,6 +70,17 @@ class NeovimConfigTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+            return result
+
+    @unittest.skipUnless(shutil.which("fzf") and shutil.which("rg"), "fzf and ripgrep are required")
+    def test_query_definition_follows_each_buffer_checkout_not_editor_cwd(self) -> None:
+        self.run_nvim(
+            Path(__file__).with_name("fixtures") / "query_definition.lua",
+            # Neovim 0.11.1 lacks the grt default removed by init.lua. Supply it
+            # so that unrelated E31 does not prevent this focused regression.
+            # The other tests retain their unmodified startup diagnostic check.
+            startup_commands=("nnoremap grt <Nop>",),
+        )
 
     def test_config_loads_fzf_without_starting_its_rpc_server(self) -> None:
         self.run_nvim(
