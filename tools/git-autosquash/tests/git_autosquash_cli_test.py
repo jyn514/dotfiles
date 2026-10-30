@@ -47,7 +47,7 @@ class CommandIntegrationTests(unittest.TestCase):
             "git",
             'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
             'case "$1" in\n'
-            '  symbolic-ref) printf "main\\n";;\n'
+            '  symbolic-ref) printf "refs/heads/main\\n";;\n'
             '  config) exit "${CONFIG_STATUS:-1}";;\n'
             '  merge-base) printf "abc123\\n";;\n'
             '  revise) exit 0;;\n'
@@ -68,7 +68,7 @@ class CommandIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(0, missing.returncode)
-        self.assertIn("merge-base HEAD origin/HEAD", calls.read_text().splitlines())
+        self.assertIn("merge-base HEAD refs/remotes/origin/HEAD", calls.read_text().splitlines())
         self.assertEqual(25, fatal.returncode)
 
 

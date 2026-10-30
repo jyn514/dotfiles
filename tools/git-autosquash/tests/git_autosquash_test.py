@@ -24,7 +24,7 @@ class GitAutosquashTests(unittest.TestCase):
     def test_derives_branch_remote_and_base_before_revising(self):
         runner = mock.Mock(
             side_effect=[
-                git_autosquash.Result(0, b"topic\n"),
+                git_autosquash.Result(0, b"refs/heads/topic\n"),
                 git_autosquash.Result(0, b"upstream\n"),
                 git_autosquash.Result(0, b"abc123\n"),
                 git_autosquash.Result(0),
@@ -36,7 +36,7 @@ class GitAutosquashTests(unittest.TestCase):
             runner.call_args_list,
             [
                 mock.call(
-                    ["git", "symbolic-ref", "--short", "--quiet", "HEAD"],
+                    ["git", "symbolic-ref", "--quiet", "HEAD"],
                     capture_output=True,
                 ),
                 mock.call(
@@ -44,7 +44,7 @@ class GitAutosquashTests(unittest.TestCase):
                     capture_output=True,
                 ),
                 mock.call(
-                    ["git", "merge-base", "HEAD", "upstream/HEAD"],
+                    ["git", "merge-base", "HEAD", "refs/remotes/upstream/HEAD"],
                     capture_output=True,
                 ),
                 mock.call(["git", "revise", "abc123", "-i"]),
@@ -55,7 +55,7 @@ class GitAutosquashTests(unittest.TestCase):
         runner = mock.Mock(
             side_effect=[
                 git_autosquash.Result(1),
-                git_autosquash.Result(0, b"recent\n"),
+                git_autosquash.Result(0, b"refs/heads/recent\n"),
                 git_autosquash.Result(1),
                 git_autosquash.Result(0, b"base\n"),
                 git_autosquash.Result(0),
@@ -66,7 +66,7 @@ class GitAutosquashTests(unittest.TestCase):
         self.assertEqual(
             runner.call_args_list[-2],
             mock.call(
-                ["git", "merge-base", "HEAD", "origin/HEAD"],
+                ["git", "merge-base", "HEAD", "refs/remotes/origin/HEAD"],
                 capture_output=True,
             ),
         )
@@ -74,10 +74,10 @@ class GitAutosquashTests(unittest.TestCase):
     def test_query_failures_stop_at_their_boundary(self):
         for results, expected in (
             ([git_autosquash.Result(2), git_autosquash.Result(24)], 24),
-            ([git_autosquash.Result(0, b"main\n"), git_autosquash.Result(25)], 25),
+            ([git_autosquash.Result(0, b"refs/heads/main\n"), git_autosquash.Result(25)], 25),
             (
                 [
-                    git_autosquash.Result(0, b"main\n"),
+                    git_autosquash.Result(0, b"refs/heads/main\n"),
                     git_autosquash.Result(0, b"origin\n"),
                     git_autosquash.Result(26),
                 ],
@@ -105,7 +105,7 @@ class GitAutosquashTests(unittest.TestCase):
     def test_empty_explicit_argument_keeps_legacy_extra_argument_behavior(self):
         runner = mock.Mock(
             side_effect=[
-                git_autosquash.Result(0, b"main\n"),
+                git_autosquash.Result(0, b"refs/heads/main\n"),
                 git_autosquash.Result(1),
                 git_autosquash.Result(0, b"base\n"),
                 git_autosquash.Result(0),

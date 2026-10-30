@@ -45,7 +45,7 @@ def captured_value(result: Result) -> str:
 
 def automatic_base(runner: Callable[..., Result]) -> tuple[int, str | None]:
     branch_result = runner(
-        ["git", "symbolic-ref", "--short", "--quiet", "HEAD"],
+        ["git", "symbolic-ref", "--quiet", "HEAD"],
         capture_output=True,
     )
     if branch_result.status:
@@ -55,7 +55,7 @@ def automatic_base(runner: Callable[..., Result]) -> tuple[int, str | None]:
                 "for-each-ref",
                 "refs/heads/",
                 "--format",
-                "%(refname:short)",
+                "%(refname)",
                 "--sort=-committerdate",
                 "--count=1",
             ],
@@ -63,7 +63,7 @@ def automatic_base(runner: Callable[..., Result]) -> tuple[int, str | None]:
         )
         if branch_result.status:
             return branch_result.status, None
-    branch = captured_value(branch_result)
+    branch = captured_value(branch_result).removeprefix("refs/heads/")
 
     remote_result = runner(
         ["git", "config", "--get", f"branch.{branch}.remote"],
@@ -77,7 +77,7 @@ def automatic_base(runner: Callable[..., Result]) -> tuple[int, str | None]:
         remote = captured_value(remote_result)
 
     base_result = runner(
-        ["git", "merge-base", "HEAD", f"{remote}/HEAD"],
+        ["git", "merge-base", "HEAD", f"refs/remotes/{remote}/HEAD"],
         capture_output=True,
     )
     if base_result.status:
