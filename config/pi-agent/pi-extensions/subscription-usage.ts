@@ -139,7 +139,10 @@ export async function showSubscriptionUsage(
       if (response.status === 401) throw new UsageError("ChatGPT login expired or was rejected. Run /login again.");
       throw new UsageError(`Account-usage request failed (HTTP ${response.status}). Try /usage again later.`);
     }
-    ctx.ui.notify(formatSubscriptionUsage(await response.json()), "info");
+    // Decode before resolving ctx.ui: its getter enforces Pi's session ownership,
+    // but a notify function captured before an await can outlive that context.
+    const message = formatSubscriptionUsage(await response.json());
+    ctx.ui.notify(message, "info");
   } catch (error) {
     // Auth resolvers and transport errors can contain credentials or response bodies.
     const message = error instanceof UsageError

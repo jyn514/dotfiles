@@ -93,6 +93,7 @@ for (const authType of ["runtime key", "fresh OAuth"]) {
     });
     const faux = fauxProvider({ provider: "offline-usage-model", api: "anthropic-messages" });
     let agentStarts = 0;
+    let commandContext;
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
     const loader = new DefaultResourceLoader({
       cwd, agentDir, settingsManager,
@@ -100,6 +101,9 @@ for (const authType of ["runtime key", "fresh OAuth"]) {
       additionalExtensionPaths: [extensionPath],
       extensionFactories: [(pi) => {
         pi.registerProvider(faux.provider);
+        pi.registerCommand("capture-usage-context", {
+          handler: async (_args, ctx) => { commandContext = ctx; },
+        });
         // The installed Codex provider is OAuth-only: a runtime API key alone
         // does not enable key auth. Configure that public auth method for this
         // fixture; the distinct fallback must lose to setRuntimeApiKey above.
@@ -151,5 +155,41 @@ for (const authType of ["runtime key", "fresh OAuth"]) {
     assert.equal(agentStarts, 0, "a slash command must not start an LLM turn");
     assert.equal(faux.state.callCount, 0, "the selected model receives no request");
     assert.deepEqual(session.messages, [], "no user, assistant, or system LLM messages are added");
+
+    // Hold body decoding after response headers arrive. Capability lookup must
+    // happen after this await, so Pi can reject an outgoing context at publication.
+    await session.prompt("/capture-usage-context");
+    for (const invalidated of [false, true]) {
+      notifications.length = 0;
+      const bodyStarted = Promise.withResolvers();
+      const body = Promise.withResolvers();
+      t.mock.method(globalThis, "fetch", async (url) => {
+        assert.equal(url, usageUrl, "no real network");
+        return { ok: true, json: () => { bodyStarted.resolve(); return body.promise; } };
+      });
+      const pending = session.prompt("/usage");
+      await bodyStarted.promise;
+      let nativeGuardError;
+      if (invalidated) {
+        session.dispose();
+        try { void commandContext.ui; } catch (error) { nativeGuardError = error; }
+        assert.ok(nativeGuardError instanceof Error, "Pi must reject outgoing context access");
+      }
+      body.resolve({ credits: { unlimited: true } });
+      await pending;
+      if (invalidated) {
+        assert.deepEqual(notifications, [], "no outgoing usage or usage-error notification");
+        // Pi catches command rejection and reports its own diagnostic. Do not
+        // suppress it or confuse it with a usage notification from stale ctx.ui.
+        assert.deepEqual(extensionErrors, [{
+          extensionPath: "command:usage", event: "command", error: nativeGuardError.message,
+        }]);
+      } else {
+        assert.deepEqual(notifications, [{ text: "  Credits:  Unlimited", level: "info" }]);
+        assert.deepEqual(extensionErrors, []);
+      }
+    }
+    assert.equal(agentStarts, 0);
+    assert.equal(faux.state.callCount, 0);
   });
 }
