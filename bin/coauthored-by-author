@@ -102,9 +102,10 @@
             out
             (throw (ex-info (str "git interpret-trailers failed\n" err)
                             {:exit exit})))))
-       str/split-lines
+       ;; Native --parse uses LF records; unfolded values can retain CR.
+       (#(str/split % #"\n"))
        (keep (fn [line]
-               (when-let [[_ token value] (re-matches #"([^:]+):[ \t]*(.*)" line)]
+               (when-let [[_ token value] (re-matches #"([^:]+):[ \t]*([^\n]*)" line)]
                  [(str/lower-case token) value])))))
 
 (defn parse-person

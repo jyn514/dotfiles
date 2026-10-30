@@ -406,6 +406,54 @@ class CoauthoredByAuthorTest(unittest.TestCase):
                     self.assertEqual("Claude Example|claude@example.test\n", self.git("show", "-s", "--format=%an|%ae", "HEAD"))
                     self.assertEqual("", self.git("status", "--porcelain=v1"))
 
+    def test_standalone_crlf_name_email_fold_reaches_apply(self) -> None:
+        if not shutil.which("git-filter-repo"):
+            self.skipTest("requires native git-filter-repo")
+        fold = b"Co-Authored-By: Claude Example \t\r\n \t<claude@example.test> \t\r\n"
+        reviewer = b"Reviewed-by: Reviewer <reviewer@example.test>\r\n"
+        body = "Standalone fold café 🐛\r\n\r\n".encode("utf-8") + fold + b"Not a trailer block.\r\n\r\n"
+        message = body + fold + reviewer
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+             "--cleanup=verbatim", "-F", "-"], cwd=self.repo, env=self.env,
+            input=message, capture_output=True, check=True,
+        )
+        commit = self.git("rev-parse", "HEAD").strip()
+        source = self.repo
+        for keep in (False, True):
+            with self.subTest(keep_trailer=keep):
+                clone = source.parent / f"standalone-CRLF-clone-{keep}"
+                self.git("clone", "--no-local", "-q", str(source), str(clone))
+                self.repo = clone
+                native = subprocess.run(
+                    ["git", "interpret-trailers", "--parse"], cwd=clone, env=self.env,
+                    input=message, capture_output=True, check=True,
+                ).stdout
+                self.assertEqual(
+                    b"Co-Authored-By: Claude Example \t\r <claude@example.test>\n"
+                    + reviewer.replace(b"\r\n", b"\n"), native,
+                )
+
+                def raw_commit() -> bytes:
+                    return subprocess.run(
+                        ["git", "cat-file", "commit", "HEAD"], cwd=clone, env=self.env,
+                        capture_output=True, check=True,
+                    ).stdout
+
+                before = raw_commit()
+                self.assertEqual(message, before.split(b"\n\n", 1)[1])
+                self.assert_candidates(self.run_command(), [commit])
+                self.assertEqual(before, raw_commit())
+                self.assert_candidates(self.run_command("--apply", *(["--keep-trailer"] if keep else [])), [commit])
+                after = raw_commit()
+                self.assertEqual(message if keep else body + reviewer, after.split(b"\n\n", 1)[1])
+                self.assertEqual(
+                    [line for line in before.split(b"\n\n", 1)[0].split(b"\n") if not line.startswith(b"author ")],
+                    [line for line in after.split(b"\n\n", 1)[0].split(b"\n") if not line.startswith(b"author ")],
+                )
+                self.assertEqual("Claude Example|claude@example.test\n", self.git("show", "-s", "--format=%an|%ae", "HEAD"))
+                self.assertEqual("", self.git("status", "--porcelain=v1"))
+
     def test_apply_uses_native_key_boundaries_not_literal_colon(self) -> None:
         if not shutil.which("git-filter-repo"):
             self.skipTest("requires native git-filter-repo")
