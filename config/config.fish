@@ -97,9 +97,9 @@ function load-global-git-abbreviations --argument-names git_command
 		set -l value "$values[1]"
 		set --erase values[1]
 		if string match -q '!*' -- "$value"
-			# string split preserves embedded/trailing newlines in substitutions.
-			set -l expansion (string split --max 1 '' -- "$value")
-			abbr --add --global "g$name" -- "$expansion[2]"
+			# Git owns the shell interpreter, arguments, and repository context.
+			# Resolve by name at execution so current repository overrides apply.
+			abbr --add --global "g$name" -- "git "(string escape -- "$name")
 		else
 			abbr --add --global --command git "$name" -- "$value"
 		end
