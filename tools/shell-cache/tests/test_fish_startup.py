@@ -1,5 +1,6 @@
 """Real Git discovery and Fish consumption with private user/repository state."""
 
+import errno
 import fcntl
 import json
 import os
@@ -13,6 +14,7 @@ import tempfile
 import termios
 import time
 import unittest
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -44,6 +46,7 @@ class FishStartupTest(unittest.TestCase):
             "PATH": f"{ROOT / 'bin'}:{self.home / '.local/bin'}:/usr/bin:/bin",
             "XDG_CONFIG_HOME": str(self.home / ".config"),
             "TERM": "xterm-256color",
+            "FISH_UNIT_TESTS_RUNNING": "1",
             "SSH_AUTH_SOCK": "fixture-agent-not-contacted",
             "HOOK_CALLS": str(self.calls),
             "PROFILE_FISH": str(ROOT / "config/config.fish"),
@@ -88,7 +91,7 @@ class FishStartupTest(unittest.TestCase):
             stdin=subprocess.DEVNULL, text=True, capture_output=True, timeout=15,
         )
 
-    def execute_abbreviation(self, cwd: Path, line: str):
+    def execute_abbreviation(self, cwd: Path, line: str, *, post_startup: str = "", terminal_output: bool = False):
         # Fish's real reader owns abbreviation expansion. A controlling PTY is
         # required: eval-ing the registered text would miss reader failures.
         master, slave = pty.openpty()
@@ -99,7 +102,9 @@ class FishStartupTest(unittest.TestCase):
 
         # Exercise the real reader without unrelated custom navigation keys.
         initialization = (
-            'source "$PROFILE_FISH"; or exit; bind --erase --all; fish_default_key_bindings; '
+            'source "$PROFILE_FISH"; or exit; '
+            + (post_startup + '; ' if post_startup else '')
+            + 'bind --erase --all; fish_default_key_bindings; '
             'function fish_prompt; printf FISH_READER_READY; end; '
             'function fixture_exit --on-event fish_postexec; exit $status; end'
         )
@@ -109,7 +114,7 @@ class FishStartupTest(unittest.TestCase):
             with subprocess.Popen(
                 [FISH, "--no-config", "--interactive", "--init-command", initialization],
                 cwd=cwd, env=self.environment | {"GIT_TRACE": "1", "GIT_TRACE2_EVENT": str(trace)},
-                stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdin=slave, stdout=slave if terminal_output else subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, preexec_fn=terminal,
             ) as process:
                 os.close(slave)
@@ -118,18 +123,36 @@ class FishStartupTest(unittest.TestCase):
                     # Fish may discard pending terminal input during startup.
                     # Wait for its reader, rather than racing or sleeping.
                     prefix = b""
+                    output = master if terminal_output else process.stdout.fileno()
                     deadline = time.monotonic() + 10
                     while b"FISH_READER_READY" not in prefix:
                         remaining = deadline - time.monotonic()
-                        if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
+                        if remaining <= 0 or not select.select([output], [], [], remaining)[0]:
                             raise subprocess.TimeoutExpired(process.args, 10)
-                        chunk = os.read(process.stdout.fileno(), 4096)
+                        chunk = os.read(output, 4096)
                         if not chunk:
                             self.fail("Fish exited before its interactive reader was ready")
                         prefix += chunk
                     os.write(master, (line + "\n").encode())
+                    if terminal_output:
+                        # which intentionally treats redirected stdout differently.
+                        # Drain its real terminal output until the reader exits.
+                        deadline = time.monotonic() + 10
+                        while True:
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0 or not select.select([output], [], [], remaining)[0]:
+                                raise subprocess.TimeoutExpired(process.args, 10)
+                            try:
+                                chunk = os.read(output, 4096)
+                            except OSError as error:
+                                if error.errno != errno.EIO:
+                                    raise
+                                break
+                            if not chunk:
+                                break
+                            prefix += chunk
                     stdout, stderr = process.communicate(timeout=10)
-                    stdout = prefix.decode() + stdout
+                    stdout = prefix.decode() + (stdout or "")
                 except subprocess.TimeoutExpired:
                     process.kill()
                     stdout, stderr = process.communicate()
@@ -141,6 +164,105 @@ class FishStartupTest(unittest.TestCase):
                 os.close(slave)
         events = [json.loads(line) for line in trace.read_text().splitlines()]
         return result, [event["argv"] for event in events if event["event"] == "start"]
+
+    def tracked_git_aliases(self) -> None:
+        # Exercise the real user-global alias.s alongside the shared bare s.
+        with self.global_config.open("a") as config:
+            config.write(f'[include]\n  path = {ROOT / "config/gitconfig"}\n')
+
+    def test_shared_status_reader_survives_tracked_git_s_in_directory_and_git(self) -> None:
+        self.tracked_git_aliases()
+        neutral = self.directory / "neutral"
+        neutral.mkdir()
+        for directory in (neutral, self.a):
+            (directory / "status-directory-marker.txt").touch()
+            for reload in (False, True):
+                with self.subTest(directory=directory.name, reload=reload):
+                    result, calls = self.execute_abbreviation(
+                        directory, "s ",
+                        post_startup='source "$PROFILE_FISH"; or exit' if reload else "",
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertIn("status-directory-marker.txt", result.stdout)
+                    self.assertNotIn("login shell", result.stdout)
+                    self.assertNotIn("Job control:", result.stdout)
+                    if directory == self.a:
+                        self.assertIn(["git", "s"], calls)
+        builtin = self.startup(self.a, "type --type status; status --is-interactive; builtin status --is-interactive")
+        self.assertEqual(0, builtin.returncode, builtin.stderr)
+        self.assertEqual("builtin\n", builtin.stdout)
+
+    def test_shared_status_reader_uses_native_jj_with_tracked_git_aliases(self) -> None:
+        self.tracked_git_aliases()
+        jj = os.environ.get("DOTFILES_TEST_JJ_REAL") or shutil.which("jj")
+        if not jj:
+            self.skipTest("native JJ is unavailable")
+        (self.home / ".local/bin/jj").symlink_to(jj)
+        workspace = self.directory / "jj-workspace"
+        workspace.mkdir()
+        for arguments in (("git", "init", "."), ("status",)):
+            (workspace / "status-jj-marker.txt").touch()
+            result = subprocess.run([jj, *arguments], cwd=workspace, env=self.environment,
+                                    text=True, capture_output=True, timeout=10)
+            self.assertEqual(0, result.returncode, result.stderr)
+        result, calls = self.execute_abbreviation(workspace, "s ")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Working copy changes:", result.stdout)
+        self.assertIn("status-jj-marker.txt", result.stdout)
+        self.assertNotIn("login shell", result.stdout)
+        self.assertNotIn(["git", "s"], calls)
+
+    def test_tracked_git_status_visible_expansion_and_argv_survive_reload(self) -> None:
+        self.tracked_git_aliases()
+        # Keep the exact-argv oracle independent of the repository's chosen
+        # alias.s flags. This later global definition wins over the include.
+        value = "status --porcelain=v1 --untracked-files=no"
+        with self.global_config.open("a") as config:
+            config.write(f"[alias]\n  s = {value}\n")
+        for reload in (False, True):
+            with self.subTest(reload=reload):
+                result, calls = self.execute_abbreviation(
+                    self.a, "git s ",
+                    post_startup='source "$PROFILE_FISH"; or exit' if reload else "",
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                # Reader redraws can split the visible command across writes.
+                # Its commandline marker and Git argv retain the complete line.
+                self.assertIn(value, result.stdout)
+                self.assertIn("cmdline_url=" + quote("git " + value + " ", safe=""), result.stdout)
+                self.assertIn(["git", "status", "--porcelain=v1", "--untracked-files=no"], calls)
+                self.assertNotIn(["git", "s"], calls)
+
+    def test_namespaced_git_triggers_are_literal_context_scoped_and_not_internal_ids(self) -> None:
+        self.tracked_git_aliases()
+        self.git("config", "--file", str(self.global_config), "alias.literal.dot", "status --short")
+        for line, expected_status, expected_argv in (
+            ("git literal.dot ", 0, ["git", "status", "--short"]),
+            ("git literalXdot ", 1, ["git", "literalXdot"]),
+            ("git xliteral.dot ", 1, ["git", "xliteral.dot"]),
+            ("git __dotfiles_git_s ", 1, ["git", "__dotfiles_git_s"]),
+            ("literal.dot ", 127, None),
+        ):
+            with self.subTest(line=line):
+                result, calls = self.execute_abbreviation(self.a, line)
+                self.assertEqual(expected_status, result.returncode, result.stderr)
+                if expected_argv:
+                    self.assertIn(expected_argv, calls)
+                else:
+                    self.assertNotIn(["git", "status", "--short"], calls)
+
+    def test_which_reports_namespaced_git_expansions_without_losing_shared_collisions(self) -> None:
+        self.tracked_git_aliases()
+        self.git("config", "--file", str(self.global_config), "alias.literal.dot", "status --short")
+        result, _ = self.execute_abbreviation(
+            self.a, "which user-global s literal.dot guser-shell", terminal_output=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("user-global is a Git abbreviation to: status --short", result.stdout)
+        self.assertIn("literal.dot is a Git abbreviation to: status --short", result.stdout)
+        self.assertIn("s is an abbreviation to: show-status --run", result.stdout)
+        self.assertIn("guser-shell is an abbreviation to: git user-shell", result.stdout)
+        self.assertNotIn("__dotfiles_git_", result.stdout)
 
     def test_shell_alias_expansion_executes_with_native_interpreter_context_and_arguments(self) -> None:
         value = (
@@ -315,7 +437,7 @@ class FishStartupTest(unittest.TestCase):
         result = self.startup(
             self.a,
             'abbr --show | while read --tokenize --local --array fields; '
-            'if test "$fields[-2]" = user-global; printf %s "$fields[-1]"; end; end',
+            'if test "$fields[-2]" = __dotfiles_git_user-global; printf %s "$fields[-1]"; end; end',
         )
         self.assertEqual(0, result.returncode, result.stderr)
         native = self.git("config", "--get", "alias.user-global")
@@ -350,11 +472,11 @@ class FishStartupTest(unittest.TestCase):
                     result = self.startup(
                         self.a,
                         'abbr --show | while read --tokenize --local --array fields; '
-                        'if contains -- "$fields[-2]" precedence-probe gprecedence-probe; '
+                        'if contains -- "$fields[-2]" __dotfiles_git_precedence-probe gprecedence-probe; '
                         'printf "%s\\0%s\\0" "$fields[-2]" "$fields[-1]"; end; end',
                     )
                     self.assertEqual(0, result.returncode, result.stderr)
-                    expected_name = "gprecedence-probe" if native.startswith("!") else "precedence-probe"
+                    expected_name = "gprecedence-probe" if native.startswith("!") else "__dotfiles_git_precedence-probe"
                     expected_value = "git precedence-probe" if native.startswith("!") else native
                     # Exactly one native-effective value: no obsolete ordinary
                     # or g-prefixed form may survive from a losing definition.

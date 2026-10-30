@@ -40,7 +40,8 @@ sl=ls
 ll=ls -l
 la=ls --almost-all
 l=ls -F
-s=status
+# The helper is also sourced at startup; a nonempty argument opts into execution.
+s=show-status --run
 wttr=weather
 ubuntu=docker run --interactive --tty ubuntu
 # show human-readable dates with offsets by default

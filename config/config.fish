@@ -101,7 +101,10 @@ function load-global-git-abbreviations --argument-names git_command
 			# Resolve by name at execution so current repository overrides apply.
 			abbr --add --global "g$name" -- "git "(string escape -- "$name")
 		else
-			abbr --add --global --command git "$name" -- "$value"
+			# Fish IDs are global even for disjoint command contexts. Separate
+			# ownership from the literal trigger so Git s cannot erase bare s.
+			set -l trigger '^'(string escape --style=regex -- "$name")'$'
+			abbr --add --global --command git --regex "$trigger" "__dotfiles_git_$name" -- "$value"
 		end
 		or return
 	end
@@ -406,6 +409,15 @@ function which
 			else
 				printf %s "$cmd is a abbreviation: "
 				abbr --show | grep --color=never -F -- "-- $cmd"
+			end
+		else if abbr --query "__dotfiles_git_$cmd"
+			# Ordinary Git triggers have namespaced IDs, not literal Fish names.
+			# Read the registered expansion rather than maintaining another map.
+			abbr --show | while read --tokenize --local --list tokens
+				if test "$tokens[-2]" = "__dotfiles_git_$cmd"
+					printf '%s is a Git abbreviation to: %s\n' "$cmd" "$tokens[-1]"
+					break
+				end
 			end
 		else
 			if test "$all" = 1
