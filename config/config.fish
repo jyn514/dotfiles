@@ -330,6 +330,8 @@ set --erase abbreviations
 abbr --add --global --command git -- -nv --no-verify
 
 # load cargo aliases
+# Intentionally cache across shells for startup speed; effective Cargo config
+# can go stale. See config/README.md for the explicit manual refresh.
 if [ -z "$old_fish" ]; and exists cargo
 	set -l cargo_alias_cache ~/.local/config/cargo.fish
 	set -l cargo_command (command --search cargo)

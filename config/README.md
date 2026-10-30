@@ -54,6 +54,24 @@ A different PATH selection refreshes hooks even when availability is unchanged a
 The identity and generated hooks are replaced together; a hook producer failure preserves the previous cache, including its identity, so the next startup retries.
 A Git query failure returns before applying abbreviations or refreshing hooks.
 
+Cargo abbreviations intentionally use the shared `~/.local/config/cargo.fish` cache to keep startup fast, rather than querying native Cargo on every shell startup.
+It refreshes when tracked dependencies are newer: the Fish configuration, Cargo abbreviation generator and its renderer source, selected Cargo executable, and `$CARGO_HOME/bin` directory when present.
+It does not track effective Cargo configuration (including project aliases), the starting directory, or all changes in PATH command selection.
+Added, changed, or removed aliases can therefore leave abbreviations stale even in a new shell.
+Project aliases captured when the cache was generated can persist in other directories and new shells because the cache is shared, not per-project.
+Normal refresh failures preserve the last-good cache.
+
+To refresh manually, first change to the project directory whose Cargo aliases you want, then run this in Fish:
+
+```fish
+rm -f ~/.local/config/cargo.fish; and exec fish
+```
+
+This explicitly discards the old cache, so there is no last-good Cargo cache fallback if rebuilding fails; fix the reported producer error and retry.
+The replacement shell rebuilds using Cargo's configuration in that directory and drops obsolete abbreviation names from the current shell.
+Simply sourcing the configuration again does not remove old names.
+Other already-running shells keep their abbreviations until replaced; the shared cache can become stale again after changing projects or configuration.
+
 ## Agent instructions
 
 Agent launchers put `libexec/agent-wrappers` on PATH.
