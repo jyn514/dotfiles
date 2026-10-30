@@ -338,7 +338,8 @@ jyn uses Fish, not Bash.
   Prefer updating an existing owner over adding a new rule or location.
   Praise authorizes a suggestion, not an edit.
 
-### Before recording a note
+### Preserve findings and follow-up work
 
-Before creating, updating, or removing a note in `notes/`, read [Note records](~/.agents/skills/references/note-records.md) for recording criteria, provenance, and resolution rules.
-Do not commit your notes; keep them as untracked files.
+Use the project's issue tracker for unresolved work, including “this needs to be documented.”
+Do not use `notes/` as a durable record or handoff.
+Read [Durable records](~/.agents/skills/references/durable-records.md) when deciding what to retain across sessions and how to preserve its evidence.

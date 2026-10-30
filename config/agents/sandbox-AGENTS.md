@@ -39,10 +39,10 @@
 - User-wide tool caches under `/home/codex/.cache` persist across workspaces and sandbox sessions in the same VM.
   Treat them as disposable cache data, not as storage for configuration, credentials, or required artifacts.
 - Use host-backed `target/` only for artifacts that host tools, other agents, or jyn must inspect.
-- Use host-backed `notes/` for compact unresolved findings that can change a future decision.
-  Do not use it for routine logs, session summaries, or information already owned by maintained documentation.
+- Record unresolved findings and follow-up work in the project's issue tracker, including missing documentation.
+  Do not use `notes/` as a durable record or handoff.
 - Never leave the only evidence for a reported result in `work/`.
-  Copy the necessary artifact to `target/` or preserve the decisive facts in `notes/`.
+  Preserve the decisive facts in the ticket or maintained documentation; use `target/` for supplementary artifacts that need inspection.
 - When a tool needed for authorized work or validation is missing, install it in the disposable sandbox and retry the blocked command.
   A guest-only tool installation is not a new host prerequisite and does not require separate approval.
   You may use `sudo` for guest-only tool installation.

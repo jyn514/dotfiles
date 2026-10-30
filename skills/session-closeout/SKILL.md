@@ -13,7 +13,8 @@ Read the original request, major course corrections, decisions, completed work, 
 
 An explicit request to wrap up or end the session authorizes—and requires—you to commit all session-owned changes in coherent commits.
 If the harness supports current-session titles, the request also authorizes changing the title.
-It does not authorize optional repairs, issue filing, external publication, or committing unrelated work; obtain separate authority for those actions.
+Recording unresolved session work in the project's tracker is part of closeout.
+It does not authorize implementing that work, filing upstream reports, external publication, or committing unrelated work; obtain separate authority for those actions.
 
 A request such as “anything we forgot?” or “do you suggest changes to docs/skills/tooling?” initiates closeout only when it is explicitly framed as ending the session. Otherwise treat it as a non-mutating review and do not load this skill. Use `commit-quality`, not this skill, for an ordinary “commit your changes” request.
 
@@ -87,9 +88,10 @@ A passing check can still protect against a plausible failure; finding no failur
 Support conclusions with concrete actions, errors, or corrections from the session.
 Loading or following a skill does not establish that it helped; distinguish observed benefit or cost from uncertain attribution.
 Briefly report material benefits and costs, even when no change is warranted, rather than listing every file read.
-Record knowledge that another agent would otherwise have to reconstruct.
-Maintained documents must stand on their own without referring readers to session-local `target/`, `/tmp`, or other disposable artifacts.
-Put important findings, rationale, prerequisites, and enough reproduction detail in the owning documentation or specification.
+Record knowledge that another agent would otherwise have to reconstruct using [Durable records](../references/durable-records.md).
+Unresolved work belongs in tickets, including “this needs to be documented”; do not substitute notes or require immediate documentation work.
+Tickets and maintained documents must stand on their own without depending on session-local `target/`, `/tmp`, or other disposable artifacts.
+Preserve important findings, rationale, prerequisites, and enough reproduction detail with the owning ticket, documentation, or specification.
 Raw probe evidence need not be retained.
 
 For a material finding about a shared component, check known consumers outside

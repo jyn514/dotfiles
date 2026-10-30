@@ -86,8 +86,8 @@ The injection's upstream/package owner remains unresolved; inspect that source r
 
 The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
 to [Change with evidence](../skills/references/change-with-evidence.md), command
-selection to [Tool and command use](../skills/references/tool-use.md), and note
-writing to [Note records](../skills/references/note-records.md).
+selection to [Tool and command use](../skills/references/tool-use.md), and durable
+findings to [Durable records](../skills/references/durable-records.md).
 These are plain references under the existing `~/.agents/skills` directory link.
 The sandbox's live skills mount exposes them to existing workers without a new mount or restart.
 Reload the harness's instructions after changing a route.
