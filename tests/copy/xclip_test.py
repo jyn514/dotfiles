@@ -46,11 +46,16 @@ class XclipTest(unittest.TestCase):
             self.assertTrue(number.isdecimal(), "owned Xvfb failed to start")
         finally:
             os.close(read_fd)
-        # Exclude all other installed backends, but invoke the actual xclip parser.
+        # Use the actual X11 parser even when Wayland tools are also installed.
+        # These sentinels fail if the wrapper reverses mixed-session priority;
+        # no Wayland service is contacted or assumed to bridge the selections.
         for name in ("xclip", "basename"):
             (self.directory / name).symlink_to(shutil.which(name))
+        for name in ("wl-copy", "wl-paste"):
+            (self.directory / name).symlink_to(shutil.which("false"))
         self.environment = os.environ | {
             "PATH": str(self.directory), "DISPLAY": ":" + number,
+            "WAYLAND_DISPLAY": str(self.directory / "unused-wayland"),
         }
         self.owners: list[subprocess.Popen] = []
         self.addCleanup(self.stop_owners)

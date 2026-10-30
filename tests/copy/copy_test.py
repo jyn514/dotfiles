@@ -38,6 +38,10 @@ class NativeClipboardTest(unittest.TestCase):
             "MOCK_STDIN": str(self.stdin),
             "MOCK_STATUS": "0",
         }
+        # Backend selection cases supply their own session namespace. Never let
+        # the invoking desktop turn an argv test into a different backend case.
+        for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+            self.environment.pop(name, None)
         for name in ("a", "b", "glob-aa"):
             (self.directory / name).touch()
 
@@ -115,6 +119,50 @@ class NativeClipboardTest(unittest.TestCase):
                             elif index == 3:
                                 expected += ["-pboard", "find" if primary else "general"]
                             self.assert_native(mode, backend, options, expected)
+
+    def test_wayland_only_session_uses_wayland_despite_installed_x11_tools(self) -> None:
+        for first in (0, 1):
+            self.install_backends(first)
+            for display in (None, ""):
+                self.environment.pop("DISPLAY", None)
+                if display is not None:
+                    self.environment["DISPLAY"] = display
+                self.environment["WAYLAND_DISPLAY"] = "owned-wayland"
+                for mode in ("copy", "paste"):
+                    with self.subTest(first=first, display=display, mode=mode):
+                        self.assert_native(
+                            mode, "wl-" + mode, ["--type", "image/png", "--primary"],
+                            ["--type", "image/png", "--primary"],
+                        )
+
+    def test_x11_context_preserves_backend_priority_even_with_wayland(self) -> None:
+        # Both selectors may describe intentional SSH/X11 forwarding or an
+        # Xwayland bridge. Do not guess that DISPLAY is stale or prefer Wayland.
+        for first, backend in ((0, "xclip"), (1, "xsel")):
+            self.install_backends(first)
+            for wayland in (None, "", "owned-wayland"):
+                self.environment["DISPLAY"] = ":owned-x11"
+                self.environment.pop("WAYLAND_DISPLAY", None)
+                if wayland is not None:
+                    self.environment["WAYLAND_DISPLAY"] = wayland
+                for mode in ("copy", "paste"):
+                    with self.subTest(first=first, wayland=wayland, mode=mode):
+                        expected = (["-in" if mode == "copy" else "-out",
+                                     "-selection", "clipboard"] if first == 0 else
+                                    ["--input" if mode == "copy" else "--output",
+                                     "--clipboard"])
+                        self.assert_native(mode, backend, [], expected)
+
+    def test_wayland_only_session_without_wayland_tools_retains_fallback(self) -> None:
+        self.install_backends(0)
+        for name in ("wl-copy", "wl-paste"):
+            (self.directory / name).unlink()
+        self.environment["WAYLAND_DISPLAY"] = "owned-wayland"
+        for mode in ("copy", "paste"):
+            with self.subTest(mode=mode):
+                self.assert_native(mode, "xclip", [],
+                                   ["-in" if mode == "copy" else "-out",
+                                    "-selection", "clipboard"])
 
     def test_native_exit_status_is_propagated_in_both_modes(self) -> None:
         for index, names in enumerate(self.BACKENDS):

@@ -14,8 +14,12 @@ fatal() {
 main() {
 	mode=$1; shift
 
+	# Installed X11 tools cannot use a Wayland-only session. Preserve X11
+	# priority when DISPLAY is supplied (including SSH and mixed sessions).
+	if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -z "${DISPLAY:-}" ] && exists wl-copy; then
+		prog=wl-$mode
 	# X11
-	if exists xclip; then
+	elif exists xclip; then
 		prog=xclip
 	# X11, no --type support
 	elif exists xsel; then
@@ -23,11 +27,7 @@ main() {
 
 	# Wayland
 	elif exists wl-copy; then
-		if [ "$mode" = copy ]; then
-			prog=wl-copy
-		else
-			prog=wl-paste
-		fi
+		prog=wl-$mode
 
 	# MacOS, no --type support currently.
 	# might be possible to add using `osascript`.
