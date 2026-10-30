@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shlex
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,40 @@ class CommandIntegrationTests(unittest.TestCase):
         path = self.directory / name
         path.write_text("#!/bin/sh\n" + contents)
         path.chmod(0o755)
+
+    def test_real_runner_preserves_shell_status_and_watch_displays_it(self) -> None:
+        fixtures = Path(__file__).parent / "fixtures"
+        for name in ("clear", "tput", "sleep"):
+            (self.directory / name).symlink_to(fixtures / "terminal_command.py")
+        environment = dict(os.environ)
+        environment.pop("WATCH_RUNNER", None)
+        environment["PATH"] = f"{self.directory}:{os.environ['PATH']}"
+
+        # A real shell reports 128 + signal; ordinary exit 241 must stay 241.
+        for case, expected in (("TERM", 143), ("INT", 130), ("0", 0), ("7", 7), ("241", 241)):
+            with self.subTest(case=case):
+                command = ["/bin/sh", str(fixtures / "native_status.sh"), "pty", case]
+                direct = subprocess.run(
+                    [str(ROOT / "libexec/runinpty.py"), *command],
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual(expected, direct.returncode, direct.stderr)
+                self.assertEqual(b"native output\n", direct.stdout)
+                watched = subprocess.run(
+                    [str(ROOT / "bin/watch"), "-x", "/bin/sh", shlex.join(command)],
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual(31, watched.returncode, watched.stderr)
+                annotation = f"\n[exit {expected}]".encode() if expected else b""
+                self.assertEqual(b"native output" + annotation, watched.stdout)
 
     def test_watch_displays_failed_command_before_next_iteration(self) -> None:
         mocks = self.directory / "mocks"

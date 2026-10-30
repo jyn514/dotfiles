@@ -70,7 +70,10 @@ def main():
         print(f'Usage: {sys.argv[0]} [command args]', file=sys.stderr)
         sys.exit(1)
 
-    sys.exit(os.waitstatus_to_exitcode(spawn(sys.argv[1:])))
+    returncode = os.waitstatus_to_exitcode(spawn(sys.argv[1:]))
+    # Report shell-style signal status to watch, not a negative code that
+    # sys.exit would wrap into an unrelated ordinary exit status.
+    sys.exit(returncode if returncode >= 0 else 128 - returncode)
 
 
 if __name__ == '__main__':
