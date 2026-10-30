@@ -13,6 +13,18 @@ This skill owns semantic resolution and validation. It does not choose rebase ta
 
 Treat existing working-copy changes as protected until ownership is established. If a dirty file contains unrelated work, stop and ask before overwriting it.
 
+## Isolate the operation
+
+Perform the rebase, merge, or restack and its resolution in a disposable workspace, or entirely in the repository database without updating the live checkout.
+Isolation starts before the operation that can introduce conflicts, not after conflicts appear.
+Follow `jj-workflow`'s temporary-workspace procedure.
+A separate workspace shares history: construct candidate revisions without rewriting the live checkout's revision while the result is unresolved or unvalidated.
+Check the chosen command's working-copy effects before using a database-only approach.
+
+Record the live checkout's revision and parents before starting.
+Keep that checkout usable throughout resolution and validation, even when no other agent is editing it.
+If it already contains conflicts, preserve its authored changes and continue resolution in isolation.
+
 ## Inspect first
 
 Start with one of these commands:
@@ -87,14 +99,9 @@ For a multi-sided conflict, inspect every diff alternative and choose the requir
 
 ## Preserve Jujutsu history
 
-When other agents are editing the checkout, use a separate resolution workspace rather than switching their working-copy revision.
-Follow `jj-workflow`'s temporary-workspace procedure; this separates checkout files, not shared history.
-
-Before switching away, record the original working-copy change ID, its parent
-change IDs, and whether it is empty and undescribed. Jujutsu may automatically
-abandon an empty, undescribed working-copy change when you leave it.
-
-Resolve in a fresh working-copy commit on top of the first conflicted change. Squash it into the exact introducing change only if that change is mutable and rewriting it is authorized; otherwise stop and use `jj-workflow` to choose an allowed history strategy:
+In the disposable workspace, resolve in a fresh working-copy commit on top of the first conflicted candidate change.
+Squash it into that exact change only if it is mutable and rewriting it is authorized; otherwise use `jj-workflow` to choose an allowed history strategy.
+These commands run in the disposable workspace:
 
 ```bash
 jj new CONFLICTED_CHANGE
@@ -107,13 +114,6 @@ Select only owned resolution paths; if a path also contains unrelated edits, sep
 Inspect any changes left in the resolution commit and preserve unrelated work.
 
 Use the stable change ID, not a nearby `@-`, as the squash target. Let descendants restack; then repeat inspection and resolution for each conflicted descendant. Do not abandon a change until its patch and resulting tree are understood.
-
-If you switched the original workspace, inspect `jj status` and `jj log` before returning to the recorded
-working-copy ID. If it still exists, return with `jj edit ORIGINAL_CHANGE`.
-If the recorded empty, undescribed change disappeared, verify its parents after
-restacking and create a new working copy with `jj new ORIGINAL_PARENT...`.
-Do not assume a missing nonempty or described change was safely abandoned;
-inspect operation history before proceeding.
 
 If a mutating command fails or is interrupted, inspect `jj status`, `jj log`, and operation state before retrying. Do not restore files or undo operations on assumption.
 
@@ -131,6 +131,8 @@ Review marker-scan matches; intentional conflict fixtures are not unresolved con
 Then inspect `jj diff -r CHANGE_ID` and run the narrowest relevant tests.
 After descendants restack, rerun affected tests at the final intended tip.
 Passing checks at an intermediate resolution do not establish that the assembled result works.
+Validate the complete candidate before updating the live checkout, including files Jujutsu merged without conflicts.
+Use native parsers for affected configuration: a clean text merge can still produce duplicate TOML keys or other invalid input.
 Before completion, verify:
 
 - no intended conflict remains in the current commit or descendants;
@@ -140,6 +142,13 @@ Before completion, verify:
 - type checks and tests pass, or unrelated baseline failures are recorded precisely.
 
 A resolution is complete only when the resulting file is semantically reviewed, the exact change has received the resolution, descendants have been checked, and validation evidence covers every affected path.
+
+## Update the live checkout
+
+After validating the candidate, check the live checkout for edits made during the work.
+Preserve those edits when integrating the candidate; if they change the validated result, compose and validate the new result in isolation first.
+Update the live checkout only to the validated result, then verify its revision, conflict status, and affected configuration.
+Do not expose intermediate conflicts or invalid configuration through a rebase, squash, or stale-workspace update.
 
 ## Review
 
