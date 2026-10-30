@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -16,7 +17,7 @@ NMCLI_ARGUMENTS = [
     "nmcli",
     "--terse",
     "--escape",
-    "no",
+    "yes",
     "--fields",
     "in-use,ssid",
     "device",
@@ -50,11 +51,25 @@ def run(arguments: list[str]) -> Result:
 
 
 def active_ssid(records: bytes) -> bytes | None:
-    for record in records.split(b"\n"):
-        # IN-USE is the literal "*" marker; ACTIVE is a localized yes/no.
-        if record.startswith(b"*:"):
-            return record[len(b"*:") :]
-    return None
+    """Select the first active SSID, rejecting malformed escaped nmcli output."""
+    if not records or not records.endswith(b"\n"):
+        return None
+    # IN-USE is literal '*' or ' '. With --escape yes, every payload colon
+    # is quoted, so only real row headers can follow a newline with '*:'/' :'.
+    # Remove just the last row terminator; payload newlines must survive.
+    fields = re.split(rb"(?:\A|\n)([ *]):", records[:-1])
+    if fields[0] or len(fields) == 1:
+        return None
+    selected = None
+    for index in range(1, len(fields), 2):
+        marker, payload = fields[index : index + 2]
+        # Native string values have no NULs, bare colons, or other escapes.
+        # Validate every row before returning, including rows after selection.
+        if re.fullmatch(rb"(?:[^:\\\x00]|\\[:\\])*", payload) is None:
+            return None
+        if marker == b"*" and selected is None:
+            selected = re.sub(rb"\\([:\\])", rb"\1", payload)
+    return selected
 
 
 def show_ssid(
