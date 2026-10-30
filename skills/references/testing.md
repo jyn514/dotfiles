@@ -17,7 +17,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Register automated suites with the repository's top-level test command, either by default or through a documented opt-in mode. Verify that the command discovers and executes them; a focused invocation alone does not prove reachability. Report missing prerequisites and skips distinctly from passing checks.
 - Use property tests when generators express the input space better than enumerated examples. When combinations or action sequences exceed a practical hand-written matrix, use bounded generated tests with requirement-derived or consumer-validated oracles. Record failing inputs for replay and reduce them to small regressions when practical. Use [property-based-testing](../property-based-testing/SKILL.md) for property-specific generator design and review.
 - Verify that executed generated cases contain the declared input classes and selected interactions, including after filtering or deduplication. Do not infer this from generator code alone. Include required cases explicitly when random generation cannot reliably exercise them; this check does not require an exhaustive cross-product.
-  For reports whose observed set may omit required items, see the [population example](testing-examples.md#coverage-and-required-populations).
+- For reports whose observed set may omit required items, see the [population example](testing-examples.md#coverage-and-required-populations).
 - Use golden tests with thoughtful fixtures at a consumer-meaningful layer; one shared check function should make cases easy to add and review.
 
 ## Expected behavior and regression evidence

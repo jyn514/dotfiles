@@ -21,8 +21,25 @@ A valid exclusion should remain possible when the governing requirements justify
 Derive the required population independently of the discovery or filtering stage whose omissions the test must detect.
 Printing a numerator and denominator helps reveal changes, but cannot detect an item missing from both reports' populations.
 
-**Evidence:** the talk's automatic captions, especially 08:08–08:58 and 15:35–19:58.
-This is the speaker's historical account; the underlying Ferrocene changes were not independently inspected or reproduced for this example.
+### What source inspection establishes
+
+Separately, Ferrocene revision `4a8f685da19c66d95a8d59b5c0cd8d20c35f4ac2` confirms the inventory-and-report mechanism.
+The [inventory exporter][ferrocene-inventory] selects expanded compiler definitions using certification policy and explicit exclusions, not execution records.
+Its independence is from the observed coverage population, not from compiler configuration or the eligibility policy itself.
+
+The [reader][ferrocene-reader] iterates every inventory entry and looks up coverage by source filename and inclusive line span.
+It discards the linkage name rather than matching compiled function symbols or generic instantiations independently.
+The [classifier][ferrocene-classifier] initially marks a missing file's lines untested, before applying annotations.
+If the file exists in the coverage map but no regions intersect a required definition's span, that definition becomes `FullyIgnored`.
+
+The inventory therefore keeps required definitions visible, but does not independently establish why their coverage is absent.
+Correct classification still depends on coverage-map completeness and source-location attribution.
+The presence of an inventory row does not establish coverage of every generic instantiation.
+
+**Evidence:** the talk's automatic captions, especially 08:08–08:58 and 15:35–19:58, plus the separately pinned source above.
+The exact talk/demo revision, percentages, and generated outputs were not independently validated.
+The `Infallible::clone` example remains part of the speaker's historical account, not a reproduction against the inspected revision.
+No runtime execution is claimed here.
 
 ## Cancellation and return values
 
@@ -75,6 +92,9 @@ The immediate-revert test checks successful replay and rename-detection count, n
 The expected contents above follow the described three-way merge and the author's rationale, not a separately reproduced result.
 
 [coverage-talk]: https://www.youtube.com/watch?v=P9lmSc4oLFs
+[ferrocene-inventory]: https://github.com/ferrocene/ferrocene/blob/4a8f685da19c66d95a8d59b5c0cd8d20c35f4ac2/ferrocene/tools/symbol-report/src/main.rs#L183-L248
+[ferrocene-reader]: https://github.com/ferrocene/ferrocene/blob/4a8f685da19c66d95a8d59b5c0cd8d20c35f4ac2/ferrocene/tools/blanket/src/rustc_driver.rs#L31-L63
+[ferrocene-classifier]: https://github.com/ferrocene/ferrocene/blob/4a8f685da19c66d95a8d59b5c0cd8d20c35f4ac2/ferrocene/tools/blanket/src/main.rs#L234-L305
 [timer-repair]: https://github.com/golang/go/commit/3b2e846e11d0c31a556b198f6c700745de5c9780
 [otel-discussion]: https://github.com/open-telemetry/opentelemetry-go/issues/5868
 [rename-rationale]: https://github.com/git/git/commit/64aceb6d738394130a6e215dc6de51d8452313e0
