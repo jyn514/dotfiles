@@ -13,6 +13,38 @@ const { DefaultResourceLoader, SessionManager, SettingsManager } =
   await import(pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
 const extensionPath = resolve(dirname(fileURLToPath(import.meta.url)),
   "../../config/pi-agent/pi-extensions/prompt-history-search.ts");
+const { loadPromptHistoryWithRipgrep } = await import(pathToFileURL(resolve(
+  dirname(extensionPath), "prompt-history-search-core.ts",
+)).href);
+
+for (const projectName of ["ordinary", "line\nfeed", "carriage\rreturn", "crlf\r\nproject"]) {
+  test(`ripgrep excludes the exact native session path for ${JSON.stringify(projectName)}`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "pi-native-history-path-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const cwd = join(root, projectName);
+    await mkdir(cwd);
+    // Let Pi encode the project path and write both files in its default session directory.
+    const current = SessionManager.create(cwd);
+    const saved = SessionManager.create(cwd);
+    t.after(() => rm(current.getSessionDir(), { recursive: true, force: true }));
+    current.appendMessage({ role: "user", content: "excluded current prompt", timestamp: 20 });
+    saved.appendMessage({ role: "user", content: "visible saved prompt\nλ", timestamp: 10 });
+    const currentPath = current.getSessionFile();
+    assert.ok(currentPath);
+    assert.ok(current.getSessionDir().includes(projectName));
+    assert.notEqual(currentPath, saved.getSessionFile());
+    assert.deepEqual(SessionManager.open(currentPath).getBranch().map((entry) => entry.message?.content), [
+      "excluded current prompt",
+    ], "Pi's reader accepts the writer's exact pathname");
+    const sessionsDir = dirname(current.getSessionDir());
+    const all = await loadPromptHistoryWithRipgrep(sessionsDir);
+    assert.ok(all.some(({ text }) => text === "excluded current prompt"));
+    assert.ok(all.some(({ text }) => text === "visible saved prompt\nλ"));
+    const selected = await loadPromptHistoryWithRipgrep(sessionsDir, currentPath);
+    assert.ok(!selected.some(({ text }) => text === "excluded current prompt"));
+    assert.ok(selected.some(({ text }) => text === "visible saved prompt\nλ"));
+  });
+}
 
 async function openPicker(t, prompts, { query = "", saved = [] } = {}) {
   const root = await mkdtemp(join(tmpdir(), "pi-native-history-"));

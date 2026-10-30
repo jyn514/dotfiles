@@ -83,22 +83,34 @@ export async function collectPromptHistoryFile(path: string): Promise<PromptHist
   return prompts;
 }
 
+function ripgrepText(value: { text?: string; bytes?: string }): string {
+  if (typeof value.text === "string") return value.text;
+  if (typeof value.bytes === "string") return Buffer.from(value.bytes, "base64").toString("utf8");
+  throw new Error("Invalid ripgrep text field");
+}
+
 export async function loadPromptHistoryWithRipgrep(
   sessionsDir: string,
   excludedPath?: string,
 ): Promise<PromptHistoryEntry[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rg", ["-0", "-H", "--fixed-strings", '"role":"user"', sessionsDir], {
+    const child = spawn("rg", ["--json", "--fixed-strings", '"role":"user"', sessionsDir], {
       stdio: ["ignore", "pipe", "ignore"],
     });
     const prompts: PromptHistoryEntry[] = [];
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
 
     lines.on("line", (line) => {
-      const separator = line.indexOf("\0");
-      if (separator < 0 || line.slice(0, separator) === excludedPath) return;
-      const prompt = promptFromLine(line.slice(separator + 1));
-      if (prompt) prompts.push(prompt);
+      try {
+        // JSON framing escapes newlines in paths before readline splits records.
+        const result = JSON.parse(line);
+        if (result.type !== "match" || ripgrepText(result.data.path) === excludedPath) return;
+        const prompt = promptFromLine(ripgrepText(result.data.lines));
+        if (prompt) prompts.push(prompt);
+      } catch (error) {
+        // Reject framing failures so the caller can use the streaming file fallback.
+        reject(error);
+      }
     });
     child.on("error", reject);
     child.on("close", (code) => {
