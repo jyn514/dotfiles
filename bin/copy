@@ -42,8 +42,10 @@ main() {
 		fatal "no clipboard manager detected"
 	fi
 
+	# Accept only [--type VALUE] [--primary]; VALUE remains a literal operand.
 	type_set=false
-	if [ "$1" = --type ]; then
+	if [ "${1:-}" = --type ]; then
+		[ "$#" -ge 2 ] || fatal "--type requires an operand"
 		case "$prog" in
 			xclip|wl-copy|wl-paste)
 				type=$2
@@ -57,7 +59,9 @@ main() {
 	selection=clipboard
 	if [ "${1:-}" = --primary ]; then
 		selection=primary
+		shift
 	fi
+	[ "$#" -eq 0 ] || fatal "unexpected argument: $1"
 
 	# Build native argv directly: MIME values must never undergo splitting or globbing.
 	case "$prog:$mode" in

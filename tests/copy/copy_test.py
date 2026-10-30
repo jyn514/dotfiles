@@ -87,7 +87,8 @@ class NativeClipboardTest(unittest.TestCase):
         # Check argv boundaries, not native parser acceptance (see xclip_test.py):
         # absent flags add no empty values, and the supplied type stays literal.
         # Include both a standalone matching glob and whitespace plus metacharacters.
-        types = (None, "", "image/png", "text/plain; charset=utf-8", "*", "*?[ab]",
+        types = (None, "", "--primary", "--type", "--bogus", "image/png",
+                 "text/plain; charset=utf-8", "*", "*?[ab]",
                  "image/png; charset=utf-8 * ? [ab]\tline\nbreak")
         for index, names in enumerate(self.BACKENDS):
             self.install_backends(index)
@@ -119,6 +120,34 @@ class NativeClipboardTest(unittest.TestCase):
                             elif index == 3:
                                 expected += ["-pboard", "find" if primary else "general"]
                             self.assert_native(mode, backend, options, expected)
+
+    def test_invalid_cli_input_fails_without_invoking_native_backend(self) -> None:
+        # The public fragment is [--type VALUE] [--primary], not arbitrary
+        # ordering or native option forwarding. VALUE itself can look like a flag.
+        invalid = (
+            ["--type"], ["--bogus"], ["filename"], [""], ["--"],
+            ["--primary", "--type", "image/png"],
+            ["--primary", "--primary"], ["--primary", "trailing"],
+            ["--type", "image/png", "--type", "text/plain"],
+            ["--type", "image/png", "trailing"],
+            ["--type", "image/png", "--primary", "trailing"],
+        )
+        for index in range(len(self.BACKENDS)):
+            self.install_backends(index)
+            for mode in ("copy", "paste"):
+                for options in invalid:
+                    with self.subTest(backend=self.BACKENDS[index], mode=mode,
+                                      options=options):
+                        self.arguments.unlink(missing_ok=True)
+                        self.stdin.unlink(missing_ok=True)
+                        result = self.run_native(mode, options)
+                        self.assertFalse(self.arguments.exists(),
+                                         "invalid input invoked the backend")
+                        self.assertFalse(self.stdin.exists(),
+                                         "invalid input reached backend stdin")
+                        self.assertNotEqual(0, result.returncode)
+                        self.assertEqual(b"", result.stdout)
+                        self.assertTrue(result.stderr)
 
     def test_wayland_only_session_uses_wayland_despite_installed_x11_tools(self) -> None:
         for first in (0, 1):
