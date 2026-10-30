@@ -2,8 +2,11 @@
 
 import json
 import os
+import re
+import runpy
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -93,6 +96,37 @@ class AgentSkillsPackageTest(unittest.TestCase):
                     self.assertIn(f"- {name}: {description}\n", result.stdout)
             self.assertNotIn("- double-check:", result.stdout)
 
+    def test_package_readme_relocates_only_supported_inline_links(self) -> None:
+        relocate = runpy.run_path(str(ROOT / "dev/publish-skills"))["package_readme"]
+        source = """[Skill](property-based-testing/SKILL.md)
+[Reference](references/change-with-evidence.md#example)
+[Same page](#example) [External](https://example.com/example.md)
+[Protocol relative](//example.com/example.md) [Absolute](/example.md)
+[Mail](mailto:example.md) [Reference link][skill]
+[skill]: property-based-testing/SKILL.md
+![Image](property-based-testing/SKILL.md)
+`[Code](property-based-testing/SKILL.md)`
+`` [Code with ` tick](property-based-testing/SKILL.md) ``
+```md
+[Code](property-based-testing/SKILL.md)
+```
+~~~md
+[Code](property-based-testing/SKILL.md)
+~~~
+[After code](mutation-testing/README.md)
+"""
+        expected = source.replace(
+            "[Skill](property-based-testing/SKILL.md)",
+            "[Skill](skills/property-based-testing/SKILL.md)",
+        ).replace(
+            "[Reference](references/change-with-evidence.md#example)",
+            "[Reference](skills/references/change-with-evidence.md#example)",
+        ).replace(
+            "[After code](mutation-testing/README.md)",
+            "[After code](skills/mutation-testing/README.md)",
+        )
+        self.assertEqual(expected, relocate(source))
+
     def test_publish_command_stages_the_skills_readme(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
@@ -115,10 +149,15 @@ class AgentSkillsPackageTest(unittest.TestCase):
 
             staged = json.loads(capture.read_text(encoding="utf-8"))
             self.assertEqual(staged["arguments"], ["publish", "--dry-run", "--access", "public"])
-            self.assertEqual(
-                staged["readme"],
-                (ROOT / "skills/README.md").read_text(encoding="utf-8"),
-            )
+            source_readme = (ROOT / "skills/README.md").read_text(encoding="utf-8")
+            expected_readme = source_readme
+            for destination in re.findall(r"\]\(([^)]+)\)", source_readme):
+                if (ROOT / "skills" / destination).is_file():
+                    expected_readme = expected_readme.replace(
+                        f"]({destination})", f"](skills/{destination})",
+                    )
+            self.assertEqual(staged["readme"], expected_readme)
+            self.assertEqual(staged["source_readme"], source_readme)
             self.assertTrue(staged["has_manifest"])
             self.assertTrue(staged["has_license"])
             self.assertTrue(staged["has_codex_plugin"])
@@ -150,6 +189,41 @@ class AgentSkillsPackageTest(unittest.TestCase):
         package = load_json("package.json")
         self.assertIn(f"Validated {package['name']}@{package['version']}", result.stdout)
         self.assertIn("no publication.", result.stdout)
+
+    @unittest.skipUnless(shutil.which("npm"), "native npm is required")
+    def test_native_archive_readme_links_resolve_without_changing_source(self) -> None:
+        stage = runpy.run_path(str(ROOT / "dev/publish-skills"))["stage_package"]
+        source = (ROOT / "skills/README.md").read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            stage(package)
+            result = subprocess.run(
+                ["npm", "pack", str(package), "--json", "--ignore-scripts", "--offline"],
+                cwd=package, capture_output=True, text=True, check=True, timeout=30,
+            )
+            [packed] = json.loads(result.stdout)
+            with tarfile.open(package / packed["filename"]) as archive:
+                files = {member.name for member in archive.getmembers() if member.isfile()}
+                readme = archive.extractfile("package/README.md").read().decode("utf-8")
+                self.assertEqual(source, archive.extractfile("package/skills/README.md").read())
+                links = re.findall(r"\]\(([^)]+)\)", readme)
+                local_links = [link for link in links if not link.startswith(("#", "https://"))]
+                self.assertTrue(local_links)
+                for destination in local_links:
+                    with self.subTest(destination=destination):
+                        self.assertIn(f"package/{destination.split('#')[0]}", files)
+                original = source.decode("utf-8")
+                self.assertEqual(
+                    re.findall(r"\]\((#[^)]+)\)", original),
+                    re.findall(r"\]\((#[^)]+)\)", readme),
+                )
+                # The generated introduction keeps every heading (and therefore
+                # its same-page anchors), not merely the list of anchor links.
+                self.assertEqual(
+                    re.findall(r"^#+ .*", original, re.MULTILINE),
+                    re.findall(r"^#+ .*", readme, re.MULTILINE),
+                )
+        self.assertEqual(source, (ROOT / "skills/README.md").read_bytes())
 
     def test_archive_check_never_publishes_and_rejects_missing_resources(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

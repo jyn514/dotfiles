@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,28 @@ ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_FILES = ("package.json", "LICENSE", "skills")
 
 
+# Relocate this README's flat-label inline links with bare local .md paths.
+# This is not a general Markdown parser: fenced blocks and single-line code
+# spans are skipped; URLs, anchors, and reference syntax are left untouched.
+README_LINKS = re.compile(
+    r"(?P<code>^ {0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n.*?"
+    r"^ {0,3}(?P=fence)[ \t]*(?:\n|$)|(?P<ticks>`+)[^\n]*?(?P=ticks))"
+    r"|(?P<link>(?<![!\\])\[[^\]\n]+\]\()"
+    r"(?P<path>(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.md)"
+    r"(?P<fragment>\#[A-Za-z0-9_-]+)?\)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def package_readme(source: str) -> str:
+    def relocate(match: re.Match) -> str:
+        if match["code"] is not None:
+            return match[0]
+        return f"{match['link']}skills/{match['path']}{match['fragment'] or ''})"
+
+    return README_LINKS.sub(relocate, source)
+
+
 def stage_package(destination: Path) -> None:
     for relative in PACKAGE_FILES:
         source = ROOT / relative
@@ -21,7 +44,12 @@ def stage_package(destination: Path) -> None:
             shutil.copytree(source, target)
         else:
             shutil.copy2(source, target)
-    shutil.copy2(ROOT / "skills/README.md", destination / "README.md")
+    # The introduction belongs at package root, but its files still live under
+    # skills/. Preserve the source README for repository and installed readers.
+    (destination / "README.md").write_text(
+        package_readme((ROOT / "skills/README.md").read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
     subprocess.run(
         [ROOT / "dev/generate-plugin-manifests", "--root", destination],
         check=True,

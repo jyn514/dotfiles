@@ -17,6 +17,7 @@ capture.write_text(json.dumps({
     "arguments": sys.argv[1:2] + sys.argv[3:],
     "package": str(package),
     "readme": (package / "README.md").read_text(),
+    "source_readme": (package / "skills/README.md").read_text(),
     "has_manifest": (package / "package.json").is_file(),
     "has_license": (package / "LICENSE").is_file(),
     "has_codex_plugin": (package / ".codex-plugin/plugin.json").is_file(),
