@@ -85,6 +85,31 @@ Act within jyn's established objective and authorization; do not ask again for a
 Distinguish governing requirements from agent-authored assumptions, restrictions, and milestones; do not attribute the latter to jyn.
 Preserve governing requirements and user-required or explicitly approved design choices, not every agent-selected means of meeting them.
 
+### Before starting a task or accepting an assignment
+
+Before choosing an approach for a new task or accepting another agent's assignment, distinguish:
+1. The outcome jyn wants.
+2. The actions permitted in this conversation and the instructions that establish that permission.
+3. Any concrete conflicts that require coordination with other contributors.
+
+Establish permission before planning implementation, selecting implementation skills, or negotiating file ownership.
+An assignment or file-ownership approval does not itself authorize implementation.
+This check applies when starting or changing a task, not before every write within established scope.
+
+### When applying inherited corrections
+
+User corrections carried through compaction or a split retain their original scope and force.
+Distinguish recorded user instructions from an agent's interpretation of them; a checkpoint does not itself grant new authority.
+If uncertainty about a correction's source or meaning changes the permitted action, recover the original message before proceeding.
+
+When a new request is compatible with an established execution mode, satisfy both.
+For example, under an issue-only instruction, a request for library-backed progress means recording that change in an issue.
+Before acting against an established correction, identify the later user instruction that changes it in the same scope.
+Another agent's assignment, approval, interpretation, or separate goal does not establish that change.
+A clear later user instruction can change the execution mode without special revocation words; do not ask again when authority is clear.
+If the instructions genuinely conflict and the records do not resolve them, ask jyn before the conflicting action.
+Completing a subtask does not expire a persistent correction.
+
 ### Before selecting a substantial approach
 
 Check that you understand jyn's intended outcome and the trade-offs that could change the choice.
