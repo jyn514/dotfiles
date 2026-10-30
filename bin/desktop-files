@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # https://askubuntu.com/a/1348668
-DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HOME/.local/share"
+DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:${XDG_DATA_HOME:-$HOME/.local/share}"
 IFS=: read -r -a data_dirs <<< "$DATA_DIRS"
 for p in "${data_dirs[@]}"; do
 	# https://unix.stackexchange.com/questions/198045/how-to-strip-the-last-slash-of-the-directory-path

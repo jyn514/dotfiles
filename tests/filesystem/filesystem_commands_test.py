@@ -100,6 +100,67 @@ class CommandIntegrationTests(unittest.TestCase):
             {first / "applications/first.desktop", second / "applications/second.desktop"},
             {Path(path) for path in result.stdout.splitlines()},
         )
+
+    def test_desktop_files_uses_custom_data_home_instead_of_default(self) -> None:
+        home = self.directory / "home"
+        custom = self.directory / "custom data"
+        first = self.directory / "first data"
+        second = self.directory / "second data"
+        for directory in (first, second, custom, home / ".local/share"):
+            applications = directory / "applications"
+            applications.mkdir(parents=True)
+            (applications / "entry.desktop").touch()
+
+        for suffix in ("", "/"):
+            with self.subTest(trailing_slash=suffix):
+                result = subprocess.run(
+                    [str(ROOT / "bin/desktop-files")],
+                    text=True,
+                    capture_output=True,
+                    env=os.environ | {
+                        "HOME": str(home),
+                        "XDG_DATA_HOME": str(custom) + suffix,
+                        "XDG_DATA_DIRS": f"{first}:{second}",
+                    },
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(
+                    [
+                        str(directory / "applications/entry.desktop")
+                        for directory in (first, second, custom)
+                    ],
+                    result.stdout.splitlines(),
+                )
+
+    def test_desktop_files_defaults_unset_or_empty_data_home(self) -> None:
+        home = self.directory / "home"
+        data_home = home / ".local/share"
+        applications = data_home / "applications"
+        applications.mkdir(parents=True)
+        entry = applications / "entry.desktop"
+        entry.touch()
+
+        for value in (None, "", str(data_home)):
+            with self.subTest(data_home=value):
+                environment = os.environ | {
+                    "HOME": str(home),
+                    "XDG_DATA_DIRS": str(self.directory / "missing system data"),
+                }
+                if value is None:
+                    environment.pop("XDG_DATA_HOME", None)
+                else:
+                    environment["XDG_DATA_HOME"] = value
+                result = subprocess.run(
+                    [str(ROOT / "bin/desktop-files")],
+                    text=True,
+                    capture_output=True,
+                    env=environment,
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual([str(entry)], result.stdout.splitlines())
+
     def test_merge_copies_dotfiles_before_removing_source(self) -> None:
         source = self.directory / "source"
         destination = self.directory / "destination"
