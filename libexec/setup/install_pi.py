@@ -32,11 +32,27 @@ def installed_revision() -> str | None:
         return None
 
 
+def verify_installation() -> None:
+    package = PI_INSTALL / "node_modules/@earendil-works/pi-coding-agent"
+    # A packed copy resolves registry dependencies instead of the fork's built
+    # workspace packages, which can differ despite identical version numbers.
+    if not package.is_symlink() or package.resolve() != PI_PACKAGE.resolve():
+        raise RuntimeError("installed Pi SDK must link to the built source package")
+    if not PI_CLI.is_file() or not all(
+        (package / relative).exists() for relative in ("README.md", "docs", "examples")
+    ):
+        raise RuntimeError("installed Pi CLI or package assets are missing")
+    run(["node", str(Path(__file__).with_name("verify_pi_sdk.mjs")), str(package)])
+
+
 def install_is_current(expected_revision: str) -> bool:
-    return installed_revision() == expected_revision and PI_CLI.is_file() and all(
-        (PI_INSTALL / "node_modules/@earendil-works/pi-coding-agent" / relative).exists()
-        for relative in ("README.md", "docs", "examples")
-    )
+    if installed_revision() != expected_revision:
+        return False
+    try:
+        verify_installation()
+    except (OSError, RuntimeError, subprocess.CalledProcessError):
+        return False
+    return True
 
 
 def source_revision() -> str:
@@ -84,9 +100,10 @@ def install() -> None:
 
     PI_INSTALL.mkdir(mode=0o700, parents=True, exist_ok=True)
     run([
-        "npm", "install", "--ignore-scripts", "--prefix", str(PI_INSTALL),
-        str(PI_PACKAGE),
+        "npm", "install", "--ignore-scripts", "--install-links=false",
+        "--prefix", str(PI_INSTALL), str(PI_PACKAGE),
     ])
+    verify_installation()
     (PI_INSTALL / ".source-revision").write_text(revision + "\n", encoding="utf-8")
 
 

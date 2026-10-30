@@ -63,8 +63,11 @@ explains how packaged extensions affect the guest image cache.
 For provider errors or undocumented hooks, inspect the installed implementation
 before changing a dotfiles extension or sandbox proxy. The installer owns
 `~/.local/share/pi/source`; `~/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent`
-is a symlink into its `packages/coding-agent` directory. Search the source checkout
-directly: `rg` does not follow that package symlink by default.
+is a symlink into its `packages/coding-agent` directory.
+The installer explicitly disables npm's `install-links` packing behavior so SDK imports use the fork's built workspace dependencies.
+It verifies the public SDK import before recording success and before accepting an existing installation as current.
+Rerun `mise run pi-install` to repair an older copied installation, even when its revision marker already matches.
+Search the source checkout directly: `rg` does not follow that package symlink by default.
 
 ```sh
 cat ~/.local/share/pi/node/.source-revision
