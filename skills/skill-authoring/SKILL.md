@@ -47,6 +47,10 @@ Use §6's scope and interaction checks to challenge the rule's main prescription
 For judgment guidance, trace how different governing requirements could lead to different choices, including cases where the rejected mechanism is necessary.
 Distinguish observed replay success from generalization; matching the originating answer alone establishes neither portability nor reliable improvement.
 
+When distilling research into guidance, identify the tempting inference and its smallest counterexample.
+Ask whether an agent without the research history could derive the decision-changing check from the existing guidance.
+Add only the missing distinction, reasoning step, or worked example; a research case may justify no edit.
+
 Require a concrete repeated use, second consumer, or hard constraint.
 Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
 
