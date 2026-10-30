@@ -121,6 +121,8 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`pi-to-codex`](pi-to-codex/) imports a Pi session file's selected compacted context, text tool calls, and results into a new Codex thread visible in the resume picker.
   It uses unstable history injection plus native display records, leaves the source unchanged, and prints a resume command without making a model request.
 - [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.
+  `--json` emits an ordered array of `{role, text}` turns for machine consumers such as `codex-to-pi`, without Markdown framing or heading customization.
+  It uses the same readable-text selection as Markdown: empty and whitespace-only turns are omitted; retained text is not trimmed or escaped as Markdown.
 - [`lapwing-prototype`](lapwing-prototype/) is a compact, heap-free Lapwing stenography translator prototype for Moonlander/QMK. Start with its [README](lapwing-prototype/README.md), then the [firmware specification](lapwing-prototype/SPEC.md); it is not hardware-verified.
 - [`moonlander`](moonlander/) implements `sync-moonlander` and `flash-moonlander` for ZSA Oryx synchronization and QMK compilation or flashing. These can change remote state, a QMK checkout, or hardware; `COMPILE_ONLY=1` avoids flashing. See the [operator guide](moonlander/README.md).
 - [`pdf-optimize`](pdf-optimize/) implements `pdf-optimize INPUT [OUTPUT]`, using Ghostscript without image downsampling. It requires `gs`, `file`, and `du` and never overwrites its destination.

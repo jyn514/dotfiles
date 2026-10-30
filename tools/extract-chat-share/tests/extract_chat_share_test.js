@@ -12,6 +12,7 @@ const {
   extractTurns,
   formatTurns,
   loadTurns,
+  main,
   parseArguments,
   readHtml,
   runSafariSnapshot,
@@ -42,6 +43,7 @@ test("customizes user and assistant headings", () => {
 
   assert.deepEqual(command, {
     input: "saved-chat.html",
+    json: false,
     headings: { user: "Question", assistant: "Answer" },
   });
   assert.equal(
@@ -54,6 +56,51 @@ test("customizes user and assistant headings", () => {
     ),
     "## Question\n\nWhy?\n\n## Answer\n\nBecause.\n\n"
   );
+});
+
+async function mainOutput(argv, dependencies) {
+  const write = process.stdout.write;
+  let output = "";
+  process.stdout.write = (chunk) => { output += chunk; return true; };
+  try {
+    assert.equal(await main(argv, dependencies), 0);
+    return output;
+  } finally {
+    process.stdout.write = write;
+  }
+}
+
+test("JSON output reuses ChatGPT turns without Markdown framing", async () => {
+  const fixture = zlib.gunzipSync(
+    fs.readFileSync(path.join(__dirname, "fixtures", "chatgpt-share.html.gz"))
+  ).toString("utf8");
+  const output = await mainOutput(["--json", "saved-chat.html"], {
+    readFile: () => fixture,
+  });
+  assert.deepEqual(JSON.parse(output), extractTurns(fixture));
+  assert.equal(JSON.parse(output).length, 57);
+});
+
+test("Claude JSON preserves text and default Markdown keeps custom headings", async () => {
+  const url = "https://claude.ai/share/334967a5-936b-4638-9e26-507b0c3b0210";
+  const text = "Before\n\n## User\n\n```markdown\n## Assistant\n```\ncafé 🫖\n ";
+  const dependencies = {
+    runSafari: async () => JSON.stringify({
+      ok: true,
+      body: JSON.stringify({ chat_messages: [
+        { sender: "human", content: [{ type: "text", text: "Question." }] },
+        { sender: "assistant", content: [{ type: "text", text }] },
+        { sender: "assistant", content: [{ type: "text", text: " \n" }] },
+      ] }),
+    }),
+  };
+  assert.deepEqual(JSON.parse(await mainOutput(["--json", url], dependencies)), [
+    { role: "user", text: "Question." },
+    { role: "assistant", text },
+  ]);
+  assert.equal(await mainOutput([
+    "--user-heading", "Question", "--assistant-heading", "Answer", url,
+  ], dependencies), `## Question\n\nQuestion.\n\n## Answer\n\n${text}\n\n`);
 });
 
 test("readHtml fetches HTTP URLs", async () => {

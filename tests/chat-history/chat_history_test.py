@@ -26,6 +26,28 @@ STAMP = "2026-10-14T15:57:28.000Z"
 SKILL = "<skill>\n<name>example</name>\n<path>/skills/example/SKILL.md</path>\nInstructions.\n</skill>"
 
 
+# Text is source data, even when it looks like the Markdown transcript framing.
+SHARE_TURNS = [
+    {"role": "user", "text": "Explain the example."},
+    {"role": "assistant", "text": "Before\n\n## Details\n\nAfter"},
+    {"role": "assistant", "text": "Quoted transcript:\n\n## User\n\nNot a new user.\n\n## Assistant\n\nStill the same answer."},
+    {"role": "user", "text": "```markdown\n\n## Assistant\n\ninside a fence\n```"},
+    {"role": "assistant", "text": "café — 日本語 🫖\nsecond line\n\nlast paragraph\n \n"},
+    {"role": "user", "text": ""},
+    {"role": "assistant", "text": " \n\t"},
+    {"role": "system", "text": "Not a user or assistant turn."},
+]
+
+
+def share_html(turns):
+    mapping = {f"turn-{index}": {"message": {"author": {"role": turn["role"]},
+                                            "content": {"parts": [turn["text"]]}}}
+               for index, turn in enumerate(turns)}
+    table = [{"loaderData": {"routes/share.$shareId.($action)": {
+        "serverResponse": {"data": {"mapping": mapping, "linear_conversation": list(mapping)}}}}}]
+    return "<script>window.__reactRouterContext.streamController.enqueue(" + json.dumps(json.dumps(table)) + ");</script>"
+
+
 class SharedChatHistoryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="chat history ")
@@ -391,6 +413,52 @@ class SharedChatHistoryTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         html = next((self.root / "packaged HTML").glob("*.html"))
         self.assertEqual(["café", "parent continuation", "current child"], self.exported_tree(html)["active"])
+
+    def import_share_fixture(self, turns):
+        fixture = self.root / "share.html"
+        fixture.write_text(share_html(turns))
+        module = runpy.run_path(str(CONVERT))
+        main = module["main"]
+        real_run = subprocess.run
+        url = "https://chatgpt.com/share/content-boundary"
+
+        def local_extractor(command, **kwargs):
+            # Replace only the remote acquisition with a saved public-page shape;
+            # run the real extractor CLI, decoder, and formatter unchanged.
+            self.assertEqual(url, command[-1])
+            result = real_run([*command[:-1], str(fixture)], **kwargs)
+            self.share_extraction = result.stdout
+            return result
+
+        with patch.dict(main.__globals__, urlopen=lambda *args, **kwargs: io.BytesIO(fixture.read_bytes())):
+            with patch.object(subprocess, "run", side_effect=local_extractor):
+                with patch.object(sys, "argv", [str(CONVERT), url, "-o", str(self.output)]):
+                    with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                        main()
+        return stdout.getvalue()
+
+    def test_share_content_roundtrips_through_extractor_import_and_native_pi(self):
+        expected = [turn for turn in SHARE_TURNS
+                    if turn["role"] in ("user", "assistant") and turn["text"].strip()]
+        stdout = self.import_share_fixture(SHARE_TURNS)
+        output = [json.loads(line) for line in self.output.read_text().splitlines()]
+        messages = [entry["message"] for entry in output if entry["type"] == "message"]
+        self.assertEqual(len(expected), len(messages))
+        self.assertEqual([turn["role"] for turn in expected], [message["role"] for message in messages])
+        texts = [message["content"] if message["role"] == "user" else message["content"][0]["text"]
+                 for message in messages]
+        self.assertEqual([turn["text"] for turn in expected], texts)
+        self.assertIn(f"wrote {len(expected)} messages", stdout)
+        tree = self.pi_tree()
+        self.assertEqual(texts, tree["active"])
+        self.assertEqual(texts, tree["context"])
+
+    def test_share_without_readable_user_or_assistant_messages_preserves_output(self):
+        self.output.write_text("keep existing\n")
+        with self.assertRaisesRegex(SystemExit, "no readable user/assistant messages"):
+            self.import_share_fixture([turn for turn in SHARE_TURNS if not turn["text"].strip()
+                                       or turn["role"] == "system"])
+        self.assertEqual("keep existing\n", self.output.read_text())
 
     def test_share_conversion_keeps_its_existing_message_policy(self):
         module = runpy.run_path(str(CONVERT))

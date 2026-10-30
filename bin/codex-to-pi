@@ -35,15 +35,17 @@ def read_share(url):
         html = response.read().decode("utf-8")
     model_match = re.search(r'\\"default_model_slug\\",\\"([^\\"]+)\\"', html)
     model = normalize_model(model_match.group(1)) if model_match else "unknown"
-    result = subprocess.run([str(extractor), url], check=True, capture_output=True, text=True)
-    turns = re.findall(r"^## (User|Assistant)\n\n(.*?)(?=\n\n## |\Z)", result.stdout, re.MULTILINE | re.DOTALL)
+    result = subprocess.run([str(extractor), "--json", url], check=True, capture_output=True, text=True)
+    # Markdown headings can also be message text; consume the extractor's turns
+    # before presentation formatting instead of reinterpreting their contents.
+    turns = [turn for turn in json.loads(result.stdout) if turn["role"] in ("user", "assistant")]
     if not turns:
         raise SystemExit("ChatGPT share page contained no readable user/assistant messages")
     session_id = re.search(r"/share/([^/?#]+)", url).group(1)
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return [{"type": "session_meta", "payload": {"session_id": session_id, "cwd": os.getcwd(), "model": model}}] + [
-        {"type": "share_message", "role": role.lower(), "text": text.rstrip(), "timestamp": now}
-        for role, text in turns]
+        {"type": "share_message", "role": turn["role"], "text": turn["text"], "timestamp": now}
+        for turn in turns]
 
 
 def content_text(content):

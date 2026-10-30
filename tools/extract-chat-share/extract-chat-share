@@ -18,6 +18,7 @@ Claude URLs require Safari on macOS with JavaScript from Apple Events enabled.
 Options:
   --user-heading TEXT       User heading (default: User)
   --assistant-heading TEXT  Assistant heading (default: Assistant)
+  --json                    Emit an array of {role, text} turns instead of Markdown
   -h, --help                Show this help
 `);
 }
@@ -33,6 +34,7 @@ function parseArguments(argv) {
     options: {
       "assistant-heading": { type: "string", default: "Assistant" },
       "user-heading": { type: "string", default: "User" },
+      json: { type: "boolean", default: false },
     },
   });
 
@@ -42,6 +44,7 @@ function parseArguments(argv) {
 
   return {
     input: positionals[0],
+    json: values.json,
     headings: {
       user: values["user-heading"],
       assistant: values["assistant-heading"],
@@ -369,7 +372,9 @@ async function main(argv, dependencies = {}) {
   }
 
   const turns = await loadTurns(command.input, dependencies);
-  process.stdout.write(formatTurns(turns, command.headings));
+  process.stdout.write(command.json
+    ? JSON.stringify(turns) + "\n"
+    : formatTurns(turns, command.headings));
 
   return 0;
 }
