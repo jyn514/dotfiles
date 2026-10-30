@@ -8,10 +8,10 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 shim_resolve "$0" codex
 # Keep the agent process and every command it launches away from the user's SSH agent.
 unset SSH_AUTH_SOCK
-# Native transport and offline policy parsing must not load interactive config
-# or receive runtime-only options such as --profile.
+# Version lookup, native transport, and offline policy parsing must not load
+# interactive config or receive runtime-only options such as --profile.
 case ${1:-} in
-	app-server|execpolicy) exec "$REAL" "$@" ;;
+	--version|-V|app-server|execpolicy) exec "$REAL" "$@" ;;
 esac
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 # Agent commands need man output in their transcript, not an interactive editor.

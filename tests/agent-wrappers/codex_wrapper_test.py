@@ -139,6 +139,8 @@ class CodexWrapperTests(unittest.TestCase):
 
     def test_native_commands_bypass_interactive_setup(self) -> None:
         commands = [
+            ["--version"],
+            ["-V"],
             ["app-server", "--listen", "stdio://"],
             ["execpolicy", "check", "--rules", "generated rules", "jj", "status"],
         ]
