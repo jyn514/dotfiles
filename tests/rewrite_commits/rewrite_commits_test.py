@@ -75,6 +75,55 @@ class RewriteCommitsTest(unittest.TestCase):
                 repo, "show", "-s", "--format=%aI|%cI|%T|%s", "HEAD"
             ))
 
+    def test_apply_preserves_commits_excluded_by_each_preview_condition(self) -> None:
+        # Help promises all three identity conditions; each contrast changes only one.
+        contrasts = {
+            "author-name": {"GIT_AUTHOR_NAME": "Not jyn"},
+            "author-email": {"GIT_AUTHOR_EMAIL": "other@example.com"},
+            "committer-email": {"GIT_COMMITTER_EMAIL": "other@example.com"},
+        }
+        identity = {
+            "GIT_AUTHOR_NAME": "jyn",
+            "GIT_AUTHOR_EMAIL": "github@jyn.dev",
+            "GIT_AUTHOR_DATE": "2026-01-02T03:04:05+02:00",
+            "GIT_COMMITTER_NAME": "Pi test",
+            "GIT_COMMITTER_EMAIL": "breq@jyn.dev",
+            "GIT_COMMITTER_DATE": "2026-01-02T05:06:07-03:00",
+        }
+        for condition, override in contrasts.items():
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory() as temporary:
+                repo = Path(temporary) / "repo"
+                repo.mkdir()
+                self.git(repo, "init", "-q")
+                for subject, author in (("excluded", override), ("selected", {})):
+                    (repo / "file").write_text(subject + "\n")
+                    self.git(repo, "add", "file")
+                    self.git(repo, "commit", "-q", "-m", subject + "\n\nMessage body.",
+                             env={**identity, **author})
+                selected = self.git(repo, "rev-parse", "HEAD")
+                excluded = self.git(repo, "rev-parse", "HEAD^")
+                selected_raw = self.git(repo, "cat-file", "commit", selected)
+                excluded_raw = self.git(repo, "cat-file", "commit", excluded)
+
+                preview = self.run_command(repo)
+                self.assertEqual(0, preview.returncode, preview.stderr)
+                self.assertEqual([selected[:12]], [
+                    line.split()[0] for line in preview.stdout.splitlines()
+                ])
+                self.assertEqual(selected, self.git(repo, "rev-parse", "HEAD"))
+
+                applied = self.run_command(repo, "--apply")
+                self.assertEqual(0, applied.returncode, applied.stderr)
+                self.assertEqual(preview.stdout, applied.stdout)
+                self.assertEqual(excluded, self.git(repo, "rev-parse", "HEAD^"))
+                self.assertEqual(excluded_raw, self.git(repo, "cat-file", "commit", "HEAD^"))
+                expected = selected_raw.replace(
+                    "author jyn <github@jyn.dev>", "author Pi test <breq@jyn.dev>", 1
+                ).replace(
+                    "committer Pi test <breq@jyn.dev>", "committer jyn <github@jyn.dev>", 1
+                )
+                self.assertEqual(expected, self.git(repo, "cat-file", "commit", "HEAD"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 if (
-    commit.author_email == b"github@jyn.dev"
+    commit.author_name == b"jyn"
+    and commit.author_email == b"github@jyn.dev"
     and commit.committer_email == b"breq@jyn.dev"
 ):
     commit.author_name = commit.committer_name
