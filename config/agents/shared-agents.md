@@ -296,6 +296,9 @@ and revise the recommendation when constraints change instead of accumulating ca
 When comparing approaches, consider whether incremental benefits justify added costs, including ongoing maintenance.
 Consider incentives, adoption, and indirect effects when they could change which approach works in practice.
 
+Performance is a feature.
+When comparing designs, consider whether one is significantly slower than another.
+
 ### When evaluating jyn's claims or feedback
 
 Read carefully, challenge weak assumptions.
