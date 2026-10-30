@@ -29,13 +29,12 @@ class Extension:
         self._timer: threading.Timer | None = None
         self._generation = 0
         self._registration: object | None = None
-        self._started = False
 
     def start(self) -> None:
         if usb is None:
             raise RuntimeError("usbx is not installed")
         with self._lock:
-            if self._started:
+            if self._registration is not None:
                 return
             self._generation += 1
             generation = self._generation
@@ -50,12 +49,10 @@ class Extension:
                     log.warning("unable to unregister failed USB reconnect watcher", exc_info=True)
                 raise
             self._registration = registration
-            self._started = True
             log.debug("USB reconnect watcher started (generation %d)", generation)
 
     def stop(self) -> None:
         with self._lock:
-            self._started = False
             self._registration = None
             self._generation += 1
             timer, self._timer = self._timer, None
@@ -80,7 +77,7 @@ class Extension:
             return
         with self._lock:
             # A retained callback must not acquire authority from a later start().
-            if not self._started or registration is not self._registration:
+            if registration is not self._registration:
                 return
             # Cancellation cannot revoke a callback already waiting for this lock.
             # Invalidate superseded work before attempting to cancel it.
@@ -98,7 +95,7 @@ class Extension:
 
     def _reset(self, generation: int) -> None:
         with self._lock:
-            if not self._started or generation != self._generation:
+            if self._registration is None or generation != self._generation:
                 return
             self._timer = None
             self.engine.reset_machine()
