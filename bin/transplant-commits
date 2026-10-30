@@ -54,7 +54,7 @@ def validate_repo(label: str, location: Location, parser: argparse.ArgumentParse
 def clean_repo_path(path: str | None) -> str | None:
     if path is None:
         return None
-    path = path.strip()
+    # Whitespace belongs to the selected directory name, not CLI formatting.
     if not path:
         return None
     while path.startswith("./"):
