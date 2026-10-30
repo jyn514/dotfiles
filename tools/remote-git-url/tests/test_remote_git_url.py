@@ -71,6 +71,82 @@ class RemoteGitUrlTests(unittest.TestCase):
         self.assertIsNone(remote_git_url.locate([b"shared", b"missing"], remote))
         self.assertIsNone(remote_git_url.locate([b""], remote))
 
+    def test_upstream_eof_does_not_add_a_row_or_remove_a_bare_cr(self) -> None:
+        self.assertIsNone(remote_git_url.locate([b"needle", b""], b"needle\n"))
+        self.assertEqual(1, remote_git_url.locate([b"needle", b""], b"needle\n\n"))
+        self.assertIsNone(remote_git_url.locate([b"needle"], b"prefix\nneedle\r"))
+
+    def test_disposable_repository_links_use_upstream_lf_line_numbers(self) -> None:
+        # GitLab's source viewer numbers LF/CRLF rows, not lone CR boundaries.
+        # Both hosts historically received native git grep's LF-based numbering.
+        cases = (
+            ("lone-cr-before-target", b"prefix\rmore\nneedle\ndecoy\n", b"needle\n", 1, 1, 2),
+            ("bare-cr-is-not-a-row-start", b"prefix\rneedle\nother\nneedle\n", b"needle\n", 1, 1, 3),
+            ("lf", b"prefix\nneedle\ndecoy\n", b"needle\n", 1, 1, 2),
+            ("crlf", b"prefix\r\nneedle\r\ndecoy\r\n", b"needle\n", 1, 1, 2),
+            ("final-newline", b"prefix\nneedle\n", b"needle\n", 1, 1, 2),
+            ("no-final-newline", b"prefix\nneedle", b"needle", 1, 1, 2),
+            ("only-one-terminal-cr", b"needle\r\r\nother\nneedle\n", b"needle\n", 1, 1, 3),
+            (
+                "complete-range",
+                b"prefix\rmore\nshared\nwrong\nshared\nright\nlast\n",
+                b"intro\nshared\nright\n",
+                2, 3, 4,
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+
+            def git(*arguments: str) -> bytes:
+                return subprocess.check_output(["git", "-C", str(repository), *arguments])
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.com")
+            for name, upstream, *_ in cases:
+                (repository / f"{name}.py").write_bytes(upstream)
+            git("add", "--all")
+            git("commit", "-qm", "upstream contents")
+            (repository / "later").write_bytes(b"later\n")
+            git("add", "--all")
+            git("commit", "-qm", "later")
+            revision = git("rev-parse", "HEAD").strip()
+            git("remote", "add", "origin", "https://gitlab.com/group/repo.git")
+            git("update-ref", "refs/remotes/origin/main", "HEAD")
+            git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+            environment = os.environ.copy()
+            environment.pop("DISPLAY", None)
+            for host in ("gitlab.com", "github.com"):
+                git("remote", "set-url", "origin", f"https://{host}/group/repo.git")
+                blob_path = "/-/blob/" if host == "gitlab.com" else "/blob/"
+                for name, _, local, start, end, expected_line in cases:
+                    with self.subTest(host=host, case=name):
+                        source = repository / f"{name}.py"
+                        source.write_bytes(local)
+                        result = subprocess.run(
+                            [
+                                str(MODULE_PATH.parents[3] / "bin/remote-git-url"),
+                                str(source), str(start), str(end),
+                            ],
+                            cwd=repository,
+                            env=environment,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            check=False,
+                        )
+                        fragment = f"#L{expected_line}"
+                        if end != start:
+                            separator = "-L" if host == "github.com" else "-"
+                            fragment += f"{separator}{expected_line + end - start}"
+                        expected = (
+                            f"https://{host}/group/repo{blob_path}"
+                            + revision.decode()
+                            + f"/{name}.py{fragment}\n"
+                        ).encode()
+                        self.assertEqual(b"", result.stderr)
+                        self.assertEqual(1, result.returncode)
+                        self.assertEqual(expected, result.stdout)
+
     def test_disposable_repository_resolves_complete_range_in_remote_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

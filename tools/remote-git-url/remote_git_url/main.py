@@ -107,7 +107,12 @@ def selected_lines(path: bytes, start: int, end: int) -> list[bytes] | None:
 def locate(lines: list[bytes], remote_contents: bytes) -> int | None:
     if not lines or not lines[0]:
         return None
-    haystack = remote_contents.splitlines()
+    # Source links use LF-based row numbers, as the former native git grep did.
+    # Remove CR only from CRLF endings, and do not invent a row after the final LF.
+    haystack = remote_contents.split(b"\n")
+    haystack[:-1] = [line.removesuffix(b"\r") for line in haystack[:-1]]
+    if not haystack[-1]:
+        haystack.pop()
     for index in range(len(haystack) - len(lines) + 1):
         if haystack[index : index + len(lines)] == lines:
             return index + 1
