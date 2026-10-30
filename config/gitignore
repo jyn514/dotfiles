@@ -45,3 +45,6 @@ AGENTS.override.md
 /.codex/rules/local.rules
 **/.claude/settings.local.json
 **/.claude/.cc-writes/
+
+*.preview.svg
+*.preview.html

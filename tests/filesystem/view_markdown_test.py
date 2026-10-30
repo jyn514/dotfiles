@@ -45,7 +45,6 @@ class ViewMarkdownTest(unittest.TestCase):
             "OPENED": str(self.opened),
             "TMPDIR": str(self.directory),
         }
-        self.executable("sleep", "exit 0\n")
         self.executable("open", 'cp "$1" "$CAPTURE" || exit\nprintf "%s" "$1" > "$OPENED"\n')
 
     def executable(self, name: str, source: str) -> None:
@@ -80,7 +79,8 @@ class ViewMarkdownTest(unittest.TestCase):
         style_path = Path(unquote(urlsplit(stylesheet["href"]).path))
         self.assertTrue(style_path.is_file())
         self.assertTrue(style_path.read_text().strip())
-        self.assertFalse(Path(self.opened.read_text()).exists())
+        self.assertEqual(self.document.with_suffix(".preview.html"), (self.directory / self.opened.read_text()))
+        self.assertTrue((self.directory / self.opened.read_text()).is_file())
 
     def test_failed_generation_does_not_open_partial_html(self) -> None:
         # Either producer can fail; neither failure may reach the browser.
@@ -92,7 +92,7 @@ class ViewMarkdownTest(unittest.TestCase):
                 self.assertEqual(status, result.returncode, result.stderr)
                 self.assertFalse(self.opened.exists())
                 self.assertFalse(self.capture.exists())
-                self.assertEqual([], list(self.directory.glob("view-markdown.*")))
+                self.assertEqual([], list(self.directory.glob("*.tmp.*")))
 
     @unittest.skipUnless(shutil.which("marked"), "native marked is required")
     def test_native_marked_renders_gfm_tables_and_fenced_code(self) -> None:
@@ -119,7 +119,7 @@ class ViewMarkdownTest(unittest.TestCase):
         result = self.run_viewer()
         self.assertNotEqual(0, result.returncode)
         self.assertFalse(self.opened.exists())
-        self.assertEqual([], list(self.directory.glob("view-markdown.*")))
+        self.assertEqual([], list(self.directory.glob("*.tmp.*")))
 
 
 if __name__ == "__main__":
