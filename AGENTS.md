@@ -8,6 +8,7 @@ and the relevant setup function before using it on a new machine.
 
 - Use `jj` for change management.
 - Run tests and ad-hoc Pi probes through `dev/test-environment`.
+  Use isolation for tests, not for ordinary repository operations.
   Read [Testing and probes](dev/README.md#testing-and-probes) for dependencies,
   isolation, and exceptions that require real configuration.
   When probing repository wrappers or launchers, invoke their paths explicitly; isolation can replace bare commands with native tools.
