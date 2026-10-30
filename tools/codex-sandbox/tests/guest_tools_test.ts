@@ -1,4 +1,5 @@
-import { test, expect, mock } from "bun:test";
+import { test, expect, mock, spyOn } from "bun:test";
+import * as childProcess from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -127,7 +128,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 }
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
-const { default: guestTools, waitForGuestToolReady } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
+const { default: guestTools, createGuestAttachment, waitForGuestToolReady } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
 
 test("guest routing projects session-tool results at request time and reverses their selectors", async () => {
   const env = {
@@ -401,5 +402,121 @@ test("registered tools and human bash snapshot their own public invocation conte
       else process.env[key] = value;
     }
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Exercise the real pipe, production bound connector, and attachment parser.
+// Acknowledge bytes only after Readable.push delivers them: the producer cannot
+// write the next fragment early and let the OS coalesce our intended boundary.
+async function callWithFragments(chunks: Buffer[], { stderr = false, status = 0,
+  onUpdate = (_result: any) => {}, onData = (_data: Buffer) => {} } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "pi-guest-fragments-"));
+  const spawn = childProcess.spawn;
+  let received = 0;
+  let released = 0;
+  const boundaries = chunks.map((chunk) => chunk.length);
+  for (let i = 1; i < boundaries.length; i++) boundaries[i] += boundaries[i - 1];
+  const spy = spyOn(childProcess, "spawn").mockImplementation((...args: Parameters<typeof spawn>) => {
+    const child = spawn(...args);
+    const stream = stderr ? child.stderr! : child.stdout!;
+    const push = stream.push;
+    stream.push = function (chunk, encoding) {
+      const result = push.call(this, chunk, encoding);
+      if (chunk) {
+        received += chunk.length;
+        while (released < boundaries.length - 1 && received >= boundaries[released]) {
+          writeFileSync(join(dir, String(released++)), "");
+        }
+      }
+      return result;
+    };
+    return child;
+  });
+  try {
+    const attachment = createGuestAttachment({
+      CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+      CODEX_SANDBOX_TOOL_CONNECT: join(import.meta.dir, "../sandbox-tool-connect-bound"),
+      CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify(["python3", join(import.meta.dir, "fixtures/guest-tool-fragments.py")]),
+    })!;
+    return await attachment.call("read", { chunks: chunks.map(chunk => chunk.toString("base64")),
+      release: dir, stderr, status }, { model: null, session: null }, undefined, onUpdate, onData);
+  } finally {
+    spy.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function guestFrame(frame: unknown): Buffer {
+  // Same UTF-8 JSON-line bytes as the existing tool-worker.mjs producer.
+  return Buffer.from(`${JSON.stringify(frame)}\n`);
+}
+
+for (const character of ["é", "中", "🙂"]) {
+  for (let split = 1; split < Buffer.byteLength(character); split++) {
+    test(`guest transport preserves update/result UTF-8 ${character} split ${split}`, async () => {
+      const text = `first line\n${character}\nlast line`;
+      const update = { content: [{ type: "text", text }] };
+      const result = { ...update, details: { done: true } };
+      const first = guestFrame({ kind: "update", result: update });
+      const last = guestFrame({ kind: "result", result });
+      const bytes = Buffer.concat([first, last]);
+      const a = first.indexOf(Buffer.from(character)) + split;
+      const b = first.length + last.indexOf(Buffer.from(character)) + split;
+      const updates: unknown[] = [];
+      expect(await callWithFragments([bytes.subarray(0, a), bytes.subarray(a, b), bytes.subarray(b)], {
+        onUpdate: value => updates.push(value),
+      })).toEqual(result);
+      expect(updates).toEqual([update]);
+    });
+
+    test(`guest transport preserves failure stderr UTF-8 ${character} split ${split}`, async () => {
+      const text = `connector failed:\n${character}\nlast line`;
+      const bytes = Buffer.from(text);
+      const at = bytes.indexOf(Buffer.from(character)) + split;
+      await expect(callWithFragments([bytes.subarray(0, at), bytes.subarray(at)], { stderr: true, status: 7 }))
+        .rejects.toThrow(text);
+    });
+  }
+}
+
+test("guest transport preserves ASCII frames, data bytes, and multiple records per chunk", async () => {
+  const updates: unknown[] = [];
+  const data: Buffer[] = [];
+  const binary = Buffer.from([0, 255, 128, 10]);
+  expect(await callWithFragments([Buffer.concat([
+    guestFrame({ kind: "update", result: "progress\nnext line" }),
+    guestFrame({ kind: "data", data: binary.toString("base64") }),
+    guestFrame({ kind: "result", result: "done" }),
+  ])], { onUpdate: value => updates.push(value), onData: value => data.push(value) })).toBe("done");
+  expect(updates).toEqual(["progress\nnext line"]);
+  expect(data).toEqual([binary]);
+});
+
+test("guest transport retains malformed JSON and incomplete-record failures", async () => {
+  await expect(callWithFragments([Buffer.from("not JSON\n")])).rejects.toBeInstanceOf(SyntaxError);
+  await expect(callWithFragments([Buffer.from('{"kind":"result","result":"no newline"}')]))
+    .rejects.toThrow("guest tool transport ended (0)");
+  await expect(callWithFragments([Buffer.from([0xe2, 0x82])])).rejects.toThrow("guest tool transport ended (0)");
+  await expect(callWithFragments([])).rejects.toThrow("guest tool transport ended (0)");
+  await expect(callWithFragments([guestFrame({ kind: "error", message: "worker refused" })]))
+    .rejects.toThrow("worker refused");
+});
+
+test("guest transport retains replacement decoding for malformed bytes and stderr EOF", async () => {
+  expect(await callWithFragments([Buffer.concat([
+    Buffer.from('{"kind":"result","result":"'), Buffer.from([0xff]), Buffer.from('"}\n'),
+  ])])).toBe("�");
+  await expect(callWithFragments([Buffer.concat([Buffer.from("failure: "), Buffer.from([0xe2, 0x82])])], {
+    stderr: true, status: 1,
+  })).rejects.toThrow("failure: �");
+});
+
+test("guest transport retains the stderr tail limit in UTF-16 units, not bytes", async () => {
+  const text = "prefix:" + "中".repeat(4096);
+  try {
+    await callWithFragments([Buffer.from(text)], { stderr: true, status: 1 });
+    throw new Error("expected transport failure");
+  } catch (error) {
+    expect((error as Error).message).toBe(text.slice(-4096));
   }
 });

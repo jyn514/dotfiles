@@ -114,8 +114,9 @@ function callGuest(
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     child.stdin.write(`${JSON.stringify({ tool, params, ...context })}\n`);
-    child.stdout.on("data", (data: Buffer) => {
-      pending += data.toString("utf8");
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (data: string) => {
+      pending += data;
       if (pending.length > 32 * 1024 * 1024) {
         protocolError = new Error("guest tool response is too large");
         child.kill("SIGTERM");
@@ -141,8 +142,9 @@ function callGuest(
         }
       }
     });
-    child.stderr.on("data", (data: Buffer) => {
-      errorText = (errorText + data.toString("utf8")).slice(-4096);
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (data: string) => {
+      errorText = (errorText + data).slice(-4096);
     });
     child.on("close", (status) => {
       signal?.removeEventListener("abort", abort);
