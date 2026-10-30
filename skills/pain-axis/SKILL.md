@@ -14,52 +14,61 @@ Use one of two modes:
 
 ## Scope and authority
 
-Start from the request's repositories, question, and permitted effects.
-If no repository or case is named, start in the current repository unless the request authorizes broader discovery.
-For pre-redesign analysis, establish the target subsystem or design question before collecting history.
-For open-ended research, begin with a concrete case in the authorized repositories; the case may reveal the question to pursue.
-Choose cases for the behavior they expose, not merely recent activity, familiar projects, or convenient commit titles.
+Use the repositories, question, and permitted effects named in the request.
+If it names no repository or case, start in the current repository unless broader discovery is authorized.
+
+For pre-redesign analysis, define the target subsystem or design question before collecting history.
+For open-ended research, start with a concrete case in the authorized repositories; let the case help identify the question.
+Choose cases for the behavior they expose, not just because they are recent, familiar, or easy to find by commit title.
 Follow relevant upstream history and discussions when access and scope permit.
 
-This skill produces evidence and research conclusions, not a design recommendation or implementation.
-Inspection does not authorize edits, experiments, publication, or changes to skills.
-Use `jj-workflow` for history operations and ordinary provenance questions, `architecture-design` for a separately requested design decision,
-`work-selection` when choosing the next investigation or application target, and `skill-authoring` before recording a lesson as guidance.
-Session-history research into whether agents followed instructions is a separate activity; code history alone does not establish compliance.
+Produce evidence and research conclusions, not a design recommendation or implementation.
+Inspection does not authorize edits, experiments, publication, or skill changes.
+
+Route adjacent work to its owner:
+
+- Use `jj-workflow` for history operations and ordinary provenance questions.
+- Use `architecture-design` for a separately requested design decision.
+- Use `work-selection` to choose the next investigation or application target.
+- Use `skill-authoring` before recording a lesson as guidance.
+
+Researching whether agents followed instructions through session history is separate work.
+Code history alone cannot establish compliance.
 
 ## Select evidence for the question
 
-Choose available records for the open question, not a mandatory set of sources for every case.
+Choose records that answer the open question; do not require every source type in every case.
 
-- **Rationale and alternatives:** inspect review conversations and rejected proposals.
-  Follow corrections to the diagnosis and reasons for keeping or rejecting an alternative, not only the accepted patch.
-- **Actual-use assumptions:** inspect integration attempts, support questions, and abandoned approaches.
+- **Rationale and alternatives:** Read review conversations and rejected proposals when they bear on the question.
+  Follow corrections to the diagnosis and the reasons for keeping or rejecting alternatives, not just the accepted patch.
+- **Assumptions about actual use:** Read integration attempts, support questions, and abandoned approaches when available.
   Look for consumer obligations or difficulties missing from the author's intended usage.
-- **Maintainability over time:** inspect feature requests, migrations, and operational history when claiming a design accommodates change well.
-  Identify which changes stayed easy and which distinctions remained necessary.
-  One protected behavior alone does not establish successful evolution.
-- **Comparative design:** compare implementations of the same operation while establishing each one's requirements independently.
-  Expose differing contracts rather than requiring identical ones.
-  Explain where costs and obligations move before attributing a difference to a language, paradigm, or representation.
+- **Maintainability over time:** When claiming a design accommodates change well, inspect relevant feature requests, migrations, and operational history.
+  Identify which changes remained easy and which distinctions were still necessary.
+  One protected behavior does not by itself establish successful evolution.
+- **Comparative design:** When comparing implementations of the same operation, establish each implementation's requirements independently.
+  Show where their contracts differ instead of requiring them to be identical.
+  Before attributing a difference to language, paradigm, or representation, explain where the costs and obligations move.
 
 Talks and papers can supply design arguments and leads to concrete cases; distinguish a speaker's explanation from inspected implementation evidence.
 Neither a polished account nor a review's acceptance establishes that its claims about behavior are correct.
 
 ## Reconstruct the case
 
-1. Use bug-fix commits, reverts, repeated refactors, issues, and coupled changes as leads where relevant to the question.
+1. **Find useful leads.** Use bug-fix commits, reverts, repeated refactors, issues, and coupled changes when they bear on the question.
    Include successful optimizations and designs that preserve important distinctions, not only defects.
-   Read the relevant patches, surrounding code, tests, and available discussions before accepting the stated diagnosis.
-2. Identify the governing behavior and a concrete input, action sequence, or interleaving that exposes the failure or protected guarantee.
-   For a change or repair, establish before-and-after revisions and lineage, including renamed files or earlier attempts where relevant.
+   Before accepting a stated diagnosis, read the relevant patches, surrounding code, tests, and available discussions.
+2. **Establish the behavior and case.** Identify the governing behavior and a concrete input, action sequence, or interleaving that exposes the failure or protected guarantee.
+   For a change or repair, establish the before-and-after revisions and lineage, including renamed files or earlier attempts when relevant.
    Separate the author's explanation from what the code and evidence establish.
-3. Trace the mechanism through the consumer that experiences the failure or preserved behavior.
-   Check the complete path, including later filtering, normalization, cleanup, and error handling where they can change the result.
+3. **Trace the mechanism.** Follow the path through the consumer that experiences the failure or preserved behavior.
+   Check later filtering, normalization, cleanup, and error handling wherever they could change the result.
    For an attempted repair, identify what it changes, what it must leave untouched, and whether it removes the cause or only a symptom.
-4. Inspect subsequent changes when they can establish whether the repair was adequate or expose a different fault.
+4. **Check what happened afterward.** Inspect later changes when they could show whether the repair was adequate or reveal a different fault.
    Do not treat successive patches as proof of one root cause.
-   A committed test is evidence of an expectation, not evidence that it ran, passed, or detected the historical defect.
-   Distinguish recorded failures, source-derived predictions, and reproduced behavior; retain gaps in execution records.
+   A committed test shows an expectation; it does not prove the test ran, passed, or detected the historical defect.
+   Distinguish recorded failures, predictions derived from source, and reproduced behavior.
+   Preserve gaps in execution records.
 
 ## Analyze in the selected mode
 

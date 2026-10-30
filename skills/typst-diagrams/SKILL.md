@@ -7,9 +7,9 @@ description: Create or revise Typst diagrams, especially Flower spec `.typ` file
 
 ## Read First
 
-- `contributing/doc-style.md` owns prose and spec style.
-- Use the global `typst` skill for Typst syntax basics when needed.
-- In Flower specs, prefer the existing `bb lint --files doc/spec/flower/flower.typ` validation path over ad hoc Typst commands.
+- For prose and spec style, follow `contributing/doc-style.md`.
+- For Typst syntax basics, consult the global `typst` skill when needed.
+- For Flower specs, prefer the existing `bb lint --files doc/spec/flower/flower.typ` validation path over ad hoc Typst commands.
 
 ## Diagram Decision
 
@@ -72,6 +72,8 @@ For source-map or provenance diagrams, distinguish:
 - fallback behavior when provenance is missing
 
 ## Validation
+
+### Rendered validation
 
 After editing a spec diagram:
 

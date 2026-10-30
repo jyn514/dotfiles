@@ -46,6 +46,9 @@ When recording a status transition, inspect the full artifact for wording that s
 
 ## Stage gates and routing
 
+Each stage below states its entry condition, owner, and permitted next step.
+Approval of an artifact does not itself start the next stage.
+
 ### Product brief
 
 Briefs **must be written by a human**.
@@ -67,20 +70,25 @@ Require explicit human approval after the skim packet. Do not treat agent review
 
 Draft only the implementation specification when explicitly requested and the approved requirements are current. The specification is mostly agent-owned.
 
+#### Normal contributors
+
 Use these normal contributors:
 
-- **`technical-docs`** for implementation-spec document form, reader tasks, ownership, and prerequisites;
-- **`holistic-writing`** for whole-artifact explanation and reader experience after substantial drafting;
-- [Change guidelines](../references/change-with-evidence.md#design-choices) for ordinary code, API, and schema choices, and [testing guidance](../references/testing.md) for test strategy;
-- **[design review](../review/references/design.md)** to review the completed specification.
+- **`technical-docs`** owns implementation-spec document form, reader tasks, ownership, and prerequisites.
+- **`holistic-writing`** owns whole-artifact explanation and reader experience after substantial drafting.
+- [Change guidelines](../references/change-with-evidence.md#design-choices) cover ordinary code, API, and schema choices.
+- [Testing guidance](../references/testing.md) covers test strategy.
+- **[Design review](../review/references/design.md)** reviews the completed specification.
 
-Use these conditional contributors only when their trigger holds:
+#### Conditional contributors — use only when the trigger holds
 
-- **`architecture-design`** for consequential subsystem decomposition or architecture boundaries needing separate analysis;
-- [Design alternatives](../architecture-design/references/alternatives.md) for an unresolved architectural choice, and [independent deliberation](../architecture-design/references/deliberation.md) only when independent comparison is needed;
-- [Boundary-contract questions](../architecture-design/references/boundary-contracts.md) for unresolved or changed contracts, reusing the selected design rather than starting another declaration phase;
-- [Complexity justification](../references/complexity-justification.md) when a mechanism's necessity or required variability remains unclear;
-- **`dependency-review`** for proposed third-party dependencies.
+- **`architecture-design`** handles consequential subsystem decomposition or architecture boundaries that need separate analysis.
+- [Design alternatives](../architecture-design/references/alternatives.md) covers unresolved architectural choices.
+  Use [independent deliberation](../architecture-design/references/deliberation.md) only when independent comparison is needed.
+- [Boundary-contract questions](../architecture-design/references/boundary-contracts.md) cover unresolved or changed contracts.
+  Reuse the selected design rather than starting another declaration phase.
+- [Complexity justification](../references/complexity-justification.md) applies when a mechanism's necessity or required variability remains unclear.
+- **`dependency-review`** covers proposed third-party dependencies.
 
 Escalation has an explicit authority boundary:
 

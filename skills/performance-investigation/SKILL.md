@@ -5,16 +5,16 @@ description: Diagnose unexpected execution delay, hangs, observed contention, an
 
 # Performance Investigation
 
-Establish the unexpected execution delay, observed contention, quota constraint, or requested measurement before starting.
-Missing, late, or out-of-order UI updates alone belong to ordinary correctness debugging: check event delivery, parsing, and rendering first.
-Use this workflow when that investigation shows slow execution or blocked rendering, or when profiling or benchmarking is explicitly requested.
-An unexpectedly stalled build triggers this skill; a quiet build progressing within its expected duration does not.
+First establish the unexpected delay, observed contention, quota constraint, or requested measurement.
+Missing, late, or out-of-order UI updates alone call for ordinary correctness debugging: check event delivery, parsing, and rendering first.
+Use this workflow if those checks reveal slow execution or blocked rendering, or if profiling or benchmarking is explicitly requested.
+An unexpectedly stalled build triggers this skill. A quiet build that is progressing within its expected duration does not.
 
 Before editing, record the baseline command, environment, metric, narrowest representative workload, elapsed time, and whether the run is cold or warm. Reproduce the user's actual command resolution; the agent's inherited shell may differ. Prior baselines are useful when environment differences are named, but precise comparisons require same-machine before/after measurements.
 
 ## Preserve evidence
 
-Before the first measurement, choose an evidence directory that survives session/environment resets and benchmark cleanup. Save exact runner, query, and analysis sources alongside raw per-run results there, preserving the source version for each run. Temporary copies, terminal output, or hashes alone cannot recover lost evidence.
+Before measuring, choose an evidence directory that survives session or environment resets and benchmark cleanup. Save the exact runner, query, and analysis sources there with the raw results for each run. Preserve the source version used for every run. Temporary copies, terminal output, or hashes alone cannot recover lost evidence.
 
 Prefer the runner's discovery roots or exclusions to keep captured test sources outside the measured workload.
 Do not assume Git-ignored directories are excluded; check the runner's discovery behavior.
@@ -28,34 +28,44 @@ Before choosing tools, name the question, the decision it informs, and the least
 Separate user limits and preservation requirements from diagnostic choices, such as sampling windows and observation points.
 Do not reject an alternative because it cannot satisfy conditions needed only by the current diagnostic.
 
-For whole-command latency, start with a phase-time budget; account for overlap rather than adding concurrent phases.
+### Whole-command costs
+
+For whole-command latency, begin with a phase-time budget. Account for overlap; do not add concurrent phases as if they ran sequentially.
 Estimate the maximum end-to-end benefit before pursuing a local optimization.
-After meaningful improvements, refresh the budget and rank the remaining avoidable costs rather than following the previous bottleneck.
+After a meaningful improvement, refresh the budget and rank the remaining avoidable costs. Do not keep following the previous bottleneck without rechecking.
+
+### Profiler selection
 
 Distinguish a progressing, CPU-heavy computation from a hang.
 For a progressing computation, prefer an existing profiler that can answer the question over sampling hooks or custom telemetry.
 Use existing evidence or the cheapest viability check; do not require an expensive profiling run just to rule out a tool.
 Completion-only profiling cannot diagnose a hang, but may capture a computation that completes or safely unwinds on timeout.
 Check the output path under relevant stop conditions and user limits; name conditions that can lose results.
+
+### Timing and attribution scope
+
 State whether subprocess counts cover direct launches or all descendants, and whether threads are included.
 Label timings as inclusive or exclusive.
 Do not sum overlapping parent/child durations or report reductions between differently scoped counts.
 Keep profiled attribution separate from unprofiled timing benchmarks.
 Do not convert traced time shares into unprofiled savings; instrumentation overhead can differ by operation.
+
+### Custom instrumentation
+
 Before adding custom instrumentation, identify the required answer an existing tool cannot provide and the evidence of that limitation.
 
 ## Diagnose boundedly
 
-When a command exceeds its expected duration or remains unexpectedly silent for 30 seconds:
+When a command exceeds its expected duration or stays unexpectedly silent for 30 seconds, work through these steps:
 
-1. Record elapsed time, output so far, and the process tree. Use shell timestamps when no portable timing tool exists, and retain diagnostic logs and stack samples in the evidence directory.
-2. Capture descendants recursively and, when children are short-lived, repeatedly. Identify the active child operation rather than attributing its time to the outer command.
-3. Classify the active phase as CPU-bound, I/O-bound, blocked, sleeping, or waiting on a child.
-4. For hangs, take a JVM thread dump or a bounded stack or syscall sample for other runtimes.
+1. Record elapsed time, output so far, and the process tree. Use shell timestamps if no portable timing tool exists. Save diagnostic logs and stack samples in the evidence directory.
+2. Capture descendants recursively. Repeat the capture if children are short-lived. Identify the active child operation instead of attributing its time to the outer command.
+3. Classify the active phase: CPU-bound, I/O-bound, blocked, sleeping, or waiting on a child.
+4. For a hang, take a JVM thread dump or a bounded stack or syscall sample for other runtimes.
 5. Separate launcher setup, dependency resolution, discovery/loading, execution, reporting, and shutdown.
-6. Stop once the sample answers the current question. If terminating a wrapper, clean up only descendants created by that invocation; preserve shared daemons and pre-existing workers.
+6. Stop when the sample answers the current question. If you terminate a wrapper, clean up only descendants created by that invocation; preserve shared daemons and pre-existing workers.
 
-For a hang, locate the active phase with bounded samples before attempting a representative completion run.
+For a hang, use bounded samples to locate the active phase before attempting a representative completion run.
 
 ## Improve the measured boundary
 

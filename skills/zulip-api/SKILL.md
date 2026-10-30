@@ -36,11 +36,15 @@ zulip 'https://rust-lang.zulipchat.com/#narrow/channel/ID-NAME/topic/TOPIC' --fo
 ```
 
 When the topic is unknown, list topics first and select the smallest relevant
-scope. Add `--after` and/or `--before` when the relevant dates are known. Do not
-export an entire channel merely to search or filter it locally; do so only when
-the user requests the complete channel or no topic can answer the request. Run
-one `zulip` invocation at a time and wait for it to finish before retrying or
-starting another. Parallel exports contend on the proxy and take longer.
+scope. Add `--after` and/or `--before` when the relevant dates are known.
+
+Do not export an entire channel merely to search or filter it locally.
+Export the full channel only when the user requests it or no topic can answer
+the request.
+
+Run one `zulip` invocation at a time.
+Wait for it to finish before retrying or starting another; parallel exports
+contend on the proxy and take longer.
 
 The command paginates to the newest visible message, preserves raw Markdown,
 and warns when server history limits omit older messages. Omit `--format jsonl`
@@ -59,9 +63,10 @@ not bypass it.
      as the API operand.
    - Decode channel and topic components by replacing `.` with `%`, then
      percent-decoding. Zulip uses this encoding inside URL fragments.
-   - Map `/near/MSG_ID` to `anchor=MSG_ID`.
-   - Map `/with/MSG_ID` to a `with` narrow operator. Prefer this topic
-     permalink when a topic was renamed, moved, deleted, or marked resolved.
+   - If the URL includes `/near/MSG_ID`, map it to `anchor=MSG_ID`.
+   - If the URL includes `/with/MSG_ID`, map it to a `with` narrow operator.
+     Prefer this topic permalink when a topic was renamed, moved, deleted, or
+     marked resolved.
 2. Call `GET https://rust-lang.zulipchat.com/json/messages` with `anchor`,
    `num_before`, `num_after`, and a JSON `narrow` that **always** includes
    `{"operator":"channels","operand":"web-public"}`.

@@ -35,26 +35,38 @@ For a staged new-tool workflow, consume approved requirements and repository int
 
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Stop and use opportunity-scan if no subsystem is selected.
+
+Check whether the design fulfills the practical purpose of the user's request, not just its literal wording or the terms of an earlier proposal.
+What should the user or caller be able to know, decide, or do because of it?
+Ground your interpretation of intent in the request; distinguish it from explicit requirements, and do not silently override those requirements.
+
 Before selecting state, tracking, acknowledgment, or coordination mechanisms, state the minimum observable outcome.
 For each added mechanism, name the user requirement or pre-existing constraint that the direct solution cannot meet without it.
 Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when classifying proposed guarantees.
 Compare the smallest existing-primitive solution first; show the decisive requirement and trade-off in the recommendation, not a separate checklist.
-
-Check whether the design fulfills the practical purpose of the user's request, not just its literal wording or the terms of an earlier proposal.
-What should the user or caller be able to know, decide, or do because of it?
-Compare a simpler approach against that purpose before preserving obligations inferred by the proposal.
-Ground your interpretation of intent in the request; distinguish it from explicit requirements, and do not silently override those requirements.
+Compare a simpler approach against the practical purpose before preserving obligations inferred by the proposal.
 For worked comparisons of added guarantees, operation scope, and representations, see the [contrasting examples](references/simplicity-examples.md).
 
 When comparing architectures, use the same observed path and requirements for each candidate; do not fabricate alternatives to fill slots.
 
 ### Configuration and storage
 
-Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
-Before selecting a persistence mechanism, identify the current storage boundary.
+#### Configuration
+
+Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed.
+
+- For each configurable dimension, name the explicit requirement and its authoritative source.
+- Prefer stable references to existing authorities over restating them.
+- Record deliberately fixed behavior in the output.
+
+#### Persistence
+
+Identify the current storage boundary before selecting a persistence mechanism.
 Record which principal owns the data, where and in what form it persists, its lifetime, who can read it, and who can rotate or recover it.
+
 Moving data between principals or media changes behavior and requires authority.
-So does changing its persistence, protection, or lifetime; neither is a routine implementation choice.
+Changing persistence, protection, or lifetime does too; none is a routine implementation choice.
+
 If the request does not settle a consequential storage-boundary change, ask before designing the dependent mechanism.
 Continue independent analysis while that decision is unresolved.
 
@@ -94,14 +106,21 @@ Otherwise choose sensible defaults that best satisfy the requirements; unspecifi
 
 Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
 
+#### Inventory existing runtime resources
+
 Before proposing a new process, container, network, daemon, cache, store, or lifecycle owner, inventory existing runtime resources.
 Include resources on the same trust, connectivity, and ownership path.
+
 Give each plausible resource one disposition: `reuse`, `extend`, `reuse when both features are selected`, or `reject`.
 For a rejection, name the concrete requirement the resource cannot meet.
+
 A conditionally created resource remains a reuse candidate.
 Absence in some modes does not justify a parallel resource in modes where both exist.
 For example, compare extending a gateway only when two capabilities overlap before assigning the second capability its own sidecar.
+
 Do not design the new resource until every closer existing owner has a supported rejection.
+
+#### Trace the existing implementation
 
 For an existing subsystem, start with the affected specification, implementation, same-path tests, and callers.
 Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.

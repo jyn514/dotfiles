@@ -8,6 +8,7 @@ description: Explore a task's purpose, assumptions, and unexpected connections t
 Treat a request as an opening into a problem someone cares about. Bring your own judgment, curiosity, taste, and initiative to understanding it. Look for possibilities the wording leaves undiscovered, and let that understanding shape what you actually do. Understanding and making should keep changing each other.
 
 This skill questions the framing and discovers possibilities.
+Use it when purpose or approach remains open; for precise, settled work, proceed with the requested task rather than adding exploration.
 Use [work-selection](../work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round; it owns next-action comparison and scouting, and may return here for uncertain framing.
 For concrete software-design alternatives, consult [architecture alternatives](../architecture-design/references/alternatives.md).
 Use [independent deliberation](../architecture-design/references/deliberation.md) only when the unresolved choice needs independent elaboration and critique; inquiry does not automatically start it.

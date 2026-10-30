@@ -5,7 +5,9 @@ description: Review, propose, and apply descriptive titles to past Pi sessions. 
 
 # Session title curation
 
-Use `search_sessions` and `read_session` to understand past work. `read_session` reports the effective current title before the transcript window. Use `edit_session_title` only after the user explicitly authorizes title changes.
+Use `search_sessions` and `read_session` to understand past work.
+`read_session` reports the effective title before the transcript window.
+Use `edit_session_title` only after the user explicitly authorizes title changes.
 
 ## 1. Establish the requested mode
 
@@ -24,11 +26,14 @@ A request to suggest, sample, inspect, or review titles is not permission to app
 - Keep the exact full session ID or returned session file with every candidate.
 - Exclude the current session from historic-title mutation.
 
-Search results are message hits, so keep searching and deduplicating until the requested number of distinct session IDs is reached. Vary broad task terms to reduce query bias. If the available search surface still cannot supply the requested count or a representative sample, state the shortfall instead of silently substituting repeated sessions.
+Keep searching and deduplicating until you have the requested number of distinct session IDs.
+Vary broad task terms to reduce query bias.
+If search still cannot provide the requested count or a representative sample, report the shortfall; do not silently substitute repeated sessions.
 
 ## 3. Read enough context
 
-Read the opening request, important course corrections, and final outcome. A middle snippet alone often names an abandoned approach.
+Read the opening request, important course corrections, and final outcome.
+A middle snippet alone may describe an abandoned approach.
 
 For forks and clones, read the recorded parent when available and compare conversation text before attributing work to the continuation.
 Copying can change entry IDs; different IDs alone do not establish new work.

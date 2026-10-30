@@ -1,13 +1,14 @@
 # Change with evidence
 
-These rules apply when designing, implementing, or reviewing code, configuration,
-or tests. Read them before that work; they supplement the always-loaded shared
-instructions.
+These rules apply when designing, implementing, or reviewing code, configuration, or tests.
+Read them before that work; they supplement the always-loaded shared instructions.
 
 Read surrounding context before edits, investigations, or audits.
 Do not draw broad conclusions from search snippets.
 
 ## Input recognition
+
+### Define and recognize the accepted input
 
 Apply [LANGSEC](https://langsec.org/) by defining the accepted input language at the parsing boundary.
 Reuse the owning parser and pass its structured results to effectful code instead of recognizing the same language again.
@@ -15,6 +16,9 @@ For a deliberately limited recognizer, state its accepted fragment and test look
 Recognize the complete input, including framing and namespace-bearing components, rather than accepting a prefix for another layer to reinterpret.
 Reject malformed or unsupported input before starting the requested effect.
 Where another component interprets the result, check that both sides assign it the same meaning.
+
+### Check downstream interpretation and generated output
+
 An argument vector prevents shell interpretation, not reinterpretation by the receiving command.
 For example, a package identifier can become a local archive operand, and an already-resolved path can become a template for another expansion pass.
 Use the owning serializer or encoder for generated output, keeping values as data rather than syntax.
@@ -27,7 +31,8 @@ For example, a Python script must launch a separate Bash file, not embed a multi
 
 ## Compatibility
 
-Do not preserve compatibility for internal interfaces whose producers and consumers change and deploy together. Preserve compatibility at external, persisted-data, protocol, and independently deployed boundaries, or when justified by a historical constraint.
+Do not preserve compatibility for internal interfaces whose producers and consumers change and deploy together.
+Preserve compatibility at external, persisted-data, protocol, and independently deployed boundaries, or when justified by a historical constraint.
 
 If running software loads source directly from the checkout, editing that source can deploy it immediately.
 Before the first write to live-loaded source, identify which producer versions and startup configuration remain active.
@@ -37,7 +42,8 @@ Run that old-launcher/new-connector regression against a disposable candidate be
 
 ## Single authority
 
-When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it. Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
+When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it.
+Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
 
 Add a regression test showing that changing the authority updates consumers without corresponding edits.
 For persisted representations, include independent readers such as launchers and discovery commands, and test their agreement on mixed old/new records.
@@ -55,12 +61,11 @@ This does not require hot reload or new runtime configurability solely for testi
 
 ## Logging
 
-Default CLI output must be human-scannable. Show the action, material inputs,
-current phase, result, and next action; keep hashes and internal data in
-receipts or explicit machine-readable output. Report failures once, stating
-what failed, why, cleanup/publication status, and recovery action. Use stdout
-for results and stderr for progress or diagnostics. Test representative
-success and failure output as a user-facing contract.
+Default CLI output must be human-scannable.
+Show the action, material inputs, current phase, result, and next action; keep hashes and internal data in receipts or explicit machine-readable output.
+Report failures once, stating what failed, why, cleanup/publication status, and recovery action.
+Use stdout for results and stderr for progress or diagnostics.
+Test representative success and failure output as a user-facing contract.
 
 ## Distinguish guarantees from details
 
@@ -109,18 +114,33 @@ Do not turn a proposed mechanism into its own requirement.
 
 ## Design choices
 
+### Choose the smallest supported change
+
 - Identify the smallest change that meets the requested outcome and required compatibility before presenting a design.
 - Recommend that change unless concrete evidence shows it is insufficient.
 - When evidence is missing, propose a small experiment instead of a larger architecture.
 - Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
 - Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
-- Represent data precisely. Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
-- Parse, don't validate: centralize checks in a structured domain model. Treat stringly typed structured data as suspect; fix the model instead of overloading meanings.
+
+### Represent and validate data
+
+- Represent data precisely.
+  Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
+- Parse, don't validate: centralize checks in a structured domain model.
+  Treat stringly typed structured data as suspect; fix the model instead of overloading meanings.
 - Make invalid states unrepresentable when language tools can do so without poor ergonomics, such as needless singleton types.
 - Choose the strongest cheap enforcement mechanism for the named invariant: types, compiler or lint rules, regression tests, static checks, runtime assertions, or benchmarks.
-- Before a structural refactor, declare the supported interface modes—library import, module invocation, direct script invocation, or a deliberate subset—and test exactly the declared modes. Do not let execution context choose an accidental API.
-- Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
-- After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
+
+### Define structural refactor interfaces
+
+- Before a structural refactor, declare the supported interface modes—library import, module invocation, direct script invocation, or a deliberate subset—and test exactly the declared modes.
+  Do not let execution context choose an accidental API.
+- Move existing implementation bodies behind the selected interface.
+  Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
+- After selecting a new owner, search for the old orchestrator and parallel implementations.
+  The refactor is incomplete while two modules can independently make the same decision.
+
+### Check numerical calculations
 
 When calculating with offsets, positions, or timestamps, identify their units and origins, distinguishing coordinates from lengths or durations.
 Bring coordinates to a common frame where the operation requires it; matching units alone do not establish matching origins.
@@ -133,9 +153,13 @@ Choose the smallest formulation that preserves the contract.
 Do not narrow accepted inputs, clamp results, or widen tolerances merely to hide a failure.
 Non-finite intermediates or rounding differences are not defects by themselves when the required behavior remains valid.
 
+### Reuse authoritative parsing results
+
 Before implementing parsing or validation, check whether an existing consumer can produce the authoritative result.
 Prefer inspecting that result over reproducing its rules.
 Explain why reuse is insufficient before implementing a custom parser or validator.
+
+### Change authoritative sources
 
 Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly.
 Change the authoritative source and regenerate through its owning mechanism.

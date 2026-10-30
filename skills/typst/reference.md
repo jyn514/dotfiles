@@ -5,7 +5,8 @@ markup/code syntax lives in `SKILL.md`.
 
 ## Raw text & code blocks (in depth)
 
-Inline `` `code` `` and fenced blocks produce *raw* (verbatim, monospace) text. Fenced blocks take an optional language tag for syntax highlighting:
+Inline `` `code` `` and fenced blocks produce *raw* (verbatim, monospace) text.
+Add an optional language tag to a fenced block for syntax highlighting:
 
 ````typst
 ```rust
@@ -21,7 +22,10 @@ The `#raw(...)` function is the programmatic form, useful when the content is dy
 #raw(read("example.rs"), lang: "rust", block: true)  // block: true forces a multi-line block
 ```
 
-`block: false` (the default for a single line) renders inline; `block: true` renders as a standalone block. Style raw text with `#show raw: set text(...)` or configure tab width / theme via `#set raw(tab-size: 4, theme: "theme.tmTheme")`.
+`block: false` (the default for a single line) renders inline.
+`block: true` renders as a standalone block.
+Style raw text with `#show raw: set text(...)`.
+Configure tab width or theme with `#set raw(tab-size: 4, theme: "theme.tmTheme")`.
 
 ## Common functions
 

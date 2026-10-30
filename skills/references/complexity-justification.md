@@ -2,8 +2,9 @@
 
 ## Purpose
 
-Own the complexity justification check: a mechanism needs a current requirement, independent consumer, reproduced failure, or pre-existing hard constraint. “Might be useful later” is insufficient.
-Consult these detailed checks when a mechanism's necessity, consumers, or required variability is unclear.
+Use these checks when a mechanism's necessity, consumers, or required variability is unclear.
+Keep a mechanism only when it meets a current requirement, serves an independent consumer, addresses a reproduced failure, or satisfies a pre-existing hard constraint.
+“Might be useful later” is insufficient.
 Ordinary local implementation and reuse with established independent consumers and a shared invariant need no extra procedure.
 These checks establish necessity, not approval to expand scope.
 
@@ -17,12 +18,17 @@ For reusable machinery, evaluate separately whether variability is required and 
 
 ## Procedure
 
-For a speculative mechanism, identify the current requirement, reproduced failure, or hard constraint that needs it. If none exists, defer it and stop. If the justification needs no reusable machinery or configurable policy, report the smallest direct solution and stop. Otherwise, continue below.
+For a speculative mechanism, identify the current requirement, reproduced failure, or hard constraint that needs it.
+If none exists, defer it and stop.
+If the justification needs no reusable machinery or configurable policy, report the smallest direct solution and stop.
+Otherwise, continue below.
 
 1. Identify the first concrete consumer: the current use.
 2. State exactly what must vary and what related behavior can remain fixed.
-3. Decide whether each variable dimension is required by the task, compatibility, or another repository constraint. Defer variability without such evidence.
-4. Independently evaluate the proposed implementation mechanism. Search for a second pre-existing or independently mandated consumer with materially shared behavior.
+3. Decide whether each variable dimension is required by the task, compatibility, or another repository constraint.
+   Defer variability without such evidence.
+4. Independently evaluate the proposed implementation mechanism.
+   Search for a second pre-existing or independently mandated consumer with materially shared behavior.
 5. If no independent second consumer exists, challenge the mechanism:
    - can the required variability remain concrete or local?
    - what actual duplication would exist without the abstraction?
@@ -31,7 +37,8 @@ For a speculative mechanism, identify the current requirement, reproduced failur
 
 ## Output
 
-For the early stop above, report the mechanism, its evidence or missing justification, and the decision to keep or defer it. Use the remaining fields only for reusable machinery or configurable policy.
+For the early stop above, report the mechanism, its evidence or missing justification, and the decision to keep or defer it.
+Use the remaining fields only for reusable machinery or configurable policy.
 
 - `KEEP_VARIABILITY` or `DEFER_VARIABILITY`
 - required variable dimensions and their evidence

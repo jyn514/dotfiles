@@ -15,7 +15,7 @@ Treat existing working-copy changes as protected until ownership is established.
 
 ## Inspect first
 
-Start with one of:
+Start with one of these commands:
 
 ```bash
 jj status
@@ -23,7 +23,7 @@ jj log -r @ --no-graph \
   -T '"conflicts: " ++ if(conflict, "true", "false") ++ "\\n" ++ conflicted_files.map(|f| f.path().display()).join("\\n") ++ "\\n"'
 ```
 
-Use the second command when the working-copy commit is known to be conflicted; otherwise use `jj status`. Identify the exact conflicted revision and target change before creating the resolution commit.
+Use `jj status` unless you already know the working-copy commit is conflicted; then use the second command. Before creating a resolution commit, identify the exact conflicted revision and target change.
 
 Inspect the whole conflict and surrounding destination code for each file.
 Check the installed `jj-conflict --help` interface rather than assuming its source documentation ships beside an installed skill.
@@ -39,7 +39,7 @@ For a checkout that does not install the wrapper, invoke its tracked path direct
 libexec/agent-wrappers/jj-conflict inspect path/to/file --json
 ```
 
-Preview a composition, write it, then check the file:
+Preview a composition first. If it is correct, write it and check the file:
 
 ```bash
 jj-conflict apply path/to/file --edit 1,3:2 --preview
@@ -66,18 +66,19 @@ For each conflict, record:
 4. unrelated destination changes to preserve;
 5. semantic result required by both changes.
 
-For a diff side, inspect its base file:
+For each diff side, inspect its base file:
 
 ```bash
 jj file show --revision BASE -- path/to/file
 ```
 
-Use the base to verify the diff, then apply its changes to the current destination snapshot. Preserve destination refactors and unrelated lines. If the destination changed the diff's context, resolve that region manually rather than restoring historical context. If both sides change the same behavior, reconcile it explicitly; do not keep both blocks merely because both appeared in the conflict.
+Verify the diff against that base, then apply its changes to the current destination snapshot. Preserve destination refactors and unrelated lines. If destination changes invalidate the diff's context, resolve that region manually; do not restore historical context. If both sides change the same behavior, reconcile the changes explicitly. Do not keep both blocks just because both appeared in the conflict.
 
 When lifecycle ordering changed, trace the old and destination transitions before composing the fork behavior.
 For example, destination startup may reserve a run before an extension callback that previously ran before reservation.
 Preserve the destination's control flow and helper placement unless a required fork contract needs a different result.
-Do not reverse that ordering just to preserve an old race fixture; use [testing guidance](../references/testing.md) to distinguish the required state from its callback mechanism.
+Do not reverse that ordering just to preserve an old race fixture.
+Test the required state, not merely the callback mechanism, using the [testing guidance on concurrent lifecycles](../references/testing.md#test-failures-and-concurrent-lifecycles).
 If preserving the fork contract requires changing destination policy, ask before dependent edits rather than treating the old test setup as authority.
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.

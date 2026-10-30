@@ -15,7 +15,8 @@ Skip Plan, Edit, and verification of changes not made; a review request does not
 
 ## Read first
 
-Discover and follow the target repository's development lifecycle, documentation entrypoint, prose and ownership rules, source-of-truth policy, and guidance for repository-local skills. Read the nearest index for every documentation subtree in scope.
+Within the selected documentation scope, discover and follow the target repository's development lifecycle, documentation entrypoint, prose and ownership rules, source-of-truth policy, and guidance for repository-local skills.
+Read the nearest index for every documentation subtree in scope.
 
 Use the format-specific owner for specifications, generated documentation, public docs, or Typst files.
 Use `holistic-writing` for whole-artifact editorial review of substantially revised prose.

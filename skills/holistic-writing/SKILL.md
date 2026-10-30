@@ -44,6 +44,8 @@ For an editorial pass, retain the destination unless relocation is requested.
 Use the placement reference when the documentation owner or destination is not already established.
 Do not force essays, reports, or instructions into documentation forms.
 
+### Encounter the reading experience
+
 Before interpreting craft, encounter the reading experience: what comes to matter, what you expect, and what stays with you afterward.
 Distinguish pleasure or friction in following the prose from what readers come to understand and how they feel about the subject or themselves.
 Be specific about whether a detail changes their mental model, their feelings, or both.
@@ -55,6 +57,8 @@ Read the whole artifact to assess it, then trace the paths its readers are likel
 Check whether they can recognize where to go and understand what they find without having read every preceding word.
 A reference can serve a reader who wants one answer; an argument may need sustained reading to develop its thought.
 
+### Establish what the evidence supports
+
 Establish what is observed, selected, provisional, and unresolved.
 Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority.
 Preserve provenance for measurements and reconstructed decisions.
@@ -65,11 +69,15 @@ A low-effort impression concerns the presentation; it does not establish who wro
 
 ## 2. Choose and develop what matters
 
+### Establish the reader and purpose
+
 Identify the reader's task, assumed background, and the understanding or action the artifact must support.
 Make its title and opening intelligible without session context.
 Define named proposals or policies rather than relying on their labels.
 Explain unfamiliar specialist terms before consequential use while preserving precise established domain terms.
 Distinguish facts, decisions, proposals, examples, and unresolved questions.
+
+### Explain choices and consequences
 
 Choose what deserves attention and explain the connections that matter to that reader.
 Your judgment can be wrong; refusing to make it leaves the reader to decide, often with less context and her own risk of error.
@@ -84,6 +92,8 @@ Stay within the supplied evidence; do not invent missing product facts or treat 
 For an explanatory distinction, identify what it helps these readers understand or decide.
 If neither side changes their understanding or choice, it is a distinction without a difference: remove or rework it when writing, and count its wasted attention or false emphasis against the prose when reviewing.
 A corrective contrast needs a plausible misconception and an explanation that gives these readers reason to reconsider; do not invent confusion to defend it.
+
+### Develop explanations and mechanisms
 
 Read forward using the intended reader's assumed background and what the document has introduced so far.
 Supply enough context for each passage to make sense when the reader reaches it; develop the connection locally or move its explanation earlier.
@@ -103,10 +113,14 @@ Before recommending an earlier definition, identify what the reader cannot under
 Explain why a schema or invariant exists before listing its fields.
 Do not force every artifact into a design-document progression or require a worked example of every application.
 
+### Select and sequence detail
+
 Give a thought room to develop.
 Joining sentences or packing definitions together can preserve facts while making their connections harder to follow.
 Concision makes good use of attention; it need not mean compressing the prose.
 Use the space that helps the reader follow, without rewarding either length or brevity on its own.
+
+### Present measurements
 
 For important measurements, identify the population or denominator, what was counted, input revision or time range, method, and limitations.
 Explain what the number demonstrates and whether it is provisional or an acceptance constant.

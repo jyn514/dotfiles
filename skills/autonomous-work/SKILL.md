@@ -5,8 +5,9 @@ description: Pursue an explicitly requested autonomous or unattended task, or an
 
 # Autonomous work
 
-Confirm either an explicit autonomous-run request or an active user-authorized tracked goal before starting.
-An active user-authorized tracked goal supplies run authority within its objective; an ordinary request for a fix, answer, draft, plan, or review does not.
+Before starting, confirm either an explicit request for an autonomous run or an active, user-authorized tracked goal.
+An active goal authorizes work only within its objective.
+An ordinary request for a fix, answer, draft, plan, or review does not authorize an autonomous run.
 Reassess activation when the task changes; having this skill in context does not activate it for the next task.
 Respect paused, blocked, and budget-limited states and the harness's resume requirements.
 An inactive goal is saved state, not permission to continue.
@@ -21,7 +22,7 @@ u got this buddy <3 i believe in u
 ## Establish authority and acceptance
 
 Read the request, governing requirements, repository guidance where applicable, and current artifacts or evidence.
-Identify the permitted activity, protected work, acceptance criteria, and effects before starting:
+Before starting, identify the permitted activity, protected work, acceptance criteria, and authorized effects:
 
 - **Implementation:** deliver the requested behavior through its intended consumer and required checks, within the authorized change scope.
 - **Research:** answer the agreed question from evidence, distinguishing supported conclusions, conflicting sources, and unresolved uncertainty.
@@ -33,23 +34,32 @@ Do not invent human approval or substitute a different activity for an unmet res
 A review-ready artifact can complete a draft request, but not a goal that explicitly requires the user's approval.
 Do not ask again for investigation, edits, or repairs the task already authorizes; a failed attempt does not impose a one-attempt limit.
 
-Derive remaining outcomes from the full governing request, not worker assignments, progress summaries, or optional cleanup.
-Narrowing an investigation does not narrow the goal or milestone.
-In the required acceptance order, identify the next unmet condition and its observable result, current evidence, missing work, and cheapest realistic check.
+Derive remaining outcomes from the full governing request, not from worker assignments, progress summaries, or optional cleanup.
+A narrower investigation does not narrow the goal or milestone.
+Follow the required acceptance order.
+For the next unmet condition, identify its observable result, current evidence, missing work, and cheapest realistic check.
 Use the task's actual criteria: sources and reasoning for research, the brief for writing, feasibility for planning, inspection evidence for review, and consumer behavior for implementation.
 Keep each condition open until its required evidence passes; an explicitly scoped feasibility or component result does not complete downstream obligations.
 
-Use existing goal, plan, or session state rather than creating another tracking system.
-Record acceptance cases before substantive work and refine them only within the governing scope.
+Use existing goal, plan, or session state; do not create another tracking system.
+Record acceptance cases before substantive work, and refine them only within the governing scope.
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
-## Keep a useful outcome graph for multi-outcome goals
+## Use an outcome graph when needed
+
+### For multi-outcome goals
 
 For an authorized autonomous goal with multiple independently verifiable outcomes or dependent workstreams, reuse an existing issue graph or create the smallest useful one with [goal-to-issue-graph](../goal-to-issue-graph/SKILL.md) before sustained execution.
 Check an existing graph against current authority, artifacts, and evidence before using it; do not blindly follow a stale task list.
 Cover root acceptance, remaining outcomes, genuine dependencies, and integration checks appropriate to the permitted activity.
+
+### For a single bounded task
+
 A single bounded task may use its existing acceptance criteria without a graph.
+
+### Shared graph rules
+
 Use permitted existing goal, plan, tracker, or session state; this requirement neither mandates a new tracking system nor authorizes tracker mutation or project-file edits for read-only work.
 
 Initial investigation may precede decomposition.
@@ -68,7 +78,7 @@ Advance acceptance and integration only when governing prerequisites and require
 
 Use [delegation](../delegation/SKILL.md) for assignments, shared contracts, waiting, review, and integration.
 
-## Apply implementation procedures only to implementation
+## For implementation work only
 
 For implementation work, use these companion procedures when their conditions apply:
 
@@ -105,6 +115,8 @@ Keep governing requirements distinct from revisable agent choices in saved state
 Record user decisions before dependent delegation and reconcile superseded holds, questions, and worker instructions without dropping constraints that still apply.
 Do not rely on compaction to retain everything needed to resume.
 
+### When compaction risks losing track
+
 Before compacting a complex run, check whether authority, acceptance, ownership, or evidence applicability is becoming hard to track.
 When it is, use [delegation](../delegation/SKILL.md) to spawn a bounded archivist subagent while you can still name the uncertain points.
 Give it those points, the current objective and permitted activity, existing task-state locations, and transcript, evidence and worker references.
@@ -116,6 +128,8 @@ Inspect its result and incorporate supported corrections into the existing permi
 Do not create a parallel status ledger or treat the archivist's inference as a user decision.
 If delegation is unavailable or compaction cannot wait, preserve the uncertain claims and recovery references explicitly rather than resolving them by assumption.
 A coherent current record needs no archivist pass.
+
+### Preserve state and resume
 
 Before compaction, interruption, or handoff, preserve:
 

@@ -8,6 +8,12 @@ description: Turn a brief or broad goal into an actionable TicGit issue graph wi
 Work backward from the promised result, not forward from the current implementation's limitations.
 A graph is useful only if completing its tasks establishes the user's goal without redefining success.
 
+Work through the numbered stages in order because each makes a different promise.
+First recover the goal and inspect the actual problem (§§1–2); then fix the root's success conditions while translating current knowledge into bounded tickets (§§3–4).
+Those tickets may change as discovery resolves uncertainty, but their closure must continue to serve the stable root contract.
+Next connect their outputs with justified dependencies and add applicable integration, quality, and maintenance work (§§5–6); review whether the whole graph can establish the root outcome (§7); create or update it in TicGit (§8); then hand it off.
+A ready graph is a plan for product work, not evidence that the product already succeeds.
+
 This skill owns decomposition, graph review, and direct creation or revision of TicGit issues for the authorized project work, not implementation.
 Use [ticgit](../ticgit/SKILL.md) for tracker operations; inspect the existing graph and reuse matching issues.
 Do not require separate approval to materialize the graph within that work; an explicit read-only or proposal-only request still forbids tracker mutation.
@@ -58,7 +64,8 @@ Keep allowed evidence modes distinct: a permitted manual exception need not meet
 Do not invent fallback permission or require one mechanism universally when the goal permits alternatives.
 A held, skipped, missing-input or unverified state may complete diagnosis; it cannot count as a successful item unless diagnosis is itself the requested outcome.
 
-Keep the governing root contract stable as discovery changes the work.
+The root contract answers what must ultimately be true; intermediate tickets describe the current route toward it.
+Keep the governing root contract stable as discovery changes that route.
 Preserve governing requirements, not every acceptance condition introduced by an earlier plan.
 When an approach changes, remove or supersede obsolete intermediate milestones and dependencies while retaining required semantic acceptance.
 Check that the replacement can achieve the root outcome without first completing the abandoned approach.
@@ -94,6 +101,17 @@ Each ticket needs enough detail for another agent to act without reconstructing 
 
 ### Acceptance and completion evidence
 
+Ticket acceptance turns bounded work into a checkable promise, and closeout must show that the promise was met on the revision being closed.
+Follow each criterion from its current wording, through the result that tests it, to the revision that result supports, and finally to the closeout owner's acceptance decision.
+Use the existing ticket fields and applicable evidence to make that chain inspectable; do not create parallel records just to restate it.
+
+For example, a CLI ticket might say criterion `[A1]`: “with the quiet option enabled, the command prints no progress messages.”
+Its existing evidence field can point to a CLI test receipt that records the command, option, observed output, and tested revision.
+If the ticket is later closed against a newer integrated revision, the closeout owner checks whether that receipt still applies to the closing revision; if a relevant change makes that uncertain, record the reconciliation or obtain applicable evidence before accepting `[A1]`.
+A populated evidence field and a passing result at an earlier revision do not by themselves prove that the current criterion is met on the revision being closed.
+
+#### Identify and map each criterion
+
 Give acceptance criteria stable identifiers such as `[A1]` and `[A2]`.
 Keep an identifier when its meaning stays the same; assign a new one for a material change and never reuse retired identifiers.
 Map each criterion to its proving boundary and evidence class, such as a CLI fixture, property test, benchmark, API result or artifact inspection.
@@ -101,18 +119,28 @@ State applicable contexts when different input origins or execution paths could 
 
 Require an acceptance-evidence mapping for every current criterion, using the existing ticket's acceptance/evidence fields when they can express it clearly.
 For each criterion, identify its current text or source reference, status and concrete supporting evidence.
+In the example, `[A1]` remains the identifier while its meaning is unchanged, and its mapping points to the CLI receipt and states what output in that receipt establishes the criterion.
+A shared result may support several criteria when the mapping identifies what proves each one.
 Keep this mapping in one canonical record; link from handoffs and recovery state rather than maintaining parallel copies.
 Use a separate completion matrix only when the existing record cannot make criterion coverage clear or an applicable governing workflow requires one.
 Treat agent-authored workflow formats as revisable mechanisms, not user requirements; do not introduce stricter shared packaging merely to standardize closeout.
+
+#### Tie evidence to the revision being closed
+
 Identify the issue and exact integrated revision being closed, and preserve references to the criteria whose acceptance was checked.
 Create additional snapshots only when existing versioned records cannot establish those identities.
 Retain the revision actually tested and establish applicability to the closing revision; never present reused evidence as newly executed.
+For `[A1]`, if the closing revision changes the command's output path, the earlier receipt cannot be treated as proof without resolving that mismatch; if the relevant behavior is unchanged and applicability is established, reuse it without claiming a new test run.
 For permitted no-code-change outcomes, identify the applicable versioned inputs, products or receipts instead of inventing a fixing commit.
+
+#### Decide and record closure
+
 The issue's actual closeout owner—not merely a contributing worker—must check that every current criterion is met by applicable evidence before claiming successful completion.
-A shared result may support several criteria when the mapping identifies what proves each one.
 Downstream closeout records the acceptance decision and any new reconciliation, linking to existing evidence rather than reproducing its narrative.
 Missing criteria, partial results, stale criterion text, unsupported worker claims and unreconciled revision mismatches block successful closure.
 An investigation may complete with no change only when its acceptance permits that outcome; cancellation or supersession is not evidence that acceptance was met.
+
+#### Validate without overstating the result
 
 Use existing tracker validation where it checks this mapping; otherwise inspect it directly without creating another validation artifact by default.
 Do not claim tool-enforced completion for checks performed only by inspection.
@@ -120,6 +148,7 @@ Do not build a new tracker or validation framework merely to write the plan.
 Structural validation prevents omissions and stale-evidence mismatches; the closeout owner must still check that the evidence actually proves each criterion.
 Planning defines this contract, not completed evidence or permission to execute the checks.
 
+Acceptance contracts and evidence records explain what closure means; they do not replace decisions about whether the route remains viable.
 For risks that can invalidate an approach or prevent completion, name the observable trigger and affected outcome.
 Assign an owner for the next decisive check or choice.
 State what its plausible results change and when to stop the affected approach, revise the graph or obtain a user decision.
@@ -133,6 +162,9 @@ Give effort ranges only when requested and supported; distinguish component work
 Do not sum concurrent allowances into an unsupported completion forecast.
 
 ## 5. Derive completion dependencies
+
+Tickets define deliverables; dependencies explain which deliverable must exist before another can be closed.
+Keep that distinction explicit: dependency edges encode closure prerequisites, while priority and safe concurrent ownership remain separate concerns.
 
 State the edge direction: `A → B` means A supplies something needed to close B.
 Explain that output or semantic prerequisite for every edge.
@@ -154,11 +186,18 @@ When a required dependency becomes concrete during discovery, update the graph r
 
 Assign these checks to graph work; do not execute implementation or product acceptance without authorization.
 Reuse existing inspection and measurement evidence where valid.
+
+### Plan an early end-to-end path
+
+Dependencies should expose the earliest point at which the graph can demonstrate a real result, not arrange components into a long queue that postpones integration.
 For implementation goals, plan the smallest supported end-to-end result as early as its genuine prerequisites allow, even with only basic features.
 Use the actual producer, intervening boundaries and final consumer; do not substitute hand-written intermediate outputs or bypass the boundary under test.
 Extend the working path through repeated integration as capability and scale increase, rather than postponing consumer checks until final convergence.
 If a working baseline already exists, exercise the changed path or next failing boundary instead of rebuilding a demonstration of unchanged behavior.
 An early limited delivery establishes a working path, not full goal acceptance; retain all required features, population and quality conditions.
+
+### Check interactions and scale
+
 When independent components share semantics or materially increase resource use, place a useful combined checkpoint before final convergence.
 Specify an actual interacting path and its negative cases; test consequential scale and interactions early enough to change the approach.
 Require a measured larger delivery when small-fixture success cannot establish viability.
@@ -169,12 +208,17 @@ Make end-to-end acceptance use the actual supported producer, serialized or depl
 Expected outputs are test assertions, not substitutes for generation or evidence of input validity.
 Account for changed, lost and wrong results, not only gains.
 
+### Set usability acceptance
+
 For usability requirements, choose cases and expected behavior independently of whichever outputs later pass.
 Explain how they support the quality claim and exercise known failure modes.
 Keep whole-population coverage separate from sample-based quality claims.
 Distinguish diagnostic metrics from acceptance criteria: a measurement can inform a quality claim without defining success.
 For each required quality claim, state which results prevent completion or require correcting or reconsidering the approach, and who owns the next action.
 When the acceptable standard or a necessary user judgment is unresolved, keep that decision explicit; do not invent a cutoff or count reporting the result as satisfying the claim.
+
+### Demonstrate maintainability
+
 For maintainability requirements, choose demonstrations against the expected ongoing workflow and known maintenance risks, not merely an easy operation with prepared inputs.
 For routine data updates, use the supported workflow, not case-specific code patches.
 Include input preparation and recurring manual work when they are material sources of upkeep.
@@ -183,6 +227,9 @@ For example, adding a regular item may not exercise the required evidence-correc
 Replaying one frozen snapshot proves reproducibility, not that updates are maintainable.
 
 ## 7. Review the graph in both directions
+
+The preceding stages build a route from root outcomes through ticket deliverables to evidence.
+Review that route from both ends: every root criterion must reach proving work, and every required ticket must contribute to a root criterion.
 
 Trace every root criterion backward to tickets and consumer-visible evidence.
 Trace every required ticket forward to a root criterion; remove unrelated work or mark it outside the required graph.

@@ -21,15 +21,24 @@ For a staged new-tool workflow only, require a ready implementation specificatio
    Carry forward known error, lifecycle, and compatibility requirements, not just the successful request.
    Name uncertainties that could change this candidate; do not fill them with speculative components or interfaces.
    This candidate is the basis for inspection and revision, not an extra document or approval stage.
-3. **Inspect to resolve those uncertainties.** Trace the candidate's entry points, data flow, side effects, deployed consumers, and affected bypass paths.
+3. **Inspect to resolve those uncertainties.**
+
+   **Trace the candidate.**
+   Follow its entry points, data flow, side effects, deployed consumers, and affected bypass paths.
    Inspect relevant tests, docs, and dependencies to establish which existing facilities suffice.
+
+   **Resolve decision-changing unknowns.**
    Each further investigation must resolve an unknown that could change the candidate or its verification; stop when the evidence settles it.
    Separate observations from assumptions.
+
+   **Establish preservation and contracts.**
    Before treating preservation as required, cite its source and trace whether affected consumers change and deploy together.
    Apply [Compatibility](../references/change-with-evidence.md#compatibility); mark unknown preservation requirements as unresolved rather than conservative defaults.
    Reference existing ownership, effects, representations, lifecycle, and compatibility contracts.
    Fill only decision-changing gaps using the applicable [boundary-contract questions](../architecture-design/references/boundary-contracts.md).
-   Trace relevant setup, error, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions without reopening unchanged lifecycle categories.
+
+   **Trace affected transitions.**
+   Check relevant setup, error, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions without reopening unchanged lifecycle categories.
 4. **Revise the candidate as evidence changes.** First try to accommodate each finding through the current path and its existing owners.
    Before adding a control, component, interface, test fixture, or phase, identify a required case the smaller candidate cannot handle.
    A useful purpose does not establish that a separate mechanism is necessary.

@@ -8,16 +8,16 @@ description: Divide and coordinate work among agents. Use before spawning or ass
 ## Choose work and keep ownership
 
 Derive the outcome and acceptance condition from the user's request, not the worker's assignment.
-Delegate only authorized work that advances that condition or resolves a demonstrated prerequisite.
-Prefer doing small inspections and integration repairs directly when delegation adds a handoff without useful independence or capability.
+Delegate only authorized work that advances that outcome or resolves a demonstrated prerequisite.
+Prefer doing small inspections and integration repairs directly when delegation would add a handoff without useful independence or capability.
 
-Delegate bounded outcomes rather than isolated components.
-Prefer one worker owning a producer-to-consumer result and its acceptance check.
+Assign bounded outcomes, not isolated components.
+Prefer one worker owning the result from producer through consumer, including its acceptance check.
 Give the worker authority for the ordinary checks, failure inspection, and in-scope corrections its assigned activity permits.
 For implementation assignments, include edits and checks through the first intended-consumer result without returning for permission at each step.
-Require a return before an unresolved consequential choice, a concrete ownership conflict, or an operation outside the assignment's permitted effects or resource limits.
+Require the worker to return before making an unresolved consequential choice, crossing an ownership conflict, or exceeding the assignment's permitted effects or resource limits.
 Do not split routine preparation and execution into separate approval handoffs; retain explicit user-imposed limits and approvals.
-Split the outcome only when independent execution saves time or an ownership or capability constraint requires separate workers.
+Split the outcome only when independent execution saves time or ownership or capability constraints require separate workers.
 The parent remains responsible for coordination and integration.
 
 For coupled implementation with unsettled shared contracts, use [the shared-contract check](references/shared-contracts.md).
@@ -25,9 +25,9 @@ Reuse settled contracts; separate files alone do not establish independence.
 
 ## Give a self-contained assignment
 
-Prefer references to accessible canonical requirements, procedures and evidence over restating them.
-A self-contained assignment identifies what to read and supplies task-specific decisions, ownership, overrides and otherwise unavailable context;
-it need not reproduce the referenced material.
+Prefer references to accessible canonical requirements, procedures, and evidence over restating them.
+A self-contained assignment names what to read and supplies task-specific decisions, ownership, overrides, and otherwise unavailable context.
+It need not reproduce the referenced material.
 
 Provide the worker with:
 
@@ -42,10 +42,14 @@ Preserve the task's purpose, consequential constraints and access to underlying 
 Reuse applicable tests, logs and artifacts; require new evidence only for a missing or invalidated claim.
 Summarize the result, unresolved issues and evidence locations in the handoff rather than reproducing the evidence or creating another report format.
 
+### When prescribing a prerequisite or method
+
 Before prescribing a prerequisite or method that constrains execution, check governing guidance or actual implementation for its necessity and availability.
 Do not make permission conditional on an assumed mechanism.
 If the workflow is uncertain, include bounded inspection within the assignment's permitted activity rather than prescribing an unverified method as a prerequisite.
 For example, require regeneration only after establishing that the target is generated and identifying its source; an authoritative data file may instead require direct edits.
+
+### When an assignment would add a resource owner
 
 When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the architecture owner's reuse dispositions.
 Cover nearby existing resources.
@@ -53,10 +57,14 @@ Do not encode a new resource as settled implementation work when reuse was not c
 If the packet lacks that comparison, assign a bounded inspection before implementation.
 The worker returns the existing candidates and what requirement, if any, rejects each one.
 
+### For full-file coverage
+
 For assignments requiring full-file coverage, specify separate, bounded read calls.
 Continue from the last line actually returned, not the requested end of a truncated range.
 Require workers to finish retrievable gaps before returning;
 when access or tool failure prevents completion, report the exact unread ranges and blocker.
+
+### When selecting and coordinating a worker
 
 Choose a worker suited to the task's judgment and cost requirements using the harness's available capabilities.
 Do not expand authority because a worker or tool can perform an action.

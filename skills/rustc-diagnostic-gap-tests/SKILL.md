@@ -8,12 +8,19 @@ description: Survey Rust compiler and rustdoc diagnostics for weak or missing be
 ## Survey
 
 1. Inspect the worktree. Preserve unrelated changes.
-2. Search the relevant test suites before proposing a case. Reject the same input shape and diagnostic limitation; sharing an error code is not duplication.
+2. Search the relevant test suites before proposing a case. Reject a case when both
+   its input shape and diagnostic limitation already exist. Sharing an error code
+   alone does not make it a duplicate.
 3. Prefer mistakes likely from new Rust users and diagnostics that expose compiler internals without actionable context.
 4. Find the owning diagnostic and nearby helpers under `compiler/`. Search emitted wording, diagnostic structs, trait diagnostic items, and suggestion text.
-5. When a subsystem mostly yields duplicates, switch compiler phases or suites. Before concluding, ask: “Are there any other parts of the compiler with gaps?” Survey at least one plausible remaining area before answering no.
+5. When a subsystem mostly yields duplicates, switch compiler phases or suites.
 
 Consider parser/macro expansion, resolution/imports, type checking, trait selection, borrow checking, const evaluation, async lowering, attributes/cfg, coherence, unsafe checking, lints/FFI, command-line parsing, and rustdoc.
+
+### Before concluding the survey
+
+Ask: “Are there any other parts of the compiler with gaps?” Survey at least one
+plausible remaining area before answering no.
 
 ## Add a test
 

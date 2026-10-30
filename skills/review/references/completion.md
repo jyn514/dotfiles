@@ -20,7 +20,7 @@ before completion does not start this procedure.
    Add rows only for governing requirements or reproduced failures of them; possible behavior differences alone add no cases.
    Test every applicable row or record why a row is inapplicable.
    Treat a missing row as missing evidence.
-   For cross-process or permission-boundary changes, include the assembled runtime path and a forbidden effect in the matrix, and test at the enforced boundary. Apply the [evidence standards](evidence.md) to every result.
+   **Cross-process or permission-boundary changes:** Include the assembled runtime path and a forbidden effect in the matrix, and test at the enforced boundary. Apply the [evidence standards](evidence.md) to every result.
 1. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
    For staged new-tool work, report acceptance drift only when a later artifact is narrower than the governing approved requirements; do not report approved exclusions or non-goals as drift.
    - **Changed comparisons:** If the owned diff changes tests, fixtures, snapshots, skiplists, or comparison logic, inspect the decisive assertions and setup, not test names or aggregate counts. Identify behavior that now passes but previously failed, and required paths or cases no longer exercised. Justify each relaxation against the governing requirements; changed expectations alone do not establish correctness. For reference-based claims, trace final expectations to the declared reference or an authorized divergence; formatting normalization must not hide changed values, missing errors, or excluded cases.

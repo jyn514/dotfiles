@@ -1,16 +1,16 @@
 # Shared contracts for coupled workers
 
-Before assigning coupled implementation, identify decisions one worker could make that would change another worker's inputs, outputs, or invariants.
-Separate file ownership does not establish independence.
+Before assigning coupled implementation, identify any decision one worker could make that would change another worker's inputs, outputs, or invariants.
+Separate file ownership alone does not make the work independent.
 
-State the shared representation, producer and consumer responsibilities, and failure behavior.
-Confirm both assignments use that contract.
+State the shared representation, each producer's and consumer's responsibilities, and failure behavior.
+Confirm that both assignments follow this contract.
 Reuse existing code or a short declaration; do not require a new document, exhaustive API specification, or architecture workflow.
 If a consequential contract remains unclear, consult only the applicable [boundary-contract questions](../../architecture-design/references/boundary-contracts.md).
 
-Resolve shared choices before dependent implementation.
-If unresolved, delegate investigation or contract design instead; continue independent work.
-Recheck affected assignments when the contract changes.
+Resolve shared choices before dependent implementation begins.
+If a choice remains unresolved, assign investigation or contract design instead, while independent work continues.
+When the contract changes, recheck affected assignments.
 
 If a running tool imports or invokes helpers from the working copy, create and test a new helper before changing a live caller to use it.
 Sequence coupled workers accordingly: confirm the helper exists and passes its focused check before the caller worker switches the import or invocation.

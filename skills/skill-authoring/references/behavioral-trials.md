@@ -8,9 +8,16 @@ Skill edits and textual reviews do not require a trial by default.
 State which decision the trial should change and what observation would change it.
 Distinguish a useful answer, a changed research action, and reliable compliance; they require different evidence.
 For a failure-driven comparison, begin with the failure task and a nearby control before adding variants or domains.
-For a fresh paired comparison, run the baseline first and verify that it reaches the decision being tested before expanding the comparison.
+For a fresh paired comparison, run the baseline first.
+Verify that it reaches the decision being tested before expanding the comparison.
+
 If the baseline does not reproduce a failure, do not credit the revision with fixing it.
-Choose a bounded repeat, assess a different observed behavior explicitly, or stop with an inconclusive result.
+Choose one of these outcomes:
+
+- Repeat a bounded comparison.
+- Assess a different observed behavior explicitly.
+- Stop and report an inconclusive result.
+
 When the next decision depends on consistency, repeat the matched comparison before widening the task matrix.
 When it depends on transfer, add a task outside the originating domain instead.
 Repetition does not remove confounding from changing retrieval results, task state, or instruction exposure.
@@ -29,7 +36,9 @@ Label that substitution and limit the conclusion; do not describe it as a deploy
 ## Observe ongoing work
 
 When observing ongoing work to judge whether guidance helped, inspect the existing transcript, artifacts, and ordinary completion events.
-Do not announce the evaluation, disclose its criteria, or request evaluation-specific reports from the agent being observed.
+
+Do not announce the evaluation or disclose its criteria to the observed agent.
+Do not request evaluation-specific reports from that agent.
 When a result is not yet available, wait for normal completion evidence rather than asking the observed agent to produce monitoring callbacks.
 
 Deliver the changed instructions and request that they be loaded when needed to establish exposure.
@@ -41,28 +50,38 @@ When passive observation cannot provide enough evidence, report that limit rathe
 
 ## Replay and paired trials
 
+### Preserve history and isolate state
+
 For trials based on a past session, directly resume or fork the original session at the decision point by default.
-Preserve its actual messages, tool calls, and tool results; do not replace them with a summary or a new user message quoting the history.
+
+Preserve its actual messages, tool calls, and tool results.
+Do not replace them with a summary or a new user message quoting the history.
 Protect the original session and real user state from replayed actions.
 Use disposable resources for state those actions can modify.
+
 A conversation fork preserves messages, not filesystem or runtime state.
 Relevant inputs can include current source files, unsolicited messages, and automatic context injection.
+
+### Choose the state and handoff method for the tested behavior
+
+Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
+A handoff trial does not establish how the original agent would continue or whether its decisions improve.
+If the original session is unavailable or cannot be resumed, report that limitation and label reconstructed inputs as an approximation.
+
 Neither history preservation nor mutation isolation by itself requires reconstructing the historical filesystem.
 Use current task state and report differences that could change the decision, or restore the relevant historical state.
 Choose according to the comparison question; these are alternatives, not sequential steps.
 Control relevant differences or disclose their limits on the comparison.
 A bounded revised-only replay may use recorded earlier outputs for comparison; report it as a quality observation, not a controlled experiment.
 Do not block that replay solely because a fresh baseline is unavailable.
-Inspect actual actions and outputs; investigate a failed check before expanding the replay.
+
+### Verify exposure before judging continuation
 
 Verify that the updated instruction body successfully loaded before treating a continuation as evidence about its behavior.
+Inspect actual actions and outputs; investigate a failed check before expanding the replay.
 A reload, a read attempt, or a completed answer alone does not establish exposure to the updated instructions.
 Inspect the full relevant continuation, including earlier responses and actions at the tested decision.
 An interface that shows only the latest final response may hide those earlier outputs.
-
-Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
-A handoff trial does not establish how the original agent would continue or whether its decisions improve.
-If the original session is unavailable or cannot be resumed, report that limitation and label reconstructed inputs as an approximation.
 
 Preserve normal coordinator tools and native completion delivery when assessing delegation, coordination, or latency.
 Removing tools can force extra delegation; manual result bridging can introduce pauses absent from the real workflow.

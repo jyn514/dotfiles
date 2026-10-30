@@ -76,19 +76,28 @@ The sum is #add(2, 3).
 
 ## Raw text & code blocks
 
-Inline `` `code` `` and fenced ``` ```lang ... ``` ``` blocks produce verbatim monospace text; the optional language tag enables syntax highlighting. `#raw(content, lang: "...", block: true)` is the programmatic form (useful with `read(...)`).
+Inline `` `code` `` and fenced code blocks produce verbatim monospace text.
+Add an optional language tag to a fenced block to enable syntax highlighting.
+Use `#raw(content, lang: "...", block: true)` to create raw text programmatically, for example with `read(...)`.
 
 For `#raw(...)` options, styling, and `#image` / `#figure` / `#table` / `#grid` / `#align` / `#outline` / `#bibliography` / spacing helpers, see `reference.md`.
 
 ## API lookup with Tinymist
 
-For unfamiliar or version-sensitive functions, prefer the installed `tinymist` language server over guessing signatures or relying only on `reference.md`. Start `tinymist lsp`, initialize the workspace over JSON-RPC, open the target file (or a minimal scratch `.typ` file), then use:
+For unfamiliar or version-sensitive functions, prefer the installed `tinymist` language server over guessing signatures or relying only on `reference.md`.
+Follow this order:
 
-- `textDocument/hover` for documentation and resolved types
-- `textDocument/signatureHelp` for parameters at a call site
-- `textDocument/completion` for available functions and named arguments
+1. Start `tinymist lsp`.
+2. Initialize the workspace over JSON-RPC.
+3. Open the target file, or a minimal scratch `.typ` file.
+4. Query the exact source position where the API is used over the initialized JSON-RPC connection, using one of these methods:
+   - `textDocument/hover` for documentation and resolved types
+   - `textDocument/signatureHelp` for parameters at a call site
+   - `textDocument/completion` for available functions and named arguments
 
-Query the exact source position where the API is used. Keep one server process for related lookups, and shut it down cleanly; if Tinymist is unavailable, compile a minimal probe with the repository's Typst version.
+Keep one server process for related lookups.
+Shut it down cleanly when the lookups are complete.
+If Tinymist is unavailable, compile a minimal probe with the repository's Typst version.
 
 ## Units & values
 

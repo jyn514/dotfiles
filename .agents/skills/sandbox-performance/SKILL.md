@@ -10,12 +10,12 @@ Preserve required sandbox behavior; a faster internal span is not enough.
 
 ## Establish the measured outcome
 
-Name the boundary that matters before changing code:
+Before changing code, name the boundary that matters:
 
-- command entry through `Sandbox preparation` for launcher preparation;
-- command entry to the first usable Pi frame for interactive startup;
-- final Pi output to shell control for cleanup;
-- a named service span for a component-specific regression.
+- **Launcher preparation:** command entry through `Sandbox preparation`.
+- **Interactive startup:** command entry to the first usable Pi frame.
+- **Cleanup:** final Pi output to shell control.
+- **Component regression:** a named service span.
 
 Use command entry to the first usable Pi frame unless the user names another boundary.
 Do not optimize a nested phase as a proxy for the user-visible outcome without measuring both.
@@ -25,20 +25,29 @@ Read [startup terminal ownership](../../../tools/codex-sandbox/development.md#st
 
 ## Measure before selecting a change
 
-Run `env CODEX_SANDBOX_TIMING=1 pi` for phase attribution.
-Use the repository's interactive startup probe for comparable first-frame measurements.
-Do not wrap that probe in `dev/test-environment`; it intentionally uses installed configuration, caches, authentication, and the host container runtime.
-Use `TMPDIR=/tmp` for the probe on Linux and `TMPDIR=/private/tmp` on macOS.
-Do not copy the macOS path to Linux; a nonexistent propagated temp path can make extensions fail before readiness.
+For phase attribution, run `env CODEX_SANDBOX_TIMING=1 pi`.
+For comparable first-frame measurements, use the repository's interactive startup probe.
+
+Do not wrap that probe in `dev/test-environment`.
+It intentionally uses installed configuration, caches, authentication, and the host container runtime.
+
+Set the temporary directory for the probe by platform:
+
+- Linux: `TMPDIR=/tmp`.
+- macOS: `TMPDIR=/private/tmp`.
+
+Do not copy the macOS path to Linux.
+A nonexistent propagated temp path can make extensions fail before readiness.
 
 When comparing an uninstalled extension checkout, use Pi's explicit one-run loading contract:
 `pi --no-extensions -e /absolute/path/to/index.ts`.
 Explicit `-e` extensions still load with discovery disabled, so this does not require changing settings, editing an installed package checkout, or publishing the source revision.
 Use this isolated result only for the named extension; configured-startup claims still require the normal probe with the full extension set.
 
-Collect at least three sequential warm runs when variance could change the conclusion.
+When variance could change the conclusion, collect at least three sequential warm runs.
 Record the revision, runtime, warm or cold state, host and VM load, and retained raw-log path.
 Separate cold image work from warm steady-state startup.
+
 Do not clear caches, stop unrelated sessions, or replace real configuration merely to produce cleaner numbers.
 
 Parent spans include their child spans, and concurrently started services overlap.
@@ -51,17 +60,19 @@ Use `jj-workflow` before reversing a deliberate pause, compatibility behavior, o
 
 ## Choose the cheapest effective change
 
+After measuring the target boundary and locating the candidate on its critical path, compare changes in this order.
+
 First ask whether the operation, process, container, network, socket round trip, or validation can be removed.
 If it cannot, consider reusing an existing owner, consolidating interactions, moving work off the critical path, or making it demand-driven.
 Cache only after elimination and reuse are insufficient.
 
 For each candidate, identify:
 
-- the measured critical-path cost it can remove;
-- the behavior or isolation guarantee currently provided;
-- the existing component that could own the work;
-- the invalidation signal if reuse or caching is proposed;
-- the experiment result that would reject the candidate.
+- **Cost:** the measured critical-path cost it can remove.
+- **Guarantee:** the behavior or isolation guarantee currently provided.
+- **Owner:** the existing component that could own the work.
+- **Invalidation:** the signal needed if proposing reuse or caching.
+- **Rejection:** the experiment result that would reject the candidate.
 
 Prefer one host-to-VM transaction over repeated CLI or socket round trips when it preserves failure reporting and terminal semantics.
 Prefer readiness publication from the producing process over polling through `docker exec` or another control-plane command.

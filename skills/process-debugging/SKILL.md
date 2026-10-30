@@ -10,10 +10,10 @@ For latency measurements and sampling scope, use `performance-investigation` whe
 
 ## Identify the process and boundary
 
-Resolve the process serving the failing request, not just the installed command or its launcher.
+Find the process serving the failing request, not merely the installed command or its launcher.
 Record its PID, executable, runtime version, and relevant process tree or cgroup.
-Recheck identity before attaching or signaling; a PID can disappear or be reused.
-For an unresponsive client, distinguish transport failure from an unresponsive server with a bounded request to each endpoint.
+Before attaching or signaling, verify the process identity again: it may have exited and its PID may have been reused.
+If a client is unresponsive, send a bounded request to each endpoint to distinguish transport failure from an unresponsive server.
 
 Inspect the owning project's recovery guidance before recommending restart or termination.
 Preserve the failing process long enough to collect evidence when recovery would erase the diagnosis.
@@ -21,23 +21,32 @@ If permission prevents inspection, report the unavailable evidence rather than i
 
 ## Make symbols work before collecting stacks
 
-Check the debugger's actual `DEBUGINFOD_URLS`, its debuginfod setting, and the package provenance of each relevant executable or library.
-Read the host's `/etc/debuginfod/*.urls` when available; shared shell overrides and sudo filtering can change the effective URLs.
+Confirm GDB resolves a source line or local type; a successful download alone does not prove it loaded the symbols.
+
+### Check symbol provenance and effective configuration
+
+Check the debugger's effective `DEBUGINFOD_URLS` and debuginfod setting, along with the package provenance of each relevant executable or library.
+When available, read the host's `/etc/debuginfod/*.urls`. Shared shell overrides and sudo filtering can change which URLs are effective.
 Match symbols by ELF build ID, not package version alone.
-Distribution rebuilds can need their own server even when the version matches upstream.
+A distribution rebuild may require its own symbol server even when its version matches upstream.
 For example, this Arch/CachyOS host provides both `https://debuginfod.archlinux.org` and `https://debuginfod.cachyos.org`.
 Do not carry those URLs to another distribution without checking its installed configuration.
+
+### Test a client lookup
 
 Use `debuginfod-find debuginfo /path/to/library` to test an actual lookup.
 Use an isolated `DEBUGINFOD_CACHE_PATH` for comparison with another server; cached misses can hide a corrected URL.
 Bound network lookups and distinguish unavailable symbols from a network failure.
 An HTTP HEAD error does not prove symbols are absent; test with the debuginfod client.
 
+### Enable downloads before loading the target
+
 Enable downloads with GDB `-iex`, before loading the executable, libraries, or attachment.
 `-ex 'set debuginfod enabled on'` runs too late for the initial load.
 In batch mode, GDB's default `ask` declines downloads because input is not a terminal.
 Pass the verified URLs with `-iex 'set debuginfod urls ...'` when inherited or privileged environments are uncertain.
-Confirm GDB resolves a source line or local type; a successful download alone does not prove it loaded the symbols.
+
+### Prepare a privileged handoff
 
 For a privileged backtrace handoff, set `pid` to the verified target and `debug_urls` to the verified space-separated URLs:
 

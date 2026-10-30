@@ -24,8 +24,8 @@ Do not silently choose a country, horizon, or definition of success.
 
 ### 1. Frame the question and inspect available evidence
 
-Define the outcome in observable terms and distinguish nearby outcomes with different prerequisites.
-Identify whether the request needs a short conditional answer, a critique, or a researched assessment.
+Define the outcome in observable terms. Distinguish nearby outcomes when they have different prerequisites.
+Determine whether the request calls for a short conditional answer, a critique, or a researched assessment.
 Start with relevant conversation records and supplied evidence; verify material factual claims against their original sources.
 Keep observations, assumptions, inferences, and unresolved questions distinct.
 A source establishing one link does not establish the entire scenario.
@@ -35,10 +35,14 @@ Do not limit discovery to current officeholders, established organizations, or p
 Identify who is already recruiting, building coalitions, supplying resources, or developing the relevant narrative.
 Compare candidates only after this discovery step; state consequential exclusions.
 
-When relying on a model, inspect its actors, response mechanisms, and explicit exclusions.
+### When relying on a model
+
+Inspect the model's actors, response mechanisms, and explicit exclusions.
 Do not use a result within the model to rule out an outcome produced by mechanisms it excludes.
 
-For a conditional forecast, hold the stipulated premises fixed and assess what follows from them.
+### For a conditional forecast
+
+Hold the stipulated premises fixed and assess what follows from them.
 Separate uncertainty about those premises from uncertainty within the requested branch.
 Map proposed alternatives to the supplied scenario tree: an outcome already represented by another branch is not a rebuttal to this one.
 Keep those premises and the specified outcome fixed when constructing a counterargument too.
@@ -47,7 +51,7 @@ For example, an argument against deliberate shutdown does not by itself counter 
 ### 2. Construct the smallest useful causal account
 
 Identify the actors, resources, technical capabilities, institutions, and dependencies that could produce the outcome.
-Distinguish an outcome deliberately achieved by coordinated actors from one emerging through fragmented actions and institutional responses.
+Ask whether coordinated actors would deliberately achieve it, or whether it could emerge from fragmented actions and institutional responses.
 If a route appears to require shared intent, organization, or political victory, test whether the outcome itself requires them.
 For an emergent route, identify how local effects spread or reinforce one another, and what could interrupt that process.
 Do not infer likelihood merely from finding a route that bypasses coordination.
@@ -111,11 +115,11 @@ Apply this check to the forecast's own reasoning as well as to actors within the
 
 ### 4. Investigate only uncertainties that could change the answer
 
-First identify the factual claims that most affect the forecast, including claims used to limit its severity or likelihood.
-Use available evidence to check those claims, and research unresolved links before assigning likelihoods.
-Do not research only the initiating threat while leaving propagation, containment, or recovery assumptions unexamined.
-Check whether a consequential mechanism already exists before treating it as hypothetical or absent.
-Revise the assessment using those findings, then decide whether the evidence supports numerical probabilities under §5.
+Identify the factual claims that most affect the forecast, including claims that limit its severity or likelihood.
+Check those claims against available evidence. Research unresolved links before assigning likelihoods.
+Do not investigate only the initiating threat; also check assumptions about propagation, containment, and recovery.
+Before treating a consequential mechanism as hypothetical or absent, check whether it already exists.
+Use the findings to revise the assessment. Then decide whether the evidence supports numerical probabilities under §5.
 If the check cannot be completed, state that limit rather than treating uninspected evidence as absent.
 Investigate only when the answer could change the conclusion.
 Distinguish “not found in the inspected evidence” from “not yet happening.”
@@ -139,10 +143,11 @@ Use dependencies when timing is unknown; give dates or ranges only with an inspe
 Distinguish an observed trend, a dated commitment, a conditional projection, and a prediction.
 A commitment establishes a stated plan, not that its target will be reached.
 
-For numerical forecasts, show the method, inputs, assumptions, and uncertainty appropriate to the claim.
-A physical projection may use measured rates and constraints; a statistical forecast may use a justified reference class.
+For a numerical forecast, show the method, inputs, assumptions, and uncertainty appropriate to the claim.
+A physical projection may use measured rates and constraints. A statistical forecast may use a justified reference class.
 A conditional scenario model must explain its conditional estimates and test sensitivity to disputed inputs.
-No single method is compulsory, and no method label makes unsupported inputs reliable.
+No single method is compulsory.
+Naming a method does not make unsupported inputs reliable.
 Do not multiply correlated event probabilities as if independent or present uncalibrated judgment as a measured likelihood.
 If the basis is inadequate, withhold the number and identify the unresolved transitions instead.
 Before ranking outcomes, compare their important routes, not only their most organized or deliberate forms.

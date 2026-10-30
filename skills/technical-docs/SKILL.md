@@ -19,7 +19,9 @@ Use `holistic-writing` for general whole-artifact authoring, substantial revisio
 A routed editorial pass uses established decisions; do not restart documentation authoring or require all three writing skills for every README.
 Use `tighten-prose` for bounded local polishing.
 
-Specialized owners retain authority over substance:
+### Subject-matter authority
+
+These owners retain authority over substance; they are not required workflow stages:
 
 - `new-tool-development` owns the lifecycle of a new independently invoked tool, CLI, service, or reusable executable subsystem.
   Product briefs are human-authored; agents may review and add only the TODO comments it permits, not write or rewrite brief prose.

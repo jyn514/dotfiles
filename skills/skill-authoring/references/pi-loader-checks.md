@@ -2,18 +2,28 @@
 
 Read this reference when a discovery change requires a Pi loader check, or when investigating Pi skill loading.
 
+### Validate the explicit skill file
+
 Prefer `validate_skill` when available.
 Confirm the expected name loaded and inspect all diagnostics.
 This checks the explicit file, not normal discovery precedence or interactive startup.
-Otherwise, check the installed CLI options and load the skill from a discoverable location in a normal Pi session;
-inspect startup diagnostics and `/skill:<name>`.
+
+### Check discovery in a normal session
+
+If `validate_skill` is unavailable:
+
+1. Check the installed CLI options.
+2. Load the skill from a discoverable location in a normal Pi session.
+3. Inspect startup diagnostics and `/skill:<name>`.
+
 Run `/reload` after edits in an active session.
 If that session is unavailable, report the missing check.
 
 ## Programmatic normal-discovery check
 
 Use `DefaultResourceLoader`, not `loadSkills`, to check normal startup discovery.
-The resource loader finds locations such as `~/.agents/skills`; the lower-level `loadSkills` function does not discover those locations itself.
+The resource loader finds locations such as `~/.agents/skills`.
+The lower-level `loadSkills` function does not discover those locations itself.
 Check the installed Pi API before adapting this example.
 The example isolates directory discovery, with configured packages and unrelated resources disabled.
 

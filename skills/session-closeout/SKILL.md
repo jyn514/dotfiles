@@ -5,19 +5,22 @@ description: Close out a session. Use when asked to wrap up or end it; for forgo
 
 # Session closeout
 
-Close the session from the complete record, not merely the latest turn.
+Close out the session using its complete record, not just the latest turn.
 
 ## 1. Establish authority and scope
 
 Read the original request, major course corrections, decisions, completed work, validation, and unresolved findings. Inspect current repository state and separate owned changes from pre-existing or unrelated work.
 
-An explicit request to wrap up or end the session authorizes and requires committing all changes owned by the session, organized into coherent commits. When the harness supports current-session titles, it also authorizes changing the title. It does not authorize optional repairs, issue filing, external publication, or inclusion of unrelated work. Obtain separate authority before those actions.
+An explicit request to wrap up or end the session authorizes—and requires—you to commit all session-owned changes in coherent commits.
+If the harness supports current-session titles, the request also authorizes changing the title.
+It does not authorize optional repairs, issue filing, external publication, or committing unrelated work; obtain separate authority for those actions.
 
 A request such as “anything we forgot?” or “do you suggest changes to docs/skills/tooling?” initiates closeout only when it is explicitly framed as ending the session. Otherwise treat it as a non-mutating review and do not load this skill. Use `commit-quality`, not this skill, for an ordinary “commit your changes” request.
 
 ## 2. Audit the whole session
 
-Reuse an existing completion audit when its requirements, implementation, and validation conditions remain unchanged. If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
+Reuse an existing completion audit if its requirements, implementation, and validation conditions are unchanged.
+If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
 
 For work not covered by an existing audit, use [completion review](../review/references/completion.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
 
@@ -30,6 +33,8 @@ For work not covered by an existing audit, use [completion review](../review/ref
 
 Search earlier turns when the current context does not establish the opening request or a decision's outcome. Do not call work complete when a requirement lacks evidence; name the missing check or remaining task.
 You can identify the current session with `PI_SESSION_ID` (for the Pi harness) or `CODEX_THREAD_ID` (for Codex).
+
+### Use edit-candidate lookup when available
 
 When `read_session` supports `view: "edit_candidates"`, use that view with the session ID or file to find earlier paths for inspection.
 Continue with `after: nextCursor` in the same view when more candidates are needed.
@@ -113,7 +118,11 @@ Verify each commit's identity and message, then recheck status. Keep closeout in
 
 When the harness supports current-session titles, leave the session with a concise title reflecting its durable purpose or result, including substantial secondary work when one title can do so cleanly. Prefer the final outcome over the opening wording or an abandoned approach; distinguish investigation, design, repair, and implementation accurately.
 
-Use the harness's supported current-session title mechanism; do not edit session storage directly. In Codex with `CODEX_THREAD_ID` set, use [codex-rename](../../libexec/agent-wrappers/codex-rename):
+Use the harness's supported current-session title mechanism; do not edit session storage directly.
+
+### Codex title changes
+
+In Codex with `CODEX_THREAD_ID` set, use [codex-rename](../../libexec/agent-wrappers/codex-rename):
 
 ```sh
 codex-rename 'Fix sandbox skill paths'
@@ -127,6 +136,9 @@ It inherits `CODEX_HOME` (default `~/.codex`) and may need sandbox approval to w
 No running daemon is required.
 If it fails, report whether the rename was sent and whether read-back verified it.
 If no supported mechanism is available, skip title mutation without blocking closeout.
+
+### Other supported title mechanisms
+
 For other mechanisms, distinguish persisted state from live client refresh and verify only the guarantees that mechanism exposes.
 
 ## 7. Report and stop

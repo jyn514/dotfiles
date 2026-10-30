@@ -7,21 +7,22 @@ description: Review a design/specification against its purpose and constraints; 
 
 ## Select the review target
 
-Read the request and repository guidance. Establish the artifact, authoritative
-inputs, owned scope, and requested output before choosing **one** procedure:
+Read the request and repository guidance.
+Before choosing **one** procedure, establish the artifact, authoritative inputs,
+owned scope, and requested output:
 
-- **Design/spec vs purpose and constraints:** read [Design review](references/design.md).
-  Establish maturity and upstream authority; check consistency, completeness,
-  necessity, and unsupported narrowing. This critiques one design or a related
-  specification set, not selection among competing proposals.
-- **Implementation vs normative spec:** read [Conformance review](references/conformance.md).
-  Start with the named files, sections, symbols, tests, commands, or revisions;
-  without narrower scope, follow its whole-spec procedure. Check missing/partial
-  implementation and bidirectional drift, not only whether code follows prose.
-- **Completed owned substantial change vs task acceptance:** read
-  [Completion review](references/completion.md) after edits are complete, or for
-  an explicit completion-audit request. A multi-component refactor or migration
-  warrants this; a localized keybinding edit needs diff review and native config
+- **Design critique:** Read [Design review](references/design.md).
+  Establish the artifact's maturity and upstream authority, then check consistency,
+  completeness, necessity, and unsupported narrowing. This procedure critiques
+  one design or related specification set; it does not select among competing proposals.
+- **Conformance audit:** Read [Conformance review](references/conformance.md).
+  Start with the named files, sections, symbols, tests, commands, or revisions.
+  If the request gives no narrower scope, follow its whole-spec procedure.
+  Check for missing or partial implementation and drift in both directions, not only whether code follows prose.
+- **Completion audit:** After edits are complete,
+  read [Completion review](references/completion.md). Also use it for an explicit
+  completion-audit request. A multi-component refactor or migration warrants this
+  procedure; a localized keybinding edit needs diff review and native config
   validation instead.
 
 Do not run all three by default. Keep one evolving review target; consult another

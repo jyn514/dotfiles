@@ -11,10 +11,10 @@ Use this skill for nontrivial Jujutsu history work: inspect or interpret path hi
 
 Start with one command:
 
-- `jj status` for working-copy and parent identity plus dirty paths.
-- `jj diff -r @ --summary` for only the dirty-file list.
+- Run `jj status` to see the working-copy and parent identity, plus dirty paths.
+- Run `jj diff -r @ --summary` when you need only the dirty-file list.
 
-Do not run both by default. Narrow with path-limited commands such as `jj diff -- path/to/file`; full colored diffs may truncate.
+Do not run both by default. Narrow inspection with a path-limited command such as `jj diff -- path/to/file`. Full colored diffs may truncate.
 
 Treat unexpected deltas as authored work until ownership is established. Before mutating a dirty working copy:
 
@@ -28,10 +28,18 @@ Concurrent workers commit only their work and return its change ID. The coordina
 
 ## Compare and inspect history
 
-Before comparing revisions, state the comparison question and establish the exact revision pair from history. For fork-only reviews, establish the fork's starting revision and head; neither upstream HEAD nor a merge base with today's upstream establishes that starting revision. A common-ancestor query answers only for its selected ref; confirm that ref belongs to the requested lineage. Support each fork-only attribution with the diff or history in that range. If the base is unresolved, report the evidence needed to resolve it and defer fork-only attributions and keep/drop priorities. Do not rank inherited code from broader tree diffs or commit titles, even provisionally.
+Before comparing revisions, state the question and identify the exact revision pair from history.
 
-Use `jj interdiff --from A --to B` to compare two revisions' patches, especially when their parents differ. `jj diff --from A --to B` compares resulting trees and may include inherited differences.
-`jj show` does not accept filesets; for a path-limited revision patch, use `jj diff -r REV <paths>`.
+### Fork-only provenance
+
+For a fork-only review, establish the fork's starting revision and head. Upstream HEAD and a merge base with today's upstream do not establish the fork's starting revision. A common-ancestor query applies only to its selected ref, so confirm that ref belongs to the requested lineage. Support each fork-only attribution with the diff or history in that range. If the base is unresolved, report what evidence would resolve it and defer fork-only attributions and keep/drop priorities. Do not rank inherited code from broader tree diffs or commit titles, even provisionally.
+
+### Compare revision patches or trees
+
+Use `jj interdiff --from A --to B` to compare the patches of two revisions, especially when their parents differ. Use `jj diff --from A --to B` to compare their resulting trees; this may include inherited differences.
+`jj show` does not accept filesets. For a path-limited revision patch, use `jj diff -r REV <paths>`.
+
+### Inspect path history
 
 For ordinary path history, pass the path directly:
 

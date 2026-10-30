@@ -3,15 +3,20 @@
 ## Establish scope and authority
 
 Read repository instructions and contributor documentation for the specification entry point, issue tracker, ownership map, and validation rules.
+
+### Select the tracker and specification independently
+
 Use the documented issue tracker and specification.
 If the tracker is not documented, use TicGit (`ti`) and consult the `ticgit` skill for its commands.
 If the specification is not documented, start in `doc/` and identify the current normative documents, not obsolete design snapshots.
 Apply these fallbacks independently; a documented tracker does not override the specification fallback or vice versa.
 If the specification is missing or ambiguous, or the tracker is unavailable, report the limitation rather than inventing requirements or silently switching trackers.
 
+### Choose bounded or whole-spec scope
+
 Start with files, sections, symbols, tests, commands, or revisions named by the request.
 For a named revision, inspect its changes first; treat a spec-changing revision as the requirement delta and audit the current tree against the resulting specification.
-Without a narrower scope, audit the current specification using [Whole-spec audit](whole-spec-audit.md).
+Only when the request gives no narrower scope, audit the current specification using [Whole-spec audit](whole-spec-audit.md).
 Use the current specification and issue history as the gap ledger.
 
 A review-only request authorizes findings, not specification edits or issue writes.

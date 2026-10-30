@@ -12,12 +12,17 @@ Native Markdown can suggest commands unavailable through the proxy; follow the s
 
 ## Basic Workflow
 
-Inspect the assigned ticket; use listing to locate tickets when needed:
+### Inspect a ticket
+
+Inspect the assigned ticket.
+Use listing to locate tickets when needed:
 
 ```sh
 ti list
 ti show <id> --markdown
 ```
+
+### Choose work when authorized
 
 Use `next` only when authorized to choose work, with filters appropriate to that scope.
 For example:
@@ -30,6 +35,8 @@ Treat the result as a recommendation, not a persistent selection or reservation.
 Inspect its assignment and blockers before starting; `next` can return blocked tickets and excludes child tickets.
 It does not supersede an assigned task or coordinate ownership between agents.
 Pass the ticket ID on every later operation, including work delegated to subagents.
+
+### Claim only when assignment is intended
 
 Claim a ticket only when assigning it to the configured author and setting its status to open and state to assigned are both intended.
 Claiming can reopen a closed ticket or replace an in-progress or blocked state; do not use it merely to announce that work starts.
@@ -56,6 +63,8 @@ Include `--subissues` when listing the whole graph; the default list omits child
 Use JSON to join tickets with their dependency IDs and identify unfinished prerequisites.
 A dependency-clear ticket is not necessarily authorized or ready to start; inspect its required inputs and governing workflow.
 `next` can recommend an in-progress ticket, so it is not an unclaimed-work queue.
+
+### Establish whether the outcome is accepted
 
 Keep dependency closure, tracker state, current execution, and accepted outcomes distinct.
 An in-progress state does not prove an agent is currently executing the task, and a closed dependency may be resolved, rejected, or a duplicate.

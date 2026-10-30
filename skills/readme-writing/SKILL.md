@@ -23,6 +23,7 @@ Establish which files the task authorizes you to change or create before writing
 For review-only work, report findings without editing.
 Follow supplied repository context when you need to establish what the project does or how an operation works.
 Resolve relative links from the original README location, not the storage location of a copied input.
+
 Keep the human's reader, purpose, and request; do not replace them with a more convenient brief.
 For an introduction with no stated audience, consider a project newcomer who has not read the related documentation.
 A project newcomer is not necessarily a domain beginner.
@@ -40,6 +41,8 @@ They show complete introductory development as well as sentence-level choices; t
 
 ## Build an explanation, then select the detail
 
+### Choose the opening
+
 Choose the opening from the reader's task and the project's uses.
 For a focused tool or concept, develop one useful operation or line of thought.
 When readers need to choose among independent uses, introduce the common purpose and summarize which sections serve which tasks.
@@ -47,10 +50,14 @@ Do not pick representative features merely to force a varied collection into a s
 Begin with that account rather than inheriting the source's section order.
 Keep effective existing prose when it already serves the reader.
 
+### Develop the explanation
+
 Explain relationships through actions: who does what, what changes, and why the next step follows.
 Naming a mechanism does not explain it.
 If a definition depends on several other unfamiliar terms, develop one use in ordinary language before introducing the classification.
 The reader should gain understanding as the explanation proceeds, not keep translating one project term into another.
+
+### Use supported examples
 
 Use a concrete illustration where it makes a relationship understandable.
 For a conceptual method, an explicitly hypothetical situation can show the intended operation without claiming a successful experiment.
@@ -64,6 +71,8 @@ Keep the project's appropriate voice; clear writing need not be chatty, cheerful
 Use concrete subjects and verbs, and retain specialized terms when they do precise work.
 Avoid making the reader pass through abstract classifications to reach an ordinary action.
 
+### Select details and route further reading
+
 Select details by what readers need to understand or do, not by whether the source documents them.
 Keep the prerequisites, conditions, hazards, and limits needed for those tasks at the point of action.
 Preserve exact tokens in commands, interfaces, quoted output, and paths when you use them.
@@ -76,6 +85,8 @@ Move migration procedures, configuration catalogs, and other specialized detail 
 Use `reorganize-docs` for that extraction; preserve the constraints needed for the README's selected use beside its actions.
 Never invent a destination or link to a promised page without creating it.
 If supporting-file edits are outside the authorized scope, keep necessary detail here or report the missing owner rather than silently widening scope.
+
+### Organize the selected material
 
 Choose sections after you know what they develop.
 A table is useful for actual choices or lookup, not as a replacement for explaining how parts work together.

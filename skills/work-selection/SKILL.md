@@ -11,16 +11,24 @@ Use [opportunity-scan](../opportunity-scan/SKILL.md) only for project-wide disco
 
 ## Compare with the existing path
 
-Before adding supporting work, identify the unmet requirement, the dependency the proposed work addresses, and its evidence.
-Inspect an existing example of the requested activity before treating a new mechanism or diagnostic as necessary.
-If no example is available, report the evidence gap rather than inventing an example or a failure.
-Compare continuing with the smallest existing-tool alternative, even when earlier steps produced useful results.
-A chain of successful supporting tasks can still fail to advance the requested outcome.
-For a diagnostic follow-up, name which possible findings would change the next action.
-Repair obvious mechanical failures directly; unrelated bugs and hypothetical failures do not establish prerequisites.
+### Establish the need and evidence
 
-Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach);
-cite the source of consequential constraints before comparing actions.
+Before treating a new mechanism or diagnostic as necessary, inspect an existing example of the requested activity.
+If no example is available, report the evidence gap rather than inventing an example or a failure.
+
+Identify the unmet requirement, the dependency the proposed work addresses, and the evidence for each.
+For a diagnostic follow-up, name which possible findings would change the next action.
+
+Repair obvious mechanical failures directly.
+Unrelated bugs and hypothetical failures do not establish prerequisites.
+
+### Compare the alternatives
+
+Compare the proposed supporting work with continuing through the smallest existing-tool alternative, even when earlier steps produced useful results.
+A chain of successful supporting tasks can still fail to advance the requested outcome.
+
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach).
+Cite the source of consequential constraints before comparing actions.
 Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
 
 When a dependency follows from a chosen approach, name the choice that creates it.
@@ -29,16 +37,24 @@ If changing the choice removes the dependency, include that alternative in the c
 
 ## Keep feedback fast
 
-Optimize for time to the next decision-changing result, not activity or completed checks.
+Optimize for time to the next result that changes which action comes next, not activity or completed checks.
 Before a costly check, identify which results would change the next action and how soon they should arrive.
 Aim for actionable development feedback within about two minutes unless the user or task establishes another budget.
 This is a threshold for reconsidering the approach, not a universal command timeout or permission to weaken acceptance.
+
+### Reassess choices in flight
 
 Apply this reassessment to work already underway, not only proposed work.
 On loading this skill during a slow loop or receiving a feedback-latency correction, identify the current delay.
 Revisit the choices keeping that delay on the critical path before assigning more work around it.
 Prior authorization establishes permission, not continued usefulness; preserve user requirements while reconsidering agent-selected constraints.
-Compare continuing unchanged, stopping with evidence preserved, and isolating further development from the running check.
+
+Compare these options:
+
+- Continue unchanged.
+- Stop with evidence preserved.
+- Isolate further development from the running check.
+
 Judge the remaining cost and expected useful results, not time already spent.
 Do not automatically stop a required acceptance run or merely route new assignments around an unexamined existing constraint.
 
@@ -46,10 +62,14 @@ If feedback will take longer, compare the smallest representative workload, a ta
 Use small checks to choose the next change; they do not replace required full-population or end-to-end acceptance.
 A progressing computation can still be an unacceptable feedback loop, even when its duration was expected.
 
+### Isolate slow acceptance when useful
+
 Separate slow acceptance runs from the development loop.
 Preserve the candidate under verification without freezing further implementation where the work can be isolated.
 Compare isolation and later integration costs against the expected wait and the useful work it prevents; do not reject isolation merely because it has overhead.
 Hold only conflicting mutations, and do not introduce copies, automation or new workflow obligations when existing facilities suffice.
+
+### Reassess when progress stalls
 
 Reassess when the feedback budget passes without a decision-changing result.
 Also reassess when several minutes yield only supporting reports, receipts or preparation rather than the requested outcome.

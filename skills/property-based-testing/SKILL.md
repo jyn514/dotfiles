@@ -5,15 +5,21 @@ description: "Writes, reviews, and debugs property-based tests — Hypothesis, f
 
 # Property-Based Testing
 
-An example test asserts one point. A property asserts a rule over the whole input
-domain and lets the generator hunt for the counterexample. That trade is worth making
-when the code has an algebraic shape — an inverse, an invariant, an oracle — and not
-otherwise. Code with no such shape gets example tests; saying so is a valid outcome.
+## Decide whether a property test fits
 
-Check first whether the shape is missing or merely buried. A calculation wrapped in I/O,
-a string built by concatenation, an in-place mutation — each has a property and no seam
-to assert it through. See [references/refactoring.md](references/refactoring.md) before
-concluding there is nothing to assert.
+An example test asserts one point.
+A property asserts a rule over the whole input domain and lets the generator hunt for a
+counterexample.
+Use property-based testing when the code has an algebraic shape — such as an inverse,
+invariant, or oracle.
+Otherwise, example tests are the better fit; reporting that is a valid outcome.
+
+## If no direct property is exposed
+
+The code may have a property but no direct seam for asserting it. For example, I/O may
+wrap a calculation, concatenation may build a string, or a function may mutate in place.
+If that is the obstacle, see [references/refactoring.md](references/refactoring.md)
+for possible small rearrangements before concluding there is nothing to assert.
 
 ## Start within the authorized scope
 
@@ -48,10 +54,10 @@ ordering. A roundtrip can preserve a mutually incompatible encoder/decoder pair,
 and idempotence accepts a normalizer that returns a constant. Combine complementary
 checks or an independent consumer where the contract requires them.
 
-Assert the strongest practical checks for the requested contract. "No crash" alone rarely justifies the
-dependency — if that is all you can find, either a small rearrangement exposes something
-stronger, or the honest report is that this code is a poor PBT candidate. Rule out the
-first before settling for the second.
+Assert the strongest practical checks for the requested contract. "No crash" alone
+rarely justifies a PBT dependency. If that is all you can find, consider whether a small
+rearrangement would expose a stronger property. Rule out that option before reporting
+that the code is a poor PBT candidate.
 
 ## The two ways a property test asserts nothing
 

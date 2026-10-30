@@ -12,6 +12,8 @@ Assume jyn is writing to another maintainer.
 
 ## 1. Decide whether to report
 
+### Check permission to draft
+
 Check the target project's current contribution instructions and linked policies for AI, LLM, or agent rules.
 Determine which rules apply to drafting, issue bodies, comments, disclosure, and agent submission.
 Permission to generate code does not imply permission to write posts.
@@ -21,6 +23,8 @@ Resolve unclear policy applicability before drafting.
 If no policy is found, state where you checked outside the report; do not claim the project permits AI-written reports.
 Follow project-specific disclosure rules when they differ from this skill's default.
 
+### Check for existing reports
+
 Search open and closed issues and pull requests for the visible failure, relevant component, and distinctive errors or function names.
 Read plausible matches and relevant comments; compare their reproduction and affected versions with the current evidence.
 For a match, read its resolution and maintainer comments before proposing follow-up.
@@ -29,15 +33,22 @@ Reproducing a known unsupported configuration on newer versions does not by itse
 Link related reports for different failures and explain the connection.
 If search is unavailable or finds no match, state that limit outside the report; do not claim the bug has never been reported.
 
+### Identify what still needs upstream action
+
 Before attributing the problem upstream, separate the observed problem and required behavior from the preferred mechanism.
+
 Distinguish governing requirements from constraints introduced by a downstream design choice, and identify who chose it.
 A draft's directory layout is not automatically an upstream requirement; do not add a disclaimer when the context already makes the choice clear.
+
 Check plausible solutions in the supported configuration and public APIs.
 State what each workaround solves, and distinguish unchanged-tool capabilities from approaches requiring consumer patches, downstream forks, or upstream adoption.
 A library API does not establish that an unmodified CLI exposes the same capability.
+
 Tie any remaining insufficiency to a concrete requirement and evidence, not an assumed side effect.
 If it follows from a revisable downstream choice, reconsider that choice instead of treating it as an upstream constraint.
 If evidence is missing, make a small authorized check or ask a bounded question.
+
+### Decide whether to stop or request a change
 
 Stop without drafting when existing guidance resolves the problem.
 If an explicitly unsupported configuration causes the issue, identify who selects it and recommend correcting it at its owner; do not report the known incompatibility again or implement the correction.

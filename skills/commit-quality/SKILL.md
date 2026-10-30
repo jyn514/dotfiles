@@ -5,20 +5,20 @@ description: Write or review commit messages, split work into atomic commits, an
 
 # Commit Quality
 
-Write commit messages for the next person debugging or reviewing the change, not merely to label the diff. Use a concise imperative subject naming the affected behavior.
+Write for the next person who will debug or review the change. Use a concise, imperative subject that names the affected behavior; do not merely label the diff.
 
-When the diff does not make the reason, failure mode, constraints, or verification obvious, add a body explaining:
+If the diff does not make the reason, failure mode, constraints, or verification obvious, explain the relevant points in the body:
 
 - the user-visible or operational problem;
 - why the previous behavior was wrong;
 - the important design choice or constraint behind the fix;
 - verification only when it records non-obvious evidence, an unusual test boundary, or a material limitation.
 
-Record what a reader would otherwise have to reconstruct; do not narrate files or repeat the subject. Do not append a routine `Verification:` section or command list. Ordinary test, lint, and formatting results belong in the review report or CI record, not the commit message.
+Record only what a reader would otherwise have to reconstruct. Do not narrate files or repeat the subject. Do not append a routine `Verification:` section or command list. Ordinary test, lint, and formatting results belong in the review report or CI record, not the commit message.
 
 For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe. Mention verification when it establishes something durable and non-obvious, such as a production reproduction, migration result, compatibility limit, or test environment that future readers might otherwise assume was covered.
 
-Before committing, inspect the complete diff and write the message from the finished change.
+Before committing, inspect the complete diff. Then write the message to describe the finished change.
 
 ## Atomic commits
 

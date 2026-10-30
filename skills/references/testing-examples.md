@@ -1,7 +1,11 @@
 # Testing examples: populations, cancellation, and reference behavior
 
-Read the relevant example when a report may omit required items, a cancellation result controls the caller's next action,
-or an unoptimized implementation is proposed as the test oracle.
+Read the relevant example when:
+
+- A report may omit required items: [Coverage and required populations](#coverage-and-required-populations).
+- A cancellation result controls the caller's next action: [Cancellation and return values](#cancellation-and-return-values).
+- An unoptimized implementation is proposed as the test oracle: [Reference behavior and remembered renames](#reference-behavior-and-remembered-renames).
+
 These cases illustrate existing [testing guidance](testing.md), not new acceptance requirements for every project.
 
 ## Coverage and required populations

@@ -13,12 +13,16 @@ test framework, version-control system, or repository runner.
 ## Start within the authorized scope
 
 Read the project's instructions, relevant contracts, source, tests, and test commands.
+
 A request to run mutation testing authorizes temporary mutations in an isolated
-experiment, subject to repository restrictions. Reviewing existing results does not
-authorize execution. Neither request grants permission to change maintained code or
-tests, publish artifacts, or access live application state. For automatically routed
-test-sensitivity work, use only the execution authority of the enclosing task;
-loading this skill grants none. Confirming a single known regression can stay under
+experiment, subject to repository restrictions.
+This permission covers only the experiment: it does not permit changing maintained code
+or tests, publishing artifacts, or accessing live application state.
+
+Reviewing existing results does not authorize execution.
+For automatically routed test-sensitivity work, use only the execution authority of the
+enclosing task; loading this skill grants none.
+Confirming a single known regression can stay under
 [testing guidance](../references/testing.md) without a campaign.
 
 Use an explicitly selected target. Otherwise, use the component already under
@@ -41,17 +45,21 @@ owned elsewhere. Regenerate or rebuild through the owning mechanism when the tes
 consumer needs an artifact. Use disposable data; a temporary checkout does not make
 commands that contact live services or stores safe.
 
+### Establish a passing baseline
+
 Identify which tests exercise the selected behavior, including subprocess, loader,
 serialization, and filesystem paths where applicable. Run the chosen baseline and
 confirm the intended cases execute without skips. If it fails, stop that scope and
 report the prerequisite failure rather than count subsequent failures as detections.
 
+### Check that the test path detects a change
+
 Before the campaign, use a positive control: a deliberate behavior change that an
 existing assertion should detect. Verify that the test consumes the changed code
 and fails for that change—not an import, environment, or unrelated build failure.
-If it survives, distinguish stale artifacts or a disconnected test path from weak
-assertions before interpreting other results. Resolve the execution path or report
-it unverified; do not assume a surviving control proves the suite is weak.
+If the control survives, check for stale artifacts or a disconnected test path before
+blaming weak assertions. Resolve the execution path or report it as unverified. A
+surviving control alone does not prove the suite is weak.
 
 For a Rust constructor, the path may be source → rebuilt crate → rejection test.
 For a TypeScript extension, it may be source → host loader → filesystem fixture.

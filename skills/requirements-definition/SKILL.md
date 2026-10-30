@@ -12,7 +12,15 @@ Use this skill only when both conditions hold:
 1. An approved product brief is available as the authoritative product-intent input.
 2. A person explicitly asks you to draft or revise requirements.
 
-The approved brief is the primary authority. Additional authoritative sources may clarify or constrain intent within the approved brief, but may not expand or contradict product intent. Do not author a requirement that expands or contradicts the brief: if resolving the conflict is necessary to state the requested requirements, record `NEEDS_PRODUCT_DECISION` and require brief revision and reapproval through `new-tool-development`; otherwise raise the idea only as a non-normative suggestion. Other sources may be used only when identified as authoritative by the requester or governing product documentation. Do not infer approval from a draft, discussion, ticket, request for ideas, or an implementation task.
+The approved brief is the primary authority.
+Additional authoritative sources may clarify or constrain intent within the approved brief, but may not expand or contradict product intent.
+
+Do not author a requirement that expands or contradicts the brief.
+If resolving the conflict is necessary to state the requested requirements, record `NEEDS_PRODUCT_DECISION` and require brief revision and reapproval through `new-tool-development`.
+Otherwise, raise the idea only as a non-normative suggestion.
+
+Use other sources only when the requester or governing product documentation identifies them as authoritative.
+Do not infer approval from a draft, discussion, ticket, request for ideas, or implementation task.
 
 This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to [design review](../review/references/design.md). Any later request for an implementation specification returns through `new-tool-development`, not [design review](../review/references/design.md).
 
@@ -48,13 +56,19 @@ Do not turn examples, preferences, implementation suggestions, or ambiguous lang
 
 Give each brief goal, constraint, and non-goal a stable source label, such as `BG-1`, `BC-1`, or `BN-1`. Preserve existing source identifiers when they are authoritative and stable.
 
-For each proposed requirement or exclusion, identify the exact source label(s) that justify it: positive requirements trace to a brief goal, constraint, or other explicitly authoritative source; exclusions trace to approved non-goals. Trace eligibility restrictions, rejection conditions, and evidence burdens to the source clauses, not just their labels. Preserve each clause's population, conditions, and phase in definitions and acceptance wording; do not extend a restriction to cases its source permits.
+For each proposed requirement or exclusion, identify the exact source label(s) that justify it: positive requirements trace to a brief goal, constraint, or other explicitly authoritative source; exclusions trace to approved non-goals.
+A label points to a source, but the clause's actual wording determines whom a restriction applies to, under what conditions, and during which phase.
+Trace eligibility restrictions, rejection conditions, and evidence burdens to those clauses, and preserve their population, conditions, and phase in definitions and acceptance wording.
+For example, if a source limits rejection to one named phase, do not write a definition that makes the same restriction apply in every phase.
 
-If a material unsupported choice would change a requirement's meaning or acceptance, record it as `NEEDS_PRODUCT_DECISION` in a clearly non-normative review-decisions section. Put optional, non-blocking agent suggestions in a clearly non-normative skim packet; never convert either into an invented requirement.
+A material unsupported choice belongs in a clearly non-normative review-decisions section when it would change a requirement's meaning or acceptance; mark it `NEEDS_PRODUCT_DECISION` rather than deciding it in the requirement.
+Optional, non-blocking agent suggestions are different: put them in the clearly non-normative skim packet, and never turn either suggestions or unresolved decisions into invented requirements.
 
 ### 3. Draft observable, solution-neutral requirements
 
-Assign each requirement a stable identifier that will remain unchanged during ordinary editing, for example `REQ-001`. Do not reuse an identifier for different behavior.
+**Define and identify each requirement.**
+Assign each requirement a stable identifier that will remain unchanged during ordinary editing, for example `REQ-001`.
+Do not reuse an identifier for different behavior.
 
 Write each requirement so that an independent evaluator can determine whether it is satisfied from externally observable behavior. Prefer:
 
@@ -63,22 +77,39 @@ Write each requirement so that an independent evaluator can determine whether it
 - observable error conditions and user-visible or externally relevant error behavior when supported;
 - compatibility, security or trust, performance, and operational constraints only when the brief or authoritative source supports them.
 
-Keep requirements solution-neutral. Exclude implementation mechanisms, file paths, internal APIs, architecture, exact test cases, technology choices, and delivery sequencing unless the item is itself an externally observable, authoritative constraint. Preserve exact identifiers, numbers, error text, and uncertainty from the sources; do not silently normalize or embellish them.
+**Keep the statement solution-neutral.**
+Exclude implementation mechanisms, file paths, internal APIs, architecture, exact test cases, technology choices, and delivery sequencing unless the item is itself an externally observable, authoritative constraint.
+Preserve exact identifiers, numbers, error text, and uncertainty from the sources; do not silently normalize or embellish them.
 
 Separate requirements from rationale, evidence, assumptions, and open decisions. Do not hide a product decision inside acceptance wording.
 
-When a requirement has independently decidable parts, state which parts authoritative sources settle and name each unresolved choice by its effect on observable behavior or acceptance. Do not treat settled parts as open merely because another part remains undecided.
+When a requirement has independently decidable parts, state which parts authoritative sources settle and name each unresolved choice by its effect on observable behavior or acceptance.
+Keep the requirement and acceptance evidence limited to what is settled; put each unresolved choice in the non-normative review-decisions section and identify the affected requirement there.
+Do not treat settled parts as open merely because another part remains undecided.
 
 ### 4. Define acceptance evidence
 
 For every requirement, state concise acceptance evidence describing what would demonstrate satisfaction. Evidence must be observable and proportionate; it is not an implementation plan and must not prescribe exact tests.
 
-For each source-permitted explanation mode, state minimum sufficient observable acceptance evidence; do not let “explained,” “justified,” “supported” or “valid” defer eligibility to implementers. Preserve rule derivation versus other permitted explanation modes. If sources leave evidence unsettled and plausible readings admit different cases, record `NEEDS_PRODUCT_DECISION`, not an invented burden. Apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check), including its eligibility-ambiguity procedure.
+**Preserve permitted explanation modes.**
+When a source permits more than one way to explain or establish something, keep those modes distinct rather than silently narrowing them to one.
+For each permitted mode, state the minimum sufficient observable acceptance evidence so terms such as “explained,” “justified,” “supported” or “valid” do not leave implementers to decide eligibility.
+Keep the evidence appropriate to each mode, and do not add another mode's evidence burden unless the source requires it.
+If a source explicitly permits an explanation without derivation, missing derivation alone cannot invalidate that explanation.
+Preserve the source's distinction between rule derivation and its other permitted explanation modes.
 
-Use evidence that can disprove the requirement, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one. If evidence cannot be defined without inventing behavior, record the missing decision and affected requirement, if any, in the non-normative review-decisions section; do not settle it in the requirement or acceptance evidence.
+**Resolve unsettled evidence.**
+If sources leave evidence unsettled and plausible readings would accept different cases, do not choose a new burden to make the evidence look complete.
+Record `NEEDS_PRODUCT_DECISION` and apply [design review's Non-narrowing check](../review/references/design.md#non-narrowing-check), including its eligibility-ambiguity procedure.
+
+Choose evidence that could show the requirement was not met, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one.
+If defining such evidence would require inventing behavior, do not fill the gap in the requirement or its acceptance evidence.
+Record the missing decision in the non-normative review-decisions section and identify the affected requirement, if any.
 
 ### 5. Produce the requirements document
 
+**Normative requirements document.**
+This is the artifact that states what must be true and how satisfaction can be assessed.
 Use this compact structure unless the requester requires an equivalent structure:
 
 1. **Status and authority** — approval state, source documents, and scope.
@@ -92,7 +123,10 @@ Use this compact structure unless the requester requires an equivalent structure
 5. **Review decisions and scope, when needed** — non-normative `NEEDS_PRODUCT_DECISION` items naming affected requirements or source labels.
 6. **Source and coverage appendix** — define source labels and map each brief goal, constraint, and non-goal to requirement IDs, exclusions, `NEEDS_PRODUCT_DECISION`, or explicitly no requirement because it is a non-goal.
 
-Provide an accompanying human skim packet with concise lists of uncovered goals, new decisions requiring review, unresolved ambiguity, and an acceptance summary. Keep it outside the normative requirements document.
+**Separate human skim packet.**
+Provide an accompanying human skim packet with concise lists of uncovered goals, new decisions requiring review, unresolved ambiguity, and an acceptance summary.
+The packet helps a person review the draft; it does not add requirements or change the normative document.
+Keep it outside that document.
 
 For a tiny tool, keep the document compact by combining sections or using a small table, but retain stable IDs, source traces, acceptance evidence, and the separate human skim packet.
 
