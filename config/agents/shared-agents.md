@@ -125,6 +125,13 @@ An implementation request or positive response to a proposal does not approve ev
 An agent choice in a spec is not new approval.
 Ask only about unresolved trade-offs or context that could change the approach; routine choices within the authorized task do not require a discovery interview.
 
+### Before expanding repeated work
+
+Before repeating an uncertain approach across many items, complete a small representative case and check its result against the intended outcome.
+Choose a case that can expose weaknesses in the approach, not merely the easiest case.
+Use that feedback to decide whether to expand, revise, or stop.
+Reuse applicable evidence when the approach is already established; do not add a pilot or human approval step by default.
+
 ### Before changing behavior or scope
 
 Check for additional missing context when a decision changes behavior, scope, ownership, or preservation requirements.

@@ -42,6 +42,17 @@ Before a costly check, identify which results would change the next action and h
 Aim for actionable development feedback within about two minutes unless the user or task establishes another budget.
 This is a threshold for reconsidering the approach, not a universal command timeout or permission to weaken acceptance.
 
+### Test an uncertain approach before expanding
+
+When an uncertain approach will be repeated across many items, identify the assumption that could make repeating it wasteful or wrong.
+Choose the smallest representative case whose result can challenge that assumption.
+Before starting, state which results would justify expanding, revising, or stopping the approach.
+Check the result against the intended outcome, not merely whether the prescribed steps completed.
+Use existing applicable evidence instead of repeating an established check.
+
+For example, before migrating many callers, try one that exercises the uncertain compatibility behavior and check it through its intended consumer.
+For a prose rewrite, have a fresh reader follow one complete workflow; easier scanning alone does not establish that the explanation works.
+
 ### Reassess choices in flight
 
 Apply this reassessment to work already underway, not only proposed work.
