@@ -50,8 +50,8 @@ Neither a polished account nor a review's acceptance establishes that its claims
 1. Use bug-fix commits, reverts, repeated refactors, issues, and coupled changes as leads where relevant to the question.
    Include successful optimizations and designs that preserve important distinctions, not only defects.
    Read the relevant patches, surrounding code, tests, and available discussions before accepting the stated diagnosis.
-2. Establish the actual before-and-after revisions and lineage, including renamed files or earlier repair attempts when relevant.
-   Identify the governing behavior and a concrete input, action sequence, or interleaving that exposes the failure or protected guarantee.
+2. Identify the governing behavior and a concrete input, action sequence, or interleaving that exposes the failure or protected guarantee.
+   For a change or repair, establish before-and-after revisions and lineage, including renamed files or earlier attempts where relevant.
    Separate the author's explanation from what the code and evidence establish.
 3. Trace the mechanism through the consumer that experiences the failure or preserved behavior.
    Check the complete path, including later filtering, normalization, cleanup, and error handling where they can change the result.
@@ -92,8 +92,9 @@ Do not require each source to yield a bug or scan every repository before drawin
 
 Keep the result proportional to the question and link conclusions to concrete revisions, files, tests, or discussions.
 For pre-redesign analysis, report the supported `pain_axes`, `historical_examples`, `cochange_signals`, `candidate_invariants`, and `uncertainties`.
-For historical-design research, report the case, prior attempts and repair adequacy, supported lesson and limits, and useful disposition:
+For historical-design research, report the case, supported lesson and limits, and useful disposition:
 a focused bug investigation, a worked example, a candidate skill change, further research, or no action.
+For a change or repair, include prior attempts and repair adequacy where relevant.
 Separate newly suspected defects from the recorded historical failures.
 
 Stop the bounded investigation when the evidence answers its question or identifies a precise unresolved dependency.
