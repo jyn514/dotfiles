@@ -1,9 +1,13 @@
+import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +121,186 @@ class CoauthoredByAuthorTest(unittest.TestCase):
 
     def test_apply_keep_trailer_preserves_original_spelling(self) -> None:
         self.assert_apply(keep_trailer=True)
+
+    def test_apply_removes_only_native_footer_occurrences(self) -> None:
+        if not shutil.which("git-filter-repo"):
+            self.skipTest("requires native git-filter-repo")
+        body = f"Boundary café 🐛\n\nCo-Authored-By: {PERSON}\nThe example ends here.\n\n"
+        unrelated = (
+            "Co-Authored-By: Human Helper <helper@example.test>\n"
+            f"Co-Authored-By: {PERSON} extra\n"
+            "Reviewed-by:   Reviewer <reviewer@example.test>  \n"
+        )
+        patch = (
+            "\n---\n example.txt | 1 +\n\ndiff --git a/example.txt b/example.txt\n"
+            "--- a/example.txt\n+++ b/example.txt\n@@ -0,0 +1 @@\n+example\n"
+        )
+        # Classify duplicate footer lines against the original message: deleting
+        # the final block first would promote the earlier body paragraph.
+        earlier = f"Duplicate footer\n\nCo-Authored-By: {PERSON}\n\n"
+        fixtures = (
+            (body + f"Co-Authored-By: {PERSON}\n" + unrelated, body + unrelated),
+            (body + f"Co-Authored-By: {PERSON}\n" + unrelated + patch, body + unrelated + patch),
+            (earlier + f"Co-Authored-By: {PERSON}\n" * 2, earlier),
+        )
+        ids = []
+        for message, _ in fixtures:
+            self.git("-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+                     "--cleanup=verbatim", "-F", "-", input=message)
+            ids.append(self.git("rev-parse", "HEAD").strip())
+        source = self.repo
+        for keep in (False, True):
+            with self.subTest(keep_trailer=keep):
+                clone = source.parent / f"boundary-clone-{keep}"
+                self.git("clone", "--no-local", "-q", str(source), str(clone))
+                self.repo = clone
+                before = self.git("log", "--reverse", "--format=%T|%aI|%cn|%ce|%cI|%B")
+                self.assert_candidates(self.run_command(), ids)
+                self.assertEqual(before, self.git("log", "--reverse", "--format=%T|%aI|%cn|%ce|%cI|%B"))
+                metadata = self.git("log", "--reverse", "--format=%T|%aI|%cn|%ce|%cI|%s")
+                self.assert_candidates(self.run_command("--apply", *(["--keep-trailer"] if keep else [])), ids)
+                self.assertEqual(metadata, self.git("log", "--reverse", "--format=%T|%aI|%cn|%ce|%cI|%s"))
+                commits = self.git("rev-list", "--reverse", "HEAD").splitlines()
+                self.assertEqual(len(fixtures), len(commits))
+                for commit, (message, removed) in zip(commits, fixtures):
+                    raw = subprocess.run(
+                        ["git", "cat-file", "commit", commit], cwd=self.repo, env=self.env,
+                        capture_output=True, check=True,
+                    ).stdout
+                    self.assertEqual((message if keep else removed).encode("utf-8"), raw.split(b"\n\n", 1)[1])
+                    self.assertEqual("Claude Example|claude@example.test\n", self.git("show", "-s", "--format=%an|%ae", commit))
+                self.assertEqual("", self.git("status", "--porcelain=v1"))
+
+    def test_apply_preserves_native_comment_lines(self) -> None:
+        if not shutil.which("git-filter-repo"):
+            self.skipTest("requires native git-filter-repo")
+        heading = "Comment café 🐛\n\n"
+        upper = f"Co-Authored-By: {PERSON}\n"
+        lower = f"co-authored-by: {PERSON}\n"
+        reviewer = "Reviewed-by: Reviewer <reviewer@example.test>\n"
+        message = heading + upper + lower + reviewer
+        self.git("-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+                 "--cleanup=verbatim", "-F", "-", input=message)
+        commit = self.git("rev-parse", "HEAD").strip()
+        source = self.repo
+        for index, (prefix, parsed, expected) in enumerate((
+            (upper.rstrip("\n"), lower + reviewer, heading + upper + reviewer),
+            # An extension of the original line can newly become a comment
+            # after appending a marker. It must not suppress a real trailer.
+            (lower.rstrip("\n") + "A", upper + lower + reviewer, heading + reviewer),
+        )):
+            with self.subTest(comment_string=prefix):
+                clone = source.parent / f"comment-clone-{index}"
+                self.git("clone", "--no-local", "-q", str(source), str(clone))
+                self.repo = clone
+                self.git("config", "core.commentString", prefix)
+                self.assertEqual(parsed, self.git("interpret-trailers", "--parse", input=message))
+                def raw_commit() -> bytes:
+                    return subprocess.run(
+                        ["git", "cat-file", "commit", "HEAD"], cwd=self.repo, env=self.env,
+                        capture_output=True, check=True,
+                    ).stdout
+
+                before = raw_commit()
+                self.assert_candidates(self.run_command(), [commit])
+                self.assertEqual(before, raw_commit())
+                self.assert_candidates(self.run_command("--apply"), [commit])
+                after = raw_commit()
+                self.assertEqual(expected.encode("utf-8"), after.split(b"\n\n", 1)[1])
+                before_headers = before.split(b"\n\n", 1)[0].split(b"\n")
+                after_headers = after.split(b"\n\n", 1)[0].split(b"\n")
+                self.assertEqual(
+                    [line for line in before_headers if not line.startswith(b"author ")],
+                    [line for line in after_headers if not line.startswith(b"author ")],
+                )
+                self.assertEqual("Claude Example|claude@example.test\n", self.git("show", "-s", "--format=%an|%ae", "HEAD"))
+                self.assertEqual("", self.git("status", "--porcelain=v1"))
+
+    def test_apply_preserves_native_line_endings_and_identity_case(self) -> None:
+        if not shutil.which("git-filter-repo"):
+            self.skipTest("requires native git-filter-repo")
+        heading = "Compatibility café 🐛\r\n\r\n".encode("utf-8")
+        upper = f"Co-Authored-By: {PERSON}\r\n".encode("utf-8")
+        lower = f"co-authored-by: {PERSON}\r\n".encode("utf-8")
+        reviewer = b"Reviewed-by: Reviewer <reviewer@example.test>\r\n"
+        canonical = f"Co-Authored-By: {PERSON}\n".encode("utf-8")
+        changed_case = f"Co-Authored-By: {PERSON.upper()}\n".encode("utf-8")
+        fixtures = (
+            ("CRLF", heading + canonical[:-1] + b" \t\r\n", heading, None, canonical),
+            ("identity-case", heading + canonical + changed_case, heading, None, canonical + changed_case),
+            ("comment-CR", heading + upper + lower + reviewer, heading + upper + reviewer,
+             upper[:-1].decode("utf-8"), lower.replace(b"\r\n", b"\n") + reviewer.replace(b"\r\n", b"\n")),
+        )
+        parent = self.repo.parent
+        for name, message, removed, comment, parsed in fixtures:
+            source = parent / name
+            source.mkdir()
+            self.repo = source
+            self.git("init", "-q")
+            self.git("config", "user.name", "Original Author")
+            self.git("config", "user.email", "original@example.test")
+            subprocess.run(
+                ["git", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty",
+                 "--cleanup=verbatim", "-F", "-"], cwd=source, env=self.env,
+                input=message, capture_output=True, check=True,
+            )
+            commit = self.git("rev-parse", "HEAD").strip()
+            for keep in (False, True):
+                with self.subTest(case=name, keep_trailer=keep):
+                    clone = parent / f"{name}-clone-{keep}"
+                    self.git("clone", "--no-local", "-q", str(source), str(clone))
+                    self.repo = clone
+                    if comment is not None:
+                        self.git("config", "core.commentString", comment)
+                    native = subprocess.run(
+                        ["git", "interpret-trailers", "--parse"], cwd=clone, env=self.env,
+                        input=message, capture_output=True, check=True,
+                    ).stdout
+                    self.assertEqual(parsed, native)
+
+                    def raw_commit() -> bytes:
+                        return subprocess.run(
+                            ["git", "cat-file", "commit", "HEAD"], cwd=clone, env=self.env,
+                            capture_output=True, check=True,
+                        ).stdout
+
+                    before = raw_commit()
+                    self.assertEqual(message, before.split(b"\n\n", 1)[1])
+                    self.assert_candidates(self.run_command(), [commit])
+                    self.assertEqual(before, raw_commit())
+                    self.assert_candidates(self.run_command("--apply", *(["--keep-trailer"] if keep else [])), [commit])
+                    after = raw_commit()
+                    self.assertEqual(message if keep else removed, after.split(b"\n\n", 1)[1])
+                    self.assertEqual(
+                        [line for line in before.split(b"\n\n", 1)[0].split(b"\n") if not line.startswith(b"author ")],
+                        [line for line in after.split(b"\n\n", 1)[0].split(b"\n") if not line.startswith(b"author ")],
+                    )
+                    self.assertEqual("Claude Example|claude@example.test\n", self.git("show", "-s", "--format=%an|%ae", "HEAD"))
+                    self.assertEqual("", self.git("status", "--porcelain=v1"))
+
+    def test_callback_refuses_failed_native_occurrence_classification(self) -> None:
+        message = f"Selected\n\nCo-Authored-By: {PERSON}\n".encode("utf-8")
+        commit = SimpleNamespace(
+            original_id=b"a" * 40, message=message,
+            author_name=b"Original Author", author_email=b"original@example.test",
+        )
+        data_path = self.repo.parent / "authors.json"
+        data_path.write_text(json.dumps({
+            "authors": {"a" * 40: {"name": "Claude Example", "email": "claude@example.test"}},
+            "keep-trailer": False,
+        }))
+        # Even plausible output cannot authorize deletion after native failure.
+        failed = subprocess.CompletedProcess(
+            ["git", "interpret-trailers", "--parse"], 42,
+            stdout=b"Co-Authored-By: coauthored-by-author-marker\n",
+        )
+        with mock.patch.dict(os.environ, {"COAUTHORED_BY_AUTHOR_DATA": str(data_path)}):
+            with mock.patch("subprocess.run", return_value=failed):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    runpy.run_path(str(ROOT / "libexec/coauthored-by-author.py"), init_globals={"commit": commit})
+        self.assertEqual(message, commit.message)
+        self.assertEqual(b"Original Author", commit.author_name)
+        self.assertEqual(b"original@example.test", commit.author_email)
 
     def test_dirty_worktree_refusal_does_not_rewrite(self) -> None:
         commit = self.commit("selected", f"co-authored-by: {PERSON}")

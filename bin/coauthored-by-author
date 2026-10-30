@@ -2,7 +2,9 @@
 
 (ns coauthored-by-author
   (:require
+   [babashka.fs :as fs]
    [babashka.process :as process]
+   [cheshire.core :as json]
    [clojure.string :as str]))
 
 (def default-match #"(?i)^Claude\b")
@@ -28,10 +30,14 @@
 
 (defn sh
   [& args]
-  (let [result (apply shell
-                      {:out :string
-                       :err :string
-                       :continue true}
+  (let [[opts args] (if (map? (first args))
+                      [(first args) (rest args)]
+                      [{} args])
+        result (apply shell
+                      (merge {:out :string
+                              :err :string
+                              :continue true}
+                             opts)
                       args)]
     (if (zero? (:exit result))
       (:out result)
@@ -136,33 +142,16 @@
                    (:name new-author)
                    (:email new-author))))
 
-(defn callback-source
-  [{:keys [keep-trailer?]} candidates]
-  (letfn [(py-string [s] (pr-str s))
-          (entry [{:keys [commit new-author]}]
-            (str "    " (py-string (str/trim commit)) ": "
-                 "{'name': " (py-string (:name new-author))
-                 ", 'email': " (py-string (:email new-author)) "}"))]
-    (str "authors = {\n"
-         (str/join ",\n" (map entry candidates))
-         "\n}\n"
-         "commit_id = commit.original_id.decode('ascii')\n"
-         "author = authors.get(commit_id)\n"
-         "if author:\n"
-         "    commit.author_name = author['name'].encode('utf-8')\n"
-         "    commit.author_email = author['email'].encode('utf-8')\n"
-         (when-not keep-trailer?
-           (str "    import re\n"
-                "    trailer_value = ('%s <%s>' % (author['name'], author['email'])).encode('utf-8')\n"
-                "    commit.message = re.sub(rb'(?im)^Co-Authored-By:[ \\t]*' + re.escape(trailer_value) + rb'[ \\t]*\\n?', b'', commit.message)\n"
-                "    commit.message = re.sub(rb'\\n{3,}$', b'\\n\\n', commit.message)\n")))))
+(defn callback-path []
+  (str (fs/path (fs/parent (fs/parent (fs/real-path *file*)))
+                "libexec" "coauthored-by-author.py")))
 
-(defn temp-callback-path []
+(defn temp-data-path []
   (let [root (or (System/getenv "TMPDIR") (System/getProperty "java.io.tmpdir"))]
     (str (java.nio.file.Files/createTempFile
           (.toPath (java.io.File. root))
           "coauthored-by-author-"
-          ".py"
+          ".json"
           (make-array java.nio.file.attribute.FileAttribute 0)))))
 
 (defn clean-worktree? []
@@ -175,15 +164,21 @@
     (System/exit 0))
   (when-not (clean-worktree?)
     (throw (ex-info "Refusing to rewrite history with a dirty Git worktree." {})))
-  (let [callback (temp-callback-path)]
-    (spit callback (callback-source opts candidates))
-    (apply sh
-           "git"
-           "filter-repo"
-           "--refs"
-           (concat (:refs opts)
-                   ["--commit-callback"
-                    (str "exec(open(" (pr-str callback) ").read())")]))))
+  (let [data-path (temp-data-path)
+        data {:authors (into {} (map (fn [{:keys [commit new-author]}]
+                                      [(str/trim commit) new-author])
+                                    candidates))
+              :keep-trailer (:keep-trailer? opts)}]
+    (try
+      (spit data-path (json/generate-string data))
+      (apply sh
+             {:extra-env {"COAUTHORED_BY_AUTHOR_DATA" data-path}}
+             "git"
+             "filter-repo"
+             "--refs"
+             (concat (:refs opts) ["--commit-callback" (callback-path)]))
+      (finally
+        (fs/delete data-path)))))
 
 (defn -main
   [& args]
