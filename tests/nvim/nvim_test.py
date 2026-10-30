@@ -82,6 +82,14 @@ class NeovimConfigTests(unittest.TestCase):
             startup_commands=("nnoremap grt <Nop>",),
         )
 
+    def test_treesitter_completion_uses_current_buffer_eligibility(self) -> None:
+        result = self.run_nvim(
+            Path(__file__).with_name("fixtures") / "treesitter_lifetime.lua",
+            startup_commands=("nnoremap grt <Nop>",),
+        )
+        if "SKIP_TREESITTER_LIFETIME_PARSERS" in result.stderr + result.stdout:
+            self.skipTest("native C and Lua parsers are not installed")
+
     def test_flix_run_main_uses_client_root_without_changing_editor_cwd(self) -> None:
         fixtures = Path(__file__).with_name("fixtures")
         with tempfile.TemporaryDirectory() as temporary:

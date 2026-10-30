@@ -694,6 +694,11 @@ vim.api.nvim_create_autocmd('FileType', {
 		if not lang then return end
 
 		local function start_treesitter()
+			-- Installation may outlive this buffer's loaded state or language.
+			if not vim.api.nvim_buf_is_loaded(args.buf)
+					or vim.treesitter.language.get_lang(vim.bo[args.buf].filetype) ~= lang then
+				return
+			end
 			if vim.treesitter.language.add(lang) then
 				vim.treesitter.start(args.buf, lang)
 			end
