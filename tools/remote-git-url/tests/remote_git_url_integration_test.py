@@ -42,7 +42,11 @@ class CommandIntegrationTests(unittest.TestCase):
             '  "remote get-url") printf "https://github.com/user/repo.git\\n";;\n'
             '  "remote ") printf "origin\\n";;\n'
             '  "rev-list --remotes=origin/*") printf "abc123\\n";;\n'
-            '  "ls-tree -r") printf "%s\\0" "$RELATIVE";;\n'
+            '  "--literal-pathspecs ls-tree")\n'
+            '    [ "$#" -eq 8 ] && [ "$3" = -r ] && [ "$4" = -z ] && '
+            '[ "$5" = --name-only ] && [ "$6" = abc123 ] && '
+            '[ "$7" = -- ] && [ "$8" = "$RELATIVE" ] || exit 98\n'
+            '    printf "%s\\0" "$RELATIVE";;\n'
             '  "show "*) printf "unique line\\n\\n";;\n'
             'esac\n',
         )
@@ -96,7 +100,11 @@ class CommandIntegrationTests(unittest.TestCase):
             '  "remote get-url") printf "%s\\n" "$REMOTE_URL";;\n'
             '  "remote ") printf "origin\\n";;\n'
             '  "rev-list --remotes=origin/*") [ "${REV_LIST_STATUS:-0}" -eq 0 ] || exit "$REV_LIST_STATUS"; printf "abc123\\n";;\n'
-            '  "ls-tree -r") printf "%s\\0" "$RELATIVE";;\n'
+            '  "--literal-pathspecs ls-tree")\n'
+            '    [ "$#" -eq 8 ] && [ "$3" = -r ] && [ "$4" = -z ] && '
+            '[ "$5" = --name-only ] && [ "$6" = abc123 ] && '
+            '[ "$7" = -- ] && [ "$8" = "$RELATIVE" ] || exit 98\n'
+            '    printf "%s\\0" "$RELATIVE";;\n'
             '  "show "*) exit "${SHOW_STATUS:-0}";;\n'
             'esac\n',
         )

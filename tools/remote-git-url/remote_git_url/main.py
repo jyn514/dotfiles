@@ -24,11 +24,14 @@ def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def git(cwd: bytes, *arguments: bytes) -> subprocess.CompletedProcess[bytes] | None:
+def git(
+    cwd: bytes, *arguments: bytes, env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[bytes] | None:
     try:
         return subprocess.run(
             [b"git", *arguments],
             cwd=cwd,
+            env=env,
             check=False,
             stdout=subprocess.PIPE,
         )
@@ -182,7 +185,14 @@ def generate(file_argument: str, start: int, end: int) -> tuple[int, bytes | Non
         revision = revision_output.strip()
         if revision:
             status, tree_output = checked(
-                git(directory, b"ls-tree", b"-r", b"-z", b"--name-only", revision, b"--", relative)
+                # A selected filename is not a pathspec expression. Git's
+                # literal mode conflicts with inherited glob/icase modes;
+                # override only those selectors, only for this tree lookup.
+                git(
+                    directory, b"--literal-pathspecs", b"ls-tree", b"-r", b"-z",
+                    b"--name-only", revision, b"--", relative,
+                    env=os.environ | {"GIT_GLOB_PATHSPECS": "0", "GIT_ICASE_PATHSPECS": "0"},
+                )
             )
             if status:
                 return status, None
