@@ -32,7 +32,8 @@ class CommandIntegrationTests(unittest.TestCase):
             'printf "<%s>\\n" "$@" >> "$TMUX_CALLS"\n'
             'case "$1" in\n'
             '  has-session) [ "$3" = current ];;\n'
-            '  display-message) printf "current\\n";;\n'
+            '  display-message)\n'
+            '    if [ "$3" = -t ]; then printf "@3\\n"; else printf "current\\n"; fi;;\n'
             '  list-windows)\n'
             '    [ "${LIST_STATUS:-0}" -eq 0 ] || exit "$LIST_STATUS"\n'
             '    if [ -e "$WINDOW_CREATED" ]; then printf "cssh.-0\\n"; else printf "csshX-0\\n"; fi;;\n'
@@ -66,6 +67,54 @@ class CommandIntegrationTests(unittest.TestCase):
             if line == "<set-option>" and lines[index + 1] == "<-p>"
         ]
         self.assertEqual(["<%7>", "<%8>"], pane_targets)
+
+    def test_tmux_cssh_propagates_created_window_identity_query_failure(self) -> None:
+        calls = self.directory / "tmux-calls"
+        shutil.copy2(
+            Path(__file__).with_name("fixtures") / "window-identity-query-failure.sh",
+            self.directory / "tmux",
+        )
+        result = subprocess.run(
+            [str(ROOT / "bin/tmux-cssh"), "first", "second"],
+            env=os.environ | {
+                "TMUX_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        self.assertEqual(27, result.returncode)
+        self.assertNotIn("split-window", calls.read_text())
+        self.assertNotIn("attach-session", calls.read_text())
+
+    def test_tmux_cssh_refreshes_window_identity_after_resource_recreation(self) -> None:
+        command = os.environ.get("DOTFILES_TEST_TMUX_CSSH", str(ROOT / "bin/tmux-cssh"))
+        for window_mode in (False, True):
+            with self.subTest(window_mode=window_mode):
+                calls = self.directory / "tmux-calls"
+                state = self.directory / "created"
+                calls.unlink(missing_ok=True)
+                state.unlink(missing_ok=True)
+                shutil.copy2(
+                    Path(__file__).with_name("fixtures") / "recreated-window.sh",
+                    self.directory / "tmux",
+                )
+                result = subprocess.run(
+                    [command, *(["-w"] if window_mode else []),
+                     "first", "second", "third"],
+                    env=os.environ | {
+                        "TMUX": "yes",
+                        "TMUX_CALLS": str(calls),
+                        "TMUX_STATE": str(state),
+                        "PATH": f"{self.directory}:{os.environ['PATH']}",
+                    },
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("2\n", state.read_text())
+                split = next(line.split() for line in calls.read_text().splitlines()
+                             if line.startswith("split-window "))
+                self.assertEqual("@2", split[split.index("-t") + 1])
+
     def test_tmux_cssh_propagates_window_query_failure(self) -> None:
         calls = self.directory / "tmux-calls"
         self.executable(

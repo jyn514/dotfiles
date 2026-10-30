@@ -104,47 +104,48 @@ if ! echo "${hosts}" | grep -q '[. ]'; then
 fi
 
 # Open a new session and split into new panes for each SSH session
+tmux_window_id=""
 for host in ${hosts}; do
 	if ! tmux has-session -t "${tmux_session}" 2>/dev/null; then
 		pane=$(tmux new-session -P -F '#D' -s "${tmux_session}" -d "${ssh_cmd} ${ssh_options} ${host}") || exit
+		tmux_window_id=""
 	elif [ "${tmux_attach_current_session}" = "true" ]; then
 		windows=$(tmux list-windows -F '#W') || exit
 		if ! printf '%s\n' "$windows" | grep -Fqx -- "${tmux_window}"; then
 			pane=$(tmux new-window -P -F '#D' -n "${tmux_window}" \
 				"${ssh_cmd} ${ssh_options} ${host}") || exit
+			tmux_window_id=""
 		else
-			pane=$(tmux split-window -P -F '#D' -t "${tmux_window}" -d \
+			pane=$(tmux split-window -P -F '#D' -t "$tmux_window_id" -d \
 				"${ssh_cmd} ${ssh_options} ${host}") || exit
 			# We have to reset the layout after each new pane otherwise the panes
 			# quickly become too small to spawn any more.
-			tmux select-layout -t "${tmux_session}" tiled
+			tmux select-layout -t "$tmux_window_id" tiled
 		fi
 	else
-		pane=$(tmux split-window -P -F '#D' -t "${tmux_session}" -d \
+		pane=$(tmux split-window -P -F '#D' -t "$tmux_window_id" -d \
 			"${ssh_cmd} ${ssh_options} ${host}") || exit
 		# We have to reset the layout after each new pane otherwise the panes
 		# quickly become too small to spawn any more.
-		tmux select-layout -t "${tmux_session}" tiled
+		tmux select-layout -t "$tmux_window_id" tiled
+	fi
+	if [ -z "$tmux_window_id" ]; then
+		# Retain the created window, not a name which may resolve in another session.
+		tmux_window_id=$(tmux display-message -p -t "$pane" '#{window_id}') || exit
 	fi
 	tmux set-option -p -t "$pane" pane-border-format "${host}"
 done
 
 # Synchronize panes by default. Show hostnames.
-if [ "${tmux_attach_current_session}" = "true" ]; then
-  tmux set-window-option -t "${tmux_window}" synchronize-panes on
-  tmux set-window-option -t "${tmux_window}" pane-border-status top
-	tmux set-option -t "${tmux_window}" remain-on-exit failed
-else
-  tmux set-window-option -t "${tmux_session}" synchronize-panes on
-  tmux set-window-option -t "${tmux_session}" pane-border-status top
-	tmux set-option -t "${tmux_session}" remain-on-exit failed
-fi
+tmux set-window-option -t "$tmux_window_id" synchronize-panes on
+tmux set-window-option -t "$tmux_window_id" pane-border-status top
+tmux set-option -t "$tmux_window_id" remain-on-exit failed
 
 if [ -n "${TMUX:-}" ]; then
   # We are in a tmux, just switch to the new session
-  tmux set-option -t "${tmux_session}" detach-on-destroy no-detached
-  tmux switch-client -t "${tmux_session}"
+  tmux set-option -t "$pane" detach-on-destroy no-detached
+  tmux switch-client -t "=${tmux_session}"
 else
   # We are NOT in a tmux, attach to the new session
-  tmux attach-session -t "${tmux_session}"
+  tmux attach-session -t "=${tmux_session}"
 fi
