@@ -93,6 +93,9 @@ Prefer splitting when separating work. Restore only changes that should be disca
 - Partial-file or hunk boundary: always use `bb agent-split target/jj-split/<name>.patch -m "Message"`.
 - Never use `jj split --interactive`, `jj split --tool :builtin`, or another interactive split editor in this repository.
 
+Build selection patches from the revision's generated diff rather than hand-writing headers and context.
+Preserve unchanged context; if selecting within a mixed-ownership hunk, keep its line counts accurate and use the helper's preflight.
+
 `bb agent-split` preflights the Git-style patch under ignored `target/jj-split/`, commits through a trusted path boundary, restores the remainder, and verifies both revisions. Failures retain recovery snapshots and print their location.
 
 After either split, inspect selected and remaining changes with `jj status` and focused `jj diff -r CHANGE_ID` / `jj diff -r @`.
