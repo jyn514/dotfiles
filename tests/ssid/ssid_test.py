@@ -19,12 +19,12 @@ LOADER.exec_module(ssid)
 
 class SsidTests(unittest.TestCase):
     def test_selects_first_active_record_without_decoding_payload(self):
-        records = b"no:Other\nyes:Justice:of\\Toren-\xff\nyes:Later\n"
+        records = b" :Other\n*:Justice:of\\Toren-\xff\n*:Later\n"
 
         self.assertEqual(ssid.active_ssid(records), b"Justice:of\\Toren-\xff")
 
     def test_invokes_nmcli_with_machine_readable_protocol(self):
-        runner = mock.Mock(return_value=ssid.Result(0, b"yes:Network Name\n"))
+        runner = mock.Mock(return_value=ssid.Result(0, b"*:Network Name\n"))
         output = io.BytesIO()
 
         self.assertEqual(ssid.show_ssid(runner, output), 0)
@@ -35,7 +35,7 @@ class SsidTests(unittest.TestCase):
                 "--escape",
                 "no",
                 "--fields",
-                "active,ssid",
+                "in-use,ssid",
                 "device",
                 "wifi",
             ]
@@ -46,7 +46,7 @@ class SsidTests(unittest.TestCase):
         output = io.BytesIO()
 
         self.assertEqual(
-            ssid.show_ssid(lambda _arguments: ssid.Result(0, b"yes:\n"), output),
+            ssid.show_ssid(lambda _arguments: ssid.Result(0, b"*:\n"), output),
             0,
         )
         self.assertEqual(output.getvalue(), b"\n")
@@ -55,7 +55,7 @@ class SsidTests(unittest.TestCase):
         output = io.BytesIO()
 
         self.assertEqual(
-            ssid.show_ssid(lambda _arguments: ssid.Result(0, b"no:Network\n"), output),
+            ssid.show_ssid(lambda _arguments: ssid.Result(0, b" :Network\n"), output),
             0,
         )
         self.assertEqual(output.getvalue(), b"")
@@ -64,7 +64,7 @@ class SsidTests(unittest.TestCase):
         output = io.BytesIO()
 
         self.assertEqual(
-            ssid.show_ssid(lambda _arguments: ssid.Result(29, b"yes:Partial\n"), output),
+            ssid.show_ssid(lambda _arguments: ssid.Result(29, b"*:Partial\n"), output),
             29,
         )
         self.assertEqual(output.getvalue(), b"")

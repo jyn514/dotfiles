@@ -18,7 +18,7 @@ NMCLI_ARGUMENTS = [
     "--escape",
     "no",
     "--fields",
-    "active,ssid",
+    "in-use,ssid",
     "device",
     "wifi",
 ]
@@ -51,8 +51,9 @@ def run(arguments: list[str]) -> Result:
 
 def active_ssid(records: bytes) -> bytes | None:
     for record in records.split(b"\n"):
-        if record.startswith(b"yes:"):
-            return record[len(b"yes:") :]
+        # IN-USE is the literal "*" marker; ACTIVE is a localized yes/no.
+        if record.startswith(b"*:"):
+            return record[len(b"*:") :]
     return None
 
 

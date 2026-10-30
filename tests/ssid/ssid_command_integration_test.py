@@ -29,7 +29,7 @@ class CommandIntegrationTests(unittest.TestCase):
         self.executable(
             "nmcli",
             'printf "%s\\n" "$*" > "$NMCLI_CALLS"\n'
-            "printf 'no:Other Network\\nyes:Justice:of\\\\Toren\\n'\n",
+            "printf ' :Other Network\\n*:Justice:of\\\\Toren\\n'\n",
         )
 
         result = subprocess.run(
@@ -46,7 +46,7 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("Justice:of\\Toren\n", result.stdout)
         self.assertEqual(
-            "--terse --escape no --fields active,ssid device wifi\n",
+            "--terse --escape no --fields in-use,ssid device wifi\n",
             calls.read_text(),
         )
     def test_ssid_propagates_nmcli_failure(self) -> None:
