@@ -88,6 +88,10 @@ Do not turn a proposed mechanism into its own requirement.
 - Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
 - After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
 
+When calculating with offsets, positions, or timestamps, identify their units and origins, distinguishing coordinates from lengths or durations.
+Bring coordinates to a common frame where the operation requires it; matching units alone do not establish matching origins.
+For example, compare an offset relative to a section's start with that section's length, not with its cumulative end.
+
 When choosing or rearranging a numerical calculation, check intermediate operations over the accepted input range.
 Algebraic equivalence does not establish equivalent behavior in the implementation's arithmetic.
 Trace cases where overflow, underflow, or cancellation could violate a required result or downstream decision.
