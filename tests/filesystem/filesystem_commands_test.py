@@ -1,12 +1,14 @@
 import json
 import os
 from pathlib import Path
+import select
 import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+from typing import Callable
 import unittest
 
 
@@ -160,6 +162,199 @@ class CommandIntegrationTests(unittest.TestCase):
 
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual([str(entry)], result.stdout.splitlines())
+
+    def merge_at_prompt(
+        self,
+        source: str | Path,
+        destination: Path,
+        before_reply: Callable[[], None],
+        reply: str = "y\n",
+    ) -> subprocess.CompletedProcess[str]:
+        command = [str(ROOT / "bin/merge"), str(source), str(destination)]
+        with subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.directory,
+        ) as process:
+            try:
+                output = b""
+                while b"Remove old directory? y/[n] " not in output:
+                    self.assertTrue(
+                        select.select([process.stdout], [], [], 5)[0],
+                        "merge did not reach its confirmation prompt",
+                    )
+                    chunk = os.read(process.stdout.fileno(), 4096)
+                    self.assertTrue(chunk, "merge exited before its confirmation prompt")
+                    output += chunk
+                before_reply()
+                remaining, error = process.communicate(reply.encode(), timeout=5)
+                return subprocess.CompletedProcess(
+                    command, process.returncode, (output + remaining).decode(), error.decode()
+                )
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()
+
+    def test_merge_refuses_removal_after_parent_symlink_retargets(self) -> None:
+        first = self.directory / "A/source"
+        replacement = self.directory / "B/source"
+        destination = self.directory / "destination"
+        for source, contents in ((first, "copied A\n"), (replacement, "uncopied B\n")):
+            source.mkdir(parents=True)
+            (source / "payload").write_text(contents)
+        destination.mkdir()
+        selected = self.directory / "selected"
+        selected.symlink_to(first.parent, target_is_directory=True)
+
+        def retarget() -> None:
+            self.assertEqual("copied A\n", (destination / "payload").read_text())
+            selected.unlink()
+            selected.symlink_to(replacement.parent, target_is_directory=True)
+
+        result = self.merge_at_prompt(selected / "source", destination, retarget)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Source retained", result.stderr)
+        self.assertEqual("copied A\n", (first / "payload").read_text())
+        self.assertEqual("uncopied B\n", (replacement / "payload").read_text())
+        self.assertEqual("copied A\n", (destination / "payload").read_text())
+        self.assertEqual(replacement, (selected / "source").resolve())
+
+    def test_merge_refuses_removal_when_original_path_vanishes(self) -> None:
+        source = self.directory / "source"
+        moved = self.directory / "moved"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("copied\n")
+
+        def move_source() -> None:
+            self.assertEqual("copied\n", (destination / "payload").read_text())
+            source.rename(moved)
+
+        result = self.merge_at_prompt(source, destination, move_source)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Source retained", result.stderr)
+        self.assertFalse(source.exists())
+        self.assertEqual("copied\n", (moved / "payload").read_text())
+        self.assertEqual("copied\n", (destination / "payload").read_text())
+
+    def test_merge_unchanged_leaf_symlink_removes_only_link(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("copied\n")
+        selected = self.directory / "selected"
+        selected.symlink_to(source, target_is_directory=True)
+
+        result = self.merge_at_prompt(selected, destination, lambda: None)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(selected.is_symlink())
+        self.assertEqual("copied\n", (source / "payload").read_text())
+        self.assertEqual("copied\n", (destination / "payload").read_text())
+
+    def test_merge_unchanged_ordinary_source_is_removed(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("copied\n")
+
+        result = self.merge_at_prompt(source, destination, lambda: None)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(source.exists())
+        self.assertEqual("copied\n", (destination / "payload").read_text())
+
+    def test_merge_does_not_revalidate_without_affirmative_confirmation(self) -> None:
+        for index, (reply, status) in enumerate((("n\n", 0), ("\n", 0), ("", 1))):
+            with self.subTest(reply=reply):
+                source = self.directory / f"source-{index}"
+                moved = self.directory / f"moved-{index}"
+                destination = self.directory / f"destination-{index}"
+                source.mkdir()
+                destination.mkdir()
+                (source / "payload").write_text("copied\n")
+
+                def move_source() -> None:
+                    self.assertEqual("copied\n", (destination / "payload").read_text())
+                    source.rename(moved)
+
+                result = self.merge_at_prompt(source, destination, move_source, reply)
+
+                self.assertEqual(status, result.returncode, result.stderr)
+                self.assertEqual("", result.stderr)
+                self.assertEqual("copied\n", (moved / "payload").read_text())
+                self.assertEqual("copied\n", (destination / "payload").read_text())
+
+    def test_merge_retains_source_after_copy_failure(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("original\n")
+        self.executable("cp", "exit 23\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/merge"), str(source), str(destination)],
+            text=True,
+            input="y\n",
+            capture_output=True,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertNotIn("Remove old directory?", result.stdout)
+        self.assertEqual("original\n", (source / "payload").read_text())
+        self.assertEqual([], list(destination.iterdir()))
+
+    def test_merge_accepts_explicit_relative_dash_prefixed_operand(self) -> None:
+        source = self.directory / "-source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("copied\n")
+
+        accepted = self.merge_at_prompt("./-source", destination, lambda: None)
+
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        self.assertFalse(source.exists())
+        self.assertEqual("copied\n", (destination / "payload").read_text())
+
+    def test_merge_supports_plain_realpath_provider_without_flags(self) -> None:
+        native_realpath = shutil.which("realpath")
+        self.assertIsNotNone(native_realpath)
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "payload").write_text("copied\n")
+        self.executable(
+            "realpath",
+            'case "$1" in -*) echo "unsupported realpath option" >&2; exit 64;; esac\n'
+            'exec "$REALPATH_NATIVE" "$@"\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/merge"), str(source), str(destination)],
+            text=True,
+            input="y\n",
+            capture_output=True,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "REALPATH_NATIVE": native_realpath,
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(source.exists())
+        self.assertEqual("copied\n", (destination / "payload").read_text())
 
     def test_merge_copies_dotfiles_before_removing_source(self) -> None:
         source = self.directory / "source"

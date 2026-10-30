@@ -50,5 +50,11 @@ fi
 printf "Remove old directory? y/[n] "
 read -r REPLY
 if [ "$REPLY" = y ]; then
+	# Refuse prompt-time path drift, but keep lexical symlink removal semantics.
+	# This check does not pin an inode or prevent changes after revalidation.
+	if ! removal_source="$(realpath "$1" 2>/dev/null)" || [ ! -e "$1" ] || [ "$removal_source" != "$source" ]; then
+		echo "Source retained because source path changed or no longer exists." >&2
+		exit 1
+	fi
 	rm -r "$1"
 fi
