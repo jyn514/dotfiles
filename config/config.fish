@@ -335,8 +335,11 @@ if [ -z "$old_fish" ]; and exists cargo
 	set -l cargo_command (command --search cargo)
 	set -l cargo_abbr_command (command --search generate-cargo-fish-abbr)
 		or return
+	# The repository wrapper imports this renderer; its own mtime does not
+	# change when the imported implementation changes.
 	set -l cache_arguments --destination $cargo_alias_cache \
 		--dependency $DOTFILES/config/config.fish \
+		--dependency $DOTFILES/tools/cargo-aliases/cargo_aliases/main.py \
 		--dependency $cargo_command \
 		--dependency $cargo_abbr_command
 	if set -q CARGO_HOME; and [ -d $CARGO_HOME/bin ]
