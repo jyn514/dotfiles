@@ -69,6 +69,19 @@ Do not depend on internal details, exact source code, or coincidentally convenie
 This applies WHENEVER there is an architecture boundary, even when writing tests for code you wrote yourself.
 Consult the "Principles" section of `architecture-design` for what constitutes a boundary.
 
+Separate caller documentation from implementation comments.
+Document a helper's purpose and non-obvious usage contract beside its declaration when callers would otherwise need to read its implementation.
+Cover relevant setup, lifecycle ordering, side effects, ownership, failure behavior, and what returned observations include or omit.
+For example, explain whether a test harness snapshot includes live state or only persisted entries.
+Describe the contract without making callers understand how the implementation fulfills it.
+
+Put implementation comments beside the code they explain.
+Explain why a surprising choice exists and what a simpler alternative would break.
+Use higher-level summaries to explain an algorithm's intent or invariant when readers would otherwise need to mentally execute the code.
+Do not paraphrase statements or repeat what names, types, or straightforward code already explain.
+Prefer clearer names and simpler code when those can remove the confusion; retain reasoning that code alone cannot express.
+Keep operator instructions and cross-component guarantees in their canonical documentation rather than duplicating them in comments.
+
 Before recommending reuse, verify that the actual component at its pinned version exposes a supported interface to the intended consumer.
 A public API in an underlying library does not expose the tool's private modules.
 If reuse requires private-source integration, a downstream patch, or a fork, name that and its maintenance cost before recommending it.

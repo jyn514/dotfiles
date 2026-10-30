@@ -4,10 +4,9 @@ Use this reference when the documentation owner or destination is not already es
 Placement alone does not require the `technical-docs` authoring workflow.
 Restructuring existing pages or navigation belongs to `reorganize-docs`.
 
-When making a user-facing change, update its canonical documentation in the same
-change.
-Check entrypoints, examples, command references, and installation or migration
-instructions for stale behavior before declaring the work complete.
+When changing behavior, update affected documentation, including code comments, in the same change.
+For user-facing changes, check canonical documentation, entrypoints, examples, command references,
+and installation or migration instructions for stale behavior before declaring the work complete.
 Do not duplicate guidance for reminder, reinforcement, or visibility.
 Add a link from another entrypoint only when an observed discovery failure needs
 one, and do not repeat the guidance there.
@@ -22,9 +21,9 @@ one, and do not repeat the guidance there.
      routes to specialized tasks—not an inventory of subsystem internals.
    - Subsystem or task documentation: usage, prerequisites, observable contracts,
      hazards, recovery, and reader-relevant limitations.
-   - Code comments: local implementation rationale and non-obvious constraints
-     needed when modifying that code. Keep operator instructions and guarantees
-     between independently maintained components in their documentation.
+   - Code documentation: caller-facing purpose and usage contracts beside declarations;
+     implementation rationale, algorithm summaries, and non-obvious constraints beside the relevant code.
+     Keep operator instructions and guarantees between independently maintained components in their documentation.
 4. Link to the owner from relevant entrypoints rather than copying its content.
    Keep safety constraints needed at the point of action; do not make a reader
    follow a link to discover that a command costs money or can destroy data.
