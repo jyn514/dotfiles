@@ -31,8 +31,8 @@ powershell=pwsh
 # tree --gitignore doesn't respect global gitignore lol lmao
 ftree=fd | tree --fromfile
 curl=curl --location
-belongs=what_belongs
-runs=what_runs
+belongs=what-belongs
+runs=what-runs
 package=what-package
 purge=sudo apt autoremove --purge
 restart=shutdown --reboot now
