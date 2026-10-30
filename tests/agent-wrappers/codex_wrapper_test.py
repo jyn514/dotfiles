@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 
@@ -13,6 +14,53 @@ WRAPPER = ROOT / "bin/codex"
 
 
 class CodexWrapperTests(unittest.TestCase):
+    def test_migration_preserves_multiline_header_data_before_native_launch(self) -> None:
+        for delimiter in ("'''", '"""'):
+            for has_generated_table in (False, True):
+                with self.subTest(delimiter=delimiter, generated=has_generated_table), \
+                        tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    fake_bin = root / "bin"
+                    fake_bin.mkdir()
+                    (fake_bin / "codex").symlink_to(ROOT / "tests/fixtures/codex_native_command.sh")
+                    home = root / ".codex"
+                    home.mkdir()
+                    manifest = home / "developer-instructions.md"
+                    manifest.write_text("")
+                    profile, config = home / "dotfiles.config.toml", home / "config.toml"
+                    instructions = (
+                        'developer_instructions = ' + delimiter + '\n'
+                        '[projects."/example"]\ntrust_level = "trusted"\n'
+                        '[ordinary]\n' + delimiter + '\n'
+                    )
+                    generated = '[projects."/real"]\ntrust_level = "trusted"\n'
+                    profile.write_text(instructions + (generated if has_generated_table else ""))
+                    tomllib.loads(profile.read_text())
+                    environment = os.environ | {
+                        "HOME": str(root), "CODEX_HOME": str(home),
+                        "CODEX_DEVELOPER_INSTRUCTIONS_FILE": str(manifest),
+                        "CODEX_TEST_EXIT_STATUS": "23",
+                        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                    }
+                    environment.pop("DOTFILES_SANDBOX", None)
+
+                    result = subprocess.run(
+                        [str(WRAPPER), "--help"], env=environment,
+                        text=True, capture_output=True,
+                    )
+
+                    # A native-only exit status and output prove migration did
+                    # not abort the launch. --help avoids session import effects.
+                    self.assertEqual(23, result.returncode, result.stderr)
+                    self.assertEqual("", result.stderr)
+                    self.assertEqual(["--profile", "dotfiles", "-c"], result.stdout.splitlines()[:3])
+                    self.assertEqual("--help", result.stdout.splitlines()[-1])
+                    self.assertEqual(instructions, profile.read_text())
+                    if has_generated_table:
+                        self.assertEqual(generated, config.read_text())
+                    else:
+                        self.assertFalse(config.exists())
+
     def test_removes_ssh_agent_socket_before_native_launch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
