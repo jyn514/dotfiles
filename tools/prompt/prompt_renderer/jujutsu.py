@@ -20,12 +20,15 @@ QUERY = [
 
 
 def parse_log(output: bytes) -> tuple[bool, str] | None:
-    lines = output.splitlines()
-    if len(lines) != 2:
+    # JJ emits LF-delimited records; CR and other controls belong to labels.
+    lines = output.split(b"\n")
+    if lines[-1] == b"":
+        lines.pop()
+    if len(lines) < 2:
         return None
-    current_empty = lines[0].split(b":", 1)[0] == b"true"
-    fields = lines[1].split(b":", 2)
-    if len(fields) != 3:
+    records = [line.split(b":", 2) for line in lines]
+    if any(len(fields) != 3 or fields[0] not in (b"true", b"false") for fields in records):
         return None
-    bookmark, description = fields[1:]
-    return current_empty, os.fsdecode(bookmark or description)
+    current_empty = records[0][0] == b"true"
+    parents = [os.fsdecode(bookmark or description) for _, bookmark, description in records[1:]]
+    return current_empty, " + ".join(parents)

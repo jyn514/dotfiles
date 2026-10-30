@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/prompt"))
 from prompt_renderer import main as renderer  # noqa: E402
 from prompt_renderer import jj_info  # noqa: E402
-from prompt_renderer.jujutsu import QUERY as JJ_QUERY  # noqa: E402
+from prompt_renderer.jujutsu import parse_log, QUERY as JJ_QUERY  # noqa: E402
 
 
 class PromptFactTests(unittest.TestCase):
@@ -180,6 +181,85 @@ class PromptRenderingTests(unittest.TestCase):
 
 
 class PromptJujutsuTests(unittest.TestCase):
+    def test_parent_labels_use_native_lf_framing_and_existing_terminal_escaping(self) -> None:
+        parsed = parse_log(
+            b"false::current\ntrue:left:ignored\nfalse::right\rbranch\vdetail:colon\ntrue:third:ignored\n"
+        )
+        self.assertEqual((False, "left + right\rbranch\vdetail:colon + third"), parsed)
+        rendered = jj_info.render(parsed[0], renderer.terminal_text(parsed[1]), {})
+        self.assertIn("left + right\\rbranch\\u000bdetail:colon", rendered)
+        self.assertNotIn("\r", rendered)
+        self.assertNotIn("\v", rendered)
+
+    @unittest.skipUnless(shutil.which("jj"), "native jj is unavailable")
+    def test_native_single_and_multi_parent_workspaces_keep_jj_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            native_jj = shutil.which("jj")
+            jj_command = [native_jj, "--config", 'user.name="Prompt test"',
+                          "--config", 'user.email="prompt@example.invalid"']
+            # Inherited repository/config selectors must not redirect fixture operations.
+            fixture_environment = {
+                name: value for name, value in os.environ.items()
+                if not name.startswith(("GIT_", "JJ_"))
+            } | {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+
+            def native(*arguments):
+                result = subprocess.run(
+                    [*jj_command, *arguments], cwd=repo if repo.exists() else root,
+                    env=fixture_environment, capture_output=True, check=False, timeout=10,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                return result.stdout
+
+            native("git", "init", str(repo))
+            native("new", "root()", "-m", "left description")
+            native("bookmark", "create", "left")
+            native("new", "root()", "-m", "right description")
+            right = native("log", "-r", "@", "--no-graph", "-T", "commit_id").decode()
+            binaries = root / "bin"
+            binaries.mkdir()
+            # Valid JJ output must not fall back to Git's view of the workspace.
+            (binaries / "git").symlink_to(shutil.which("false"))
+            environment = fixture_environment | {"PATH": f"{binaries}:{fixture_environment['PATH']}"}
+            for name in ("ZSH_VERSION", "FISH_VERSION"):
+                environment.pop(name, None)
+
+            for parents, labels in (
+                (["left"], ["left"]),
+                ([right], ["right description"]),
+                (["left", right], ["left", "right description"]),
+            ):
+                for empty in (True, False):
+                    with self.subTest(parents=labels, empty=empty):
+                        native("new", *parents, "-m", "working copy")
+                        if not empty:
+                            (repo / "change.txt").write_text("working copy change\n")
+                            native("status")  # Snapshot before the read-only prompt query.
+                        possible_labels = [" + ".join(labels), " + ".join(reversed(labels))]
+                        for command in (
+                            [str(ROOT / "bin/jj-info")],
+                            [str(ROOT / "bin/prompt-command"), "fish-left", "0", "0", "fish"],
+                        ):
+                            with self.subTest(consumer=Path(command[0]).name):
+                                result = subprocess.run(
+                                    command, cwd=repo, env=environment,
+                                    capture_output=True, check=False, timeout=10,
+                                )
+                                self.assertEqual(0, result.returncode, result.stderr)
+                                self.assertEqual(b"", result.stderr)
+                                output = result.stdout.decode()
+                                color = "\x1b[2;32m" if empty else "\x1b[0;31m"
+                                if Path(command[0]).name == "jj-info":
+                                    self.assertIn(output, [jj_info.render(empty, label, {}) for label in possible_labels])
+                                    self.assertIn("\x01" + color + "\x02jj", output)
+                                else:
+                                    plain = renderer.ANSI.sub("", output)
+                                    self.assertTrue(any(f"(jj: {label})\n" in plain for label in possible_labels), plain)
+                                    self.assertIn(color + "jj", output)
+                                    self.assertNotIn("detached", output)
+
     def test_jj_info_shell_markers_match_native_prompt_protocols(self) -> None:
         code = "\x1b[0;31m"
         self.assertEqual("\x01\x1b[0;31m\x02", jj_info.marker(code, {}))
@@ -255,7 +335,13 @@ class PromptJujutsuTests(unittest.TestCase):
         self.assertEqual(b"", result.stdout)
 
     def test_jj_info_rejects_malformed_query_output(self) -> None:
-        for output in ("true::only-one-record\\n", "true::one\\ntrue::two\\nextra\\n"):
+        for output in (
+            "true::only-one-record\\n",
+            "true::one\\ntrue::two\\nextra\\n",
+            "invalid::current\\ntrue::parent\\n",
+            "true::current\\ninvalid::parent\\n",
+            "true::current\\ntrue:missing-description-field\\n",
+        ):
             with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
                 jj = Path(directory) / "jj"
                 jj.write_text(f"#!/bin/sh\nprintf '{output}'\n")
@@ -295,9 +381,11 @@ class PromptJujutsuTests(unittest.TestCase):
                 check=False,
             )
 
+            git_was_called = git_called.exists()
+
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("working copy", result.stdout)
-        self.assertFalse(git_called.exists())
+        self.assertFalse(git_was_called)
 
     def test_failed_jj_query_falls_back_to_git_refs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
