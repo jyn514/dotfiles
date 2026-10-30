@@ -12,50 +12,11 @@ class ArchiveWebpageTests(unittest.TestCase):
     def run_archive(
         self, *arguments: str, failed_format: str = "", wget_status: int = 0,
     ) -> tuple[int, dict[str, list], str]:
-        harness = r"""
-const Module = require("module");
-const archive = process.argv[1];
-const archiveArguments = JSON.parse(process.env.ARCHIVE_ARGUMENTS);
-const state = { trees: [], renders: [], writes: [], spawns: [] };
-const page = {
-  title: 'quoted " title\nnext',
-  evaluate: () => "complete",
-  open: (_url, callback) => callback("success"),
-  render: (path, options) => {
-    state.renders.push([path, options]);
-    return options.format !== process.env.FAILED_FORMAT;
-  },
-};
-const originalLoad = Module._load;
-Module._load = function(request, parent, isMain) {
-  if (request === "system") return { args: [archive, ...archiveArguments] };
-  if (request === "fs") return {
-    makeTree: path => { state.trees.push(path); return true; },
-    write: (path, contents, mode) => state.writes.push([path, contents, mode]),
-  };
-  if (request === "webpage") return { create: () => page };
-  if (request === "child_process") return {
-    spawn: (command, args) => {
-      state.spawns.push([command, args]);
-      return { on: (_event, callback) => callback(Number(process.env.WGET_STATUS)) };
-    },
-  };
-  return originalLoad(request, parent, isMain);
-};
-global.setTimeout = callback => callback();
-global.phantom = { exit: code => { throw { archiveExit: true, code }; } };
-let status = 0;
-try {
-  require(archive);
-} catch (error) {
-  if (!error.archiveExit) throw error;
-  status = error.code;
-}
-console.log("__RESULT__" + JSON.stringify({ status, state }));
-"""
-
         result = subprocess.run(
-            ["node", "-e", harness, str(ROOT / "bin/archive-webpage")],
+            [
+                "node", str(Path(__file__).parent / "fixtures/archive-harness.cjs"),
+                str(ROOT / "bin/archive-webpage"),
+            ],
             env=os.environ | {
                 "ARCHIVE_ARGUMENTS": json.dumps(arguments),
                 "FAILED_FORMAT": failed_format,
