@@ -701,26 +701,29 @@
                   (json/generate-string {:type "message" :message {:role "user" :content text}})
                   "\n")))
 
-(defn- fixture-export-environment [root]
-  (let [bin (fs/file root "fixture-bin")
-        exporter (fs/file bin "pi")
-        converter (fs/file bin "python3")
-        calls (fs/file root "pi-calls")]
-    (fs/create-dirs bin)
-    ;; Exercise the real CLI subprocess boundary, not a replacement allocation or
-    ;; writer. The fixture implements only the intended explicit-output Pi API.
-    (spit exporter (str "#!/bin/sh\nset -eu\n"
-                       "printf '%s\\n' \"$@\" >> \"$EXTRACT_CHAT_PI_CALLS\"\n"
-                       "[ \"$#\" -eq 3 ]\n[ \"$1\" = '--export' ]\n"
-                       "printf '<html>fixture export</html>\\n' > \"$3\"\n"))
-    (.setExecutable exporter true)
-    (fs/copy "tools/extract-chat/tests/fixtures/converter-spy.sh" converter)
-    (.setExecutable converter true)
-    (assoc (into {} (System/getenv))
-           "PATH" (str bin ":" (System/getenv "PATH"))
-           "EXTRACT_CHAT_PI_CALLS" (str calls)
-           "EXTRACT_CHAT_CONVERTER_CALLS" (str (fs/file root "converter-calls"))
-           "EXTRACT_CHAT_PYTHON" (str (fs/which "python3")))))
+(defn- fixture-export-environment
+  ([root] (fixture-export-environment root false))
+  ([root include-source?]
+    (let [bin (fs/file root "fixture-bin")
+          exporter (fs/file bin "pi")
+          converter (fs/file bin "python3")
+          calls (fs/file root "pi-calls")]
+      (fs/create-dirs bin)
+      ;; Exercise the real CLI subprocess boundary, not a replacement allocation or
+      ;; writer. The fixture implements only the intended explicit-output Pi API.
+      (spit exporter (str "#!/bin/sh\nset -eu\n"
+                         "printf '%s\\n' \"$@\" >> \"$EXTRACT_CHAT_PI_CALLS\"\n"
+                         "[ \"$#\" -eq 3 ]\n[ \"$1\" = '--export' ]\n"
+                         "printf '<html>fixture export</html>\\n' > \"$3\"\n"
+                         (when include-source? "cat \"$2\" >> \"$3\"\n")))
+      (.setExecutable exporter true)
+      (fs/copy "tools/extract-chat/tests/fixtures/converter-spy.sh" converter)
+      (.setExecutable converter true)
+      (assoc (into {} (System/getenv))
+             "PATH" (str bin ":" (System/getenv "PATH"))
+             "EXTRACT_CHAT_PI_CALLS" (str calls)
+             "EXTRACT_CHAT_CONVERTER_CALLS" (str (fs/file root "converter-calls"))
+             "EXTRACT_CHAT_PYTHON" (str (fs/which "python3"))))))
 
 (defn- run-export-cli [environment & args]
   (apply shell/sh "bb" (str (fs/absolutize "bin/extract-chat"))
@@ -935,6 +938,116 @@
                 (is (= ["convert" "convert"]
                        (str/split-lines (slurp (get environment "EXTRACT_CHAT_CONVERTER_CALLS")))))
                 (is (not (fs/exists? (get environment "EXTRACT_CHAT_CONVERTER_CALLS")))))))
+          (finally
+            (fs/delete-tree root)))))))
+
+(deftest extract-chat-rejects-cross-source-output-identities-before-effects
+  (doseq [route [:markdown :pi-native :codex-native :codex-default]
+          kind [:hardlink :symlink :independent :same-source]]
+    (testing (str route " " kind)
+      (let [root (fs/create-temp-dir {:prefix "extract-chat-output-preservation"})]
+        (try
+          (let [inputs (fs/file root "inputs")
+                output (fs/file root "output")
+                early (preservation-source inputs "a-early" 1)
+                first-source (preservation-source inputs "b-first" 2)
+                second-source (preservation-source inputs "c-second" 3)
+                sources [early first-source second-source]
+                native? (not= :markdown route)
+                first-output (preservation-output output first-source native?)
+                second-output (preservation-output output second-source native?)
+                collision? (#{:hardlink :symlink} kind)]
+            (fs/create-dirs inputs)
+            (fs/create-dirs output)
+            (doseq [[file index] (map vector sources (range 1 4))]
+              (write-preservation-source route file index false))
+            (spit (preservation-output output early native?) "Existing early output")
+            (spit first-output "Existing first output")
+            (if collision?
+              (create-preservation-link kind second-output first-output)
+              (spit second-output "Existing independent second output"))
+            (let [environment (assoc (fixture-export-environment root true)
+                                     "EXTRACT_CHAT_CWD" (str output))
+                  before (export-tree-state root)
+                  source-bytes (mapv slurp sources)
+                  args (concat (preservation-args route output inputs)
+                               (when (= :same-source kind) [(str first-source)]))
+                  {:keys [exit out err]} (apply run-export-cli environment args)]
+              (is (= source-bytes (mapv slurp sources)))
+              (if collision?
+                (do
+                  (is (not= 0 exit))
+                  (is (str/blank? out))
+                  (is (str/includes? err "Export destination collision:"))
+                  (doseq [file [first-source second-source first-output second-output]]
+                    (is (str/includes? err (str (if (= :codex-default route)
+                                                (fs/file-name file) file)))))
+                  (is (= before (export-tree-state root)))
+                  (is (fs/same-file? first-output second-output))
+                  (is (not (fs/exists? (get environment "EXTRACT_CHAT_PI_CALLS"))))
+                  (is (not (fs/exists? (get environment "EXTRACT_CHAT_CONVERTER_CALLS")))))
+                (do
+                  (is (zero? exit) err)
+                  (is (not (fs/same-file? first-output second-output)))
+                  (doseq [[index source] (map vector (range 1 4) sources)]
+                    (is (str/includes? (slurp (preservation-output output source native?))
+                                       (str "Disposable source " index))))
+                  (is (= native? (fs/exists? (get environment "EXTRACT_CHAT_PI_CALLS"))))
+                  (is (= (boolean (#{:codex-native :codex-default} route))
+                         (fs/exists? (get environment "EXTRACT_CHAT_CONVERTER_CALLS"))))))))
+          (finally
+            (fs/delete-tree root)))))))
+
+(deftest extract-chat-identity-preflight-handles-optional-and-colliding-file-keys
+  ;; BasicFileAttributes keys are optional and are not themselves the identity
+  ;; oracle. Cover absent keys in either comparison direction, plus key collisions.
+  (doseq [key-mode [:none :inputs-only :outputs-only :colliding]
+          policy [:inputs :outputs]
+          collision? [false true]]
+    (testing (str key-mode " " policy " collision=" collision?)
+      (let [root (fs/create-temp-dir {:prefix "extract-chat-optional-keys"})]
+        (try
+          (let [inputs (fs/file root "inputs")
+                output (fs/file root "output")
+                first-source (fs/file inputs "first.jsonl")
+                second-source (fs/file inputs "second.jsonl")
+                first-output (fs/file output "first.md")
+                second-output (fs/file output "second.md")
+                original-reader fs/read-attributes]
+            (write-export-fixture first-source "First independent result" false)
+            (write-export-fixture second-source "Second independent result" false)
+            (fs/create-dirs output)
+            (spit second-output "Existing second output")
+            (if collision?
+              (create-preservation-link :hardlink first-output
+                                        (if (= :inputs policy) second-source second-output))
+              (spit first-output "Existing first output"))
+            (let [before (export-tree-state root)
+                  source-bytes (mapv slurp [first-source second-source])]
+              (with-redefs [fs/read-attributes
+                            (fn [file attributes]
+                              (let [result (original-reader file attributes)
+                                    input? (str/ends-with? (str file) ".jsonl")]
+                                (assoc result :fileKey
+                                       (case key-mode
+                                         :none nil
+                                         :inputs-only (when input? (:fileKey result))
+                                         :outputs-only (when-not input? (:fileKey result))
+                                         :colliding false))))]
+                (binding [*out* (java.io.StringWriter.)]
+                  (if collision?
+                    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                         (if (= :inputs policy)
+                                           #"Export destination overlaps input:"
+                                           #"Export destination collision:")
+                                         (extract-chat/main ["--extract-dir" (str output) (str inputs)])))
+                    (extract-chat/main ["--extract-dir" (str output) (str inputs)]))))
+              (is (= source-bytes (mapv slurp [first-source second-source])))
+              (if collision?
+                (is (= before (export-tree-state root)))
+                (do
+                  (is (str/includes? (slurp first-output) "First independent result"))
+                  (is (str/includes? (slurp second-output) "Second independent result"))))))
           (finally
             (fs/delete-tree root)))))))
 

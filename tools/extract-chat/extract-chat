@@ -294,23 +294,65 @@
     (when-let [markdown (session-markdown session)]
       (print markdown))))
 
+(defn- canonical-path [^Path file]
+  (.getCanonicalPath (.toFile file)))
+
+(defn- file-resource [file]
+  (let [resource {:path file :canonical (canonical-path file)}]
+    (try
+      (assoc resource :exists? true
+             :file-key (:fileKey (fs/read-attributes file "basic:fileKey")))
+      (catch java.nio.file.NoSuchFileException _ resource))))
+
+(defn- index-resource [index {:keys [canonical exists? file-key] :as resource}]
+  (cond-> (assoc-in index [:by-path canonical] resource)
+    (and exists? (some? file-key)) (update-in [:by-key file-key] (fnil conj []) resource)
+    (and exists? (nil? file-key)) (update :unkeyed (fnil conj []) resource)))
+
+(defn- matching-resource [{:keys [by-path by-key unkeyed]} {:keys [path canonical exists? file-key]}]
+  ;; This index lives only for preflight. Opaque BasicFileAttributes keys narrow
+  ;; comparisons, never decide identity: Files/isSameFile remains authoritative.
+  ;; Providers without keys still compare all potentially matching resources.
+  (or (get by-path canonical)
+      (when exists?
+        (some (fn [resource]
+                (when (fs/same-file? path (:path resource)) resource))
+              (concat (if (some? file-key) (get by-key file-key) (mapcat val by-key))
+                      unkeyed)))))
+
 (defn- reject-input-overlaps [sessions]
-  ;; Include inputs without an export. Canonical names catch symlinks; the
-  ;; filesystem comparison also catches distinct names for hardlinked files.
-  (let [inputs-by-canonical (into {} (map (fn [{:keys [file]}]
-                                         [(.getCanonicalPath (.toFile ^Path file)) file])
-                                       sessions))]
+  ;; All inputs are protected, including ones without their own export.
+  (let [inputs (reduce (fn [index {:keys [file]}]
+                         (index-resource index (file-resource file))) {} sessions)]
     (doseq [{:keys [output-file]} sessions
             :when output-file
-            :let [source (or (get inputs-by-canonical
-                                 (.getCanonicalPath (.toFile ^Path output-file)))
-                             (when (fs/exists? output-file)
-                               (some (fn [{:keys [file]}]
-                                       (when (fs/same-file? file output-file) file))
-                                     sessions)))]
-            :when source]
-      (throw (ex-info (str "Export destination overlaps input: " output-file " selects " source)
-                      {:output (str output-file) :source (str source)}))))
+            :let [input (matching-resource inputs (file-resource output-file))]
+            :when input]
+      (throw (ex-info (str "Export destination overlaps input: " output-file " selects " (:path input))
+                      {:output (str output-file) :source (str (:path input))}))))
+  sessions)
+
+(defn- reject-output-collisions [sessions]
+  ;; Unlike source protection, repeated exports from the same canonical source
+  ;; may share a destination. Distinct source exports must not overwrite each other.
+  (reduce (fn [outputs {:keys [file output-file]}]
+            (if-not output-file
+              outputs
+              (let [source (canonical-path file)
+                    resource (assoc (file-resource output-file) :source source)
+                    destination (:canonical resource)
+                    previous (matching-resource outputs resource)
+                    previous-source (:source previous)]
+                (when (and previous (not= previous-source source))
+                  (throw (ex-info (str "Export destination collision: " destination
+                                       (when (not= destination (:canonical previous))
+                                         (str " aliases " (:canonical previous)))
+                                       " would be written by " previous-source " and " source)
+                                  {:output destination
+                                   :outputs [(str (:path previous)) (str output-file)]
+                                   :sources [previous-source source]})))
+                (index-resource outputs resource))))
+          {} sessions)
   sessions)
 
 (defn- allocate-outputs [extract-dir native? branches? sessions]
@@ -326,18 +368,7 @@
                             (assoc session :output-file
                                    (when extension (session-output-path extract-dir file extension)))))
                         sessions)]
-    (reduce (fn [sources-by-output {:keys [file output-file]}]
-              (if-not output-file
-                sources-by-output
-                (let [source (.getCanonicalPath (.toFile ^Path file))
-                      destination (.getCanonicalPath (.toFile ^Path output-file))
-                      previous (get sources-by-output destination)]
-                  (when (and previous (not= previous source))
-                    (throw (ex-info (str "Export destination collision: " destination
-                                         " would be written by " previous " and " source)
-                                    {:output destination :sources [previous source]})))
-                  (assoc sources-by-output destination source))))
-            {} allocated)
+    (reject-output-collisions allocated)
     (reject-input-overlaps allocated)))
 
 (defn- write-session [native? branches? {:keys [output-file pi?] :as session}]
@@ -433,6 +464,7 @@
                                         (assoc session :output-file
                                                (when-not pi?
                                                  (session-output-path "." file ".html")))))
+                                reject-output-collisions
                                 reject-input-overlaps)]
               (doseq [session sessions]
                 (print-session native? branches? session)))
