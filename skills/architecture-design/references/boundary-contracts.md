@@ -14,6 +14,9 @@ For coupled-worker assignments, use [delegation's shared-contract check](../../d
    Where calls overlap or results arrive late, state the invariant and how conflicting or stale updates are ordered or rejected, including ownership transfer.
 2. Identify where side effects are permitted and which effects form one publication.
    State the commit or visibility point and what observers may see before and after it; name any partial visibility intentionally allowed.
+   Name what each success signal establishes by locating its producer relative to the required decision or effect.
+   For example, a public health check can succeed before caller admission; retrying it cannot establish that admission succeeded.
+   Use an observation of the required stage instead, unless the earlier stage is itself the promised outcome.
    For interactive changes, compare workflow separately from authority.
    State where interaction occurs, which application receives input, and any changes in focus or interruption behavior.
    A narrower authority boundary does not make a different workflow equivalent; identify which interactions must remain unchanged.
@@ -30,6 +33,10 @@ For coupled-worker assignments, use [delegation's shared-contract check](../../d
 5. Identify lifecycle states, invalid transitions, deadlines, and cancellation owners.
    Distinguish a live owner from the currently selected request or scheduled action.
    Where only current work may act, check that dispatched callbacks still own their effects; cancellation alone may not revoke them.
+   Distinguish pending intent from effects already delivered.
+   Undoing local state does not itself reverse an external effect: correcting text need not undo a keyboard shortcut already sent.
+   State whether cancellation or correction prevents pending delivery or only changes bookkeeping.
+   If it reverses or compensates for a delivered effect, identify the supported operation and its authority.
    State who owns outstanding work and resource cleanup after cancellation or shutdown, and whether failure can leave an effect committed, failed, or outcome-unknown.
 6. For destructive or multi-step work, identify recovery authority and the evidence available after interruption, including durable state when needed.
    Ensure required recovery evidence remains available if primary paths move or disappear.

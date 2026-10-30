@@ -26,3 +26,9 @@ A worker summary or aggregate count is not enough, but independence does not req
 Use raw traces where they resolve a correctness question, not as a mandatory duplicate reconstruction of every passing check.
 When repeated mechanical checks are necessary, extend existing maintained tests or validation rather than adding successive coordinator scripts.
 Keep one authoritative result and reference its evidence and demonstrated limits from acceptance and recovery records.
+
+Keep historical evidence bound to the artifact and property actually checked.
+A reference-only rewrite can preserve execution behavior while invalidating an attestation to the exact body.
+Changing identifiers or recomputing hashes does not establish that the transformed artifact passed the original check.
+Establish which checked properties survive an authorized transformation before reusing the evidence; verify only claims whose evidence is missing or invalidated.
+Do not present preserved historical evidence as a newly executed check.

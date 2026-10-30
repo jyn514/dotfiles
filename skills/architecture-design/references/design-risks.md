@@ -48,6 +48,13 @@ Include selected-but-uncommitted batches and failures between ownership transfer
 At each fallible transition, identify where its payload remains recoverable until commit, transfer, or explicit consumption/discard.
 An error report is not a discard.
 
+When faithful reconstruction is required, trace the distinctions that must survive through the actual serialization and restore paths.
+For example, rebuilding records through a model that retains titles and bodies can still reset comment dates or omit relationships.
+A successful import or matching record count does not establish preservation of those distinctions.
+Compare existing supported recovery paths with reconstructing records through a narrower model.
+Verify restoration without the original store or caches supplying missing data.
+An intentionally lossy import may discard what its contract excludes; do not impose byte identity or claim recovery beyond that contract.
+
 ## Runtime progress
 
 For asynchronous lifecycles, trace who waits for whom and what enables each transition.
@@ -85,6 +92,13 @@ Trace an old/new producer-consumer pair and a persisted-data transition when tho
 Check release order, interrupted migration, and rollback where applicable; reverting code may not undo a data change.
 If a transition cannot preserve data or authority, name the required migration or rollout decision before endorsing the boundary.
 Do not impose mixed-version support or permanent compatibility where no consumer or requirement needs it.
+
+When identities or representations change, trace affected live leases, queued work, and resumable operations as well as stored records.
+For example, rewritten issue IDs can leave an active lease unmatched, making ownership appear absent while its worker can still act.
+Compare finishing and releasing old work under its existing identities with translating live state, keeping required continuity fixed.
+For the chosen transition, explain when old consumers may act or resume and which identities they use.
+An empty request queue alone does not establish that old work has ended.
+Preserve ownership and already-delivered effects through any live translation rather than treating restart as sufficient.
 
 Treat every compatibility signal as a bounded claim, not proof of behavioral compatibility.
 A version, schema, fixture digest, or contract test covers only the behavior it represents;
