@@ -280,7 +280,7 @@ class PreCommitTest(unittest.TestCase):
                     self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
 
     def test_literal_selected_names_do_not_expand_to_unchanged_index_files(self) -> None:
-        for name in ("ordinary-change", "*", "[ab]", ":(glob)*"):
+        for name in ("ordinary-change", "*", "[ab]", ":(glob)*", "tab\tfile"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 repository = Path(temporary) / "repository"
                 subprocess.run(["git", "init", "-q", str(repository)], check=True)

@@ -29,7 +29,7 @@ def git_ls_files(paths: Sequence[str]) -> Generator[GitLsFile, None, None]:
     # Filename operands must not expand to unrelated index entries as pathspecs.
     outs = cmd_output('git', '--literal-pathspecs', 'ls-files', '-z', '--stage', '--', *paths)
     for out in zsplit(outs):
-        metadata, filename = out.split('\t')
+        metadata, filename = out.split('\t', 1)
         mode, _, _ = metadata.split()
         yield GitLsFile(mode, filename)
 
