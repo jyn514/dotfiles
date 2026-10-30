@@ -97,6 +97,53 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(Path(f"{self.source}-optimized.pdf").is_file())
 
+    def test_source_path_components_are_resolved_by_the_filesystem(self) -> None:
+        self.successful_ghostscript()
+        actual = self.directory / "actual"
+        (actual / "child").mkdir(parents=True)
+        (self.directory / "link").symlink_to(actual / "child")
+        selected = actual / self.source.name
+        selected.write_bytes(b"%PDF-1.4\nselected through symlink parent\n")
+        for absolute in (False, True):
+            with self.subTest(absolute=absolute):
+                source = f"link/../{self.source.name}"
+                if absolute:
+                    source = str(self.directory / source)
+                destination = self.directory / f"selected-{absolute}.pdf"
+                result = self.run_command(source, destination)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(selected.read_bytes(), destination.read_bytes())
+        self.assertEqual(b"%PDF-1.4\nsource\n", self.source.read_bytes())
+
+    def test_missing_or_non_directory_source_component_is_not_normalized_away(self) -> None:
+        self.successful_ghostscript()
+        for component in ("missing", self.source.name):
+            with self.subTest(component=component):
+                destination = self.directory / "not-created.pdf"
+                result = self.run_command(f"{component}/../{self.source.name}", destination)
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertFalse(destination.exists())
+                self.assertFalse(self.calls.exists())
+
+    def test_missing_destination_component_is_not_normalized_away(self) -> None:
+        self.successful_ghostscript()
+        result = self.run_command(self.source, "missing/../not-created.pdf")
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn(b"could not publish output", result.stderr)
+        self.assertFalse((self.directory / "not-created.pdf").exists())
+        self.assertEqual([], list(self.directory.glob(".not-created.pdf.*.tmp")))
+
+    def test_option_like_relative_paths_remain_operands(self) -> None:
+        self.successful_ghostscript()
+        source = self.directory / "-input.pdf"
+        source.write_bytes(self.source.read_bytes())
+        result = self.run_command(source.name, "-output.pdf")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(source.read_bytes(), (self.directory / "-output.pdf").read_bytes())
+        calls = self.calls.read_text()
+        self.assertIn(f"du <-h> <{source}>", calls)
+        self.assertIn(f"du <-h> <{self.directory / '-output.pdf'}>", calls)
+
     def test_ghostscript_failure_leaves_no_output_and_preserves_log(self) -> None:
         self.make_executable("gs", "printf 'partial log\\n'\nexit 42\n")
         destination = self.directory / "failed.pdf"
@@ -249,6 +296,60 @@ class NativePdfInputTests(unittest.TestCase):
         self.assertEqual(original, self.source.read_bytes())
         self.assertTrue(self.link.is_symlink())
         self.assertEqual(self.source.name, os.readlink(self.link))
+
+    def test_symlink_parent_source_selects_the_native_document(self) -> None:
+        actual = self.directory / "actual"
+        (actual / "child").mkdir(parents=True)
+        (self.directory / "link").symlink_to(actual / "child")
+        selected = actual / "document.pdf"
+        generated = subprocess.run(
+            ["gs", "-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pdfwrite",
+             f"-sOutputFile={selected}", "-c", "showpage showpage"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        self.assertEqual(0, generated.returncode, generated.stderr)
+        destination = self.directory / "selected.pdf"
+        result = self.run_command(Path("link/../document.pdf"), destination)
+        self.assertEqual(0, result.returncode, result.stderr)
+        for index, (path, expected) in enumerate(
+            ((self.source, 1), (selected, 2), (destination, 2))
+        ):
+            pages = self.directory / f"rendered-{index}"
+            pages.mkdir()
+            parsed = subprocess.run(
+                ["gs", "-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pnggray", "-r10",
+                 f"-sOutputFile={pages}/page-%d.png", str(path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            self.assertEqual(0, parsed.returncode, parsed.stderr)
+            self.assertEqual(expected, len(list(pages.glob("page-*.png"))))
+
+    def test_destination_parent_components_and_existing_entries_keep_os_meaning(self) -> None:
+        actual = self.directory / "actual"
+        (actual / "child").mkdir(parents=True)
+        (self.directory / "link").symlink_to(actual / "child")
+        requested = Path("link/../output.pdf")
+        destination = actual / "output.pdf"
+        lexical = self.directory / "output.pdf"
+        result = self.run_command(self.source, requested)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(destination.is_file())
+        self.assertFalse(lexical.exists())
+        original = destination.read_bytes()
+        result = self.run_command(self.source, requested)
+        self.assertEqual(1, result.returncode)
+        self.assertIn(b"output file already exists", result.stderr)
+        self.assertEqual(original, destination.read_bytes())
+        self.assertFalse(lexical.exists())
+        destination.unlink()
+        destination.symlink_to("absent.pdf")
+        result = self.run_command(self.source, requested)
+        self.assertEqual(1, result.returncode)
+        self.assertIn(b"output file already exists", result.stderr)
+        self.assertEqual("absent.pdf", os.readlink(destination))
+        self.assertFalse((actual / "absent.pdf").exists())
+        self.assertFalse(lexical.exists())
+        self.assertEqual([], list(actual.glob(".output.pdf.*.tmp")))
 
     def test_ghostscript_consumes_the_classified_snapshot_after_source_replacement(self) -> None:
         original = self.source.read_bytes()

@@ -104,7 +104,7 @@ def disk_size(du_command: bytes, path: bytes) -> tuple[int, bytes]:
 
 
 def publish(source: bytes, destination: bytes) -> None:
-    parent = os.path.dirname(os.path.abspath(destination))
+    parent = os.path.dirname(destination)
     prefix = b"." + os.path.basename(destination) + b"."
     descriptor, pending = tempfile.mkstemp(prefix=prefix, suffix=b".tmp", dir=parent)
     try:
@@ -122,8 +122,12 @@ def publish(source: bytes, destination: bytes) -> None:
 
 
 def optimize(source: bytes, destination: bytes) -> int:
-    source = os.path.abspath(source)
-    destination = os.path.abspath(destination)
+    # Anchor option-like names without collapsing symlink/.. or missing/..
+    # components: only the filesystem may decide what the caller's path means.
+    if not os.path.isabs(source) or not os.path.isabs(destination):
+        cwd = os.getcwdb()
+        source = os.path.join(cwd, source)
+        destination = os.path.join(cwd, destination)
     ghostscript = executable("gs")
     if ghostscript is None:
         emit(b"ERROR: ghostscript was not found on this system", stderr=True)
