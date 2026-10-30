@@ -177,7 +177,7 @@ class CommandIntegrationTests(unittest.TestCase):
                 self.assertEqual(name + "\n", result.stdout)
                 self.assert_checkout(name, upstream, origin)
 
-    def ssh_endpoint(self, checkout: Path, remote: str) -> tuple[str, int | None]:
+    def ssh_arguments(self, checkout: Path, remote: str) -> list[str]:
         record = self.directory / "ssh-arguments.json"
         record.unlink(missing_ok=True)
         recorder = Path(__file__).with_name("fixtures") / "ssh_record.py"
@@ -197,9 +197,81 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertTrue(record.exists(), result.stderr)
         arguments = json.loads(record.read_text())
         self.assertTrue(arguments[-1].startswith("git-upload-pack "), arguments)
+        return arguments
+
+    def ssh_endpoint(self, checkout: Path, remote: str) -> tuple[str, int | None]:
+        arguments = self.ssh_arguments(checkout, remote)
         # None means Git leaves port selection to SSH's configuration/defaults.
         port = int(arguments[arguments.index("-p") + 1]) if "-p" in arguments else None
         return arguments[-2], port
+
+    def test_personal_remote_decodes_url_names_without_changing_namespace(self) -> None:
+        for index, (upstream, path, personal_path) in enumerate((
+            ("ssh://git@example.test/owner/repo%2Ename.git", "/owner/repo.name.git", "jyn514/repo.name.git"),
+            ("ssh://git@example.test/owner/repo%2ename.git", "/owner/repo.name.git", "jyn514/repo.name.git"),
+            ("ssh://git@example.test/owner/repo%252Ename.git", "/owner/repo%2Ename.git", "jyn514/repo%2Ename.git"),
+            ("ssh://git@example.test/owner/repo%2Fname.git", "/owner/repo/name.git", "jyn514/repo/name.git"),
+            ("ssh://git@example.test/owner/repo%C3%A9name.git", "/owner/repoéname.git", "jyn514/repoéname.git"),
+            ("ssh://git@example.test:2222/owner/repo%2Ename.git", "/owner/repo.name.git", "/jyn514/repo.name.git"),
+            ("ssh://git@[2001:db8::1]:2222/owner/repo%2Ename.git", "/owner/repo.name.git", "/jyn514/repo.name.git"),
+            ("git@example.test:owner/repo%2Ename.git", "owner/repo%2Ename.git", "jyn514/repo%2Ename.git"),
+            ("https://example.test:8443/owner/repo%2Ename.git", None, "jyn514/repo.name.git"),
+            ("https://github.com/owner/repo%2Ename.git", None, "jyn514/repo.name.git"),
+            ("ssh://git@example.test/owner/repo%2Egit", "/owner/repo.git", "jyn514/repo.git"),
+            ("ssh://git@example.test/owner/repo.git.git", "/owner/repo.git.git", "jyn514/repo.git.git"),
+            ("ssh://git@example.test/owner/repo.git%2Egit", "/owner/repo.git.git", "jyn514/repo.git.git"),
+            ("ssh://git@example.test:2222/owner/repo%2Egit", "/owner/repo.git", "/jyn514/repo.git"),
+            ("ssh://git@[2001:db8::1]:2222/owner/repo.git%2Egit", "/owner/repo.git.git", "/jyn514/repo.git.git"),
+            # Git keeps encoded NUL literal; it cannot be an argv byte.
+            ("ssh://git@example.test/owner/repo%00name.git", "/owner/repo%00name.git", "jyn514/repo%00name.git"),
+            ("ssh://git@example.test/owner/repo%2E%00name.git", "/owner/repo.%00name.git", "jyn514/repo.%00name.git"),
+            ("ssh://git@example.test/owner/repo%252E%00name.git", "/owner/repo%2E%00name.git", "jyn514/repo%2E%00name.git"),
+        )):
+            with self.subTest(url=upstream):
+                self.local_remote(upstream)
+                # Preserve lexical checkout-name selection, including escapes.
+                name = upstream.rsplit("/", 1)[-1].removesuffix(".git")
+                destination = f"percent-{index}"
+                result = self.fork(upstream, destination)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(destination + "\n", result.stdout)
+                checkout = self.directory / destination
+                if path is not None:
+                    for source in (upstream, "upstream"):
+                        self.assertEqual(
+                            ["git-upload-pack", path],
+                            shlex.split(self.ssh_arguments(checkout, source)[-1]),
+                        )
+                self.assertEqual(
+                    ["git-upload-pack", personal_path],
+                    shlex.split(self.ssh_arguments(checkout, "origin")[-1]),
+                )
+                # An implicit destination must not silently become decoded.
+                implicit = self.directory / f"implicit-{index}"
+                implicit.mkdir()
+                parsed = subprocess.run(
+                    [str(ROOT / "bin/fork-github"), upstream],
+                    cwd=implicit, env=self.environment, text=True,
+                    capture_output=True, timeout=30,
+                )
+                self.assertEqual(0, parsed.returncode, parsed.stderr)
+                self.assertEqual(name + "\n", parsed.stdout)
+
+    def test_non_utf8_uri_paths_remain_native_jj_clone_failures(self) -> None:
+        source = "ssh://git@example.test/owner/repo%FFname.git"
+        # Git accepts this byte path, but JJ rejects the input before cloning.
+        self.assertEqual(
+            ["git-upload-pack", "/owner/repo\udcffname.git"],
+            shlex.split(self.ssh_arguments(self.directory, source)[-1]),
+        )
+        for upstream in (source, "https://example.test/owner/repo%FFname.git"):
+            with self.subTest(url=upstream):
+                self.local_remote(upstream)
+                result = self.fork(upstream, "non-utf8")
+                self.assertEqual(2, result.returncode, result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertIn("URL can not be parsed as valid URL", result.stderr)
+                self.assertFalse((self.directory / "non-utf8").exists())
 
     def test_personal_remote_preserves_ssh_endpoint_but_not_https_port(self) -> None:
         for index, (upstream, port) in enumerate((

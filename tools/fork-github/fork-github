@@ -11,7 +11,7 @@ import shlex
 import subprocess
 import sys
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 GITHUB_PAGE = re.compile(r"^(https://github\.com/[^/]+/[^/?#]+)")
@@ -83,13 +83,30 @@ def configure(
     if cloned.status:
         return cloned.status
 
+    name = repository.name
+    url_leaf = name + ".git"
+    if not repository.url.startswith("git@"):
+        leaf = repository.url.removesuffix("/").rsplit("/", 1)[-1]
+        try:
+            # Git keeps %00 literal. Protect only that escape before decoding
+            # once, so adjacent escapes and encoded .git suffixes still work.
+            decoded = unquote(leaf.replace("%00", "%2500"), errors="strict")
+        except UnicodeDecodeError:
+            # jj's URL argument requires UTF-8; retain the old spelling.
+            pass
+        else:
+            name = decoded.removesuffix(".git")
+            # URL output keeps the original escapes; scp output uses literals.
+            url_leaf = leaf if decoded.endswith(".git") else leaf + ".git"
+
     if repository.ssh_port is not None or ":" in repository.host:
         # IPv6 colons belong to the host, not scp's path or a URL's port.
         host = f"[{repository.host}]" if ":" in repository.host else repository.host
         port = f":{repository.ssh_port}" if repository.ssh_port is not None else ""
-        origin = f"ssh://git@{host}{port}/jyn514/{repository.name}.git"
+        origin = f"ssh://git@{host}{port}/jyn514/{url_leaf}"
     else:
-        origin = f"git@{repository.host}:jyn514/{repository.name}.git"
+        # Keep scp's relative namespace, not a URL's absolute server path.
+        origin = f"git@{repository.host}:jyn514/{name}.git"
     added = runner(["jj", "git", "remote", "add", "origin", origin], cwd=directory)
     return added.status
 
