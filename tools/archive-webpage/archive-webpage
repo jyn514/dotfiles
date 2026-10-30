@@ -135,12 +135,20 @@ function onPageReady() {
 	page.viewportSize = { width: 1920, height: 1080 };
 
 	console.log("INFO: saving page as PNG... ")
-	page.render(output_dir + "/" + page_title + ".png",
-			{format: 'png', quality: '85'});
+	if (!page.render(output_dir + "/" + page_title + ".png",
+			{format: 'png', quality: '85'})) {
+		console.log("FATAL: could not render " + output_dir + "/" + page_title + ".png");
+		phantom.exit(1);
+		return;
+	}
 
 	console.log("INFO: saving page as PDF... ")
-	page.render(output_dir + "/" + page_title + ".pdf",
-			{format: 'pdf'});
+	if (!page.render(output_dir + "/" + page_title + ".pdf",
+			{format: 'pdf'})) {
+		console.log("FATAL: could not render " + output_dir + "/" + page_title + ".pdf");
+		phantom.exit(1);
+		return;
+	}
 
 	console.log("INFO: writing metadata...");
 	try {
