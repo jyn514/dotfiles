@@ -64,6 +64,52 @@ async function noChildren(f) {
   assert.deepEqual(await readdir(f.temp), []);
 }
 
+test("CodexClient preserves stderr diagnostics across UTF-8 boundaries", async t => {
+  const cases = [];
+  for (const character of ["é", "中", "🙂"]) {
+    const text = `diagnostic:\n${character}\ncontext`;
+    const bytes = Buffer.from(text);
+    for (let split = 1; split < Buffer.byteLength(character); split++) {
+      const at = bytes.indexOf(Buffer.from(character)) + split;
+      cases.push({ name: `${character} split ${split}`, text, chunks: [bytes.subarray(0, at), bytes.subarray(at)] });
+    }
+  }
+  cases.push(
+    { name: "ASCII", text: "ASCII failure", chunks: [Buffer.from("ASCII failure")] },
+    { name: "UTF-16 tail limit", text: "中".repeat(16384), chunks: [Buffer.from("prefix:" + "中".repeat(16384))] },
+    { name: "incomplete UTF-8 at EOF", text: "failure: �", chunks: [Buffer.concat([Buffer.from("failure: "), Buffer.from([0xe2, 0x82])])] },
+  );
+  for (const { name, text, chunks } of cases) await t.test(name, async t => {
+    const f = await fixture(t);
+    const client = new CodexClient({ command: join(f.dir, "bin/codex"),
+      env: { ...f.env, PI_IMPORT_FIXTURE_MODE: "stderr" } });
+    t.after(() => client.close().catch(() => {}));
+    let received = 0;
+    let released = 0;
+    const boundaries = chunks.map(chunk => chunk.length);
+    for (let i = 1; i < boundaries.length; i++) boundaries[i] += boundaries[i - 1];
+    const stream = client.process.stderr;
+    const push = stream.push;
+    // Deliver each raw fragment before allowing the child to write the next:
+    // the real pipe cannot coalesce the UTF-8 boundary under test.
+    stream.push = function (chunk, encoding) {
+      const result = push.call(this, chunk, encoding);
+      if (chunk) {
+        received += chunk.length;
+        while (released < boundaries.length - 1 && received >= boundaries[released]) {
+          released++;
+          client.send({ method: "fixture/next-stderr" });
+        }
+      }
+      return result;
+    };
+    await assert.rejects(client.request("fixture/stderr", { chunks: chunks.map(chunk => chunk.toString("base64")) }),
+      { message: `Codex app-server exited (7): ${text}` });
+    assert.equal(received, boundaries.at(-1));
+    await noChildren(f);
+  });
+});
+
 test("conversion preserves occurrences, JSON arguments, parallel result identity, and failures", () => {
   // Seeded bounded cases cover nested JSON and varying result order, without a new dependency.
   let seed = 519;

@@ -11,10 +11,19 @@ const mode = process.env.PI_IMPORT_FIXTURE_MODE;
 const state = join(home, "fixture-thread.json");
 appendFileSync(join(home, "fixture-pids.jsonl"), JSON.stringify(process.pid) + "\n");
 const lines = createInterface({ input: process.stdin });
+let diagnosticChunks;
 lines.on("line", line => {
   const request = JSON.parse(line);
   if (request.method === undefined) return;
   appendFileSync(join(home, "fixture-requests.jsonl"), JSON.stringify(request) + "\n");
+  if (mode === "stderr") {
+    if (request.method === "fixture/stderr") diagnosticChunks = request.params.chunks.slice();
+    else if (request.method !== "fixture/next-stderr") throw new Error("unexpected stderr fixture request");
+    const chunk = Buffer.from(diagnosticChunks.shift(), "base64");
+    const last = diagnosticChunks.length === 0;
+    process.stderr.write(chunk, () => { if (last) process.exit(7); });
+    return;
+  }
   if (request.id === undefined) return;
   const reply = result => process.stdout.write(JSON.stringify({ id: request.id, result }) + "\n");
   const reject = () => process.stdout.write(JSON.stringify({ id: request.id,

@@ -203,6 +203,7 @@ export class CodexClient {
     }));
     this.process.on("error", error => this.fail(error));
     this.process.stdin.on("error", error => this.fail(error));
+    this.process.stderr.setEncoding("utf8");
     this.process.stderr.on("data", chunk => { this.diagnostics = (this.diagnostics + chunk).slice(-16384); });
     this.lines = createInterface({ input: this.process.stdout });
     this.lines.on("line", line => {
