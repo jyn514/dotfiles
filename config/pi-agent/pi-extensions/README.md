@@ -12,6 +12,10 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+`detailed-reasoning.ts` changes OpenAI Responses and Codex reasoning summaries from `auto` to `detailed`.
+Thinking effort, disabled summaries, and explicit summary choices remain unchanged.
+Run `/reload` to apply it to subsequent requests; existing saved summaries do not change.
+
 `openrouter-output-cap.ts` limits OpenRouter chat requests to 10,000 output tokens.
 Start Pi with `--openrouter-max-tokens 6000` to choose another cap (minimum 2048).
 An invalid cap reports an extension error but leaves the request uncapped by this extension because [request-hook failures do not abort requests](../README.md#request-hook-failures).

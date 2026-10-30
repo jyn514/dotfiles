@@ -4,6 +4,7 @@ import contextBreakdown from "./context-breakdown.ts";
 import commitBoundary from "./commit-boundary.ts";
 import compactSession from "./compact-session.ts";
 import currentDate from "./current-date.ts";
+import detailedReasoning from "./detailed-reasoning.ts";
 import footer from "./footer.ts";
 import hostOS from "./host-os.ts";
 import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
@@ -30,6 +31,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   contextBreakdown(pi);
   commitBoundary(pi);
   currentDate(pi);
+  detailedReasoning(pi);
   footer(pi);
   hostOS(pi);
   skillReferenceAutocomplete(pi);
