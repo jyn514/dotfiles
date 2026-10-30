@@ -166,7 +166,15 @@ def generate(file_argument: str, start: int, end: int) -> tuple[int, bytes | Non
     remote_line: int | None = None
     if lines and lines[0]:
         status, revision_output = checked(
-            git(directory, b"rev-list", b"--remotes", remote + b"/HEAD~^!", b"--max-count=1")
+            # Bind candidate refs to the repository used in the emitted URL,
+            # while retaining all of that remote's branches and the HEAD range.
+            git(
+                directory,
+                b"rev-list",
+                b"--remotes=" + remote + b"/*",
+                remote + b"/HEAD~^!",
+                b"--max-count=1",
+            )
         )
         if status:
             return status, None
