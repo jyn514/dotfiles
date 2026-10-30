@@ -29,6 +29,42 @@ def ownership_command(arguments: list[str]) -> list[str] | None:
     return [manager_executable, option, "--", resolved, *arguments[1:]]
 
 
+def directory_alias(canonical: str) -> Path | None:
+    target = Path(canonical)
+    try:
+        alias = Path("/") / target.relative_to("/usr")
+        # Keep target ownership: a separately packaged final symlink is not
+        # a directory alias, even when it resolves to the same executable.
+        if not alias.is_symlink() and alias.parent.resolve(strict=True) == target.parent:
+            return alias
+    except (ValueError, OSError, RuntimeError):
+        pass
+    return None
+
+
+def query_dpkg(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+    original = subprocess.run(command, check=False, capture_output=True)
+    # dpkg-query documents 1 as a fully or partially missing match; 2 is fatal.
+    if original.returncode != 1:
+        return original
+    alias = directory_alias(command[3])
+    if alias is None:
+        return original
+    try:
+        # Additional operands can fail while the canonical target is owned.
+        # Ask dpkg separately rather than interpreting its output text.
+        if len(command) > 4:
+            target = subprocess.run(command[:4], check=False, capture_output=True)
+            if target.returncode != 1:
+                return original
+        retry = subprocess.run(
+            [*command[:3], str(alias), *command[4:]], check=False, capture_output=True
+        )
+    except OSError:
+        return original
+    return retry if retry.returncode == 0 else original
+
+
 def main(arguments: list[str]) -> int:
     if not arguments:
         print("usage: what-package executable [additional-path ...]", file=sys.stderr)
@@ -41,7 +77,12 @@ def main(arguments: list[str]) -> int:
         print("no supported package manager found", file=sys.stderr)
         return 1
     try:
-        result = subprocess.run(command, check=False)
+        if command[1] == "-S":
+            result = query_dpkg(command)
+            sys.stdout.buffer.write(result.stdout)
+            sys.stderr.buffer.write(result.stderr)
+        else:
+            result = subprocess.run(command, check=False)
     except OSError as error:
         print(f"could not run package manager: {error}", file=sys.stderr)
         return 127
