@@ -9,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { CodexClient, convertMessages, loadPi, readSession } from "../pi-to-codex.mjs";
+import { appendDisplayHistory, CodexClient, convertMessages, loadPi, readSession } from "../pi-to-codex.mjs";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, "../../..");
@@ -195,6 +195,11 @@ test("public command imports before publication, adds one visibility event, and 
   assert.equal(requests.filter(item => item.method === "thread/resume" && !item.params.history).length, 1);
   assert.equal(requests.filter(item => item.method === "thread/list").length, 2);
   assert.ok(requests.filter(item => item.method === "thread/list").every(item => item.params.useStateDbOnly));
+  assert.deepEqual(requests.filter(item => item.method === "thread/name/set").map(item => item.params),
+    [{ threadId: JSON.parse(await readFile(join(f.home, "fixture-thread.json"))).id, name: "ORIGINAL_USER" }]);
+  const methods = requests.map(item => item.method);
+  assert.ok(methods.indexOf("thread/name/set") > methods.lastIndexOf("thread/resume"));
+  assert.ok(methods.indexOf("thread/name/set") < methods.indexOf("thread/list"));
   const records = await readLines(join(f.home, "owned-rollout.jsonl"));
   assert.deepEqual(records.filter(item => item.type === "event_msg" && item.payload.type === "user_message")
     .map(item => item.payload.message), ["ORIGINAL_USER"]);
@@ -202,6 +207,23 @@ test("public command imports before publication, adds one visibility event, and 
   assert.equal(requests.filter(item => item.method === "thread/read").length, 1);
   assert.equal(records.at(-1).ordinal, records.length - 1);
   assert.deepEqual(await readFile(f.source), original);
+  await noChildren(f);
+});
+
+test("imported names normalize whitespace and bound Unicode text without changing history", async t => {
+  const f = await fixture(t);
+  const text = `  \n ${"🙂  雪\t".repeat(90)}\n tail`;
+  const records = await readLines(f.source);
+  records.find(record => record.message?.role === "user").message.content = text;
+  await writeFile(f.source, records.map(record => JSON.stringify(record) + "\n").join(""));
+  const outcome = await launch(f).done;
+  assert.equal(outcome.code, 0, outcome.stderr);
+  const requests = await readLines(join(f.home, "fixture-requests.jsonl"));
+  const named = requests.find(item => item.method === "thread/name/set").params.name;
+  assert.equal(named, "🙂 雪 ".repeat(20));
+  assert.equal(Array.from(named).length, 80);
+  const injected = requests.find(item => item.method === "thread/resume" && item.params.history);
+  assert.equal(injected.params.history[0].content[0].text, text);
   await noChildren(f);
 });
 
@@ -269,7 +291,7 @@ test("legacy sessions migrate only in the private snapshot", async t => {
 });
 
 test("protocol failures preserve source, report partial publication, and reap children", async t => {
-  for (const mode of ["reject", "eof", "malformed", "bad-rollout", "reopen-error", "missing-display"]) {
+  for (const mode of ["reject", "eof", "malformed", "bad-rollout", "reopen-error", "index-update-error", "missing-index", "missing-display"]) {
     const f = await fixture(t);
     const original = await readFile(f.source);
     const outcome = await launch(f, undefined, { PI_IMPORT_FIXTURE_MODE: mode }).done;
@@ -277,7 +299,10 @@ test("protocol failures preserve source, report partial publication, and reap ch
     assert.equal(outcome.stdout, "");
     assert.match(outcome.stderr, /pi-to-codex:/);
     assert.match(outcome.stderr, /inspect .*before retrying/);
-    if (["bad-rollout", "reopen-error", "missing-display"].includes(mode)) assert.match(outcome.stderr, /thread [0-9a-f-]+ may be partially imported/);
+    if (["bad-rollout", "reopen-error", "index-update-error", "missing-index", "missing-display"].includes(mode)) {
+      assert.match(outcome.stderr, /thread [0-9a-f-]+ may be partially imported/);
+    }
+    if (mode === "missing-index") assert.match(outcome.stderr, /absent from Codex's resume index/);
     const requests = await readLines(join(f.home, "fixture-requests.jsonl"));
     assert.equal(requests.filter(item => item.method === "thread/resume" && item.params.history).length, 1);
     assert.deepEqual(await readFile(f.source), original);
@@ -330,6 +355,52 @@ test("imported threads use the dotfiles profile instead of base approval default
       assert.equal(resumed.model, "profile-model");
     } finally { await client.close(); }
   }
+});
+
+test("native metadata update recovers an already-created unindexed import without duplicating history", { timeout: 30000 }, async t => {
+  const native = nativeCodex();
+  if (!native) { t.skip("native Codex is not installed"); return; }
+  const f = await fixture(t, native);
+  const context = await readSession(f.source);
+  const withNative = async work => {
+    const client = new CodexClient({ command: native, env: f.env });
+    try {
+      await client.initialize();
+      return await work(client);
+    } finally { await client.close(); }
+  };
+  // Reproduce the previous import path: persist history, append display events,
+  // then resume and close without an explicit metadata update.
+  const thread = await withNative(async client => (await client.request("thread/resume", {
+    threadId: "00000000-0000-4000-8000-000000000000", history: context.history,
+    cwd: context.cwd, excludeTurns: true,
+  })).thread);
+  await appendDisplayHistory(thread, context);
+  await withNative(client => client.request("thread/resume", { threadId: thread.id, excludeTurns: true }));
+  const before = await readLines(thread.path);
+  const indexed = await withNative(client => client.request("thread/list", { modelProviders: [], useStateDbOnly: true }));
+  t.diagnostic(`previous import path indexed: ${indexed.data.some(item => item.id === thread.id)}`);
+
+  // A native metadata operation on the resumed writer commits the reconstructed
+  // preview. It must not inject a duplicate prompt or start a model turn.
+  await withNative(async client => {
+    await client.request("thread/resume", { threadId: thread.id, excludeTurns: true });
+    await client.request("thread/name/set", { threadId: thread.id, name: "Recovered Pi session" });
+  });
+  await withNative(async client => {
+    const listed = await client.request("thread/list", { modelProviders: [], useStateDbOnly: true });
+    const recovered = listed.data.find(item => item.id === thread.id);
+    assert.ok(recovered, "fresh process sees the recovered thread in the database-only index");
+    assert.equal(recovered.name, "Recovered Pi session");
+    const read = await client.request("thread/read", { threadId: thread.id, includeTurns: true });
+    assert.deepEqual(read.thread.turns.flatMap(turn => turn.items).map(item => item.id), context.display.map(item => item.id));
+  });
+  const after = await readLines(thread.path);
+  // Native resumes may persist configuration-only settings snapshots (0.162.1
+  // does). Those are not model messages or displayed history.
+  const history = records => records.filter(record => record.type === "response_item" ||
+    (record.type === "event_msg" && record.payload.type !== "thread_settings_applied"));
+  assert.deepEqual(history(after), history(before), "recovery neither appends model messages nor duplicates UI events");
 });
 
 test("missing and invalid profiles fail before creating an imported thread", async t => {

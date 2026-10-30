@@ -15,7 +15,7 @@ const usage = `usage: pi-to-codex FILE_OR_SESSION_ID [--cwd DIRECTORY]
 
 Import the selected Pi branch, text tool calls, and compacted context into Codex.
 Prints the new thread ID and resume command; does not make a model request.
-Requires Node, the installed Pi SDK, cp, cmp, and Codex (tested with 0.162.1).
+Requires Node, the installed Pi SDK, cp, cmp, and Codex (tested with 0.162.1 and 0.165.0).
 Uses unstable Codex history injection and its internal paginated rollout format.
 Accepts an exact Pi session UUID; existing paths take precedence.
 `;
@@ -392,8 +392,15 @@ export async function importSession(source, { cwd, signal, report = console.erro
     // appending native display history and the picker's visibility event.
     signal?.throwIfAborted();
     await appendDisplayHistory(thread, context);
-    await withClient(client => client.request("thread/resume", { threadId: thread.id, config, excludeTurns: true }), signal);
-    // Closing the second writer flushes the reconstructed has_user_event metadata.
+    await withClient(async client => {
+      await client.request("thread/resume", { threadId: thread.id, config, excludeTurns: true });
+      // Codex can defer resume-derived picker metadata until an append or
+      // explicit metadata update. Naming this owned thread commits its
+      // reconstructed preview without adding model-context messages or running a turn.
+      const name = Array.from(context.visibility.trim().replace(/\s+/g, " ")).slice(0, 80).join("");
+      await client.request("thread/name/set", { threadId: thread.id, name });
+    }, signal);
+    // Verify persistence from another process, not the resumed writer's live state.
     await withClient(async client => {
       if (!(await visible(client, thread.id))) throw new Error("imported thread is absent from Codex's resume index");
       const result = await client.request("thread/read", { threadId: thread.id, includeTurns: true });

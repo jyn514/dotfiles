@@ -38,7 +38,7 @@ lines.on("line", line => {
     if (mode === "malformed") { process.stdout.write("not json\n"); return; }
     if (mode === "stall") { setInterval(() => {}, 1000); return; }
     if (request.params.history) {
-      const thread = { id: randomUUID(), path: join(home, "owned-rollout.jsonl") };
+      const thread = { id: randomUUID(), path: join(home, "owned-rollout.jsonl"), indexed: false };
       const records = [{ type: "session_meta", ordinal: 0,
         payload: { id: mode === "bad-rollout" ? "different-thread" : thread.id, history_mode: "paginated" } },
       ...request.params.history.map((payload, index) => ({ type: "response_item", ordinal: index + 1, payload }))];
@@ -46,6 +46,14 @@ lines.on("line", line => {
       writeFileSync(state, JSON.stringify(thread));
       reply({ thread });
     } else reply({ thread: JSON.parse(readFileSync(state)) });
+  } else if (request.method === "thread/name/set") {
+    if (mode === "index-update-error") { reject(); return; }
+    const thread = JSON.parse(readFileSync(state));
+    if (request.params.threadId !== thread.id) throw new Error("named an unrelated thread");
+    thread.name = request.params.name;
+    thread.indexed = mode !== "missing-index";
+    writeFileSync(state, JSON.stringify(thread));
+    reply({});
   } else if (request.method === "thread/read") {
     const thread = JSON.parse(readFileSync(state));
     const records = readFileSync(thread.path, "utf8").trim().split("\n").map(line => JSON.parse(line));
@@ -54,7 +62,7 @@ lines.on("line", line => {
     reply({ thread: { ...thread, turns: mode === "missing-display" ? [] : [{ items }] } });
   } else if (request.method === "thread/list") {
     const thread = JSON.parse(readFileSync(state));
-    reply(request.params.cursor ? { data: [thread], nextCursor: null } :
+    reply(request.params.cursor ? { data: thread.indexed ? [thread] : [], nextCursor: null } :
       { data: [{ id: "other-thread" }], nextCursor: "second-page" });
   } else {
     throw new Error(`unexpected import method: ${request.method}`);
