@@ -78,8 +78,12 @@ def discover_editor_mimes(policy: dict, mime_directories: list[Path]) -> list[st
     )
 
 
+def user_data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+
+
 def default_mime_directories() -> list[Path]:
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    data_home = user_data_home()
     data_directories = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
     return [
         data_home / "mime",
@@ -222,7 +226,7 @@ def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 def glide_desktop(dry_run: bool) -> str | None:
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    data_home = user_data_home()
     data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
     if command_exists("glide-bin"):
         for directory in [*(Path(entry) for entry in data_dirs.split(":")), data_home]:
@@ -280,7 +284,7 @@ def glide_desktop(dry_run: bool) -> str | None:
 
 
 def glide_mail_desktop(dry_run: bool) -> str:
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    data_home = user_data_home()
     destination = data_home / "applications/fastmail-glide.desktop"
     if not dry_run:
         launcher = data_home / "dotfiles/open-fastmail"
@@ -304,7 +308,7 @@ def glide_mail_desktop(dry_run: bool) -> str:
 def linux_setup(policy: dict, dry_run: bool) -> None:
     linux_policy = policy["linux"]
     mimes = discover_editor_mimes(linux_policy, default_mime_directories())
-    desktop = Path.home() / ".local/share/applications/nvim-generated.desktop"
+    desktop = user_data_home() / "applications/nvim-generated.desktop"
     if dry_run:
         print("Neovim MIME defaults:")
         for mime in mimes:

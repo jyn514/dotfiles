@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import contextlib
 import importlib.util
 import os
 import plistlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -163,8 +165,89 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertIn(
             "default org.kde.dolphin.desktop inode/directory", registrations
         )
-        desktop = home / ".local/share/applications/nvim-generated.desktop"
+        desktop = self.mime / "empty-data-home/applications/nvim-generated.desktop"
         self.assertIn("application/x-nested-source", desktop.read_text())
+        self.assertFalse((home / ".local/share/applications/nvim-generated.desktop").exists())
+
+    @unittest.skipUnless(shutil.which("xdg-mime"), "xdg-mime is not installed")
+    def test_native_xdg_mime_resolves_editor_in_configured_or_default_data_home(self) -> None:
+        xdg_mime = shutil.which("xdg-mime")
+        binaries = self.mime / "native-bin"
+        binaries.mkdir()
+        (binaries / "hx-hax").symlink_to(ROOT / "bin/hx-hax")
+        policy = {"linux": {
+            "editor_mime_prefixes": [],
+            "editor_mime_roots": ["text/plain"],
+            "editor_mime_exceptions": [],
+        }}
+        for value in (None, "", "custom data"):
+            with self.subTest(data_home=value):
+                home = self.mime / f"native-home-{value}"
+                config = home / ".config"
+                config.mkdir(parents=True)
+                cwd = home / "cwd"
+                cwd.mkdir()
+                data_home = home / (value or ".local/share")
+                environment = os.environ | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:{os.defpath}",
+                    "XDG_CONFIG_HOME": str(config),
+                    "XDG_CONFIG_DIRS": str(home / "missing-config"),
+                    "XDG_DATA_DIRS": str(home / "missing-data"),
+                    "XDG_CURRENT_DESKTOP": "X-Generic",
+                }
+                if value is None:
+                    environment.pop("XDG_DATA_HOME", None)
+                else:
+                    environment["XDG_DATA_HOME"] = str(data_home) if value else ""
+
+                with mock.patch.dict(os.environ, environment, clear=True), contextlib.chdir(cwd):
+                    setup_mimetypes.linux_setup(policy, False)
+                    result = subprocess.run(
+                        [xdg_mime, "query", "default", "text/plain"],
+                        text=True,
+                        capture_output=True,
+                    )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("nvim-generated.desktop\n", result.stdout)
+                self.assertTrue((data_home / "applications/nvim-generated.desktop").is_file())
+                self.assertFalse((cwd / "applications").exists())
+                if value:
+                    self.assertFalse((home / ".local/share/applications").exists())
+
+    def test_mime_and_glide_helpers_default_unset_or_empty_data_home(self) -> None:
+        for value in (None, ""):
+            with self.subTest(data_home=value):
+                home = self.mime / f"helper-home-{value}"
+                data_home = home / ".local/share"
+                applications = data_home / "applications"
+                applications.mkdir(parents=True)
+                (applications / "glide-browser-bin.desktop").write_text("[Desktop Entry]\n")
+                cwd = home / "cwd"
+                cwd.mkdir()
+                environment = os.environ | {
+                    "HOME": str(home),
+                    "XDG_DATA_DIRS": str(home / "missing-data"),
+                }
+                if value is None:
+                    environment.pop("XDG_DATA_HOME", None)
+                else:
+                    environment["XDG_DATA_HOME"] = value
+                with (
+                    mock.patch.dict(os.environ, environment, clear=True),
+                    contextlib.chdir(cwd),
+                    mock.patch.object(setup_mimetypes, "command_exists",
+                                      side_effect=lambda name: name == "glide-bin"),
+                ):
+                    self.assertEqual(data_home / "mime", setup_mimetypes.default_mime_directories()[0])
+                    self.assertEqual("glide-browser-bin.desktop", setup_mimetypes.glide_desktop(False))
+                    name = setup_mimetypes.glide_mail_desktop(False)
+
+                self.assertTrue((applications / name).is_file())
+                self.assertTrue((data_home / "dotfiles/open-fastmail").is_file())
+                self.assertFalse((cwd / "applications").exists())
+                self.assertFalse((cwd / "dotfiles").exists())
 
     def test_dry_run_reports_defaults_without_writing_or_registering(self) -> None:
         home = self.mime / "home"
@@ -211,6 +294,7 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertFalse(
             (home / ".local/share/applications/nvim-generated.desktop").exists()
         )
+        self.assertFalse((self.mime / "empty-data-home/applications").exists())
 
 
 class MacOSMimetypeTests(unittest.TestCase):
