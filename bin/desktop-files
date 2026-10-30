@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # https://askubuntu.com/a/1348668
-DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:${XDG_DATA_HOME:-$HOME/.local/share}"
-IFS=: read -r -a data_dirs <<< "$DATA_DIRS"
+IFS=: read -r -a data_dirs <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+data_dirs+=("${XDG_DATA_HOME:-$HOME/.local/share}")
 for p in "${data_dirs[@]}"; do
 	# https://unix.stackexchange.com/questions/198045/how-to-strip-the-last-slash-of-the-directory-path
 	if [ -d "${p%/}/applications" ]; then

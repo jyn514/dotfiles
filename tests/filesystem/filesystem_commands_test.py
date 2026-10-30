@@ -103,7 +103,7 @@ class CommandIntegrationTests(unittest.TestCase):
 
     def test_desktop_files_uses_custom_data_home_instead_of_default(self) -> None:
         home = self.directory / "home"
-        custom = self.directory / "custom data"
+        custom = self.directory / "custom:data with spaces"
         first = self.directory / "first data"
         second = self.directory / "second data"
         for directory in (first, second, custom, home / ".local/share"):
