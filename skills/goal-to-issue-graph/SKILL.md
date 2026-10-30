@@ -1,6 +1,6 @@
 ---
 name: goal-to-issue-graph
-description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Not for a selected change's file/commit plan, choosing an architecture, executing tickets, or tracker operations alone.
+description: Turn a brief or broad goal into an actionable TicGit issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work directly in TicGit. Not for a selected change's file/commit plan, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
 ---
 
 # Goal to issue graph
@@ -8,7 +8,9 @@ description: Turn a brief or broad goal into an actionable issue graph with obse
 Work backward from the promised result, not forward from the current implementation's limitations.
 A graph is useful only if completing its tasks establishes the user's goal without redefining success.
 
-This skill owns decomposition and graph review, not implementation or automatic tracker mutation.
+This skill owns decomposition, graph review, and direct creation or revision of TicGit issues for the authorized project work, not implementation.
+Use [ticgit](../ticgit/SKILL.md) for tracker operations; inspect the existing graph and reuse matching issues.
+Do not require separate approval to materialize the graph within that work; an explicit read-only or proposal-only request still forbids tracker mutation.
 Use `implementation-plan` for a selected change's detailed plan.
 Represent an unsettled architecture as a decision task; use [independent design deliberation](../architecture-design/references/deliberation.md) when design selection is also authorized.
 For a staged new-tool project, follow `new-tool-development` rather than inventing a parallel approval process.
@@ -19,7 +21,7 @@ Read the request, relevant decisions and authoritative project guidance before i
 Distinguish the whole objective from a current milestone, paused goal or worker assignment.
 For a continuation, inspect the supporting records before treating a summary's constraints as user decisions.
 
-Write a compact root contract:
+Define a compact root contract for the root issue:
 
 - Required observable outcomes, including distinct correctness, coverage, usability and maintenance requirements actually supported by the request.
 - The complete target population and authoritative inputs, revisions or environments.
@@ -84,7 +86,7 @@ After splitting, check each child's claims, prerequisites and first action again
 
 Each ticket needs enough detail for another agent to act without reconstructing hidden decisions:
 
-- A stable local key, concrete title and useful result tied to the root contract.
+- A concrete title and useful result tied to the root contract; use the tracker ID once the issue is created.
 - Bounded work, owning subsystem or principal files, and relevant authority/current evidence.
 - Acceptance cases and the actual consumer or check that will establish success, including necessary negatives.
 - Required facts, fixtures or component outputs, their producer/owner and completion dependencies.
@@ -199,18 +201,19 @@ Remove unnecessary matrices, copied bodies, hashes and validation reports withou
 State how changed authority, inputs, interfaces or integration products invalidate affected evidence.
 Final acceptance must concern the same current inputs and product; reuse unaffected evidence instead of rerunning everything by habit.
 
-## 8. Save or materialize only what was requested
+## 8. Create or update the TicGit graph directly
 
-Prefer existing project formats and trackers.
-A small graph can be a ticket list with explicit edges; add machine-readable output or a renderer only for a concrete consumer.
-Choose one authoritative representation and derive any index or diagram rather than maintaining competing graphs.
-Validate the final reader-visible bodies and links, not only source syntax.
+Create or reuse the root and bounded outcome issues directly in TicGit, unless the request is explicitly read-only or proposal-only.
+Keep the graph, dependencies, and acceptance records in those issues; link existing authoritative specifications and evidence rather than copying them.
+Do not require an intermediate Markdown plan, writeup, or separate materialization approval.
+Files needed as CLI input are transport, not a second maintained plan.
+Add an index, diagram, or other representation only for a concrete consumer, and derive it from the tracker rather than maintaining competing graphs.
 
-A local graph does not imply permission to create tracker issues, initialize a store or change implementation.
-When tracker mutation is authorized, use the owning tracker procedure, inspect existing issues and reuse matches.
-Keep planning keys distinct from actual IDs, record the mapping, translate dependencies and read back actual bodies/edges before claiming creation succeeded.
-Shared contracts must survive outside temporary planning files; record them once in a durable owner and update child references.
-If access is unavailable, deliver the local handoff and name the blocked tracker step without claiming it happened.
+Use actual issue IDs for dependencies and handoffs; translate temporary planning keys if used.
+Read back the actual bodies, links, and dependency edges before claiming creation or revision succeeded.
+Record shared contracts once in the root issue or link their existing authoritative owner from affected children.
+Issue creation does not authorize implementation beyond the existing task, tracker initialization, or tracker administration.
+If tracker access is unavailable, report the blocked tracker step without claiming it happened or silently substituting a Markdown plan.
 
 ## Cross-domain check
 
