@@ -10,12 +10,14 @@ author = data["authors"].get(commit.original_id.decode("ascii"))
 if author:
     message = commit.message
     if not data["keep-trailer"]:
-        # Git's locale-independent whitespace is SPACE, TAB, CR, and LF.
+        # Raw envelopes only: Git owns continuation unfolding and membership.
+        # Do not include blank separator lines in a possible removal span.
         pattern = re.compile(
-            rb"(?im)^Co-Authored-By:[ \t]*(?P<value>"
-            + re.escape(author["name"].encode("utf-8")) + rb"[ \t]*<"
-            + re.escape(author["email"].encode("utf-8"))
-            + rb">)(?P<space>[ \t\r]*)(?=\n|$)\n?"
+            rb"(?im)^Co-Authored-By[^\n]*(?:\n[ \t\r]+(?=[^ \t\r\n])[^\n]*)*\n?"
+        )
+        identity = re.compile(
+            re.escape(author["name"].encode("utf-8")) + rb"[ \t\r]*<"
+            + re.escape(author["email"].encode("utf-8")) + rb">", re.I
         )
         marker = b"coauthored-by-author-marker"
         while any(prefix + marker in message for prefix in (b"A", b"B")):
@@ -23,22 +25,36 @@ if author:
         parts = []
         end = 0
         for match in pattern.finditer(message):
-            # Preserve the entire physical line prefix, including any configured
-            # comment prefix. Git forbids newlines in core.commentString: a
-            # longer prefix can newly match at most one of these A/B extensions.
-            # Probe original bytes, since deletion can promote an earlier block.
-            line_end = match.end("space")
+            # Preserve complete physical prefixes, including comment strings.
+            # First/last markers must belong to one native logical field. Since
+            # commentString cannot contain LF, a newly colliding prefix cannot
+            # match both A/B extensions (nor both a token and an indented line).
+            # Always probe original bytes: deletion can promote an earlier block.
+            first_end = message.find(b"\n", match.start(), match.end())
+            if first_end < 0:
+                first_end = match.end()
+            last_end = match.end() - (message[match.end() - 1:match.end()] == b"\n")
             for prefix in (b"A", b"B"):
-                extension = prefix + marker
-                probe = message[:line_end] + extension + message[line_end:]
+                start_marker = prefix + marker + b"-start"
+                end_marker = prefix + marker + b"-end"
+                probe = (message[:first_end] + start_marker + message[first_end:last_end]
+                         + end_marker + message[last_end:])
                 parsed = subprocess.run(
                     ["git", "interpret-trailers", "--parse"], input=probe, stdout=subprocess.PIPE
                 )
                 parsed.check_returncode()
-                fields = (line.partition(b":") for line in parsed.stdout.split(b"\n"))
-                augmented_value = match.group("value") + match.group("space") + extension
-                if any(key.lower() == b"co-authored-by" and value.lstrip(b" \t") == augmented_value
-                       for key, _, value in fields):
+                admitted = False
+                for field in parsed.stdout.split(b"\n"):
+                    key, _, value = field.partition(b":")
+                    if key.lower() != b"co-authored-by" or start_marker not in value or end_marker not in value:
+                        continue
+                    # Markers can expose whitespace Git originally trimmed at
+                    # the logical value's edges; its whitespace table is ASCII.
+                    value = value.replace(start_marker, b"").replace(end_marker, b"").strip(b" \t\r")
+                    if identity.fullmatch(value):
+                        admitted = True
+                        break
+                if admitted:
                     parts.append(message[end:match.start()])
                     end = match.end()
                     break
