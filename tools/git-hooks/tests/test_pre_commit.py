@@ -279,6 +279,54 @@ class PreCommitTest(unittest.TestCase):
                     self.assertIn(expected, result.stdout + result.stderr)
                     self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
 
+    def test_literal_selected_names_do_not_expand_to_unchanged_index_files(self) -> None:
+        for name in ("ordinary-change", "*", "[ab]", ":(glob)*"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                repository = Path(temporary) / "repository"
+                subprocess.run(["git", "init", "-q", str(repository)], check=True)
+                subprocess.run(
+                    ["git", "-C", str(repository), "config", "user.email", "test@example.com"],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(repository), "config", "user.name", "Test"],
+                    check=True,
+                )
+                unchanged = repository / "a"
+                unchanged.write_text("#!/bin/sh\n")
+                unchanged.chmod(0o755)
+                subprocess.run(["git", "-C", str(repository), "add", "a"], check=True)
+                subprocess.run(["git", "-C", str(repository), "commit", "-qm", "base"], check=True)
+                selected = repository / name
+                # First accept a valid selected file, then prove both mode
+                # checkers still reject that exact file rather than skipping it.
+                for executable, content, expected in (
+                    (False, "content\n", None),
+                    (True, "content\n", b"Files marked executable but have no (or invalid) shebang:"),
+                    (False, "#!/bin/sh\n", b"has a shebang but is not marked executable!"),
+                ):
+                    with self.subTest(executable=executable, content=content):
+                        selected.write_text(content)
+                        selected.chmod(0o755 if executable else 0o644)
+                        subprocess.run(
+                            ["git", "-C", str(repository), "--literal-pathspecs", "add", "--", name],
+                            check=True,
+                        )
+                        result = subprocess.run(
+                            [str(ROOT / "config/githooks/pre-commit")],
+                            cwd=repository,
+                            capture_output=True,
+                            env=os.environ | {"TMPDIR": temporary},
+                            check=False,
+                        )
+                        output = result.stdout + result.stderr
+                        self.assertEqual(0 if expected is None else 1, result.returncode, output)
+                        self.assertNotIn(b"Traceback", output)
+                        if expected is not None:
+                            self.assertIn(expected, output)
+                            self.assertIn(os.fsencode(name), output)
+                        self.assertEqual([], list(Path(temporary).glob("repository-pre-commit.*")))
+
     def test_linked_worktree_uses_its_index_and_common_hook_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

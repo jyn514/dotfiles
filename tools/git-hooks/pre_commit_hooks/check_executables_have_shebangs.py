@@ -26,7 +26,8 @@ class GitLsFile(NamedTuple):
 
 
 def git_ls_files(paths: Sequence[str]) -> Generator[GitLsFile, None, None]:
-    outs = cmd_output('git', 'ls-files', '-z', '--stage', '--', *paths)
+    # Filename operands must not expand to unrelated index entries as pathspecs.
+    outs = cmd_output('git', '--literal-pathspecs', 'ls-files', '-z', '--stage', '--', *paths)
     for out in zsplit(outs):
         metadata, filename = out.split('\t')
         mode, _, _ = metadata.split()
