@@ -10,11 +10,12 @@ author = data["authors"].get(commit.original_id.decode("ascii"))
 if author:
     message = commit.message
     if not data["keep-trailer"]:
-        trailer_value = ("%s <%s>" % (author["name"], author["email"])).encode("utf-8")
         # Git's locale-independent whitespace is SPACE, TAB, CR, and LF.
         pattern = re.compile(
-            rb"(?im)^Co-Authored-By:[ \t]*(?P<value>" + re.escape(trailer_value)
-            + rb")(?P<space>[ \t\r]*)(?=\n|$)\n?"
+            rb"(?im)^Co-Authored-By:[ \t]*(?P<value>"
+            + re.escape(author["name"].encode("utf-8")) + rb"[ \t]*<"
+            + re.escape(author["email"].encode("utf-8"))
+            + rb">)(?P<space>[ \t\r]*)(?=\n|$)\n?"
         )
         marker = b"coauthored-by-author-marker"
         while any(prefix + marker in message for prefix in (b"A", b"B")):
