@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -80,6 +81,34 @@ class NeovimConfigTests(unittest.TestCase):
             # The other tests retain their unmodified startup diagnostic check.
             startup_commands=("nnoremap grt <Nop>",),
         )
+
+    def test_flix_run_main_uses_client_root_without_changing_editor_cwd(self) -> None:
+        fixtures = Path(__file__).with_name("fixtures")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binaries = root / "bin"
+            binaries.mkdir()
+            executable = binaries / "flix"
+            shutil.copyfile(fixtures / "flix_run.sh", executable)
+            executable.chmod(0o755)
+            environment = os.environ.copy()
+            for key in (
+                "NVIM", "NVIM_LISTEN_ADDRESS", "VIMINIT", "EXINIT", "VIM", "VIMRUNTIME",
+                "LUA_PATH", "LUA_CPATH", "LUA_INIT", "ENV", "BASH_ENV", "ZDOTDIR", "SHINIT",
+            ):
+                environment.pop(key, None)
+            environment.update({
+                "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+                "SHELL": "/bin/sh", "NVIM_APPNAME": "nvim",
+                "DOTFILES_NVIM_FLIX_CWD_LOG": str(root / "executed-cwd"),
+            })
+            with patch.dict(os.environ, environment, clear=True):
+                self.run_nvim(
+                    fixtures / "flix_execution.lua",
+                    # Same focused grt compatibility fixture as the query test;
+                    # do not suppress startup diagnostics in the other tests.
+                    startup_commands=("nnoremap grt <Nop>",),
+                )
 
     def test_config_loads_fzf_without_starting_its_rpc_server(self) -> None:
         self.run_nvim(

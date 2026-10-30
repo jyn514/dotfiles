@@ -1142,7 +1142,8 @@ vim.lsp.config('flix', {
 	settings = {},
 	on_attach = function(client, _)
 		client.commands["flix.runMain"] = function(_, _)
-			vim.cmd("terminal flix run")
+			vim.cmd.enew()
+			vim.fn.jobstart("flix run", { term = true, cwd = client.root_dir })
 		end
 	end,
 })
