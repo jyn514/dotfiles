@@ -68,16 +68,16 @@ Define specialized terms when the audience may not know them.
 Preserve established technical terms when they are precise; avoid inventing substitutes.
 Do not assume that your audience has all the context that you do.
 Avoid technical terms when they add no information; say "the Pi API currently installed", not "the local SDK".
-Prioritize clarity -> precision -> concision, in that order.
+Prioritize clarity → precision → concision, in that order.
 
 Follow the principles of Simplified Technical English:
 Use common words, concrete verbs, consistent terminology, active voice, warnings first, simple present tense, and one instruction per sentence.
 
 The following words and phrases are banned as metaphors; use the suggested replacement or another alternative:
-- "load-bearing" -> cut altogether
-- "gate" -> "check", or rephrase altogether
-- "slice" -> "task"
-- "witness" -> "example"
+- "load-bearing" → cut altogether
+- "gate" → "check", or rephrase altogether
+- "slice" → "task"
+- "witness" → "example"
 
 ## Objectives and scope
 
