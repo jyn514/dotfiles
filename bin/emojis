@@ -1,5 +1,15 @@
 #!/usr/bin/env pwsh
+# Keep the bracketless convenience form as well as native Discord markup.
+$emoji = 'a?:(?<name>[^:<>\s]+):(?<id>[0-9]+)'
 $Input | %{
-	((($_ -replace '><', '> <') -replace ' ', "`n") -replace '[<>]', '').split("`n") `
-		| %{$x, $name, $id = $_.split(':'); curl "https://cdn.discordapp.com/emojis/$id.png?size=128&quality=lossless" "-o" "$name.png";}
+	($_ -split '\s+|(?<=>)(?=<)') | %{
+		if ($_ -cmatch "\A(?:<$emoji>|$emoji)\z") {
+			$name, $id = $Matches.name, $Matches.id
+			# The name becomes one filename, never a path (on either platform).
+			if ($name -notmatch '[\\/]' -and $name -notin '.', '..' -and
+				$name.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -eq -1) {
+				curl "https://cdn.discordapp.com/emojis/$id.png?size=128&quality=lossless" "-o" "$name.png";
+			}
+		}
+	}
 }

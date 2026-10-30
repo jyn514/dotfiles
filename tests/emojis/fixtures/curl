@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Offline curl consumer: record argv and exercise -o in owned temporary storage."""
+import json
+import os
+from pathlib import Path
+import sys
+
+arguments = sys.argv[1:]
+with Path(os.environ["EMOJI_CURL_LOG"]).open("a") as log:
+    log.write(json.dumps(arguments) + "\n")
+if len(arguments) != 3 or arguments[1] != "-o":
+    sys.exit("unexpected curl arguments")
+output = Path(arguments[2]).resolve()
+if not output.is_relative_to(Path(os.environ["EMOJI_FIXTURE_ROOT"]).resolve()):
+    sys.exit("fixture refused a write outside disposable storage")
+output.write_text("offline emoji fixture\n")
