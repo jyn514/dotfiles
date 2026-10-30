@@ -42,6 +42,17 @@ When the same value appears across multiple consumers, choose one authoritative 
 Add a regression test showing that changing the authority updates consumers without corresponding edits.
 For persisted representations, include independent readers such as launchers and discovery commands, and test their agreement on mixed old/new records.
 
+Tests and test doubles are consumers too.
+Do not duplicate real configuration values in fixtures or assertions.
+For configuration wiring, set a synthetic, non-default value at the authority and assert that it reaches the consuming boundary.
+Changing real configuration must not require corresponding test edits.
+
+Keep independent expected values for behavioral and protocol requirements.
+Do not make assertions tautological by deriving the expected result from the implementation being tested.
+
+Verify propagation at the application's supported reload or restart boundary.
+This does not require hot reload or new runtime configurability solely for testing.
+
 ## Logging
 
 Default CLI output must be human-scannable. Show the action, material inputs,
