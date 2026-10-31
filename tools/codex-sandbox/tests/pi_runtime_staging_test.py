@@ -82,16 +82,30 @@ class PiRuntimeStagingTest(unittest.TestCase):
                 "npm", "install", "--ignore-scripts", "--offline", "--no-audit", "--no-fund",
             ], cwd=source, check=True, capture_output=True, text=True)
 
+            extensions = Path(directory) / "extensions"
+            adapter = extensions / "node_modules/fixture-adapter"
+            adapter.mkdir(parents=True)
+            (extensions / "package.json").write_text(json.dumps({"dependencies": {"fixture-adapter": "1.0.0"}}))
+            (adapter / "package.json").write_text(json.dumps({"name": "fixture-adapter", "type": "module",
+                                                             "main": "index.js"}))
+            (adapter / "index.js").write_text("export { external } from '@fixture/external';\n")
+            extension_external = extensions / "node_modules/@fixture/external"
+            extension_external.mkdir(parents=True)
+            (extension_external / "package.json").write_text((external / "package.json").read_text())
+            (extension_external / "index.js").write_text("export const external = 99;\n")
+
             # Changing the package's published file list needs no staging-code edit.
-            for include_asset in (False, True):
-                with self.subTest(include_asset=include_asset):
-                    if include_asset:
+            for include_asset, omit_standalone in ((False, False), (False, True), (True, False), (True, True)):
+                with self.subTest(include_asset=include_asset, omit_standalone=omit_standalone):
+                    if include_asset and not (agent / "extra-runtime.json").exists():
                         manifest = json.loads((agent / "package.json").read_text())
                         manifest["files"].append("extra-runtime.json")
                         (agent / "package.json").write_text(json.dumps(manifest))
                         (agent / "extra-runtime.json").write_text("{}")
-                    output = Path(directory) / f"runtime-{include_asset}"
-                    staged_result = subprocess.run(["node", str(STAGE), str(built), str(output)],
+                    output = Path(directory) / f"runtime-{include_asset}-{omit_standalone}"
+                    options = ["--omit-standalone"] if omit_standalone else []
+                    staged_result = subprocess.run(["node", str(STAGE), str(built), str(output),
+                                                    "--extensions", str(extensions), *options],
                                                    capture_output=True, text=True)
                     self.assertEqual(0, staged_result.returncode, staged_result.stderr)
                     staged = output / "src/packages/coding-agent"
@@ -111,15 +125,30 @@ class PiRuntimeStagingTest(unittest.TestCase):
                     self.assertFalse((output / "src/node_modules/@fixture/compiler").exists())
                     self.assertFalse((output / "src/packages/unrelated").exists())
                     self.assertTrue((output / "standalone").is_symlink())
-                    self.assertTrue((output / "standalone/pi").samefile(staged / "dist/pi"))
+                    self.assertEqual(not omit_standalone, (output / "standalone/pi").exists())
+                    if not omit_standalone:
+                        self.assertTrue((output / "standalone/pi").samefile(staged / "dist/pi"))
                     result = subprocess.run([
                         "node", "--input-type=module", "-e",
                         "import { value, external } from '@fixture/coding-agent'; console.log(value + external)",
                     ], cwd=output / "src", check=True, capture_output=True, text=True)
                     self.assertEqual("49\n", result.stdout)
+                    adapter_result = subprocess.run([
+                        "node", "--input-type=module", "-e",
+                        "import { external } from 'fixture-adapter'; console.log(external)",
+                    ], cwd=output / "src", check=True, capture_output=True, text=True)
+                    self.assertEqual("99\n", adapter_result.stdout)
                     helper = subprocess.run([str(output / "src/node_modules/.bin/runtime-helper")],
                                             check=True, capture_output=True, text=True)
                     self.assertEqual("runtime-helper-ok\n", helper.stdout)
+
+            (extensions / "package.json").write_text(json.dumps({
+                "dependencies": {"@fixture/external": "2.0.0"},
+            }))
+            collision = subprocess.run(["node", str(STAGE), str(built), str(Path(directory) / "collision"),
+                                        "--extensions", str(extensions)], capture_output=True, text=True)
+            self.assertNotEqual(0, collision.returncode)
+            self.assertIn("EEXIST", collision.stderr)
 
 
 if __name__ == "__main__":

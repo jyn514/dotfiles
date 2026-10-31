@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, before, test } from "node:test";
+import { promisify } from "node:util";
 
 const here = dirname(fileURLToPath(import.meta.url));
 let directory;
@@ -119,6 +120,35 @@ test("startup listens before loading the Pi tool module", async () => {
     lazyWorker.kill();
     await once(lazyWorker, "exit");
   }
+});
+
+test("cache warming imports the selected module without starting the worker", async () => {
+  const cache = join(directory, "warm-cache");
+  const warmMarker = join(directory, "warm-marker");
+  const warmSocket = join(directory, "warm.sock");
+  const warmReady = join(directory, "warm.ready");
+  const env = { ...process.env, NODE_COMPILE_CACHE: cache,
+    CODEX_SANDBOX_WARM_MARKER: warmMarker, CODEX_SANDBOX_TOOL_SOCKET: warmSocket,
+    CODEX_SANDBOX_TOOL_READY: warmReady,
+    CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(join(here, "fixtures/tool-worker-warm.mjs")).href };
+  delete env.NODE_DISABLE_COMPILE_CACHE;
+  const run = promisify(execFile);
+  const command = [resolve(here, "../image/tool-worker.mjs"), "--warm-cache"];
+  await run(process.execPath, command, { env, timeout: 10000 });
+  assert.equal(await readFile(warmMarker, "utf8"), "module-loaded");
+  assert(!existsSync(warmSocket));
+  assert(!existsSync(warmReady));
+  if (Number(process.versions.node.split(".")[0]) >= 22) {
+    assert((await readdir(cache, { recursive: true })).length > 0);
+  }
+  const disabledCache = join(directory, "disabled-cache");
+  await run(process.execPath, command, { timeout: 10000,
+    env: { ...env, NODE_COMPILE_CACHE: disabledCache, NODE_DISABLE_COMPILE_CACHE: "1" } });
+  assert(!existsSync(disabledCache));
+  await assert.rejects(run(process.execPath, command, { timeout: 10000,
+    env: { ...env, CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(join(directory, "missing-sdk.mjs")).href } }),
+    /missing-sdk\.mjs/);
+  assert(!existsSync(warmSocket));
 });
 
 test("native skill validation accepts only a path and ignores default skills", async () => {

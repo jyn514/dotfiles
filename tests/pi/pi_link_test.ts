@@ -27,10 +27,8 @@ test("pi-link native loader/session/WebSocket root API regressions", () => {
     if (/^1\.\.0\r?$/m.test(result.stdout)) {
       throw new Error(`No native pi-link tests matched ${JSON.stringify(pattern)}.\n${result.stdout}`);
     }
-    expect(Number(result.stdout.match(/^# pass (\d+)\r?$/m)?.[1] ?? 0)).toBeGreaterThan(0);
     process.stdout.write(result.stdout);
-  } else {
-    expect(result.stdout).toContain("# pass 26");
   }
+  expect(Number(result.stdout.match(/^# pass (\d+)\r?$/m)?.[1] ?? 0)).toBeGreaterThan(0);
   expect(result.stdout).toContain("# fail 0");
 }, 100_000);

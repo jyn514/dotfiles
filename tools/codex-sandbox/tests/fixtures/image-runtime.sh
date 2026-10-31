@@ -3,7 +3,11 @@ set -eu
 probe_root=$(mktemp -d)
 tar -xf - -C "$probe_root"
 test -L /opt/agent-pi/standalone
-test -f /opt/agent-pi/standalone/pi
+if [ -e /etc/alpine-release ]; then
+    test ! -e /opt/agent-pi/standalone/pi
+else
+    test -f /opt/agent-pi/standalone/pi
+fi
 test -d /opt/agent-pi/src/packages/coding-agent/docs
 test -d /opt/agent-pi/src/packages/coding-agent/examples
 test ! -e /opt/agent-pi/src/node_modules/typescript/package.json
@@ -16,6 +20,7 @@ else
     bun "$probe_root/pi-runtime-package.mjs"
     bun "$probe_root/pi-runtime-worker.mjs"
 fi
+python3 "$probe_root/node-cache.py" >&2
 sha256sum /opt/agent-tools/libexec/jj
 node --version
 cat /opt/agent-pi/REVISION

@@ -155,7 +155,8 @@ def probe_guest(tag: str) -> list[str]:
     with tarfile.open(fileobj=archive, mode='w') as tar:
         for path in (WRAPPED_COMMAND_PROBE,
                      RUNTIME_PROBE.with_name('pi-runtime-package.mjs'),
-                     RUNTIME_PROBE.with_name('pi-runtime-worker.mjs')):
+                     RUNTIME_PROBE.with_name('pi-runtime-worker.mjs'),
+                     RUNTIME_PROBE.with_name('node-cache.py')):
             tar.add(path, arcname=path.name)
     return run(
         'docker', 'run', '--rm', '--interactive', '--entrypoint', 'sh', tag,

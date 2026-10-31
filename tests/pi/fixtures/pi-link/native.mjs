@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -292,92 +292,6 @@ test("configured local package loads the fork and its skill through the bootstra
   assert.ok(skill, "loading the package must also discover its bundled skill");
   assert.equal(await realpath(skill.filePath), await realpath(join(root, "tools/pi-link/skills/pi-link-tools/SKILL.md")));
 
-  // Run the image's real install script with only its fixed image paths relocated.
-  // A relative source must resolve from agentDir, not the neutral build workspace.
-  const workspace = join(directory, "workspace");
-  await mkdir(workspace);
-  const cacheSource = process.env.PI_LINK_TEST_CACHE_SOURCE || join(root, "tools/codex-sandbox/image/cache-pi-extensions.mjs");
-  const cacheScript = join(directory, "cache-pi-extensions.mjs");
-  const cacheTmp = join(directory, "tmp");
-  await mkdir(cacheTmp);
-  const cacheEnvironment = { ...process.env, PI_OFFLINE: "1", TMPDIR: cacheTmp, JITI_RESPECT_TMPDIR_ENV: "1" };
-  execFileSync("cp", [cacheSource, cacheScript]);
-  execFileSync("cmp", [cacheSource, cacheScript]);
-  let script = await readFile(cacheScript, "utf8");
-  for (const [original, relocated] of [
-    ['"/opt/agent-pi/src/packages/coding-agent/dist/bundle/index.js"', JSON.stringify(import.meta.resolve("@earendil-works/pi-coding-agent"))],
-    ['const cwd = "/workspace";', `const cwd = ${JSON.stringify(workspace)};`],
-    ['const agentDir = "/home/codex/.pi/agent";', `const agentDir = ${JSON.stringify(agentDir)};`],
-    ['readdirSync("/tmp/jiti")', `readdirSync(${JSON.stringify(join(cacheTmp, "jiti"))})`],
-  ]) {
-    assert.equal(script.split(original).length, 2, `image fixture path must be unique: ${original}`);
-    script = script.replace(original, relocated);
-  }
-  await writeFile(cacheScript, script);
-  const declaredSettings = await readFile(settingsFile, "utf8");
-  const install = execFileSync(process.execPath, [cacheScript, "install"],
-    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
-  assert.match(install, /Installing cache input: \.\/pi-link/);
-  assert.doesNotMatch(install, /Installing cache input: \.\/pi-dashboard/);
-  process.stdout.write(install);
-  const warm = execFileSync(process.execPath, [cacheScript, "warm"],
-    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
-  assert.match(warm, /Cached [1-9]\d* extensions in [1-9]\d* files/);
-  process.stdout.write(warm);
-  assert.equal(await readFile(settingsFile, "utf8"), declaredSettings,
-    "install/warm must not rewrite settings or remove the host-only declaration");
-  await assert.rejects(realpath(join(agentDir, "pi-dashboard")), { code: "ENOENT" });
-  assert.ok(mapping[0].startsWith("$HOME/"));
-  const installedLink = join(directory, mapping[0].slice("$HOME/".length));
-  await unlink(installedLink);
-  const missing = spawnSync(process.execPath, [cacheScript, "install"],
-    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
-  assert.notEqual(missing.status, 0, "missing local packages must fail instead of silently warming an incomplete cache");
-  assert.ok(missing.stderr.includes(`Path does not exist: ${installedLink}`), missing.stderr);
-  const missingWarm = spawnSync(process.execPath, [cacheScript, "warm"],
-    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
-  assert.notEqual(missingWarm.status, 0, "offline warm must still fail closed for a missing real cache input");
-  assert.match(missingWarm.stderr, /Missing cache input: \.\/pi-link/);
-  // A similar name is not the host-only declaration: absent packages must not
-  // become optional just because their names contain the word Dashboard.
-  settingsManager.setPackages(["./pi-dashboard-extra"]);
-  await settingsManager.flush();
-  for (const phase of ["install", "warm"]) {
-    const otherMissing = spawnSync(process.execPath, [cacheScript, phase],
-      { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
-    assert.notEqual(otherMissing.status, 0, `missing non-exempt input must fail during ${phase}`);
-    assert.match(otherMissing.stderr, /pi-dashboard-extra/);
-  }
-});
-
-test("image cache inputs load pi-link with its sibling modules", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "pi-link-image-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const imageRoot = join(directory, "image");
-  const agentDir = join(imageRoot, "home/codex/.pi/agent");
-  const extensionDir = join(agentDir, "pi-link");
-  await mkdir(extensionDir, { recursive: true });
-  // Match the Dockerfile's explicit local source copies, not the repository tree:
-  // loading from a bootstrap symlink hides modules omitted from the image.
-  const dockerfile = await readFile(join(root, "tools/codex-sandbox/image/Dockerfile"), "utf8");
-  for (const line of dockerfile.split("\n")) {
-    const fields = line.trim().split(/\s+/);
-    if (fields[0] !== "COPY" || fields[1].startsWith("--")) continue;
-    const destination = fields.at(-1);
-    if (!destination.startsWith("/home/codex/.pi/agent/pi-link/")) continue;
-    for (const source of fields.slice(1, -1)) {
-      if (!source.endsWith(".ts") && !source.endsWith(".mjs")) continue;
-      execFileSync("cp", [join(root, source), join(imageRoot, destination)]);
-    }
-  }
-  await symlink(join(root, "node_modules"), join(directory, "node_modules"), "dir");
-  await mkdir(join(extensionDir, "node_modules"));
-  await symlink(dirname(lockedRequire.resolve("ws/package.json")), join(extensionDir, "node_modules/ws"), "dir");
-  const loaded = await discoverAndLoadExtensions([join(extensionDir, "index.ts")], directory, agentDir);
-  assert.deepEqual(loaded.errors, [], "the image must copy every module needed by the native Pi loader");
-  assert.equal(loaded.extensions.length, 1);
-  assert.ok(loaded.extensions[0].tools.has("link_set_identity"));
-  assert.ok(loaded.extensions[0].tools.has("link_reply"));
 });
 
 test("startup connects without flags and preserves a restored session's opt-out", async (t) => {

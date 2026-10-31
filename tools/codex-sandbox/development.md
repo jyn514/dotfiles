@@ -405,17 +405,19 @@ docker image rm codex-sandbox-jj-test:cache codex-sandbox-pi-alpine-test:cache c
 Direct Dockerfile builds must also supply `--build-arg PI_REVISION=<full-pi-commit>`;
 there is no independent guest revision default.
 
-Check the image caches against a built final image;
-test containers run without network access:
+Check the worker's Node compile cache against a built final image.
+The test sends its probe over stdin and runs without network access:
 
 ```sh
-docker build --build-arg PI_REVISION=<full-pi-commit> --target pi-extension-cache -f tools/codex-sandbox/image/Dockerfile -t pi-cache-test .
-python3 tools/codex-sandbox/tests/cache_integration.py --runtime <sandbox-image> --builder pi-cache-test
-docker image rm pi-cache-test
+dev/test-environment python3 tools/codex-sandbox/tests/cache_integration.py --runtime <sandbox-image>
 ```
 
-This checks Alpine bytecode reuse, first-launch extension cache hits, edited source, isolation between containers, and build failure on missing local packages or extension errors.
-The cache stage copies the portable packages before installation and warming; their source files and goal prompts also participate in image identity.
+The Alpine image warms the tool worker's SDK imports under the final Node version, paths, and user.
+The probe checks seed reuse without rewriting it and verifies that disabling the cache prevents cache use.
+The Debian Node 20 compatibility probe uses Bun for SDK operations and skips the Node cache check.
+Node 20 cannot load the worker SDK; the launcher still requires a compatible worker runtime.
+The runtime-image integration above includes this probe for both runtime variants.
+Host Pi loads extensions on the host; host-only sources and settings do not invalidate the guest image.
 
 ## Model authentication checks
 

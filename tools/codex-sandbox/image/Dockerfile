@@ -14,29 +14,37 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     KEEP_PACKAGE_CACHE=1 install-agent-deps \
     && rm /usr/local/bin/install-agent-deps
 
-FROM alpine:3.22 AS tools
+FROM alpine:3.22 AS tool-deps
+RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
+    apk add ca-certificates curl gcompat tar xz
 COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-tools
+
+FROM tool-deps AS bb-tool
 ARG BB_VERSION=1.13.219
+RUN install-agent-tools bb "${BB_VERSION}"
+
+FROM tool-deps AS gh-tool
 ARG GH_VERSION=2.76.1
+RUN install-agent-tools gh "${GH_VERSION}"
+
+FROM tool-deps AS docker-tool
 ARG DOCKER_VERSION=29.8.0
+RUN install-agent-tools docker "${DOCKER_VERSION}"
+
+FROM tool-deps AS buildx-tool
 ARG BUILDX_VERSION=0.37.0
+RUN install-agent-tools buildx "${BUILDX_VERSION}"
+
+FROM tool-deps AS typst-tool
 ARG TYPST_VERSION=0.15.1
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=cache,target=/var/cache/apk,sharing=locked \
-    --mount=type=cache,target=/var/cache/yum,sharing=locked \
-    BB_VERSION=${BB_VERSION} \
-    GH_VERSION=${GH_VERSION} \
-    DOCKER_VERSION=${DOCKER_VERSION} \
-    BUILDX_VERSION=${BUILDX_VERSION} \
-    TYPST_VERSION=${TYPST_VERSION} \
-    install-agent-tools \
-    && mkdir -p /opt/agent-tools/bin /opt/agent-tools/libexec \
-    && cp -a \
-        /usr/local/bin/gh \
-        /usr/local/bin/typst \
-        /opt/agent-tools/bin/ \
-    && cp -a /usr/local/bin/bb /usr/local/bin/docker /opt/agent-tools/libexec/
+RUN install-agent-tools typst "${TYPST_VERSION}"
+
+FROM alpine:3.22 AS tools
+COPY --from=bb-tool /usr/local/bin/bb /opt/agent-tools/libexec/bb
+COPY --from=gh-tool /usr/local/bin/gh /opt/agent-tools/bin/gh
+COPY --from=docker-tool /usr/local/bin/docker /opt/agent-tools/libexec/docker
+COPY --from=typst-tool /usr/local/bin/typst /opt/agent-tools/bin/typst
+COPY --from=buildx-tool /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
 # A JJ release update must not rerun downloads for unrelated tools.
 COPY --from=jj /trusted/bin/jj /opt/agent-tools/libexec/jj
 RUN /opt/agent-tools/libexec/jj --version
@@ -44,8 +52,6 @@ RUN /opt/agent-tools/libexec/jj --version
 FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
 RUN npm ci --ignore-scripts --prefix /opt/pi-npm
-COPY ./tools/pi-link/package.json ./tools/pi-link/package-lock.json /opt/pi-link/
-RUN npm ci --ignore-scripts --omit=dev --prefix /opt/pi-link
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
@@ -57,55 +63,44 @@ RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
 FROM oven/bun:1.3.14 AS bun-build
 FROM oven/bun:1.3.14-alpine AS bun-runtime
 
-FROM node:24-bookworm-slim AS pi-build
+FROM node:24-bookworm-slim AS pi-manifests
+COPY ./tools/codex-sandbox/image/stage-pi-dependencies.mjs /opt/stage-pi-dependencies.mjs
+RUN --mount=type=bind,from=pi-source,source=/src,target=/opt/pi-source \
+    node /opt/stage-pi-dependencies.mjs /opt/pi-source /opt/agent-pi/src
+
+FROM node:24-bookworm-slim AS pi-dependencies
+WORKDIR /opt/agent-pi/src
+COPY --from=pi-manifests /opt/agent-pi/src ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts --prefix /opt/agent-pi/src
+
+FROM pi-dependencies AS pi-build
 # The Debian build stage requires Bun's glibc binary.
 COPY --from=bun-build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=pi-source /src /opt/agent-pi/src
 COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
-WORKDIR /opt/agent-pi/src
-RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
-    && if [ -d packages/ai/src/providers/data ]; then rm -r packages/ai/src/providers/data; fi \
+RUN if [ -d packages/ai/src/providers/data ]; then rm -r packages/ai/src/providers/data; fi \
     && npm run hydrate:pinned-model-data --prefix /opt/agent-pi/src \
     && chmod -R a+rX packages/ai/src/providers/data \
     && npm run build:offline --prefix /opt/agent-pi/src \
     &&  node scripts/build-coding-agent-binary.mjs --outfile packages/coding-agent/dist/pi \
     && npm --prefix packages/coding-agent run copy-binary-assets
 
-FROM pi-build AS pi-runtime-files
-COPY ./tools/codex-sandbox/image/stage-pi-runtime.mjs /opt/stage-pi-runtime.mjs
-RUN node /opt/stage-pi-runtime.mjs /opt/agent-pi /opt/pi-runtime
-
-FROM pi-build AS pi-extension-cache
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates
-ENV HOME=/home/codex
-ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
-ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
-WORKDIR /workspace
-COPY --from=pi-extensions /opt/pi-link /home/codex/.pi/agent/pi-link
-COPY ./tools/pi-codex-subagents/package.json ./tools/pi-codex-subagents/index.ts ./tools/pi-codex-subagents/implementation.ts ./tools/pi-codex-subagents/core.ts ./tools/pi-codex-subagents/handoff.ts ./tools/pi-codex-subagents/child-helper.ts ./tools/pi-codex-subagents/child-prompt.ts ./tools/pi-codex-subagents/child-link.ts ./tools/pi-codex-subagents/link.ts ./tools/pi-codex-subagents/suspension.ts ./tools/pi-codex-subagents/peek.ts /home/codex/.pi/agent/packages/pi-codex-subagents/
-COPY ./tools/pi-codex-goal/package.json /home/codex/.pi/agent/packages/pi-codex-goal/
-COPY ./tools/pi-codex-goal/extensions /home/codex/.pi/agent/packages/pi-codex-goal/extensions
-COPY ./tools/pi-codex-goal/src /home/codex/.pi/agent/packages/pi-codex-goal/src
-COPY ./tools/pi-codex-goal/prompts /home/codex/.pi/agent/packages/pi-codex-goal/prompts
-COPY ./tools/pi-session-search/package.json ./tools/pi-session-search/index.ts ./tools/pi-session-search/cli.ts /home/codex/.pi/agent/packages/pi-session-search/
-COPY ./config/pi-agent/settings.json /home/codex/.pi/agent/settings.json
-COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
-RUN node /opt/cache-pi-extensions.mjs install
-COPY ./config/pi-agent/pi-extensions /home/codex/.pi/agent/pi-extensions
-COPY ./tools/pi-link/index.ts ./tools/pi-link/identity.ts ./tools/pi-link/identity-format.mjs ./tools/pi-link/messaging.ts /home/codex/.pi/agent/pi-link/
-COPY ./tools/pi-link/skills /home/codex/.pi/agent/pi-link/skills
-RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
-
 FROM agent-deps AS pi-runtime
-COPY --from=pi-runtime-files /opt/pi-runtime /opt/agent-pi
-COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
+COPY ./tools/codex-sandbox/image/stage-pi-runtime.mjs /opt/stage-pi-runtime.mjs
+# Select runtime files directly from the build mount, without an intermediate copy.
+RUN --mount=type=bind,from=pi-build,source=/opt/agent-pi,target=/opt/pi-build \
+    --mount=type=bind,from=pi-extensions,source=/opt/pi-npm/package.json,target=/opt/pi-npm/package.json \
+    if [ -e /etc/alpine-release ]; then set -- --omit-standalone; else set --; fi \
+    && node /opt/stage-pi-runtime.mjs /opt/pi-build /opt/agent-pi --extensions /opt/pi-npm "$@" \
+    && rm /opt/stage-pi-runtime.mjs
+COPY --from=pi-extensions /opt/pi-npm /opt/pi-npm
 # Runtime libc follows BASE_IMAGE. Select the matching binary rather than using
 # gcompat to approximate glibc behavior beyond startup on Alpine.
-COPY --from=bun-build /usr/local/bin/bun /opt/bun/glibc
-COPY --from=bun-runtime /usr/local/bin/bun /opt/bun/musl
-RUN if [ -e /etc/alpine-release ]; then bun_variant=musl; else bun_variant=glibc; fi \
-    && cp "/opt/bun/${bun_variant}" /usr/local/bin/bun \
-    && rm -rf /opt/bun
+RUN --mount=type=bind,from=bun-build,source=/usr/local/bin/bun,target=/opt/bun-glibc \
+    --mount=type=bind,from=bun-runtime,source=/usr/local/bin/bun,target=/opt/bun-musl \
+    if [ -e /etc/alpine-release ]; then bun_variant=musl; else bun_variant=glibc; fi \
+    && cp "/opt/bun-${bun_variant}" /usr/local/bin/bun
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
 COPY ./tools/codex-sandbox/image/tool-worker.mjs /opt/agent-tools/bin/tool-worker.mjs
@@ -127,7 +122,6 @@ COPY --from=tools /opt/agent-tools /opt/agent-tools
 COPY ./tools/codex-sandbox/image/create-user.sh .
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
-COPY --from=pi-extension-cache --chown=${AGENT_UID}:${AGENT_GID} /tmp/jiti /tmp/jiti
 RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
     && agent_name=$(awk -F: -v uid="${AGENT_UID}" '$3 == uid { print $1; exit }' /etc/passwd) \
     && test -n "${agent_name}" \
@@ -197,12 +191,14 @@ ENV JJ_ROUTE_HELPER=/tools/jj-proxy/route.py
 ENV RG_REAL=/opt/agent-tools/libexec/rg
 ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
+ENV NODE_COMPILE_CACHE=/tmp/pi-node-cache
+
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /workspace
 
-# Use the final Node version, paths, and UID: bytecode is not portable across
-# Node versions, and every new container should start with a populated cache.
-RUN --network=none if [ -e /etc/alpine-release ]; then pi --offline --help >/dev/null; fi
+# Warm the Alpine worker SDK with the final Node version, paths, and UID.
+# The Debian compatibility probe uses Bun because its Node 20 cannot load the SDK.
+RUN --network=none if [ -e /etc/alpine-release ]; then node /opt/agent-tools/bin/tool-worker.mjs --warm-cache; fi
 
 ENV COLORTERM=truecolor
 ENV TERM=xterm-256color
