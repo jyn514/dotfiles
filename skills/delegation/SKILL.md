@@ -94,7 +94,7 @@ Before treating an unknown as a blocker, check whether independent evidence insp
 Advance useful independent work when available; otherwise wait.
 Do not invent supporting work or poll repeatedly to avoid being idle.
 Hold only the operation that conflicts or needs the result, not the entire investigation.
-Use [performance-investigation](../performance-investigation/SKILL.md) to decide which measurements need isolation; attribution does not automatically require controlled before/after precision.
+Use the [measurement-scope check](../performance-investigation/references/measurement-scope.md) to decide which measurements need isolation without starting a performance investigation.
 
 ## Integrate and verify
 
