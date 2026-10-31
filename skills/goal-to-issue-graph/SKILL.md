@@ -1,6 +1,6 @@
 ---
 name: goal-to-issue-graph
-description: Turn a brief or broad goal into an actionable TicGit issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work directly in TicGit. Not for a selected change's file/commit plan, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
+description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work in the repository's default issue tracker, or TicGit if none is specified. Not for a selected change's file/commit plan, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
 ---
 
 # Goal to issue graph
@@ -11,11 +11,13 @@ A graph is useful only if completing its tasks establishes the user's goal witho
 Work through the numbered stages in order because each makes a different promise.
 First recover the goal and inspect the actual problem (§§1–2); then fix the root's success conditions while translating current knowledge into bounded tickets (§§3–4).
 Those tickets may change as discovery resolves uncertainty, but their closure must continue to serve the stable root contract.
-Next connect their outputs with justified dependencies and add applicable integration, quality, and maintenance work (§§5–6); review whether the whole graph can establish the root outcome (§7); create or update it in TicGit (§8); then hand it off.
+Next connect their outputs with justified dependencies and add applicable integration, quality, and maintenance work (§§5–6); review whether the whole graph can establish the root outcome (§7); create or update it in the selected tracker (§8); then hand it off.
 A ready graph is a plan for product work, not evidence that the product already succeeds.
 
-This skill owns decomposition, graph review, and direct creation or revision of TicGit issues for the authorized project work, not implementation.
-Use [ticgit](../ticgit/SKILL.md) for tracker operations; inspect the existing graph and reuse matching issues.
+This skill owns decomposition, graph review, and direct creation or revision of issues in the selected tracker for the authorized project work, not implementation.
+Use the repository's default issue tracker, or TicGit if none is specified.
+Follow the repository's tracker guidance; for TicGit, use [ticgit](../ticgit/SKILL.md).
+Inspect the existing graph and reuse matching issues.
 Do not require separate approval to materialize the graph within that work; an explicit read-only or proposal-only request still forbids tracker mutation.
 Use `implementation-plan` for a selected change's detailed plan.
 Represent an unsettled architecture as a decision task; use [independent design deliberation](../architecture-design/references/deliberation.md) when design selection is also authorized.
@@ -248,9 +250,9 @@ Remove unnecessary matrices, copied bodies, hashes and validation reports withou
 State how changed authority, inputs, interfaces or integration products invalidate affected evidence.
 Final acceptance must concern the same current inputs and product; reuse unaffected evidence instead of rerunning everything by habit.
 
-## 8. Create or update the TicGit graph directly
+## 8. Create or update the issue graph directly
 
-Create or reuse the root and bounded outcome issues directly in TicGit, unless the request is explicitly read-only or proposal-only.
+Create or reuse the root and bounded outcome issues directly in the selected tracker, unless the request is explicitly read-only or proposal-only.
 Keep the graph, dependencies, and acceptance records in those issues; link existing authoritative specifications and evidence rather than copying them.
 Do not require an intermediate Markdown plan, writeup, or separate materialization approval.
 Files needed as CLI input are transport, not a second maintained plan.
