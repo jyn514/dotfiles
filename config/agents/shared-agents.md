@@ -170,6 +170,10 @@ existing file for direct modification, configuration changes, multiline shell
 commands, or language/runtime selection, read
 [Tool and command use](~/.agents/skills/references/tool-use.md).
 
+Treat repeated output truncation as a signal to change the inspection approach.
+Filter irrelevant output, use bounded reads when you need the details yourself, or delegate a large reading task when a worker can return findings and source references.
+Do not repeat substantially the same oversized request.
+
 ### Before mutating a working copy
 
 Treat unexpected changes as authored work until ownership is established.
