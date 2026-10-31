@@ -100,6 +100,7 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/pi-session-search/index.ts',
                        'tools/pi-session-search/cli.ts',
                        'libexec/chat-history.clj',
+                       'libexec/codex-history.mjs', 'libexec/codex-client.mjs',
                        'bin/codex-to-pi',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj',

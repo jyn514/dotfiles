@@ -5,6 +5,7 @@ It supports session lookup, `--final-only`, and per-session Markdown.
 
 Use it to read a local conversation without resuming an agent.
 It requires Babashka (`bb`); native HTML exports also require Pi on PATH, and Codex branch exports require Python 3.
+Codex session-ID exports additionally require Node and an installed Codex with `thread/turns/list` support.
 With no paths, it scans `~/.codex/sessions`, or the corresponding directory under `CODEX_HOME`.
 Exports can contain private conversations.
 Writing an existing export path replaces it.
@@ -18,7 +19,8 @@ extract-chat --branches --native --extract-dir exports SESSION_ID
 
 ## Input selection and output files
 
-`--session ID` selects the newest matching Codex rollout by filename timestamp and rollout UUID, including replacement rollouts created by revert.
+`--session ID` finds the current Codex rollout and reads its displayed conversation through Codex's history API.
+The API result must select that same rollout; a mismatch fails instead of exporting another history.
 Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
 A bare session UUID also implies `--session`, so `extract-chat ID --branches --native` works directly.
 Existing paths take precedence over UUID lookup, and positional UUIDs can be mixed with file or directory inputs.
@@ -28,11 +30,18 @@ Existing exports can still be replaced by rerunning a single source or a noncoll
 
 ## Codex ancestry and message selection
 
-Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
+Session IDs use an owned app-server's `thread/read` and paginated `thread/turns/list` calls without resuming the thread or starting a turn.
+Codex supplies conversation order, inherited history, user/assistant text, and assistant phases for active and archived sessions.
+Tools and other known non-message items are omitted; unsupported user content, unknown item types, and incomplete pagination fail before writing exports.
+The displayed transcript can differ from retained model context after imports or compaction.
+API errors do not silently fall back to the offline reader.
+
+Explicit files, directory scans, and `--branches` retain the offline reader for copies and superseded rollouts that the API cannot select by ID.
+These exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
 References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
 Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.
 Missing ancestors, reference cycles, and invalid cutoffs fail instead of producing a partial transcript.
-Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
+Offline Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
 
 ## Native HTML exports
 

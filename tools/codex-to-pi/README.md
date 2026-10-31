@@ -3,6 +3,7 @@
 [`codex-to-pi`](../../bin/codex-to-pi) converts a Codex session ID, JSONL path, or ChatGPT share URL to Pi v3 JSONL.
 
 It requires Python 3; local history conversion also requires Babashka (`bb`) on PATH.
+Session-ID conversion additionally requires Node and an installed Codex with `thread/turns/list` support.
 Share URLs require network access and the [share-page extractor](../extract-chat-share/README.md).
 Conversion writes a new Pi session file; it does not resume a session or replay tools.
 
@@ -15,8 +16,17 @@ Choose an output path that is safe to replace.
 
 ## Message selection
 
-Local conversion uses the same read-only [history reader](../../libexec/chat-history.clj) as `extract-chat` and requires `bb` on PATH.
-It also omits injected skill instructions while preserving skill invocations and discussion.
+Session-ID conversion uses the same [history reader](../../libexec/chat-history.clj) as `extract-chat`.
+It starts an owned Codex app-server, reads thread metadata, and pages full turn items in conversation order without resuming the thread or starting a turn.
+Both active and archived sessions use Codex's displayed conversation, which can differ from its retained model context after imports or compaction.
+User and assistant text, repeated occurrences, and assistant phases are preserved; tools and other non-message items are omitted.
+Unsupported user content or unknown history item types fail before writing the destination.
+Recorded turn times are used when available; these are not original per-message timestamps.
+
+Explicit file paths and `--branches` retain the offline rollout reader, including ancestor cutoffs and superseded rollouts that the ID-based API cannot select.
+Directory scans in `extract-chat` also remain offline.
+The offline reader omits injected skill instructions while preserving skill invocations and discussion.
+An API failure does not silently fall back to parsing message records.
 
 ## Output and path options
 

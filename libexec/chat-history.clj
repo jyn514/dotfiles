@@ -1,18 +1,24 @@
-;; Shared read-only session loading for extract-chat and codex-to-pi.
+;; Shared session loading for extract-chat and codex-to-pi.
 ;; Library API: files-under lists JSON/JSONL inputs; find-session searches explicit roots in priority order;
 ;; history-segments returns event sequences, oldest ancestor first, omitting injected skill instructions.
 ;; history-ranges retains physical rollout identities for graph consumers.
+;; api-history reads normalized transcript_message entries from Codex's displayed history.
 ;; Direct invocation: bb chat-history.clj MODE SOURCE CODEX-HOME [--branches].
 ;; MODE is file, session, or archived-session. Success writes one JSON object:
 ;; {"file": "selected path", "segments": [[exportable source events], ...]}.
+;; Session-ID modes use Codex's API; file and --branches modes read offline rollouts.
 ;; --branches adds all related paginated rollouts as branches, each with file,
 ;; thread_id, rollout_id, selected, and ranges [{file, rollout_id, events}].
 ;; Failure writes a diagnostic to stderr, exits 1, and emits no JSON.
 (ns dotfiles.chat-history
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [clojure.string :as str])
   (:import (java.nio.file Files Path)))
+
+(def ^:private api-reader
+  (str (io/file (.getParentFile (.getCanonicalFile (io/file *file*))) "codex-history.mjs")))
 
 (defn- path [s]
   (.toPath (io/file s)))
@@ -185,13 +191,29 @@
 (defn history-segments [file codex-roots]
   (mapv :events (history-ranges file codex-roots)))
 
-(defn- session-header [file]
+(defn session-header
+  "Read only a Codex rollout's metadata; return nil for another session format."
+  [file]
   ;; Family discovery needs only metadata, not every unrelated conversation.
   (try
     (with-open [reader (io/reader (.toFile ^Path file))]
       (let [event (some #(when-not (str/blank? %) (json/parse-string % true)) (line-seq reader))]
         (when (= "session_meta" (:type event)) (:payload event))))
     (catch Exception _ nil)))
+
+(defn api-history
+  "Read a selected thread through Codex's API, or return nil for a non-Codex file.
+  The expected file check prevents an ID lookup from silently selecting another rollout."
+  [file codex-home]
+  (when-let [meta (session-header file)]
+    (let [id (or (:id meta) (:session_id meta))
+          _ (when-not (and (string? id) (not (str/blank? id)))
+              (throw (history-error file "session metadata has no thread ID")))
+          {:keys [exit out err]} (shell/sh "node" api-reader id
+                                         (str codex-home) (str (.toAbsolutePath ^Path file)))]
+      (when-not (zero? exit)
+        (throw (ex-info (str/trim err) {:file (str file) :exit exit})))
+      (json/parse-string out true))))
 
 (defn branch-histories [file codex-roots]
   (let [selected (.toRealPath ^Path file (make-array java.nio.file.LinkOption 0))
@@ -240,8 +262,11 @@
                  (find-session source [(if (= "archived-session" mode)
                                          (second roots) (first roots))]))]
       (println (json/generate-string
-                (cond-> {:file (str file) :segments (history-segments file roots)}
-                  branches (assoc :branches (branch-histories file roots))))))
+                (if (and (not branches) (not= "file" mode))
+                  (or (api-history file codex-home)
+                      (throw (history-error file "session ID did not select a Codex rollout")))
+                  (cond-> {:file (str file) :segments (history-segments file roots)}
+                    branches (assoc :branches (branch-histories file roots)))))))
     (catch Exception error
       (binding [*out* *err*]
         (println (str "chat-history: " (ex-message error))))

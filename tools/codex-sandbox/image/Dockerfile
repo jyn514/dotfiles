@@ -156,6 +156,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
 # Preserve the source layout without relying on /bin (a symlink on Debian).
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /tools/chat-export/tools/extract-chat/extract-chat
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/chat-history.clj /tools/chat-export/libexec/chat-history.clj
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/codex-history.mjs ./libexec/codex-client.mjs /tools/chat-export/libexec/
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./bin/codex-to-pi /tools/chat-export/bin/codex-to-pi
 RUN ln -s /tools/chat-export/tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-docker/woodpecker-cli /tools/agent-docker/woodpecker-cli

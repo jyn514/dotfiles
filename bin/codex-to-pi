@@ -77,7 +77,9 @@ def messages(events):
     response_messages = []
     for event in events:
         payload = event.get("payload", {})
-        if event.get("type") == "share_message":
+        if event.get("type") == "transcript_message":
+            event_messages.append((event["role"], event["text"], event.get("timestamp"), event))
+        elif event.get("type") == "share_message":
             event_messages.append((event["role"], event["text"], event.get("timestamp"), event))
         elif event.get("type") == "event_msg":
             kind = payload.get("type")
@@ -97,8 +99,9 @@ def messages(events):
             role, text = payload["role"], content_text(payload.get("content"))
             if text.strip() and not (role == "user" and synthetic_user_message(text)):
                 response_messages.append((role, text, event.get("timestamp"), event))
-    # Codex stores both views. Prefer event_msg, matching extract-chat.
-    return event_messages or response_messages
+    # Modern Codex can retain only a partial event_msg mirror (for example an
+    # imported summary). Prefer message records so that mirror cannot hide turns.
+    return response_messages or event_messages
 
 
 def timestamp_ms(value):

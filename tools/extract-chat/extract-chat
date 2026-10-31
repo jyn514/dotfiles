@@ -38,6 +38,8 @@
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
   (println "With --session, extracts the newest Codex rollout or the matching Pi session.")
   (println "Bare session UUIDs also use session lookup; existing file and directory paths take precedence.")
+  (println "Codex IDs read displayed history through its app-server API (requires Node and Codex with thread/turns/list).")
+  (println "Explicit files, directory scans, and --branches use the offline rollout reader.")
   (println "Paginated Codex history includes referenced ancestors up to their saved cutoffs.")
   (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
   (println "With --extract-dir, output-name collisions between distinct sources fail before any exports; reruns still replace existing files.")
@@ -62,7 +64,7 @@
                       (= input (str (java.util.UUID/fromString input)))
                       (catch IllegalArgumentException _ false))]
     (if (and session-id? (not (fs/exists? file)))
-      [(find-session input archived?)]
+      [{:file (find-session input archived?) :api? true}]
       (history/files-under file))))
 
 (defn- content-part-text [part]
@@ -170,8 +172,10 @@
                         (str "\n\nCommand: " (:command message))))}])))))
 
 (defn- messages [events]
-  (or (seq (keep event-message events))
+  ;; Modern Codex may retain only a summary in the legacy event_msg mirror.
+  (or (seq (keep #(when (= "transcript_message" (:type %)) %) events))
       (seq (keep response-item-message events))
+      (seq (keep event-message events))
       (seq (keep claude-message events))
       (seq (mapcat (fn [event]
                      (if-let [metadata (or (pi-goal-message event) (pi-model-message event))]
@@ -203,9 +207,14 @@
                 (when (and phase (not= phase "final_answer"))
                   (str " (" phase ")"))))))
 
-(defn- read-session [final-only? file]
-  (let [segments (history/history-segments file [(default-root (System/getenv) false)
-                                                (default-root (System/getenv) true)])
+(defn- read-session [final-only? input branches?]
+  (let [file (if (map? input) (:file input) input)
+        api (when (and (:api? input) (not branches?))
+              (history/api-history file (or (System/getenv "CODEX_HOME")
+                                            (str (System/getProperty "user.home") "/.codex"))))
+        segments (or (:segments api)
+                     (history/history-segments file [(default-root (System/getenv) false)
+                                                     (default-root (System/getenv) true)]))
         events (last segments)]
     (merge {:file file
             :pi? (= "session" (:type (first events)))
@@ -434,7 +443,7 @@
                       paths
                       [(default-root (System/getenv) archived?)]))
             files (if session
-                    [(find-session session archived?)]
+                    [{:file (find-session session archived?) :api? true}]
                     (mapcat #(input-files archived? %) roots))]
         (when (and
                (not (seq paths))
@@ -448,7 +457,7 @@
             (println (str "extract-chat: No session files found in: " (str/join ", " roots)))))
         (if extract-dir
           (let [sessions (->> files
-                              (map #(read-session final-only? %))
+                              (map #(read-session final-only? % branches?))
                               (sort-by (juxt :timestamp (comp str :file)))
                               without-replayed-prefixes
                               (allocate-outputs extract-dir native? branches?))]
@@ -459,7 +468,7 @@
             ;; --extract-dir. Default Pi exports still delegate naming to Pi;
             ;; their unknown destinations are not covered by this preflight.
             (let [sessions (->> files
-                                (map #(read-session final-only? %))
+                                (map #(read-session final-only? % branches?))
                                 (mapv (fn [{:keys [file pi?] :as session}]
                                         (assoc session :output-file
                                                (when-not pi?
@@ -469,7 +478,7 @@
               (doseq [session sessions]
                 (print-session native? branches? session)))
             (doseq [file files]
-              (print-session native? branches? (read-session final-only? file)))))))))
+              (print-session native? branches? (read-session final-only? file branches?)))))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

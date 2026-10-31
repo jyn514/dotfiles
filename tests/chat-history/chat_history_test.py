@@ -108,7 +108,7 @@ class SharedChatHistoryTests(unittest.TestCase):
         return [event["message"]["content"] for event in events[1:]]
 
     def assert_consumers(self, selector, expected, *flags, cwd=ROOT):
-        extracted = self.run_command(EXTRACT, *flags, "--session", selector, cwd=cwd)
+        extracted = self.run_command(EXTRACT, *flags, selector, cwd=cwd)
         self.assertEqual(0, extracted.returncode, extracted.stderr)
         self.assertEqual(expected, re.findall(r"^## User\n\n(.*?)\n\n(?=## |\Z)",
                                             extracted.stdout, re.MULTILINE | re.DOTALL))
@@ -117,20 +117,51 @@ class SharedChatHistoryTests(unittest.TestCase):
         self.assertEqual(expected, self.converted_messages())
 
     def test_both_consumers_follow_parent_edits_and_revert_cutoffs(self):
-        parent, _ = self.lineage()
-        self.assert_consumers(CHILD, ["café", "parent continuation", "current child"])
+        parent, latest = self.lineage()
+        self.assert_consumers(latest, ["café", "parent continuation", "current child"])
         # A source change at the shared boundary must reach both consumers.
         content = parent.read_bytes().replace("café".encode(), "thé!".encode())
         parent.write_bytes(content)
-        self.assert_consumers(CHILD, ["thé!", "parent continuation", "current child"])
+        self.assert_consumers(latest, ["thé!", "parent continuation", "current child"])
 
-    def test_archived_lookup_and_explicit_files_from_unrelated_directory(self):
+    def test_both_consumers_keep_response_history_with_partial_or_complete_event_mirrors(self):
+        file = self.write_rollout(f"rollout-2026-10-14T16-00-00-{CHILD}.jsonl", CHILD,
+                                  ["summary", "repeat", "repeat"])
+        responses = [json.loads(line) for line in file.read_text().splitlines()]
+        responses.append({"type": "response_item", "ordinal": 4, "timestamp": STAMP,
+                          "payload": {"type": "message", "role": "assistant",
+                                      "phase": "final_answer",
+                                      "content": [{"type": "output_text", "text": "done"}]}})
+        for mirror_count in (0, 1, 4):
+            with self.subTest(mirror_count=mirror_count):
+                events = [responses[0]]
+                for index, response in enumerate(responses[1:]):
+                    events.append(response)
+                    if index < mirror_count:
+                        payload = response["payload"]
+                        events.append({"type": "event_msg", "timestamp": STAMP,
+                                       "payload": {"type": "user_message" if payload["role"] == "user"
+                                                   else "agent_message",
+                                                   "message": payload["content"][0]["text"],
+                                                   "phase": payload.get("phase")}})
+                file.write_text("".join(json.dumps(e) + "\n" for e in events))
+                extracted = self.run_command(EXTRACT, file)
+                self.assertEqual(0, extracted.returncode, extracted.stderr)
+                self.assertEqual(["summary", "repeat", "repeat", "done"],
+                                 re.findall(r"^## (?:User|Assistant)\n\n(.*?)\n\n(?=## |\Z)",
+                                            extracted.stdout, re.MULTILINE | re.DOTALL))
+                converted = self.run_command(CONVERT, file, "-o", self.output)
+                self.assertEqual(0, converted.returncode, converted.stderr)
+                self.assertEqual(["summary", "repeat", "repeat", [{"type": "text", "text": "done"}]],
+                                 self.converted_messages())
+
+    def test_archived_explicit_files_from_unrelated_directory(self):
         _, latest = self.lineage()
         for path in (self.home / "sessions/2026/10/14").glob("*.jsonl"):
             path.rename(self.home / "archived_sessions/2026/10/14" / path.name)
-        self.assert_consumers(CHILD, ["café", "parent continuation", "current child"],
-                              "--archived", cwd=self.root)
         latest = self.home / "archived_sessions/2026/10/14" / latest.name
+        self.assert_consumers(latest, ["café", "parent continuation", "current child"],
+                              "--archived", cwd=self.root)
         result = self.run_command(CONVERT, latest, "--normalize", "-o", self.output, cwd=self.root)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["café", "parent continuation", "current child"], self.converted_messages())
@@ -145,8 +176,8 @@ class SharedChatHistoryTests(unittest.TestCase):
                 events[0]["payload"]["history_base"] = position
                 latest.write_text("".join(json.dumps(e) + "\n" for e in events))
                 self.output.write_text("preserve existing session\n")
-                extracted = self.run_command(EXTRACT, "--session", CHILD)
-                converted = self.run_command(CONVERT, CHILD, "-o", self.output)
+                extracted = self.run_command(EXTRACT, latest)
+                converted = self.run_command(CONVERT, latest, "-o", self.output)
                 self.assertNotEqual(0, extracted.returncode)
                 self.assertNotEqual(0, converted.returncode)
                 self.assertEqual("", extracted.stdout)
@@ -361,7 +392,7 @@ class SharedChatHistoryTests(unittest.TestCase):
                     events = [json.loads(line) for line in latest.read_text().splitlines()]
                     events[0]["payload"]["history_base"] = self.position(parent, PARENT, 6, 6)
                     latest.write_text("".join(json.dumps(e) + "\n" for e in events))
-                self.assert_consumers(CHILD, [*visible, "continue"])
+                self.assert_consumers(latest, [*visible, "continue"])
 
     def test_skill_filter_preserves_assistant_messages_and_filters_pi_and_claude_users(self):
         for format in ("pi", "claude", "codex"):
@@ -393,7 +424,8 @@ class SharedChatHistoryTests(unittest.TestCase):
     def test_packaged_extractor_finds_shared_reader_through_symlink(self):
         image = self.root / "image"
         layout = image / "tools/chat-export"
-        for relative in ("tools/extract-chat/extract-chat", "libexec/chat-history.clj", "bin/codex-to-pi"):
+        for relative in ("tools/extract-chat/extract-chat", "libexec/chat-history.clj",
+                         "libexec/codex-history.mjs", "libexec/codex-client.mjs", "bin/codex-to-pi"):
             target = layout / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["cp", str(ROOT / relative), str(target)], check=True)
@@ -401,8 +433,8 @@ class SharedChatHistoryTests(unittest.TestCase):
         entrypoint = image / "opt/agent-tools/bin/extract-chat"
         entrypoint.parent.mkdir(parents=True)
         entrypoint.symlink_to(layout / "tools/extract-chat/extract-chat")
-        self.lineage()
-        result = self.run_command(entrypoint, "--session", CHILD, cwd=self.root)
+        _, latest = self.lineage()
+        result = self.run_command(entrypoint, latest, cwd=self.root)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("## User\n\ncafé\n\n", result.stdout)
         self.assertIn("## User\n\ncurrent child\n\n", result.stdout)

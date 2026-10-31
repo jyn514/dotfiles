@@ -376,10 +376,10 @@
         (let [expected (str "# " latest "\n\n## User\n\ncafé\n\n"
                             "## User\n\nparent continuation\n\n"
                             "## User\n\ncurrent child turn\n\n")]
-          (is (= expected (with-out-str (extract-chat/main ["--session" child-id]))))
+          (is (= (str latest) (str (extract-chat/find-session child-id false))))
           (is (= expected (with-out-str (extract-chat/main [(str latest)]))))
-          (is (= expected (with-out-str (extract-chat/main ["--final-only" "--session" child-id]))))
-          (extract-chat/main ["--session" child-id "--extract-dir" (str output-dir)])
+          (is (= expected (with-out-str (extract-chat/main ["--final-only" (str latest)]))))
+          (extract-chat/main [(str latest) "--extract-dir" (str output-dir)])
           (is (= expected (slurp (fs/file output-dir
                                          (str/replace (fs/file-name latest) #"\.jsonl$" ".md")))))))
       (finally (fs/delete-tree root)))))
