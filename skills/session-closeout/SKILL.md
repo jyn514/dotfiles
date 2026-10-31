@@ -105,7 +105,7 @@ Use that assessment to decide whether process improvements are warranted.
 
 For each suggestion, name the affected owner and the failure it would prevent.
 Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible.
-Route whole-artifact explanation and reader experience to `holistic-writing`, consulting its [documentation checks](../holistic-writing/references/documentation.md) for documentation-specific work.
+Route whole-artifact explanation and reader experience to the [shared editorial pass](../holistic-writing/references/editorial-pass.md), consulting the [documentation checks](../holistic-writing/references/documentation.md) for documentation-specific work.
 Route skill behavior to `skill-authoring`, and cleanup to `cleanup-triage` or another owning skill rather than duplicating its procedure here.
 
 If the session contains concrete friction, report at least one improvement; otherwise state why none was warranted.

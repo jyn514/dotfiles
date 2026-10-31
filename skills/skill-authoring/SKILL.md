@@ -265,7 +265,7 @@ For every change, confirm affected linked paths exist and affected commands matc
 Run repository checks for bundled scripts or code that changed.
 Apply §6's positive, negative, and interaction checks to changed behavior and routes.
 Reload an active session before using its behavior as evidence for edited instructions.
-Use `holistic-writing` for a whole-artifact editorial pass after creating or substantially rewriting the skill, preserving the behavior and discovery decisions established here.
+Use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) after creating or substantially rewriting the skill, preserving the behavior and discovery decisions established here.
 Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
 
 Report changed files, checks performed, reused evidence, and any environment-specific limitation.

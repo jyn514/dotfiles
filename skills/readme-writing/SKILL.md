@@ -11,8 +11,8 @@ Fit the introduction to the reader's task: develop a focused use, or orient read
 A shorter, self-contained replacement is valid; retaining the source's complete reference is not the default.
 
 This skill is sufficient to begin a README; do not load every broader writing workflow by default.
-May combine with `holistic-writing` for whole-artifact prose guidance; reuse established reader, purpose, evidence, and decisions rather than restarting workflows.
-Use its [documentation reference](../holistic-writing/references/documentation.md) for documentation-specific forms and workflow checks, and `tighten-prose` for bounded local polish.
+May use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact prose guidance; reuse established reader, purpose, evidence, and decisions rather than restarting workflows.
+Use the [documentation reference](../holistic-writing/references/documentation.md) for documentation-specific forms and workflow checks, and `tighten-prose` for bounded local polish.
 Use `reorganize-docs` when extracting or moving existing material, or judging navigation and the documentation set.
 Those routes do not expand the task's write permission.
 

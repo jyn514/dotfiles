@@ -186,5 +186,5 @@ If no material checks remain, say so briefly.
 After the first draft, provide the upstream issue-creation URL outside the report body.
 Drafting does not authorize submission; submit only when explicitly requested and the project's policy permits agent submission.
 
-After writing or revising a report, use `holistic-writing` for a whole-artifact editorial review.
+After writing or revising a report, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact editorial review.
 Make clear which response from the maintainer would help, and distinguish existing capabilities from proposed changes.

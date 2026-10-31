@@ -10,7 +10,7 @@ Use this workflow for consequential approvals or explanations that need substant
 Ask simple preference questions, routine confirmations, and requests for missing facts directly.
 This skill owns selection and framing of human review questions and explanations, not the underlying investigation or design selection.
 Use the owning investigation or design skill for that work.
-Use `holistic-writing` for whole-artifact authoring and reader experience.
+Use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact authoring and reader experience.
 It does not grant implementation or approval authority.
 
 ## 1. Resolve what needs human judgment
@@ -109,5 +109,5 @@ If they also ask why the behavior is harmful or the mechanism is needed, check t
 A request for clarification is not rejection of the design, but finding no support for its claimed benefit requires revising that claim or recommendation.
 
 If the front fails these checks, rewrite it rather than adding more instructions for the reader.
-Check source fidelity and links, then use `holistic-writing` for whole-artifact editorial review of substantial drafts.
+Check source fidelity and links, then use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact editorial review of substantial drafts.
 Stop when the packet is readable and faithful; no decision, response, or approval is required to finish preparing it.

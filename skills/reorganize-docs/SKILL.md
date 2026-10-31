@@ -17,7 +17,7 @@ Within the selected documentation scope, discover and follow the target reposito
 Read the nearest index for every documentation subtree in scope.
 
 Use the format-specific owner for specifications, generated documentation, public docs, or Typst files.
-Use `holistic-writing` for whole-artifact editorial review of substantially revised prose.
+Use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact editorial review of substantially revised prose.
 
 ## Observe
 
