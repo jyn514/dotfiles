@@ -1,4 +1,6 @@
-import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
+import { runInThisContext } from "node:vm";
 import { dirname, resolve } from "node:path";
 
 export async function loadConfig(filename) {
@@ -6,6 +8,11 @@ export async function loadConfig(filename) {
   const deleted = [];
   const executed = [];
   const includes = [];
+  async function evaluate(path) {
+    // Glide strips TypeScript and evaluates a classic script, not an ES module.
+    const source = stripTypeScriptTypes(await readFile(path, "utf8"));
+    runInThisContext(source, { filename: path });
+  }
   const keymaps = new Map();
   const scope = prefix => ({
     set(modes, key, callback) {
@@ -24,12 +31,12 @@ export async function loadConfig(filename) {
     },
     excmds: { async execute(command) { executed.push(command); } },
     include(name) {
-      const promise = import(pathToFileURL(resolve(dirname(filename), name)));
+      const promise = evaluate(resolve(dirname(filename), name));
       includes.push(promise);
       return promise;
     },
   };
-  await import(pathToFileURL(filename));
+  await evaluate(filename);
   await Promise.all(includes);
   await Promise.resolve();
   deleted.length = 0;
