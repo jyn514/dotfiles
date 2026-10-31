@@ -100,7 +100,7 @@ Preserve the source's distinction between rule derivation and its other permitte
 
 **Resolve unsettled evidence.**
 If sources leave evidence unsettled and plausible readings would accept different cases, do not choose a new burden to make the evidence look complete.
-Record `NEEDS_PRODUCT_DECISION` and apply [design review's Non-narrowing check](../spec-review/SKILL.md#non-narrowing-check), including its eligibility-ambiguity procedure.
+Record `NEEDS_PRODUCT_DECISION` and apply `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md), including its eligibility-ambiguity procedure, without starting a full specification review.
 
 Choose evidence that could show the requirement was not met, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one.
 If defining such evidence would require inventing behavior, do not fill the gap in the requirement or its acceptance evidence.
@@ -136,7 +136,7 @@ Before presenting the draft, verify:
 
 - no requirement lacks authoritative traceability;
 - every brief goal and supported constraint appears in coverage;
-- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply [design review's Non-narrowing check](../spec-review/SKILL.md#non-narrowing-check) to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
+- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md) to flag eligibility ambiguity and unsupported restrictions, not merely check source labels; this focused check does not start a full specification review;
 - non-goals are not accidentally restated as scope;
 - material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;

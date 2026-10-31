@@ -14,7 +14,7 @@ For critique, evaluate the supplied candidate using the relevant caller trace, p
 Report supported findings, their consequences, and the smallest useful corrections.
 A review request does not authorize edits or require developing a replacement architecture.
 Use the design procedure below when developing or comparing approaches is requested.
-For a concrete question about whether the proposed contract narrows governing requirements, consult the [non-narrowing check](../spec-review/SKILL.md#non-narrowing-check), not another full review.
+For a concrete question about whether the proposed contract narrows governing requirements, consult `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md), not another full review.
 
 ## Read First
 

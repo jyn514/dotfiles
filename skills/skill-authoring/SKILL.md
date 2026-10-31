@@ -10,7 +10,7 @@ Create or evaluate skills that change action reliably without burdening every pr
 For review, inspect the existing or proposed guidance and its callers, then apply §6's discovery and procedure checks.
 Use §1's provenance checks when assessing a proposed correction.
 Report supported findings and the smallest useful corrections; a review request does not authorize edits or creation of a replacement skill.
-Consult the [non-narrowing check](../spec-review/SKILL.md#non-narrowing-check) when a concrete question concerns supported cases or governing authority, not as another full review.
+Consult `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md) when a concrete question concerns supported cases or governing authority, not as another full review.
 For creation or substantive changes, follow the workflow below.
 
 ## 1. Justify the skill
