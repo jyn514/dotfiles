@@ -68,6 +68,9 @@ Use these sections in order, omitting empty or inapplicable content; state neces
 ### Objective and authority
 
 State this conversation's governing objective, its source and goal status, and latest request separately.
+Preserve established quality trade-offs, time constraints, and reasons for priorities or rejected approaches that explain the result's value.
+Retain reasoning that could change later task selection even when the immediate task changes; distinguish user decisions from assistant hypotheses.
+An objective label, ticket list, or coverage count does not replace that context; cut completed procedural detail before cutting it.
 In split or observer sessions, preserve this conversation's actual assignment as governing; inherited goals owned by another session are background, not this session's active assignment or authority.
 When no newer request is recorded, carry forward the last established user request instead of reporting only “no new request.”
 Resolve short follow-ups such as “review,” “fix,” or “implement” against the most recently selected task, not automatically against the ongoing goal or previous checkpoint.

@@ -21,6 +21,25 @@ Cite the source of consequential constraints before comparing actions.
 Repair obvious mechanical failures directly.
 Unrelated bugs and hypothetical failures do not establish prerequisites.
 
+### Judge comparative value before selecting work
+
+Ask what successful completion would leave unsolved.
+Could the proposed step succeed completely while leaving the obstacle the user cares about unchanged?
+Text can render correctly while writing remains cumbersome.
+Documentation links can resolve while readers still cannot follow the instructions.
+Identify how the step addresses that obstacle before prioritizing it over work that does.
+A necessary partial step can still be worthwhile; compare the remaining route to the requested result, not only the intermediate success.
+
+Judge the marginal benefit from the current state, not the general importance of the category.
+Identify what already works, what the step adds, and what integration or unresolved decisions remain before that addition becomes useful.
+Research can earn priority by changing a consequential decision; resolving an uncertainty is not inherently progress.
+Use existing evidence and rough comparisons when sufficient rather than creating another measurement project.
+
+Separate confidence in finishing a task from the value of finishing it.
+A well-defined defect with a certain repair can matter less than uncertain work addressing the main obstacle.
+Prefer the strongest expected contribution within the available time, preserving required quality rather than optimizing a convenient proxy.
+Do not invent probabilities or numeric scores to make that judgment look precise.
+
 ### Examine what makes the approach settled
 
 Distinguish a settled outcome, an approach supported by applicable evidence, and an approach you have merely selected.
