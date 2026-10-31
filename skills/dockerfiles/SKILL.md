@@ -77,6 +77,9 @@ See [Bake target contexts and outputs](https://docs.docker.com/build/bake/refere
 Identify required executables, production dependencies, dynamic libraries, package metadata, and runtime assets before pruning.
 Keep source or debugging tools when the requested product needs them; minimality does not override that requirement.
 Use authoritative package file lists and preserve workspace symlinks and executable links.
+When combining separately installed dependency trees, check the resolved package paths and versions from each consumer in the final filesystem.
+A directory overlay can replace locked transitive dependencies even when both installs succeeded.
+Preserve each consumer's intended versions, keeping dependency roots separate when their requirements conflict.
 Avoid retaining duplicate assets beside both a standalone binary and an SDK when both consumers can share one tree.
 Keep compilers, development dependencies, package caches, and build credentials out of runtime layers unless a runtime requirement calls for them.
 
@@ -115,8 +118,13 @@ See [UID/GID mapping](https://docs.docker.com/engine/security/rootless/uid-gid-m
 Use the repository's isolated test environment and owned disposable contexts, images, and mounts.
 Inspect resolved Bake configuration and use native build checks supported by the installed Buildx version.
 Build the affected targets and exercise the packaged application under its final user, paths, platform, and libc.
+Use the production executable, argv, and entrypoint wrappers for those operations.
+A probe run under Bun does not establish that a Node-launched worker can import the same SDK.
 Check retained assets and imports, executable and workspace links, excluded build tools, and required mounted reads or writes according to what changed.
 When changing cache wiring, check one relevant invalidation and one reuse case with disposable inputs.
+For startup caches, identify the consuming process and module graph.
+Verify seed reuse by that process under its final runtime version, paths, environment, and user.
+Remove warming stages whose outputs have no runtime consumer.
 Do not touch the authoritative checkout to trigger a rebuild.
 Do not prune shared caches or change shared image tags to manufacture a cold test.
 
