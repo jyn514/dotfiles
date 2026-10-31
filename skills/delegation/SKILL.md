@@ -51,11 +51,10 @@ For example, require regeneration only after establishing that the target is gen
 
 ### When an assignment would add a resource owner
 
-When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the architecture owner's reuse dispositions.
-Cover nearby existing resources.
+When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the reuse dispositions required by the shared [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms).
 Do not encode a new resource as settled implementation work when reuse was not compared first.
 If the packet lacks that comparison, assign a bounded inspection before implementation.
-The worker returns the existing candidates and what requirement, if any, rejects each one.
+The worker returns the existing candidates and their dispositions.
 
 ### For full-file coverage
 

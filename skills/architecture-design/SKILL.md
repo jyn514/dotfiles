@@ -116,17 +116,7 @@ Complete this inspection before choosing or proposing an API, protocol, or subsy
 
 #### Inventory existing runtime resources
 
-Before proposing a new process, container, network, daemon, cache, store, or lifecycle owner, inventory existing runtime resources.
-Include resources on the same trust, connectivity, and ownership path.
-
-Give each plausible resource one disposition: `reuse`, `extend`, `reuse when both features are selected`, or `reject`.
-For a rejection, name the concrete requirement the resource cannot meet.
-
-A conditionally created resource remains a reuse candidate.
-Absence in some modes does not justify a parallel resource in modes where both exist.
-For example, compare extending a gateway only when two capabilities overlap before assigning the second capability its own sidecar.
-
-Do not design the new resource until every closer existing owner has a supported rejection.
+Before proposing a new runtime resource or lifecycle owner, apply the shared [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms) to inventory existing owners and justify any new resource.
 
 #### Trace the existing implementation
 
