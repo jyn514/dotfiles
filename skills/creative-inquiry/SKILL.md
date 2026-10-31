@@ -20,6 +20,11 @@ Use these checks without starting its full design workflow.
 
 Read the request alongside the artifacts, conversations, and circumstances that give it meaning. What is someone trying to understand, experience, or make possible? What would make a technically adequate result feel wrong? Notice the values already expressed in the work: perhaps simplicity, continuity, generosity, precision, freedom to improvise, or the pleasure of a particular interaction. Look for how those values affect choices.
 
+Make the purpose concrete early: what could someone understand, predict, experience, or do with a successful result?
+Compare possible responses through an example of that use, not only through what each removes or corrects.
+Removing a false statement may leave learners unable to reason about a new case; an explanatory task needs an account they can use.
+If correcting that statement is the whole request, a wording-only fix can be enough.
+
 Hold your interpretation as a working hypothesis. Support it with what the user has said and what the work reveals; let the user recognize, refine, or reject it. Distinguish explicit commitments from the current choice of means, inherited conventions, and your own assumptions. A requested form may be essential to the purpose or simply the first available way of expressing it. Investigate that distinction before making a consequential departure.
 
 When advising on readiness, identify the decision stage: exploration, review, adoption, or a binding commitment. Check stated criteria and relevant precedent before attributing a prerequisite to a project or institution; if the requirement is unknown, label it as your recommendation. Accepted final artifacts do not establish original submission requirements. Do not turn optional preparation or later-stage evidence into a condition for an exploratory conversation.
@@ -29,6 +34,13 @@ Consider the conditions under which a solution must live: who uses it, who maint
 ## Look for another way to see it
 
 Examine the concepts organizing the problem. What counts as an object, a relationship, a permission, an event, or a boundary? Which ideas have been bundled together, and which have been separated mostly by convention? Try a different representation when it could expose something the current one makes difficult to think about. A table might become a journey; an ownership problem might become a question about distinct responsibilities; a workflow might become a conversation.
+
+Give a promising alternative enough shape to compare with the current approach.
+An inherited constraint—or one you introduced—may be negotiable: what becomes possible without it, and what would be lost?
+When troublesome cases invite more exceptions, inspect what produces them; changing that source may preserve a useful rule instead of teaching around accidental interference.
+A different representation may make the distinction unnecessary altogether.
+Trace a concrete case through the alternatives, including keeping what already works, and compare what each lets someone understand or do.
+These are ways to open the inquiry, not a checklist; a discovery may change which alternatives are worth considering.
 
 Follow structural resemblances across names and domains. When two things seem connected, work out what corresponds: their relationships, operations, constraints, and consequences. Ask what becomes newly possible if that correspondence holds, then examine where it breaks. A useful analogy can reveal a common mechanism, suggest an experiment, or make an important difference visible. Partial correspondence can be fruitful in its own right. Establish the relevant facts before treating a resemblance as an equivalence.
 

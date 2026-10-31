@@ -49,6 +49,11 @@ Do not make permission conditional on an assumed mechanism.
 If the workflow is uncertain, include bounded inspection within the assignment's permitted activity rather than prescribing an unverified method as a prerequisite.
 For example, require regeneration only after establishing that the target is generated and identifying its source; an authoritative data file may instead require direct edits.
 
+For a broken installed parser, assign the outcome “restore file opening with a compatible parser,” not “implement a startup migration,” unless recurring migration behavior is already required.
+Supply the observed parser mismatch and installation paths so the worker can compare one-off cleanup with a source change.
+If the supported setup recreates the mismatch, fixing its source may be necessary; leftover state from a one-time migration does not by itself justify code that runs at every startup.
+A worker that cannot perform a required host operation can return the command within the task's authority rather than substitute persistent guest-writable configuration.
+
 ### When an assignment would add a resource owner
 
 When an assignment would add a process, container, network, daemon, cache, store, or lifecycle owner, include the reuse dispositions required by the shared [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms).

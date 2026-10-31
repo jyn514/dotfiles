@@ -4,6 +4,26 @@ These examples distinguish requested behavior from added guarantees, inspect the
 and separate required distinctions from their existing representation.
 They illustrate the skill's requirement-to-mechanism comparison, not permission to drop user requirements or a separate exercise for every design.
 
+## Start with the existing operation
+
+**Request:** Restart running sessions without losing the work their existing pause operation can save.
+
+**Tempting design:** The restart launcher needs proof of a successful save, so build a socket protocol with save requests, receipts, status queries, and retry identities.
+The protocol may be coherent, but its absence does not establish that the existing operation cannot support restart.
+
+**Concrete comparison:** First trace the pause operation through durable save, successful exit, reopening the saved session, and restoration.
+Suppose it already supports save-and-exit and leaves a record the launcher can verify.
+Compare that path with the proposed protocol against the same requirements, including save failure, crash before exit, already-paused sessions, and partial restart.
+A process exit alone does not distinguish a successful save from a crash; inspect whether the saved record supplies the missing evidence before inventing a receipt service.
+
+**Decision:** If the existing lifecycle and verifiable saved record meet the preservation requirement, adapt the launcher around them rather than adding a second control interface.
+If a governing requirement instead needs live sessions to acknowledge a specific save while continuing to run, save-and-exit cannot satisfy it.
+Retain the necessary acknowledgment mechanism or find another supported operation; do not weaken that requirement to obtain a smaller design.
+
+**Transfer:** Trace the operation that could produce the result, not only the proposed interface that would coordinate it.
+A missing preferred transport is not proof of a missing capability.
+The simpler path wins only when it satisfies the full required outcome, not because it has fewer components.
+
 ## An added guarantee creates the machinery
 
 **Request:** Warn an agent before a later edit makes an earlier editing response's changes no longer separately selectable for a commit.

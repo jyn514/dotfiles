@@ -112,7 +112,15 @@ Otherwise choose sensible defaults that best satisfy the requirements; unspecifi
 
 ### 1. Trace the existing path
 
-Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
+Complete the applicable inspection before choosing or proposing an API, protocol, or subsystem split.
+Start with one complete caller-to-result interaction using existing commands, identifiers, and defaults.
+For an existing subsystem, trace the affected specification, implementation, same-path tests, and callers.
+Identify the result the caller needs, then inspect how far that interaction already gets before treating a missing proposed interface as a missing capability.
+
+Compare that route with the governing outcome, including required maintenance or lifecycle changes, before investigating proposal-specific machinery.
+Check the ownership, authorization, compatibility, storage, and supported-interface constraints needed to establish whether the direct route suffices.
+If it does, use step 2 to state the complete recommendation and stop; do not investigate resources or boundaries for an addition that is no longer needed.
+Use the further inspection below only where it can resolve a remaining choice or establish a candidate's sufficiency.
 
 #### Inventory existing runtime resources
 
@@ -120,7 +128,6 @@ Before proposing a new runtime resource or lifecycle owner, apply the shared [ru
 
 #### Trace the existing implementation
 
-For an existing subsystem, start with the affected specification, implementation, same-path tests, and callers.
 Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.
 For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 For adapters and proxies, inspect the native interface and any existing analogous adapter before deciding what to forward, restrict, or replace.
@@ -142,8 +149,9 @@ Use history as evidence when useful, but do not equate churn with pain. Check wh
 
 ### 2. Challenge the hardest part and decide whether design is needed
 
-Start with one complete caller-to-result interaction using existing commands, identifiers, and defaults.
+Compare the traced interaction with the proposed addition before elaborating the addition's interface or failure handling.
 Before introducing another input, identifier, persistent record, or protocol step, show a concrete case where that interaction fails a governing requirement.
+If the comparison is unclear, use the [existing-operation example](references/simplicity-examples.md#start-with-the-existing-operation) to distinguish a missing capability from a preferred new interface.
 Distinguish required behavior from optional guarantees introduced by the proposal.
 Name the hardest part of the proposed approach and the guarantee, distinction, or coordination that makes it hard.
 Ask whether the hard part can be removed while keeping required behavior, timing, and coverage fixed.

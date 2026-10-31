@@ -11,29 +11,44 @@ Use [opportunity-scan](../opportunity-scan/SKILL.md) only for project-wide disco
 
 ## Compare with the existing path
 
-### Establish the need and evidence
-
-Before treating a new mechanism or diagnostic as necessary, inspect an existing example of the requested activity.
+Start with the requested outcome, the nearest existing route to it, and the proposed supporting action.
+Inspect an existing example of the requested activity and trace that route from the current state through its intended consumer.
+Compare continuing that route with the supporting action before elaborating a new mechanism or diagnostic, even when earlier steps were useful.
 If no example is available, report the evidence gap rather than inventing an example or a failure.
-
-Identify the unmet requirement, the dependency the proposed work addresses, and the evidence for each.
-For a diagnostic follow-up, name which possible findings would change the next action.
-
-Repair obvious mechanical failures directly.
-Unrelated bugs and hypothetical failures do not establish prerequisites.
-
-### Compare the alternatives
-
-Compare the proposed supporting work with continuing through the smallest existing-tool alternative, even when earlier steps produced useful results.
-A chain of successful supporting tasks can still fail to advance the requested outcome.
 
 Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach).
 Cite the source of consequential constraints before comparing actions.
-Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
+Repair obvious mechanical failures directly.
+Unrelated bugs and hypothetical failures do not establish prerequisites.
 
-When a dependency follows from a chosen approach, name the choice that creates it.
-“Keeping X requires Y” is not the same as “the user’s goal requires Y.”
-If changing the choice removes the dependency, include that alternative in the comparison.
+### Construct alternatives that change the action
+
+Do not limit the comparison to several implementations of an assumed mechanism.
+Use the actual state and governing requirements to construct alternatives across action types where relevant:
+
+- Repair installed state once versus add persistent source behavior.
+  Establish whether the problem needs a one-off correction or can recur under supported use.
+- Invoke or extend an existing operation versus create a new protocol or workflow.
+  Trace what the existing operation already does before designing coordination around it.
+- Remove an agent-selected constraint versus satisfy the dependencies it creates.
+  Name the choice that creates the dependency: “keeping X requires Y” is not the same as “the user’s goal requires Y.”
+
+For example, a leftover installed artifact may need one authorized cleanup rather than cleanup on every startup.
+If supported installation can recreate it, a one-off cleanup does not meet a requirement to prevent recurrence.
+Compare fixes to the responsible source behavior.
+The deciding fact is how the artifact returns, not which cleanup implementation is shortest.
+
+Compare complete routes to the requested outcome, not just the nearest primitive or a successful intermediate step.
+Check what the intended consumer needs, including required compatibility and acceptance evidence.
+The smallest alternative qualifies only if it meets the full governing outcome.
+When an existing route cannot do that, identify the concrete missing behavior before adding supporting work.
+
+### Establish which supporting work is needed
+
+Identify the unmet requirement, the dependency the proposed work addresses, and the evidence for each.
+For a diagnostic follow-up, name which possible findings would change the next action.
+A chain of successful supporting tasks can still fail to advance the requested outcome.
+Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
 
 ## Keep feedback fast
 
