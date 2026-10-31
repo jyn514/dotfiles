@@ -207,7 +207,11 @@ These specialized Git helpers can change Git history or metadata directly.
 | --- | --- |
 | Merge directory contents | [`merge`](../bin/merge) copies without overwriting destination entries and offers source removal only after a successful collision-free copy. |
 | Replace literal text recursively | [`replace`](../bin/replace) rewrites every regular file below the current directory in place, including hidden and ignored files. |
-| Inspect disk usage | [`usage`](../bin/usage) prints immediate filesystem usage in descending human-readable size. |
+| Inspect disk usage | `gdu -npx -- PATH` prints immediate files and directories in descending size without crossing filesystems; `gdu -x -- PATH` opens the interactive browser, which includes deletion actions. |
+
+The local `usage` helper is retired; use gdu directly.
+[Package setup](package-plan/README.md) already installs gdu on supported targets except Chimera, where the package policy skips it as unavailable.
+Homebrew installs `gdu-go`; macOS local setup provides the `gdu` alias.
 
 ### User accounts
 
