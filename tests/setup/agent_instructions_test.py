@@ -87,14 +87,18 @@ class AgentInstructionTests(unittest.TestCase):
         self.assertTrue(route.startswith("~/"), "route must address the installed HOME")
         return self.home / route[2:]
 
-    def test_codex_and_pi_keep_distinct_prompt_entrypoints(self) -> None:
+    def test_harnesses_keep_distinct_prompt_entrypoints(self) -> None:
         codex_developer = (ROOT / "config/agents/codex/codex-developer-instructions.md").read_text()
         codex_agents = (ROOT / "config/agents/codex/AGENTS.md").read_text()
+        claude = (ROOT / "config/agents/claude/CLAUDE.md").read_text()
         pi_agents = (ROOT / "config/pi-agent/AGENTS.md").read_text()
 
         self.assertIn("@~/.agents/shared.md", codex_developer)
         self.assertIn("@~/.agents/irc.md", codex_developer)
         self.assertNotIn("@~/.agents/shared.md", codex_agents)
+        self.assertIn("@~/.agents/shared.md", claude)
+        for entrypoint in (codex_developer, codex_agents, claude):
+            self.assertNotIn("ROOT.md", entrypoint, "other harnesses must not depend on Pi's root instructions")
         self.assertEqual("@../../.agents/shared.md\n", pi_agents)
 
     def test_manifest_installs_shared_and_whole_skills_and_reference_route_resolves(self) -> None:

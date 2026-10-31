@@ -1,7 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type ContextFile = { path: string; content: string };
 
@@ -90,8 +90,19 @@ export async function expandInstructionIncludes(
 
 export default function instructionIncludes(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
+    const rootPath = resolve(getAgentDir(), "ROOT.md");
+    // This hook owns ROOT context. Replace it on each run, including after removal.
+    const contextFiles = event.systemPromptOptions.contextFiles.filter((file) => resolve(file.path) !== rootPath);
+    if (!process.env.PI_SUBAGENT_ID) {
+      try {
+        contextFiles.push({ path: rootPath, content: await readUtf8(rootPath) });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    event.systemPromptOptions.contextFiles = contextFiles;
     const expanded = await expandInstructionIncludes(
-      event.systemPromptOptions.contextFiles,
+      contextFiles,
       event.systemPromptOptions.cwd,
     );
     if (expanded.length === 0) {

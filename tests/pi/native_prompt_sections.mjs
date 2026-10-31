@@ -58,6 +58,88 @@ function systems(context) {
   return context.messages.filter((message) => message.role === "system");
 }
 
+test("native prompt composition shares rules and skills but loads ROOT only outside managed children", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-native-root-"));
+  const saved = { directory: process.env.PI_CODING_AGENT_DIR, child: process.env.PI_SUBAGENT_ID };
+  const sessions = [];
+  t.after(async () => {
+    for (const session of sessions) session.dispose();
+    if (saved.directory === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved.directory;
+    if (saved.child === undefined) delete process.env.PI_SUBAGENT_ID;
+    else process.env.PI_SUBAGENT_ID = saved.child;
+    await rm(root, { recursive: true, force: true });
+  });
+  const cwd = join(root, "project");
+  const agentDir = join(root, "agent");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  await mkdir(cwd);
+  await mkdir(join(agentDir, "skills", "shared-skill"), { recursive: true });
+  await writeFile(join(agentDir, "AGENTS.md"), "@shared.md\n");
+  await writeFile(join(agentDir, "shared.md"), "Shared global working rules.");
+  await writeFile(join(cwd, "AGENTS.md"), "Shared project working rules.");
+  await writeFile(join(agentDir, "ROOT.md"), "Root-only coordination rules.\n@root-detail.md\n");
+  await writeFile(join(agentDir, "root-detail.md"), "Root-only included detail.");
+  await writeFile(join(agentDir, "skills", "shared-skill", "SKILL.md"),
+    "---\nname: shared-skill\ndescription: Shared skill discovery marker.\n---\nRead only when selected.\n");
+
+  for (const custom of [false, true]) {
+    for (const child of [false, true]) {
+      if (child) process.env.PI_SUBAGENT_ID = "managed-worker";
+      else delete process.env.PI_SUBAGENT_ID;
+      const faux = fauxProvider({ provider: `native-root-${custom}-${child}`, api: "anthropic-messages" });
+      const requests = [];
+      faux.setResponses([(context) => {
+        requests.push(structuredClone(context));
+        return fauxAssistantMessage("offline root-selection check");
+      }]);
+      const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+      const modelRuntime = await ModelRuntime.create({
+        credentials: new InMemoryCredentialStore(), modelsPath: null,
+        modelsStorePath: join(agentDir, "models-store.json"),
+        allowModelNetwork: false, refreshOnCreate: false,
+      });
+      const loader = new DefaultResourceLoader({
+        cwd, agentDir, settingsManager,
+        noExtensions: true, noPromptTemplates: true, noThemes: true,
+        additionalExtensionPaths: [join(extensionDir, "pi-instruction-includes.ts")],
+        ...(custom ? { systemPrompt: "Configured base prompt.", appendSystemPrompt: ["Configured append prompt."] } : {}),
+        extensionFactories: [(pi) => { pi.registerProvider(faux.provider); }],
+      });
+      await loader.reload();
+      assert.deepEqual(loader.getExtensions().errors, []);
+      const { session, extensionsResult } = await createAgentSession({
+        cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+        sessionManager: SessionManager.inMemory(cwd), model: faux.getModel(),
+      });
+      sessions.push(session);
+      assert.deepEqual(extensionsResult.errors, []);
+      await session.prompt("Inspect the current instructions without calling tools.");
+      assert.equal(requests.length, 1);
+      const messages = systems(requests[0]);
+      assert.equal(messages.length, 1);
+      const rendered = getSystemMessageText(messages[0]);
+      for (const marker of ["Shared global working rules.", "Shared project working rules.", "Shared skill discovery marker."]) {
+        assert.equal(rendered.split(marker).length - 1, 1, `${marker} occurs once (custom=${custom}, child=${child})`);
+      }
+      for (const marker of ["Root-only coordination rules.", "Root-only included detail."]) {
+        assert.equal(rendered.split(marker).length - 1, child ? 0 : 1, `${marker} is root-only (custom=${custom}, child=${child})`);
+      }
+      if (custom) {
+        assert.equal(messages[0].sections.preamble, "Configured base prompt.");
+        assert.match(rendered, /Configured append prompt\./);
+      } else {
+        assert.match(messages[0].sections.preamble, /expert coding assistant operating inside pi/);
+        assert.ok(messages[0].sections.tools);
+        assert.ok(messages[0].sections.rules);
+        assert.ok(messages[0].sections.docs);
+      }
+      session.dispose();
+      sessions.pop();
+    }
+  }
+});
+
 // A returned full-prompt handler can still leave structured transcript patches.
 // Inspect forceSystemPrompt after all four handlers as well as the provider's
 // transcript; otherwise that old implementation could falsely pass this test.

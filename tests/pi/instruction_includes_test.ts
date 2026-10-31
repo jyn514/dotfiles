@@ -40,6 +40,101 @@ afterEach(async () => {
 });
 
 describe("instruction includes", () => {
+  test.each([false, true])("ROOT instructions are root-only (managed child=%s)", async (child) => {
+    const agentDir = await fixture();
+    const saved = { directory: process.env.PI_CODING_AGENT_DIR, child: process.env.PI_SUBAGENT_ID };
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    if (child) process.env.PI_SUBAGENT_ID = "managed-worker";
+    else delete process.env.PI_SUBAGENT_ID;
+    try {
+      await writeFile(join(agentDir, "ROOT.md"), "Root role\n@root-detail.md\n");
+      await writeFile(join(agentDir, "root-detail.md"), "Root detail");
+      await writeFile(join(agentDir, "shared.md"), "Shared working rules");
+      const event = {
+        systemPromptOptions: {
+          cwd: agentDir,
+          contextFiles: [{ path: join(agentDir, "AGENTS.md"), content: "@shared.md" }],
+          sections: {} as Record<string, string>,
+        },
+      };
+      let handler!: (input: typeof event) => Promise<unknown>;
+      instructionIncludes({ on(_name: string, callback: typeof handler) { handler = callback; } } as never);
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles.some((file) => file.content.includes("Root role"))).toBe(!child);
+      const expanded = event.systemPromptOptions.sections.instruction_includes;
+      expect(expanded).toContain("Shared working rules");
+      expect(expanded.includes("Root detail")).toBe(!child);
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles.filter((file) => file.path === join(agentDir, "ROOT.md")))
+        .toHaveLength(child ? 0 : 1);
+    } finally {
+      if (saved.directory === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = saved.directory;
+      if (saved.child === undefined) delete process.env.PI_SUBAGENT_ID;
+      else process.env.PI_SUBAGENT_ID = saved.child;
+    }
+  });
+
+  test("ROOT refreshes without duplicates and disappears when removed or running as a child", async () => {
+    const agentDir = await fixture();
+    const saved = { directory: process.env.PI_CODING_AGENT_DIR, child: process.env.PI_SUBAGENT_ID };
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    delete process.env.PI_SUBAGENT_ID;
+    try {
+      const rootFile = join(agentDir, "ROOT.md");
+      const event = { systemPromptOptions: {
+        cwd: agentDir, contextFiles: [] as { path: string; content: string }[], sections: {},
+      } };
+      let handler!: (input: typeof event) => Promise<unknown>;
+      instructionIncludes({ on(_name: string, callback: typeof handler) { handler = callback; } } as never);
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toEqual([]);
+      await initialGuidance(rootFile);
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toEqual([{ path: rootFile, content: "Old guidance" }]);
+      await updateGuidance(rootFile, "in-place write");
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toEqual([{ path: rootFile, content: "New guidance" }]);
+      process.env.PI_SUBAGENT_ID = "managed-worker";
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toEqual([]);
+      delete process.env.PI_SUBAGENT_ID;
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toHaveLength(1);
+      await rm(rootFile);
+      await handler(event);
+      expect(event.systemPromptOptions.contextFiles).toEqual([]);
+    } finally {
+      if (saved.directory === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = saved.directory;
+      if (saved.child === undefined) delete process.env.PI_SUBAGENT_ID;
+      else process.env.PI_SUBAGENT_ID = saved.child;
+    }
+  });
+
+  test("ROOT read errors other than absence remain visible", async () => {
+    const agentDir = await fixture();
+    const saved = { directory: process.env.PI_CODING_AGENT_DIR, child: process.env.PI_SUBAGENT_ID };
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    delete process.env.PI_SUBAGENT_ID;
+    try {
+      const rootFile = join(agentDir, "ROOT.md");
+      const event = { systemPromptOptions: { cwd: agentDir, contextFiles: [], sections: {} } };
+      let handler!: (input: typeof event) => Promise<unknown>;
+      instructionIncludes({ on(_name: string, callback: typeof handler) { handler = callback; } } as never);
+      await mkdir(rootFile);
+      await expect(handler(event)).rejects.toThrow("not a file");
+      await rm(rootFile, { recursive: true });
+      await Bun.write(rootFile, new Uint8Array([0xff]));
+      await expect(handler(event)).rejects.toThrow("not valid UTF-8");
+    } finally {
+      if (saved.directory === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = saved.directory;
+      if (saved.child === undefined) delete process.env.PI_SUBAGENT_ID;
+      else process.env.PI_SUBAGENT_ID = saved.child;
+    }
+  });
+
   test.each(updates)("refreshes guidance after %s without forcing the prompt and clears absent includes", async (update) => {
     const root = await fixture();
     const rules = join(root, "rules.md");

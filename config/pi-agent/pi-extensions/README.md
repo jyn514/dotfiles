@@ -148,6 +148,19 @@ send a prompt, then use `/system-prompt` to inspect the captured prompt.
 
 The bundle requires a Pi build with the mutable `systemPromptOptions.sections` API.
 
+Keep shared working rules in the agent directory's `AGENTS.md` and its existing shared include.
+The instruction-includes extension adds the optional `ROOT.md` beside it only outside managed subagents.
+Managed children identify themselves with `PI_SUBAGENT_ID`; the launcher sets this before loading extensions.
+Put root identity, delegation permission, and whole-task coordination in `ROOT.md`, not shared context.
+The extension reads ROOT and expands context-file `@` includes before each run, without replacing Pi's base prompt.
+Root context refreshes when the file changes and disappears when it is removed.
+Missing ROOT files are allowed; other read errors and invalid includes use Pi's normal extension-error reporting.
+
+The root split does not enable child context discovery by itself.
+Children need a subagent-extension version that loads normal context files for shared `AGENTS.md` rules to reach them.
+Codex and Claude keep their own shared-instruction entrypoints and skill discovery; neither loads Pi's ROOT file.
+Install the new file through `./setup dotfiles`, then reload Pi's extensions and context files.
+
 Prompt additions use named sections: `current_date`, `host_os`,
 `instruction_includes`, and `web_search`. Each extension owns its section;
 web-search guidance disappears
