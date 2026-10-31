@@ -9,6 +9,7 @@ The whole-work judgments reported here are PhotoCraft 2/5, Frog and Toad 5/5, an
 They were supplied by jyn during calibration; the excerpts have no separate grades.
 The discussion and sentence-order examples use feature-level human feedback; they do not grade their excerpts or proposed rewrites.
 The help-page and reference-lookup passages and sample reviews are constructed and ungraded.
+The ticket example compares recorded local drafts and a corrected excerpt; it has no separate human grade.
 “Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
 The final five revision exercises are invented and ungraded.
 
@@ -321,6 +322,62 @@ Here the reader needs the connected explanation, not three independent lookup de
 The labels repeat the sentence topics and interrupt the reasoning without helping the reader find a separate answer.
 Keep the continuous paragraph.
 The choice is whether a concrete revision helps these readers use the text, not whether necessary facts forbid edits or multiple topics require headings.
+
+## A readable issue must preserve the causal story, not just its nouns
+
+**Source and scope:** dotfiles ticket `0493d0bc-36fd-441b-b4f4-6d5dadfe6f5c`, revised October 31, 2026.
+The reader is jyn returning to the backlog without the investigation session.
+The passages below are excerpts, not complete ticket bodies.
+The original evidence dates to October 29–30; the rejected rewrite and correction come from Pi session `0d3b4dff-e061-4fd7-ba88-8ff514fb66b5`.
+
+### An investigation handoff
+
+The original title was “Decide setup backup retention before repairing same-basename data loss.”
+Its description included:
+
+> Owner: dotfiles setup/Dotbot backup handling.
+>
+> Native Dotbot setup of existing Atuin and Mise `config.toml` files moved both into `~/.local/config/config.toml`; installation succeeded but only Mise survived.
+> An earlier backup was also overwritten.
+> An existing test explicitly requires replacing older same-name backups, so a new retention policy cannot be assumed.
+> Choose latest per installed destination, all versions, or safe refusal on collision.
+
+This already records the loss and the reason not to assume a retention policy.
+But “setup of existing … files” leaves the reader to work out whether those files were installed, replaced, or backed up.
+“Only Mise survived” likewise leaves the affected data implicit.
+The title leads with an administrative decision before explaining what makes the decision necessary.
+A reviewer can recover the intended meaning without the passage making that recovery easy.
+
+### A fluent rewrite that changes what happened
+
+A Luna draft began:
+
+> Dotbot setup installed both Atuin and Mise `config.toml` files at `~/.local/config/config.toml`.
+> Setup reported success, but only Mise’s file remained; an earlier backup was also overwritten.
+
+This sounds simpler, but it describes a different operation.
+The affected files were existing user files moved to a backup destination, not dotfiles installed there.
+The mistake changes both the mechanism and what the reader understands was lost.
+Keeping the program names, filename, path, and success report did not preserve the finding.
+
+### Explain the loss, then the unresolved choice
+
+The corrected passage reads:
+
+> While installing dotfiles, Dotbot moved the existing Atuin and Mise `config.toml` files to the same backup path, `~/.local/config/config.toml`.
+> Setup reported success, but only Mise’s backup remained; an earlier backup was also overwritten.
+> The current test explicitly expects older same-name backups to be replaced, so changing that behavior requires a retention decision first.
+>
+> Choose whether to keep only the latest backup per installed destination, retain every version, or stop safely when names collide.
+> Record the chosen retention and collision behavior before changing the existing overwrite expectation.
+
+Now the reader can follow the operation: two existing files share a backup destination, so one backup replaces the other while setup reports success.
+The test expectation then explains why the ticket asks for a policy decision rather than silently selecting a repair.
+The choices distinguish retaining the latest file for each destination, keeping history, and refusing the collision.
+
+The full ticket keeps the reproduction evidence, provenance, future test cases, and restriction against treating the ticket as implementation authority.
+Those details follow the problem and choice rather than replacing their explanation.
+Neither smoother sentences nor a new default retention policy would be an adequate correction.
 
 ## Smaller revision exercises
 
