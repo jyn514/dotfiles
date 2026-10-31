@@ -97,6 +97,7 @@ before committing the session's work and ending it.
 
 | Task | Skill |
 | --- | --- |
+| Create, edit, or review Dockerfiles and Docker Bake builds | [Dockerfiles](dockerfiles/SKILL.md) |
 | Review a proposed dependency addition or update | [Dependency review](dependency-review/SKILL.md) |
 | Investigate slow execution or benchmark a change | [Performance investigation](performance-investigation/SKILL.md) |
 | Diagnose native-process crashes, hangs, or missing symbols | [Process debugging](process-debugging/SKILL.md) |
