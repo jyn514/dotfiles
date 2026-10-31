@@ -59,7 +59,10 @@ jj log -r 'files("doc/spec/flower/**") & ancestors(@)' --no-graph
 
 When an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix, inspect its history before changing it.
 Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
-Start with the relevant `jj log`.
+When unexplained behavior concerns shared tooling, search its owner, known local consumers, and prior sessions by component name—not only the current repository.
+Read the supporting evidence and check its version and applicability before reusing it.
+Stop when the question is settled.
+If file history is needed, start with the relevant `jj log`.
 Use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain it, and read the tests that explain the constraint.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 

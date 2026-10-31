@@ -1,5 +1,7 @@
-# Documentation placement
+# Documentation conventions and placement
 
+Read before editing documentation, prose source, or agent instructions, or drafting GitHub discussions or comments.
+This applies even when the owner and destination are already known.
 Placement alone does not require a whole-artifact writing workflow.
 Restructuring existing pages or navigation belongs to `reorganize-docs`.
 
@@ -42,3 +44,16 @@ Its [documentation reference](../holistic-writing/references/documentation.md)
 covers documentation-specific reader tasks, forms, prerequisites, and workflow checks.
 Use `readme-writing` independently for an introductory README; no sequence of writing
 skills is required.
+
+## Prose source formatting
+
+In prose source, use one sentence per line when rendering joins those lines into paragraphs, so diffs are easier to review.
+For GitHub discussion or comment text where newlines become visible breaks, keep each prose paragraph on one source line instead.
+When using sentence-per-line formatting, semicolons may count as a line break.
+Try to keep those source lines under 150 columns wide.
+
+## Agent instruction files
+
+Treat `AGENTS.md` as an early routing and correction layer.
+Include only rules that always apply within its scope, routes to canonical task documentation,
+and constraints that must change the agent's plan before further work.

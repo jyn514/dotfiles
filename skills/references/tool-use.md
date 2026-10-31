@@ -33,6 +33,17 @@ Use `uv`, not `venv` or direct `pip`, for Python projects.
 After changing configuration, verify that the running application loaded it before interpreting test results.
 When diagnosing a daemon, check the running process's executable and version, not only the installed version.
 
+## Inspection output
+
+Treat repeated output truncation as a signal to change the inspection approach.
+Filter irrelevant output, use bounded reads when you need the details yourself, or delegate a large reading task when a worker can return findings and source references.
+Do not repeat substantially the same oversized request.
+
+## Log and packet collection
+
+Before collecting logs or packets, narrow the filter to the endpoints or component under investigation.
+If broader capture is needed to find an unknown source, bound it by time or count, then narrow it.
+
 ## Arguments and ad-hoc scripts
 
 Protect arguments beginning with `--` from option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts the value.

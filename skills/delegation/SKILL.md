@@ -1,6 +1,6 @@
 ---
 name: delegation
-description: Divide and coordinate work among agents. Use before spawning or assigning subagents, splitting work among running agents, deciding whether to wait for a worker, or integrating delegated results. Covers implementation, research, review, and writing. Does not authorize new work, replace domain-specific procedures, or govern human approval requests.
+description: Divide and coordinate work among agents. Use before spawning or assigning subagents, splitting work among running agents, coordinating overlapping mutations or revision dependencies, deciding whether to wait for a worker, or integrating delegated results. Covers implementation, research, review, and writing. Does not authorize new work, replace domain-specific procedures, or govern human approval requests.
 ---
 
 # Delegation
@@ -98,6 +98,13 @@ Do not limit evidence entrypoints to files for the proposed mechanism.
 For review, include cumulative added mechanisms, not just the latest patch.
 Ask whether the proposed work is necessary and whether a smaller approach preserves the requirements, not only how to complete it.
 Before treating an unknown as a blocker, check whether independent evidence inspection or preparation can proceed without the missing result or human decision.
+
+## Coordinate conflicting work
+
+A shared checkout, another active agent, or a history edit alone does not justify a hold.
+Before requesting a hold, name the conflicting mutation or revision dependency and what could go wrong.
+When existing tools detect conflicts and preserve authored work, accept a retry rather than stopping independent work.
+Hold only the conflicting mutations, not unrelated file edits or the entire agent, and release the hold with the resulting revision IDs.
 
 ## While work is outstanding
 

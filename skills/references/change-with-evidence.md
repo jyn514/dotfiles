@@ -133,6 +133,10 @@ Do not turn a proposed mechanism into its own requirement.
 - Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
 - Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
 
+### Optimization and caching
+
+Before optimizing or caching an operation, check whether the operation or intermediate representation can be eliminated.
+
 ### Represent and validate data
 
 - Represent data precisely.
