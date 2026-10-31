@@ -29,29 +29,11 @@ Keep this index current when adding, renaming, or removing a helper.
 ### Sessions and coordination
 
 - [`codex-archive-old`](codex-archive-old/) implements `codex-archive-old [--days N] [--apply]`, listing or archiving stale interactive Codex sessions through the app-server protocol.
-- [`codex-import`](../bin/codex-import) repairs missing synced sessions in Codex's local index while other Codex sessions run.
-  The [`codex` wrapper](../bin/codex) runs it before interactive startup; import failures print a warning and startup continues.
-  Administrative commands, help, version checks, and noninteractive commands such as `exec` skip startup import.
-
-  A receipt in `CODEX_HOME/codex-import-receipt.json` avoids launching an app-server when index coverage and previously scanned unindexed files are unchanged.
-  Indexed sessions can keep growing without invalidating the receipt.
-  New files, changed unindexed files, deleted paths, lost index coverage, configuration changes, and replaced executables trigger a full repair.
-  The fast path reads Codex 0.162.1's `state_5.sqlite` schema without modifying it; unsupported layouts and custom `sqlite_home` configuration fall back to full repair.
-  Use `codex-import --force` to bypass the receipt, including when retrying a file Codex silently omitted during an earlier scan.
-
-  Full repair starts a temporary `codex app-server --stdio` and pages through `thread/list` with scan-and-repair enabled for current and archived sessions, across providers and source kinds.
-  It leaves the persistent daemon running and does not resume sessions, reset the backfill marker, or edit SQLite directly.
-  Codex owns the index repairs; transcripts stay unchanged.
-
-  Completion reports the number of sessions listed, not the number newly imported or a guarantee that every rollout parsed successfully.
-  On failure, completed page repairs may remain; retry `codex-import`.
-  It uses `CODEX_HOME` (default `~/.codex`) and requires `codex` and `python3`.
-  The scan-and-repair behavior was verified with Codex 0.162.1; it depends on Codex's implementation of `thread/list`.
+- [`codex-import`](codex-import/README.md) repairs missing sessions in Codex's local index; completed repairs can remain after a failure, while transcripts stay unchanged.
 - [`pi-codex-goal`](pi-codex-goal/README.md) provides persistent Pi goals and continuation; goal state is stored in session custom entries.
 - [`pi-codex-subagents`](pi-codex-subagents/README.md) spawns and manages child Pi sessions, including durable pause; children can execute their configured tools.
 - [`pi-session-search`](../bin/pi-session-search) searches and reads local Pi and Codex transcripts without resuming sessions; see the [CLI reference](pi-session-search/docs/cli-interface.md).
-- [`pi-link`](pi-link/) is a local fork of alvivar's live-session messaging extension, with message IDs and optional reply references in the transcript.
-  Pi settings load the fork and its skill on startup; new sessions connect automatically.
+- [`pi-link`](pi-link/README.md) provides live-session messaging with message IDs and reply references; new sessions connect automatically.
 
 ### Sandbox runtimes and proxies
 
@@ -73,7 +55,7 @@ These specialized Git helpers can change Git history or metadata directly.
 
 | Task | Helper and important effects |
 | --- | --- |
-| Import commits between repositories, optionally selecting and relocating a directory | [`transplant-commits`](../bin/transplant-commits) pipes `format-patch` into `git am`; preserves authors, author dates, and message text, rewrites commit IDs, and omits merge commits. `--dry-run` prints the pipeline; applying writes target HEAD/index and can leave an interrupted `git am`. |
+| Import commits between repositories, optionally selecting and relocating a directory | [`transplant-commits`](transplant-commits/README.md) writes target Git history/index; commit IDs change and merge commits are omitted. |
 | Correct commits attributed to jyn instead of their agent committer | [`rewrite-commits`](../bin/rewrite-commits) previews matches; `--apply` rewrites author/committer metadata and synchronizes Git/JJ. |
 | Promote a coauthor trailer to the primary author | [`coauthored-by-author`](../bin/coauthored-by-author) previews matches; `--apply` rewrites selected refs and removes the matching trailer unless `--keep-trailer` is supplied. |
 | Filter repository history | [`git-filter-repo`](../bin/git-filter-repo) invokes the vendored history rewriter; apply operations rewrite commit IDs and can change refs. |
@@ -151,12 +133,7 @@ These specialized Git helpers can change Git history or metadata directly.
 | Paste the primary selection into a graphical application | [`paste-primary`](../bin/paste-primary) temporarily swaps the clipboard, injects a paste key, then restores it. |
 | Decode a QR code from a clipboard image | [`decode-qr`](../bin/decode-qr) uses zbarimg, writes the result to the terminal, and replaces the primary selection. |
 
-- [`copy`](../bin/copy) and [`paste`](../bin/paste) use the installed X11, Wayland, or macOS clipboard backend.
-  Pass `--primary` for the primary selection, or `--type MIME` before it for xclip and Wayland backends.
-  The MIME value stays one literal backend argument, including any spaces or glob characters:
-  xclip receives `-target MIME`, while Wayland receives `--type MIME`. xsel and macOS reject `--type`.
-  `dev/pytest tests/copy` includes native X11 tests when xclip and Xvfb are installed;
-  they create a disposable display without using the desktop clipboard.
+- [`copy` and `paste`](copy/README.md) read and write graphical clipboards; copying replaces the selected clipboard contents.
 - [`picker-actions`](picker-actions/) implements `picker-action copy|edit|open|search` for explicit or NUL-delimited selections. Actions may write the clipboard, inject tmux keys, launch an editor, or open a URL.
 
 ### Editors and opening files
@@ -253,17 +230,7 @@ These specialized Git helpers can change Git history or metadata directly.
 | Convert timesheet intervals to decimal hours | [`hours`](../bin/hours) reads newline-separated cells from stdin and prints hours. |
 | Format a copied GroupMe conversation | [`groupme2transcript`](../bin/groupme2transcript) reads stdin or `--input FILE` and writes a transcript to stdout. |
 
-- [`clean-discord`](../bin/clean-discord) converts Discord copy-pasted text to `[HH:MM] <name> message` lines; requires Babashka (`bb`).
-  Run `clean-discord chat.txt` or `paste | clean-discord`; output goes to stdout without changing the source.
-  Use `clean-discord -i chat.txt` to rewrite the file instead, with no stdout output.
-
-  In-place mode requires a file, preserves permissions, follows symlinks, and atomically replaces the file only after cleaning succeeds.
-  Failed cleaning leaves the original unchanged; already-cleaned IRC text is not accepted as Discord input.
-
-  It recognizes timestamp/name/colon headers split across lines, including a missing opening bracket on the first timestamp.
-  It removes trailing `[badge],` name decorations, detached copies at message boundaries, and blank lines.
-  An opening four-space-indented block separated from the reply by blank lines becomes a `>` quote; other indentation stays unchanged.
-  Other UI layouts are not supported; unrecognized text before the first header fails without output.
+- [`clean-discord`](clean-discord/README.md) converts copied Discord text to IRC-style transcripts; in-place mode replaces the input file.
 
 ### Search and web archives
 
@@ -277,45 +244,10 @@ These specialized Git helpers can change Git history or metadata directly.
 
 ### Agent session exports and imports
 
-- [`extract-chat`](extract-chat/) extracts user and assistant turns from local Pi, Codex, or Claude JSON/JSONL sessions. It supports session lookup, `--final-only`, and per-session Markdown.
-  `--session ID` selects the newest matching Codex rollout by filename timestamp and rollout UUID, including replacement rollouts created by revert.
-  Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
-  A bare session UUID also implies `--session`, so `extract-chat ID --branches --native` works directly.
-  Existing paths take precedence over UUID lookup, and positional UUIDs can be mixed with file or directory inputs.
-  With `--extract-dir`, output names retain the source basename with `.md` or `.html`.
-  Distinct sources targeting the same destination, including `.json`/`.jsonl` stem collisions, fail the whole batch before any exports or native calls.
-  Existing exports can still be replaced by rerunning a single source or a noncolliding batch.
-
-  Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
-  References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
-  Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.
-  Missing ancestors, reference cycles, and invalid cutoffs fail instead of producing a partial transcript.
-  Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
-
-  For Pi, `--native` uses `pi --export` to produce HTML (`pi` must be on PATH); other formats remain Markdown. Native Pi exports include the full session regardless of `--final-only`; without `--extract-dir`, Pi writes to the current directory.
-  For Codex, `extract-chat --session ID --branches --native` uses `codex-to-pi --branches` and Pi's native exporter to produce a navigable HTML conversation tree.
-  This requires Python and Pi on PATH and local paginated Codex history; `--branches` requires `--native`.
-  Codex HTML uses the source rollout's basename with `.html` in `--extract-dir` or the current directory; temporary Pi sessions are removed after success or failure.
-  Native Codex exports use the converter's user/assistant message selection and ignore `--final-only`.
-
-  Pi Markdown includes saved goal status, objective, and token budget; provider/model switches and assistant or shell cancellations appear in session order, and partial replies remain visible. These events remain with `--final-only`; goal usage counters and continuation prompts are omitted.
-  Empty file/directory scans report the searched source paths on stderr and exit 0, without creating or removing export files. Output may expose private conversations.
-- [`codex-to-pi`](../bin/codex-to-pi) converts a Codex session ID, JSONL path, or ChatGPT share URL to Pi v3 JSONL.
-  Local conversion uses the same read-only [history reader](../libexec/chat-history.clj) as `extract-chat` and requires `bb` on PATH.
-  It also omits injected skill instructions while preserving skill invocations and discussion.
-  Use `codex-to-pi SESSION -o FILE` to choose the destination; otherwise it writes to Pi's session directory.
-  `--archived` searches archived sessions; `--normalize` rewrites macOS paths for sandbox sessions.
-  `codex-to-pi SESSION --branches -o FILE` imports related forks and superseded rollouts into one Pi tree; use `/tree` to navigate it.
-  Discovery includes active and archived history, ancestors, sibling forks, and descendants, while excluding spawned subagent sessions.
-  Branch endpoints carry Codex thread and rollout labels, and the requested rollout is selected when Pi opens the file.
-  Shared source records appear once; repeated messages from different records remain distinct.
-  Branch import requires local paginated history and all referenced ancestors; legacy sessions and share URLs are rejected.
-  Without `--branches`, conversion and Markdown extraction follow only the selected thread.
-- [`pi-to-codex`](pi-to-codex/) imports a Pi session file's selected compacted context, text tool calls, and results into a new Codex thread visible in the resume picker.
-  It uses unstable history injection plus native display records, leaves the source unchanged, and prints a resume command without making a model request.
-- [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.
-  `--json` emits an ordered array of `{role, text}` turns for machine consumers such as `codex-to-pi`, without Markdown framing or heading customization.
-  It uses the same readable-text selection as Markdown: empty and whitespace-only turns are omitted; retained text is not trimmed or escaped as Markdown.
+- [`extract-chat`](extract-chat/README.md) exports local agent conversations to Markdown or HTML; exports may expose private text and replace existing output files.
+- [`codex-to-pi`](codex-to-pi/README.md) converts a Codex conversation or share URL to Pi JSONL; writes a session file without resuming it.
+- [`pi-to-codex`](pi-to-codex/README.md) creates a resumable Codex thread from a Pi session through unstable Codex interfaces; the source stays unchanged.
+- [`extract-chat-share`](extract-chat-share/README.md) extracts shared ChatGPT/Claude conversations; URL inputs access the network and Claude uses Safari automation.
 
 ### Document previews and PDFs
 
