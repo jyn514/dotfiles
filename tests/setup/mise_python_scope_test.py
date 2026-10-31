@@ -70,6 +70,16 @@ class MisePythonScopeTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual([str(executable), arguments], json.loads(result.stdout))
 
+    def test_global_settings_allow_one_off_tools_but_explicit_locked_mode_still_works(self) -> None:
+        config = tomllib.loads(self.config.read_text())
+        self.assertTrue(config["settings"]["lockfile"])
+        unlocked = self.run_mise("settings", "locked")
+        self.assertEqual(0, unlocked.returncode, unlocked.stdout + unlocked.stderr)
+        self.assertEqual("false", unlocked.stdout.strip())
+        locked = self.run_mise("--locked", "settings", "locked")
+        self.assertEqual(0, locked.returncode, locked.stdout + locked.stderr)
+        self.assertEqual("true", locked.stdout.strip())
+
     def test_global_environment_leaves_python_alone_but_bootstrap_selects_locked_python(self) -> None:
         active = self.run_mise("ls", "--current", "--json")
         self.assertEqual(0, active.returncode, active.stdout + active.stderr)

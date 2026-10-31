@@ -62,7 +62,7 @@ task.run_auto_install = false
 # Prefer available binaries on every host, including Alpine and NixOS.
 all_compile = false
 lockfile = true
-locked = true
+# Allow explicitly requested one-off tools; use --locked when strict installs are needed.
 lockfile_platforms = ["linux-x64", "macos-arm64"]
 npm.package_manager = "pnpm"
 cargo.binstall = true
