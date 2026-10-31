@@ -72,7 +72,11 @@ Test representative success and failure output as a user-facing contract.
 API guarantees between architecture boundaries must be explicitly documented.
 Do not depend on internal details, exact source code, or coincidentally convenient properties.
 This applies WHENEVER there is an architecture boundary, even when writing tests for code you wrote yourself.
-Consult the "Principles" section of `architecture-design` for what constitutes a boundary.
+Consult the "Principles" section of [architecture-design](../architecture-design/SKILL.md) for what constitutes a boundary.
+
+When diagnosing a failure across a boundary, identify the producer, consumer, authoritative contract, and contract owner before choosing a fix location.
+Repair the owner that violates the contract; do not make a consumer compensate unless a governing compatibility requirement or historical constraint requires it.
+If the contract or owner is unsettled, use `architecture-design` to trace the existing path and settle the boundary before editing either side.
 
 Separate caller documentation from implementation comments.
 Document a helper's purpose and non-obvious usage contract beside its declaration when callers would otherwise need to read its implementation.

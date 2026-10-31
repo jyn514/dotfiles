@@ -154,7 +154,7 @@ install_mise() {
 	mise_install_status=0
 	if exists apk; then
 		# Alpine supplies these itself, or has no compatible prebuilt release.
-		if env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:marked,npm:vscode-langservers-extracted,npm:obsidian-headless,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
+		if env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:marked,npm:vscode-langservers-extracted,npm:obsidian-headless,npm:@blackbelt-technology/pi-agent-dashboard,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
 			MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null; then
 			:
 		else
@@ -383,7 +383,9 @@ setup_services () {
 		systemctl --user enable tmux.service || return
 		echo 'tmux enabled for future boots; if no server is running, start it with systemctl --user start tmux.service'
 	fi
-	python3 libexec/setup/setup_obsidian_sync.py
+	python3 libexec/setup/setup_obsidian_sync.py || return
+	# Configure Dashboard policy only; it remains manually started, not a login service.
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" python3 libexec/setup/setup_dashboard.py
 }
 
 setup_install_global () {

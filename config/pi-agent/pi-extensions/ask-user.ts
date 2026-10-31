@@ -23,6 +23,18 @@ type PendingQuestion = Static<typeof PendingSchema>;
 const SnapshotSchema = Type.Object({ version: Type.Literal(1), questions: Type.Array(PendingSchema) });
 const ENTRY = "dotfiles-ask-user";
 
+// Structural seam only: Dashboard is optional and never imported at runtime.
+interface BrowserResponse { id: string; answer?: string; cancelled?: boolean; source: string }
+interface BrowserRequest {
+  id: string;
+  pipeline: string;
+  type: string;
+  question: string;
+  options?: string[];
+  metadata?: Record<string, unknown>;
+}
+type RequestBrowser = (request: Omit<BrowserRequest, "id">) => Promise<BrowserResponse>;
+
 interface Draft { text: string; option: number; editing: boolean }
 interface QuestionsState {
   pending: PendingQuestion[];
@@ -217,6 +229,91 @@ export default function askUser(pi: ExtensionAPI): void {
   let openingId = 0;
   let generation = 0;
   let sessionId: string | undefined;
+  let activeContext: ExtensionContext | undefined;
+  let requestBrowser: RequestBrowser | undefined;
+  let browserEpoch = 0;
+  let cancelBrowser: ((id: string) => void) | undefined;
+  const browserIds = new Map<string, string>(); // queue ID -> disposable bus ID
+  const submitting = new Set<string>();
+
+  const dismissBrowser = (id: string) => {
+    const promptId = browserIds.get(id);
+    browserIds.delete(id);
+    if (promptId) cancelBrowser?.(promptId);
+  };
+  const detachBrowser = () => {
+    browserEpoch++;
+    for (const id of browserIds.keys()) dismissBrowser(id);
+    cancelBrowser = undefined;
+    requestBrowser = undefined;
+  };
+
+  const publishBrowser = () => {
+    if (!requestBrowser || !activeContext || activeContext.mode !== "tui" ||
+        sessionId !== activeContext.sessionManager.getSessionId()) return;
+    const epoch = browserEpoch;
+    const currentGeneration = generation;
+    const ctx = activeContext;
+    for (const question of state.pending) {
+      if (browserIds.has(question.id)) continue;
+      try {
+        // onRequest synchronously captures the bus-minted ID. No component claim:
+        // Dashboard's native SelectRenderer owns browser rendering.
+        const result = requestBrowser({
+          pipeline: ENTRY, type: "select", question: question.title,
+          options: question.options ?? [],
+          metadata: { kind: "queue-question", questionId: question.id, message: question.question },
+        });
+        void result.then((response) => {
+          if (epoch !== browserEpoch || currentGeneration !== generation) return;
+          if (browserIds.get(question.id) !== response.id) return;
+          browserIds.delete(question.id);
+          // Dismissal is not cancellation of the authoritative queue.
+          if (response.cancelled) return;
+          try { submitAnswer(question, response.answer ?? "", ctx, currentGeneration); }
+          catch (error) {
+            ctx.ui.notify(`ask_user: not submitted: ${String(error)}. Retry in the question panel or browser.`, "error");
+          }
+          // A consumed browser prompt must be recreated after rejected dispatch.
+          publishBrowser();
+        }).catch((error) => {
+          if (epoch !== browserEpoch || currentGeneration !== generation) return;
+          dismissBrowser(question.id);
+          ctx.ui.notify(`ask_user: browser question failed: ${String(error)}`, "error");
+        });
+      } catch (error) {
+        dismissBrowser(question.id);
+        ctx.ui.notify(`ask_user: browser question failed: ${String(error)}`, "error");
+      }
+    }
+  };
+
+  pi.events.on("prompt:set-bus-request", (payload: unknown) => {
+    const request = (payload as { request?: RequestBrowser } | undefined)?.request;
+    if (typeof request !== "function" || !activeContext) return;
+    detachBrowser();
+    requestBrowser = request;
+    const epoch = browserEpoch;
+    const currentGeneration = generation;
+    pi.events.emit("prompt:register-adapter", {
+      name: ENTRY,
+      setRespond(_respond: (response: BrowserResponse) => void) { /* Promise is the single response path. */ },
+      setCancel(cancel: (id: string) => void) {
+        if (epoch === browserEpoch) cancelBrowser = cancel;
+      },
+      onRequest(prompt: BrowserRequest) {
+        if (epoch !== browserEpoch || currentGeneration !== generation ||
+            prompt.pipeline !== ENTRY || prompt.metadata?.kind !== "queue-question") return;
+        const id = prompt.metadata.questionId;
+        if (typeof id !== "string" || !state.pending.some((q) => q.id === id)) return;
+        browserIds.set(id, prompt.id);
+        return {};
+      },
+      onResponse(_response: BrowserResponse) { /* request promise owns submission. */ },
+      onCancel(_id: string) { /* request promise handles non-authoritative dismissal. */ },
+    });
+    publishBrowser();
+  });
 
   const status = (ctx: ExtensionContext) => {
     if (ctx.mode === "tui") ctx.ui.setWidget("ask-user", state.pending.length ? [`${state.pending.length} pending question(s) · Alt+A to answer`] : undefined, { placement: "aboveEditor" });
@@ -224,6 +321,8 @@ export default function askUser(pi: ExtensionAPI): void {
   const persist = (questions: PendingQuestion[]) => pi.appendEntry(ENTRY, { version: 1, questions });
   const reset = () => {
     generation++;
+    detachBrowser();
+    activeContext = undefined;
     panel?.close();
     panel = undefined;
     opening = false;
@@ -243,7 +342,9 @@ export default function askUser(pi: ExtensionAPI): void {
       }
       state.pending = structuredClone(entry.data.questions);
     }
+    activeContext = ctx;
     status(ctx);
+    pi.events.emit("prompt:request-bus", undefined);
   };
   pi.on("session_start", (_event, ctx) => restore(ctx));
   pi.on("session_tree", (_event, ctx) => restore(ctx));
@@ -277,6 +378,7 @@ export default function askUser(pi: ExtensionAPI): void {
       state.pending = pending;
       status(ctx);
       panel?.invalidate();
+      publishBrowser();
       // setWidget requests a host render, including an already open custom panel.
       return {
         content: [{ type: "text", text: `Queued questions: ${questions.map((q) => q.id).join(", ")}. Answers will arrive later as user messages. Continue only independent work; silence is not permission.` }],
@@ -307,7 +409,7 @@ export default function askUser(pi: ExtensionAPI): void {
         const pending = state.pending.filter((q) => !removed.has(q.id));
         persist(pending); // Keep prompts and drafts intact if saving fails.
         state.pending = pending;
-        for (const id of cancelled) state.drafts.delete(id);
+        for (const id of cancelled) { state.drafts.delete(id); dismissBrowser(id); }
         if (state.viewed && removed.has(state.viewed)) state.viewed = undefined;
         panel?.update(); // Switch a cancelled selection, or close an empty panel now.
         status(ctx);
@@ -318,6 +420,34 @@ export default function askUser(pi: ExtensionAPI): void {
       };
     },
   });
+
+  const submitAnswer = (question: PendingQuestion, answer: string, ctx: ExtensionContext, expectedGeneration: number) => {
+    if (expectedGeneration !== generation || sessionId !== ctx.sessionManager.getSessionId()) {
+      throw new Error("Session changed");
+    }
+    if (!answer.trim()) throw new Error("Enter a non-empty answer");
+    if (submitting.has(question.id)) throw new Error("Question submission in progress");
+    if (!state.pending.some((q) => q.id === question.id)) throw new Error("Question is no longer pending");
+    // The void API accepts dispatch synchronously, not delivery. Pi reports
+    // asynchronous failures; never await or invent an acknowledgement.
+    const body = `${question.question.split("\n").map((line) => `> ${line}`).join("\n")}\n\n${answer}`;
+    submitting.add(question.id);
+    try { pi.sendUserMessage(`Answer to ask_user ${question.id}\nTitle: ${JSON.stringify(question.title)}\n\n${body}`, { deliverAs: "steer" }); }
+    finally { submitting.delete(question.id); }
+    if (expectedGeneration !== generation) return;
+    const index = state.pending.findIndex((q) => q.id === question.id);
+    state.pending = state.pending.filter((q) => q.id !== question.id);
+    state.drafts.delete(question.id);
+    dismissBrowser(question.id);
+    state.viewed = state.pending[index % Math.max(1, state.pending.length)]?.id;
+    try { persist(state.pending); }
+    catch (error) {
+      // Dispatch already happened: do not offer duplicate submission.
+      ctx.ui.notify(`ask_user: answer dispatched, but saving pending state failed: ${String(error)}. Reload may restore this question.`, "error");
+    }
+    panel?.update();
+    status(ctx);
+  };
 
   pi.registerShortcut(Key.alt("a"), {
     description: "Answer pending questions",
@@ -334,24 +464,7 @@ export default function askUser(pi: ExtensionAPI): void {
             if (openedGeneration === generation && openedId === openingId) { panel = undefined; opening = false; }
             done();
           }, (question, answer) => {
-            if (openedGeneration !== generation || sessionId !== ctx.sessionManager.getSessionId()) {
-              throw new Error("Session changed");
-            }
-            if (!state.pending.some((q) => q.id === question.id)) throw new Error("Question is no longer pending");
-            // The void API accepts dispatch synchronously, not delivery. Pi reports
-            // asynchronous failures; never await or invent an acknowledgement.
-            const body = `${question.question.split("\n").map((line) => `> ${line}`).join("\n")}\n\n${answer}`;
-            pi.sendUserMessage(`Answer to ask_user ${question.id}\nTitle: ${JSON.stringify(question.title)}\n\n${body}`, { deliverAs: "steer" });
-            const index = state.pending.findIndex((q) => q.id === question.id);
-            state.pending = state.pending.filter((q) => q.id !== question.id);
-            state.drafts.delete(question.id);
-            state.viewed = state.pending[index % Math.max(1, state.pending.length)]?.id;
-            try { persist(state.pending); }
-            catch (error) {
-              // Dispatch already happened: do not offer duplicate submission.
-              ctx.ui.notify(`ask_user: answer dispatched, but saving pending state failed: ${String(error)}. Reload may restore this question.`, "error");
-            }
-            status(ctx);
+            submitAnswer(question, answer, ctx, openedGeneration);
           });
           panel = currentPanel;
           return currentPanel;

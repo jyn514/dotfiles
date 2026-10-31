@@ -14,7 +14,66 @@ const theme = { fg: (_color: string, text: string) => text, bold: (text: string)
 // Native registration/execute/custom-component boundary. Only host services are
 // doubled: the component uses the installed real Editor, keybindings and schema.
 // sendUserMessage deliberately returns void, matching Pi's extension API.
-function host() {
+function eventBus() {
+  const listeners = new Map<string, Set<(payload: any) => void>>();
+  return {
+    on(name: string, listener: (payload: any) => void) {
+      let group = listeners.get(name);
+      if (!group) listeners.set(name, group = new Set());
+      group.add(listener);
+      return () => { group.delete(listener); };
+    },
+    emit(name: string, payload?: unknown) {
+      for (const listener of [...(listeners.get(name) ?? [])]) listener(payload);
+    },
+  };
+}
+
+// Model only the documented event/PromptBus boundary, not native rendering.
+function dashboard(events: ReturnType<typeof eventBus>) {
+  const adapters = new Map<string, any>();
+  const pending = new Map<string, { prompt: any; resolve: (value: any) => void }>();
+  const history: any[] = [];
+  let nextId = 0;
+  const respond = (response: any) => {
+    const entry = pending.get(response.id);
+    if (!entry || response.cancelled || !response.answer?.trim()) return;
+    pending.delete(response.id);
+    for (const adapter of adapters.values()) adapter.onResponse(response);
+    entry.resolve(response);
+  };
+  const cancel = (id: string) => {
+    const entry = pending.get(id);
+    if (!entry) return;
+    pending.delete(id);
+    for (const adapter of adapters.values()) adapter.onCancel(id);
+    entry.resolve({ id, cancelled: true, source: "cancel" });
+  };
+  const request = (options: any) => new Promise<any>((resolve) => {
+    const prompt = { ...options, id: `browser-${++nextId}` };
+    history.push(prompt);
+    for (const adapter of adapters.values()) {
+      const claim = adapter.onRequest(prompt);
+      if (prompt.pipeline === "dotfiles-ask-user") expect(claim).toEqual({});
+    }
+    pending.set(prompt.id, { prompt, resolve });
+  });
+  const unregister = events.on("prompt:register-adapter", (adapter) => {
+    adapters.set(adapter.name, adapter);
+    adapter.setRespond(respond);
+    adapter.setCancel(cancel);
+  });
+  const ready = () => events.emit("prompt:set-bus-request", { request });
+  const undiscover = events.on("prompt:request-bus", ready);
+  ready();
+  return { pending, history, adapters, ready, respond, cancel,
+    stop() { unregister(); undiscover(); },
+  };
+}
+
+function host(before?: (events: ReturnType<typeof eventBus>) => void) {
+  const events = eventBus();
+  before?.(events);
   const tools = new Map<string, any>();
   let transformer: MarkdownTransformer;
   const handlers = new Map<string, Function>();
@@ -33,6 +92,7 @@ function host() {
   let failPersist = false;
   let duringSend: (() => void) | undefined;
   const pi = {
+    events,
     registerTool(value: any) { tools.set(value.name, value); },
     registerMarkdownTransformer(value: MarkdownTransformer) { transformer = value; },
     registerShortcut(key: string, value: any) { shortcuts.set(key, value.handler); },
@@ -73,7 +133,7 @@ function host() {
   const emit = (event: string) => handlers.get(event)?.({}, ctx);
   emit("session_start");
   return {
-    ctx, pi, tools, messages, notifications, emit,
+    ctx, pi, events, tools, messages, notifications, emit,
     display(markdown: string, messageType: "user" | "assistant" | "assistant-thinking" = "user", availableWidth = 140, isStreaming = false) {
       return transformer(markdown, { messageType, availableWidth, isStreaming });
     },
@@ -546,5 +606,184 @@ describe("asynchronous ask_user", () => {
     h.key(ENTER);
     await reopened;
     expect(h.messages[0].content).toEndWith("\n\nfirst 日本語\nsecond 🧭");
+  });
+});
+
+
+const flushBrowser = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+describe("Dashboard question queue adapter", () => {
+  test("event bus permits multiple listeners and unsubscribe", () => {
+    const events = eventBus();
+    const calls: string[] = [];
+    const off = events.on("test", () => calls.push("a"));
+    events.on("test", () => calls.push("b"));
+    events.emit("test"); off(); events.emit("test");
+    expect(calls).toEqual(["a", "b", "b"]);
+  });
+
+  test("both load orders discover and project persisted queues without awaiting answers", async () => {
+    for (const dashboardFirst of [false, true]) {
+      let browser: ReturnType<typeof dashboard>;
+      const h = host(dashboardFirst ? (events) => { browser = dashboard(events); } : undefined);
+      const queued = await h.ask([question("scope", ["Cancel", "Yes"]), question("format")]);
+      if (!dashboardFirst) browser = dashboard(h.events);
+      expect(browser!.pending.size).toBe(2);
+      const prompt = [...browser!.pending.values()][0].prompt;
+      expect(prompt).toMatchObject({
+        pipeline: "dotfiles-ask-user", type: "select", question: "scope", options: ["Cancel", "Yes"],
+        metadata: { kind: "queue-question", questionId: queued.details.questions[0].id, message: "Decide scope?" },
+      });
+      expect([...browser!.pending.values()][1].prompt.options).toEqual([]);
+      browser!.ready();
+      await flushBrowser();
+      expect(browser!.pending.size).toBe(2);
+      expect(browser!.adapters.size).toBe(1);
+      h.emit("session_tree");
+      await flushBrowser();
+      expect(browser!.pending.size).toBe(2);
+      expect(h.messages).toHaveLength(0);
+      expect(h.customCalls).toBe(0);
+    }
+  });
+
+  test("browser preserves literal Cancel and multiline steering; blank/navigation do not consume", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    await h.ask([question("scope", ["Cancel"]), question("format")]);
+    let id = [...browser.pending.keys()][0];
+    browser.respond({ id, answer: "   ", source: "dashboard" });
+    browser.respond({ id, cancelled: true, source: "dashboard" });
+    await flushBrowser();
+    expect(browser.pending.size).toBe(2);
+    browser.respond({ id, answer: "Cancel", source: "dashboard" });
+    await flushBrowser();
+    expect(h.messages[0].content).toEndWith("Cancel");
+    id = [...browser.pending.keys()][0];
+    browser.respond({ id, answer: "line one\nline two", source: "dashboard" });
+    await flushBrowser();
+    expect(h.messages[1].content).toContain('Title: "format"\n\n> Decide format?\n\nline one\nline two');
+    expect(browser.pending.size).toBe(0);
+    expect(h.entries.at(-1).data.questions).toEqual([]);
+  });
+
+  test("either surface wins once, updates open panel, and preserves unrelated drafts", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    await h.ask([question("scope"), question("format")]);
+    const open = h.open(); h.key("terminal draft"); h.key(RIGHT); h.key("keep draft"); h.key(LEFT);
+    const first = [...browser.pending.keys()][0];
+    browser.respond({ id: first, answer: "browser answer", source: "dashboard" });
+    // Terminal wins before the resolved Promise continuation runs.
+    h.key(ENTER);
+    await flushBrowser();
+    expect(h.messages).toHaveLength(1);
+    expect(h.messages[0].content).toEndWith("terminal draft");
+    expect(h.text()).toContain("keep draft");
+    expect(browser.pending.size).toBe(1);
+    const second = [...browser.pending.keys()][0];
+    browser.respond({ id: second, answer: "browser wins", source: "dashboard" });
+    await flushBrowser(); await open;
+    h.key(ENTER);
+    expect(h.messages).toHaveLength(2);
+    expect(browser.pending.size).toBe(0);
+    expect(h.closed).toBe(1);
+  });
+
+  test("failed persistence leaves browser projection and cancellation state intact", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    h.failPersist = true;
+    await expect(h.ask([question("not published")])).rejects.toThrow("disk unavailable");
+    expect(browser.pending.size).toBe(0);
+    h.failPersist = false;
+    const result = await h.ask([question("keep"), question("remove")]);
+    const ids = result.details.questions.map((q: any) => q.id);
+    h.failPersist = true;
+    await expect(h.cancel([ids[1]])).rejects.toThrow("disk unavailable");
+    expect(browser.pending.size).toBe(2);
+    h.failPersist = false;
+    await h.cancel([ids[1]]);
+    await flushBrowser();
+    expect(browser.pending.size).toBe(1);
+    expect(h.messages).toHaveLength(0);
+    expect([...browser.pending.values()][0].prompt.metadata.questionId).toBe(ids[0]);
+  });
+
+  test("dispatch rejection republishes for retry; post-dispatch save failure never offers duplicate", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    await h.ask([question("scope")]);
+    const first = [...browser.pending.keys()][0];
+    h.failSend = true;
+    browser.respond({ id: first, answer: "retry", source: "dashboard" });
+    await flushBrowser();
+    expect(h.messages).toHaveLength(0);
+    expect(h.notifications.at(-1)).toContain("dispatch unavailable");
+    expect(browser.pending.size).toBe(1);
+    const retry = [...browser.pending.keys()][0];
+    expect(retry).not.toBe(first);
+    h.failSend = false; h.failPersist = true;
+    browser.respond({ id: retry, answer: "accepted", source: "dashboard" });
+    await flushBrowser();
+    expect(h.messages).toHaveLength(1);
+    expect(h.notifications.at(-1)).toContain("answer dispatched, but saving pending state failed");
+    expect(browser.pending.size).toBe(0);
+    await h.open();
+    expect(h.notifications.at(-1)).toBe("No pending questions.");
+  });
+
+  test("branch replacement projects only selected snapshots and stale setters stay detached", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    await h.ask([question("old branch")]);
+    const oldId = [...browser.pending.keys()][0];
+    const oldAdapter = browser.adapters.get("dotfiles-ask-user");
+    browser.respond({ id: oldId, answer: "old answer", source: "dashboard" });
+    h.entries = [{ type: "custom", customType: "dotfiles-ask-user", data: {
+      version: 1, questions: [{ id: "selected-branch-question", ...question("selected branch") }],
+    } }];
+    h.emit("session_tree");
+    let staleCancelled = 0;
+    oldAdapter.setCancel(() => { staleCancelled++; });
+    await flushBrowser();
+    expect(h.messages).toHaveLength(0);
+    expect(browser.pending.size).toBe(1);
+    expect([...browser.pending.values()][0].prompt.metadata.questionId).toBe("selected-branch-question");
+    await h.cancel(["selected-branch-question"]);
+    expect(browser.pending.size).toBe(0);
+    expect(staleCancelled).toBe(0);
+  });
+
+  test("bus-only cancellation leaves queue authoritative and discovery reconstructs presentation", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    const result = await h.ask([question("scope")]);
+    browser.cancel([...browser.pending.keys()][0]);
+    await flushBrowser();
+    expect(h.entries.at(-1).data.questions[0].id).toBe(result.details.questions[0].id);
+    expect(h.widget).toEqual(["1 pending question(s) · Alt+A to answer"]);
+    browser.ready();
+    expect(browser.pending.size).toBe(1);
+    expect(h.messages).toHaveLength(0);
+  });
+
+  test("late replies and adapters cannot touch a restored same-ID incarnation or shutdown", async () => {
+    const h = host(); const browser = dashboard(h.events);
+    await h.ask([question("scope")]);
+    const first = [...browser.pending.keys()][0];
+    const oldAdapter = browser.adapters.get("dotfiles-ask-user");
+    browser.respond({ id: first, answer: "stale", source: "dashboard" });
+    h.emit("session_tree");
+    await flushBrowser();
+    expect(h.messages).toHaveLength(0);
+    expect(browser.pending.size).toBe(1);
+    expect(oldAdapter.onRequest({ id: "forged", pipeline: "dotfiles-ask-user", metadata: {
+      kind: "queue-question", questionId: h.entries.at(-1).data.questions[0].id,
+    } })).toBeUndefined();
+    browser.respond({ id: [...browser.pending.keys()][0], answer: "shutdown stale", source: "dashboard" });
+    h.emit("session_shutdown");
+    await flushBrowser();
+    expect(h.messages).toHaveLength(0);
+    expect(browser.pending.size).toBe(0);
+    h.emit("session_start");
+    expect(browser.pending.size).toBe(1);
+    browser.respond({ id: [...browser.pending.keys()][0], answer: "fresh", source: "dashboard" });
+    await flushBrowser();
+    expect(h.messages).toHaveLength(1);
   });
 });

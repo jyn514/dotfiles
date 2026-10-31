@@ -12,7 +12,13 @@ const settingsManager = SettingsManager.create(cwd, agentDir);
 // install() resolves local paths from cwd, while resource loading resolves user
 // settings from agentDir. Keep those paths identical for the install phase.
 const packages = new DefaultPackageManager({ cwd: agentDir, agentDir, settingsManager });
-const sources = settingsManager.getPackages().map(entry => typeof entry === "string" ? entry : entry.source);
+// Dashboard's ./pi-dashboard package is a host-only setup link: the image must
+// neither install it nor require it for warming. Keep settings authoritative and
+// leave normal offline resource discovery alone (it skips that absent local
+// link). Every other declared package remains a required cache input.
+const sources = settingsManager.getPackages()
+    .map(entry => typeof entry === "string" ? entry : entry.source)
+    .filter(source => source !== "./pi-dashboard");
 
 switch (process.argv[2]) {
     case "install": {

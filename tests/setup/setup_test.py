@@ -215,7 +215,7 @@ class DotfileSetupTests(unittest.TestCase):
             "id": "echo test-user\n",
             "loginctl": 'echo "loginctl $*" >> "$HOME/service-commands"\n',
             "systemctl": 'echo "systemctl $*" >> "$HOME/service-commands"\n',
-            "python3": 'case "$1" in libexec/setup/setup_obsidian_sync.py) exit 0;; esac\n'
+            "python3": 'case "$1" in libexec/setup/setup_obsidian_sync.py|libexec/setup/setup_dashboard.py) exit 0;; esac\n'
                        f'exec {python} "$@"\n',
         }.items():
             if name == fail:

@@ -44,10 +44,44 @@ class PiWrapperTests(unittest.TestCase):
     def test_normal_session_delegates_to_sandbox(self) -> None:
         self.assertEqual(["prompt"], self.run_wrapper("prompt"))
 
+    def test_dashboard_session_uses_sandbox_from_registered_checkout(self) -> None:
+        checkout = self.root / "dashboard-checkout"
+        (checkout / "bin").mkdir(parents=True)
+        (checkout / "libexec/tmux").mkdir(parents=True)
+        shutil.copyfile(WRAPPER, checkout / "bin/pi")
+        (checkout / "bin/pi").chmod(0o755)
+        owned = checkout / "bin/codex-sandbox"
+        owned.write_text('#!/bin/sh\nprintf "owned:%s\\n" "$*"\n')
+        owned.chmod(0o755)
+        # Placement is best-effort; it must not fall back to another checkout.
+        (checkout / "libexec/tmux/place-dashboard-pi.py").write_text("raise SystemExit(7)\n")
+        result = subprocess.run(
+            [str(checkout / "bin/pi"), "prompt"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            env={**self.environment, "PI_DASHBOARD_SPAWN_TOKEN": "browser-token",
+                 "TMUX": str(self.root / "tmux.sock") + ",1,0", "TMUX_PANE": "%0"},
+        )
+        self.assertEqual("owned:prompt\n", result.stdout)
+
     def test_version_uses_native_pi_without_starting_sandbox(self) -> None:
         for argument in ("--version", "-v"):
             with self.subTest(argument=argument):
                 self.assertEqual(["fixture-version"], self.run_wrapper(argument))
+
+    def test_dashboard_environment_does_not_touch_tmux_for_info_or_export(self) -> None:
+        record = self.root / "tmux-called"
+        fake = self.root / "tmux"
+        fake.write_text(f"#!/bin/sh\nprintf called > '{record}'\nexit 1\n")
+        fake.chmod(0o755)
+        self.environment.update(PI_DASHBOARD_SPAWN_TOKEN="browser-token",
+                                TMUX=str(self.root / "missing.sock") + ",1,0", TMUX_PANE="%0")
+        self.assertEqual(["fixture-version"], self.run_wrapper("--version"))
+        source = self.root / "session.jsonl"
+        source.write_text("Session content")
+        self.run_wrapper("--export", str(source), str(self.root / "export.html"))
+        self.assertFalse(record.exists())
 
     def test_version_with_other_arguments_still_uses_sandbox(self) -> None:
         self.assertEqual(["--version", "prompt"], self.run_wrapper("--version", "prompt"))

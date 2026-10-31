@@ -31,6 +31,8 @@ def main() -> int:
     extensions = Path(__file__).resolve().parents[2] / "config/pi-agent/pi-extensions"
     old_sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
     installed_index = home / ".pi/agent/pi-extensions/index.ts"
+    extension_index = (installed_index.resolve() if installed_index.is_file()
+                       else extensions / "index.ts")
     args = []
     index = 0
     while index < len(arguments):
@@ -42,7 +44,7 @@ def main() -> int:
             continue
         args.append(arguments[index])
         index += 1
-    command = [str(pi_cli), "--extension", str(extensions / "index.ts"),
+    command = [str(pi_cli), "--extension", str(extension_index),
                "--extension", str(extensions / "guest-tools.ts"), *args]
     family = os.environ.get("PI_HTTP_FAMILY", "")
     if family and family != "4":

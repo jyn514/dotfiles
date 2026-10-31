@@ -264,11 +264,16 @@ test("configured local package loads the fork and its skill through the bootstra
   execFileSync("cp", [join(root, "config/pi-agent/settings.json"), settingsFile]);
   execFileSync("cmp", [join(root, "config/pi-agent/settings.json"), settingsFile]);
   const settingsManager = SettingsManager.create(directory, agentDir);
+  assert.ok(settingsManager.getPackages().some(entry =>
+    typeof entry === "object" && entry.source === "./pi-dashboard"),
+    "exercise the tracked host-only Dashboard declaration, not a fixture substitute");
+  await assert.rejects(realpath(join(agentDir, "pi-dashboard")), { code: "ENOENT" });
   // Keep the configured local sources. Remote packages and the separate extension
   // bundle are outside this regression and must not load personal state or use network.
   settingsManager.setPackages(settingsManager.getPackages().filter((entry) =>
     (typeof entry === "string" ? entry : entry.source).startsWith("./")));
   settingsManager.setExtensionPaths([]);
+  await settingsManager.flush();
   const loader = new DefaultResourceLoader({ cwd: directory, agentDir, settingsManager,
     noPromptTemplates: true, noThemes: true, noContextFiles: true });
   await loader.reload();
@@ -276,6 +281,8 @@ test("configured local package loads the fork and its skill through the bootstra
   assert.deepEqual(loaded.errors, []);
   const fork = loaded.extensions.find((extension) => extension.tools.has("link_send"));
   assert.ok(fork, "startup settings must discover the fork through the installed local package");
+  assert.ok(!loaded.extensions.some(extension => extension.path.includes("/pi-dashboard/")),
+    "normal guest discovery must not load the absent host-only Dashboard bridge");
   assert.equal(await realpath(fork.path), await realpath(join(root, "tools/pi-link/index.ts")));
   assert.ok(fork.tools.get("link_send").definition.parameters.properties.replyTo,
     "the configured package must expose the fork's reply references");
@@ -291,6 +298,9 @@ test("configured local package loads the fork and its skill through the bootstra
   await mkdir(workspace);
   const cacheSource = process.env.PI_LINK_TEST_CACHE_SOURCE || join(root, "tools/codex-sandbox/image/cache-pi-extensions.mjs");
   const cacheScript = join(directory, "cache-pi-extensions.mjs");
+  const cacheTmp = join(directory, "tmp");
+  await mkdir(cacheTmp);
+  const cacheEnvironment = { ...process.env, PI_OFFLINE: "1", TMPDIR: cacheTmp, JITI_RESPECT_TMPDIR_ENV: "1" };
   execFileSync("cp", [cacheSource, cacheScript]);
   execFileSync("cmp", [cacheSource, cacheScript]);
   let script = await readFile(cacheScript, "utf8");
@@ -298,18 +308,46 @@ test("configured local package loads the fork and its skill through the bootstra
     ['"/opt/agent-pi/src/packages/coding-agent/dist/bundle/index.js"', JSON.stringify(import.meta.resolve("@earendil-works/pi-coding-agent"))],
     ['const cwd = "/workspace";', `const cwd = ${JSON.stringify(workspace)};`],
     ['const agentDir = "/home/codex/.pi/agent";', `const agentDir = ${JSON.stringify(agentDir)};`],
+    ['readdirSync("/tmp/jiti")', `readdirSync(${JSON.stringify(join(cacheTmp, "jiti"))})`],
   ]) {
     assert.equal(script.split(original).length, 2, `image fixture path must be unique: ${original}`);
     script = script.replace(original, relocated);
   }
   await writeFile(cacheScript, script);
-  execFileSync(process.execPath, [cacheScript, "install"], { cwd: workspace });
+  const declaredSettings = await readFile(settingsFile, "utf8");
+  const install = execFileSync(process.execPath, [cacheScript, "install"],
+    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
+  assert.match(install, /Installing cache input: \.\/pi-link/);
+  assert.doesNotMatch(install, /Installing cache input: \.\/pi-dashboard/);
+  process.stdout.write(install);
+  const warm = execFileSync(process.execPath, [cacheScript, "warm"],
+    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
+  assert.match(warm, /Cached [1-9]\d* extensions in [1-9]\d* files/);
+  process.stdout.write(warm);
+  assert.equal(await readFile(settingsFile, "utf8"), declaredSettings,
+    "install/warm must not rewrite settings or remove the host-only declaration");
+  await assert.rejects(realpath(join(agentDir, "pi-dashboard")), { code: "ENOENT" });
   assert.ok(mapping[0].startsWith("$HOME/"));
   const installedLink = join(directory, mapping[0].slice("$HOME/".length));
   await unlink(installedLink);
-  const missing = spawnSync(process.execPath, [cacheScript, "install"], { cwd: workspace, encoding: "utf8" });
+  const missing = spawnSync(process.execPath, [cacheScript, "install"],
+    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
   assert.notEqual(missing.status, 0, "missing local packages must fail instead of silently warming an incomplete cache");
   assert.ok(missing.stderr.includes(`Path does not exist: ${installedLink}`), missing.stderr);
+  const missingWarm = spawnSync(process.execPath, [cacheScript, "warm"],
+    { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
+  assert.notEqual(missingWarm.status, 0, "offline warm must still fail closed for a missing real cache input");
+  assert.match(missingWarm.stderr, /Missing cache input: \.\/pi-link/);
+  // A similar name is not the host-only declaration: absent packages must not
+  // become optional just because their names contain the word Dashboard.
+  settingsManager.setPackages(["./pi-dashboard-extra"]);
+  await settingsManager.flush();
+  for (const phase of ["install", "warm"]) {
+    const otherMissing = spawnSync(process.execPath, [cacheScript, phase],
+      { cwd: workspace, env: cacheEnvironment, encoding: "utf8" });
+    assert.notEqual(otherMissing.status, 0, `missing non-exempt input must fail during ${phase}`);
+    assert.match(otherMissing.stderr, /pi-dashboard-extra/);
+  }
 });
 
 test("image cache inputs load pi-link with its sibling modules", async (t) => {

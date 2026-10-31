@@ -471,6 +471,19 @@ Simple preference questions, routine confirmations, and requests for missing fac
 A pending count and **Alt+A** hint appear above the normal editor; the extension
 does not modify that editor.
 
+### Browser answers
+
+With the patched Dashboard bridge configured, the same queue also appears in the browser.
+The dotfiles extension still owns persistence, cancellation, and answer delivery; Dashboard keeps only a disposable presentation.
+Answering from either interface removes the question from both and sends one steering message.
+Browser options are literal answers, including an option named `Cancel`, and multiline free text remains available.
+There is no destructive browser Cancel control, expiry, or false blocked-agent status for these questions.
+Navigating away leaves them pending.
+
+Dashboard absence leaves the terminal workflow unchanged and does not install or import Dashboard.
+The tool still requires Pi's TUI mode; browser-created sessions use the configured tmux launcher rather than RPC.
+See [Dashboard setup and operation](../README.md#browser-and-phone-access).
+
 ### Cancelling obsolete questions
 
 The model can call `cancel_ask_user({ "question_ids": ["<ID from ask_user>"] })`

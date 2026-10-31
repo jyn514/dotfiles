@@ -1,0 +1,23 @@
+{
+  "spawnStrategy": "tmux",
+  "spawnRegisterTimeoutMs": 120000,
+  "autoShutdown": false,
+  "reopenSessionsAfterShutdown": "off",
+  "registerAskUserTool": false,
+  "listenOnLoopback": true,
+  "maxConcurrentSubagents": 0,
+  "defaultModel": "",
+  "defaultThinkingLevel": "",
+  "agentPathGate": {"enabled": false},
+  "openspec": {"enabled": false},
+  "vault": {"deliveryEnabled": false},
+  "piTrustMirror": {"enabled": false, "liveQuery": false},
+  "accessGrants": {"promptEnabled": false},
+  "questions": {"autoBrief": false},
+  "modelProxy": {"enabled": false},
+  "tunnel": {"enabled": false},
+  "network": {"trustMode": "pair", "trustModeOrigin": "operator"},
+  "pairing": {"acceptLanRequests": true},
+  "trustedNetworks": ["100.64.0.0/10"],
+  "allowedHosts": ["selene"]
+}
