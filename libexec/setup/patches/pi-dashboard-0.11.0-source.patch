@@ -804,7 +804,7 @@
 +});
 --- /dev/null
 +++ b/packages/extension/src/__tests__/server-auto-start-bind.test.ts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,76 @@
 +import { createServer } from "node:http";
 +import type { AddressInfo } from "node:net";
 +import { mkdtempSync, rmSync } from "node:fs";
@@ -812,11 +812,22 @@
 +import { join } from "node:path";
 +import { describe, expect, it, vi } from "vitest";
 +import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
++import { loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
++import * as launcher from "@blackbelt-technology/pi-dashboard-shared/server-launcher.js";
 +import { autoStartServer, type AutoStartDeps } from "../server-auto-start.js";
++import { launchServer } from "../server-launcher.js";
 +
 +describe("specific HTTP bind auto-start detection", () => {
 +  const host = Object.values(networkInterfaces()).flat().find(a => a && a.family === "IPv4" && !a.internal)?.address ?? "127.0.0.2";
-+  it.each([false, true])("finds a real non-localhost listener before/after launch (post-launch: %s)", async (postLaunch) => {
++  it.each([
++    { postLaunch: false, listenOnLoopback: false },
++    { postLaunch: true, listenOnLoopback: false },
++    { postLaunch: false, listenOnLoopback: true },
++    { postLaunch: true, listenOnLoopback: true },
++  ])("finds the local listener (post-launch: $postLaunch, loopback: $listenOnLoopback)", async ({ postLaunch, listenOnLoopback }) => {
++    const listenerHost = listenOnLoopback ? "127.0.0.1" : host;
++    // A tailnet change can leave the primary bind address unreachable.
++    const bindHost = listenOnLoopback ? "192.0.2.1" : host;
 +    const listener = createServer((req, res) => {
 +      if (req.url !== "/api/health") { res.writeHead(404).end(); return; }
 +      res.setHeader("Content-Type", "application/json");
@@ -825,16 +836,17 @@
 +    const lockDir = mkdtempSync(join(tmpdir(), "dashboard-bind-"));
 +    await new Promise<void>((resolve, reject) => {
 +      listener.once("error", reject);
-+      listener.listen(0, host, resolve);
++      listener.listen(0, listenerHost, resolve);
 +    });
 +    try {
 +      const port = (listener.address() as AddressInfo).port;
-+      console.info(`Native specific-bind extension fixture: ${host}:${port}`);
-+      expect((await isDashboardRunning(port, "localhost", { timeoutMs: 100, retries: 0 })).running).toBe(false);
++      if (!listenOnLoopback) {
++        expect((await isDashboardRunning(port, "localhost", { timeoutMs: 100, retries: 0 })).running).toBe(false);
++      }
 +      let calls = 0;
 +      const probe = vi.fn(async (...args: Parameters<typeof isDashboardRunning>) => {
 +        if (postLaunch && calls++ === 0) return { running: false };
-+        return isDashboardRunning(...args);
++        return isDashboardRunning(args[0], args[1], { timeoutMs: 100, retries: 0 });
 +      });
 +      const deps: AutoStartDeps = {
 +        isDashboardRunning: probe,
@@ -843,13 +855,29 @@
 +        notify: vi.fn(), log: () => {}, lockDir,
 +        resolveCliPath: () => join(tmpdir(), "installed", "packages", "server", "src", "cli.ts"),
 +      };
-+      const result = await autoStartServer({ port, piPort: 19999, autoStart: true, bindHost: host }, deps);
-+      expect(result.server).toEqual({ host, port, piPort: 19999 });
-+      expect(probe.mock.calls.every(call => call[1] === host)).toBe(true);
++      const result = await autoStartServer({ port, piPort: 19999, autoStart: true, bindHost, listenOnLoopback }, deps);
++      expect(result.server).toEqual({ host: listenerHost, port, piPort: 19999 });
++      expect(probe.mock.calls.every(call => call[1] === listenerHost)).toBe(true);
 +      expect(deps.launchServer).toHaveBeenCalledTimes(postLaunch ? 1 : 0);
++      expect(deps.discoverDashboard).toHaveBeenCalledTimes(postLaunch ? 1 : 0);
 +    } finally {
 +      await new Promise<void>((resolve, reject) => listener.close(err => err ? reject(err) : resolve()));
 +      rmSync(lockDir, { recursive: true, force: true });
++    }
++  });
++
++  it.each([false, true])("uses the same endpoint for child readiness (loopback: %s)", async (listenOnLoopback) => {
++    const launch = vi.spyOn(launcher, "launchDashboardServer").mockResolvedValue({
++      childPid: 123, reportedPid: 123, healthOk: true,
++    });
++    try {
++      const result = await launchServer({ ...loadConfig(), bindHost: "192.0.2.1", listenOnLoopback });
++      expect(result.success).toBe(true);
++      expect(launch).toHaveBeenCalledWith(expect.objectContaining({
++        healthHost: listenOnLoopback ? "127.0.0.1" : "192.0.2.1",
++      }));
++    } finally {
++      launch.mockRestore();
 +    }
 +  });
 +});
@@ -2480,28 +2508,29 @@
  
 --- a/packages/extension/src/server-auto-start.ts
 +++ b/packages/extension/src/server-auto-start.ts
-@@ -3,6 +3,7 @@
-  * Uses mDNS discovery first, falls back to health check, then auto-starts.
-  */
+@@ -16,7 +16,7 @@
+   recordChildPid,
+   releaseAutoStartLock,
+ } from "./autostart-lock.js";
+-import { resolveServerCliPath } from "./server-launcher.js";
++import { localServerHealthHost, resolveServerCliPath } from "./server-launcher.js";
  
-+import { localDialHost } from "@blackbelt-technology/pi-dashboard-shared/local-credential-proof.js";
- import { spawnReadinessBudgetMs } from "@blackbelt-technology/pi-dashboard-shared/config.js";
- import { getDashboardServerLogPath } from "@blackbelt-technology/pi-dashboard-shared/dashboard-paths.js";
- import type { DashboardCheckOpts } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
-@@ -184,10 +185,11 @@
+ export interface DiscoveredServer {
+   host: string;
+@@ -184,10 +184,11 @@
   * Returns the server to connect to.
   */
  export async function autoStartServer(
 -  config: { piPort: number; port: number; autoStart: boolean; readinessTimeoutMs?: number },
-+  config: { piPort: number; port: number; autoStart: boolean; readinessTimeoutMs?: number; bindHost?: string },
++  config: { piPort: number; port: number; autoStart: boolean; readinessTimeoutMs?: number; bindHost?: string; listenOnLoopback?: boolean },
    deps: AutoStartDeps,
  ): Promise<AutoStartResult> {
    const noMdns = mdnsDisabled();
-+  const host = config.bindHost === undefined ? "localhost" : localDialHost(config.bindHost);
++  const host = localServerHealthHost(config);
    const log = deps.log ?? appendAutoStartLog;
    const probeOpts = { ...RESOLVED_PORT_PROBE_OPTS, _sleep: deps.probeSleep };
  
-@@ -196,12 +198,12 @@
+@@ -196,12 +197,12 @@
    // retried, a refused one is not. When it serves, auto-start returns it and
    // does NOT consult discovery at all — there is no divergence to record and
    // no banner, because the correct answer is already known (D4).
@@ -2516,7 +2545,7 @@
    }
  
    // 2. Discovery — runs ONLY when the resolved port is silent or foreign.
-@@ -332,9 +334,9 @@
+@@ -332,9 +333,9 @@
  
      let holderGone = false;
      while (probes.now() < deadline) {
@@ -2528,7 +2557,7 @@
        }
        if (readLock(lockPath) === null) { holderGone = true; break; }
        await sleep(pollMs);
-@@ -343,9 +345,9 @@
+@@ -343,9 +344,9 @@
      // Holder released without a dashboard coming up, or the budget elapsed:
      // one last look, then report unavailable.
      if (holderGone) {
@@ -2540,22 +2569,22 @@
        }
      }
      return {};
-@@ -397,12 +399,13 @@
+@@ -397,12 +398,13 @@
   * is released on ready, failed AND timed-out spawns alike).
   */
  async function spawnAndAttach(
 -  config: { piPort: number; port: number; autoStart: boolean },
-+  config: { piPort: number; port: number; autoStart: boolean; bindHost?: string },
++  config: { piPort: number; port: number; autoStart: boolean; bindHost?: string; listenOnLoopback?: boolean },
    deps: AutoStartDeps,
    noMdns: boolean,
    lockCtx: { lockDir?: string; locked: boolean },
    probeOpts: { timeoutMs: number; retries: number; retryDelayMs: number; _sleep?: (ms: number) => Promise<void> },
  ): Promise<AutoStartResult> {
-+  const host = config.bindHost === undefined ? "localhost" : localDialHost(config.bindHost);
++  const host = localServerHealthHost(config);
    deps.onLaunchStart?.();
    let result: Awaited<ReturnType<AutoStartDeps["launchServer"]>>;
    try {
-@@ -424,7 +427,7 @@
+@@ -424,7 +426,7 @@
        deps.onServerSpawned?.(result.childPid);
      }
      deps.onLaunchEnd?.(true);
@@ -2564,7 +2593,7 @@
  
      // D-post: the server we just launched owns the attach decision. Probe the
      // resolved port with the SAME bootstrap-aware opts as the pre-launch gate;
-@@ -432,9 +435,9 @@
+@@ -432,9 +434,9 @@
      // advertiser can never displace the server we just started. The retry
      // absorbs our own server's bootstrap; no "resolved port silent" warning
      // is ever raised on this path (D4).
@@ -2576,7 +2605,7 @@
      }
  
      // Resolved port still silent after the bootstrap-aware probe: discovery
-@@ -457,14 +460,14 @@
+@@ -457,14 +459,14 @@
        }
      }
  
@@ -2601,11 +2630,24 @@
  /**
   * Server launcher — spawns the dashboard server as a detached process.
   * The spawned server runs in foreground mode (no subcommand) and writes
-@@ -168,6 +169,7 @@
+@@ -22,6 +23,12 @@
+ 
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ const require = createRequire(import.meta.url);
++
++/** Local discovery and child readiness use the fixed loopback listener when enabled. */
++export function localServerHealthHost(config: { bindHost?: string; listenOnLoopback?: boolean }): string {
++  if (config.listenOnLoopback) return "127.0.0.1";
++  return config.bindHost === undefined ? "localhost" : localDialHost(config.bindHost);
++}
+ 
+ export interface LaunchResult {
+   success: boolean;
+@@ -168,6 +175,7 @@
        stdio: { logFile: getDashboardServerLogPath() },
        healthTimeoutMs: config.readinessTimeoutMs ?? HEALTH_CHECK_TIMEOUT_MS,
        port: config.port,
-+      healthHost: localDialHost(config.bindHost),
++      healthHost: localServerHealthHost(config),
        starter: "Bridge",
      });
      return { success: true, message: "Server started", childPid: result.childPid, logOwned: true };

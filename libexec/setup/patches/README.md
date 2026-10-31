@@ -49,9 +49,10 @@ existing sessions and repair surfaces continue to work.
 
 The check applies only to Pi-backed spawns, not ACP sessions. The native launch
 primitive's optional internal `healthHost` carries the
-selected HTTP bind address through readiness checks. Extension and CLI callers
-use the existing `localDialHost` helper; bridge URLs and UDS transport are
-unchanged.
+selected HTTP address through readiness checks.
+Bridge discovery and readiness use `127.0.0.1` when `listenOnLoopback` is enabled, so changing tailnets does not hide a running daemon.
+Without that listener, they use the selected primary bind address.
+CLI callers use the existing `localDialHost` helper; bridge URLs and UDS transport are unchanged.
 
 ### Fixed web-interface-only profile
 
@@ -154,9 +155,10 @@ files; that count is evidence for this build, not a rule for future revisions.
 Run tests through `dev/test-environment`, from the patched source checkout. Start
 with `npm run lint` and the changed tests. Selected-address regressions live in
 `server-auto-start-bind.test.ts`, `server-launcher.test.ts`, and
-`cli-specific-bind.test.ts`; they exercise real HTTP listeners, require a
-localhost probe to fail, and use an available noninternal IPv4 address (falling
-back to `127.0.0.2` when none exists). The CLI fixture also verifies the native
+`cli-specific-bind.test.ts`; they exercise real HTTP listeners.
+The bridge regression covers a stale primary address with a working loopback listener, before and after launch, and checks the child readiness endpoint.
+Primary-only cases require a localhost probe to fail and use an available noninternal IPv4 address (falling back to `127.0.0.2` when none exists).
+The CLI fixture also verifies the native
 restart HMAC against the accepted socket binding. Registration tests cover valid,
 missing, broken, and disabled declarations without changing a managed settings
 symlink.
