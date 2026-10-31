@@ -3,17 +3,14 @@
 (ns coauthored-by-author
   (:require
    [babashka.fs :as fs]
-   [babashka.process :as process]
    [cheshire.core :as json]
    [clojure.string :as str]))
 
-(def default-match #"(?i)^Claude\b")
+(load-file (str (fs/path (fs/parent (fs/parent (fs/real-path *file*)))
+                         "libexec" "rewrite-history.clj")))
+(require '[dotfiles.rewrite-history :as history])
 
-(defn shell
-  [& args]
-  (if (map? (first args))
-    (apply process/shell (merge {:shutdown nil} (first args)) (rest args))
-    (apply process/shell {:shutdown nil} args)))
+(def default-match #"(?i)^Claude\b")
 
 (defn usage []
   (println "Usage: coauthored-by-author [--apply] [--keep-trailer] [--refs REF ...] [--match REGEX]")
@@ -27,29 +24,6 @@
   (println "  --refs  HEAD")
   (println)
   (println "Without --apply, prints the commits that would be rewritten."))
-
-(defn sh
-  [& args]
-  (let [[opts args] (if (map? (first args))
-                      [(first args) (rest args)]
-                      [{} args])
-        result (apply shell
-                      (merge {:out :string
-                              :err :string
-                              :continue true}
-                             opts)
-                      args)]
-    (if (zero? (:exit result))
-      (:out result)
-      (throw (ex-info (str "Command failed: " (str/join " " args)
-                           (when (seq (:err result))
-                             (str "\n" (:err result))))
-                      {:args args
-                       :exit (:exit result)})))))
-
-(defn git
-  [& args]
-  (apply sh "git" args))
 
 (defn parse-args
   [args]
@@ -77,26 +51,22 @@
 
 (defn commit-records
   [refs]
-  (->> (apply git "log" "--reverse" "--format=%H%x00%an%x00%ae%x00%B%x1e" refs)
-       (#(str/split % #"\u001e"))
-       (keep (fn [record]
-               (let [record (str/trim-newline record)]
-                 (when-not (str/blank? record)
-                   (let [[commit author-name author-email message] (str/split record #"\u0000" 4)]
-                     {:commit commit
-                      :author {:name author-name
-                               :email author-email}
-                      :message message})))))))
+  (->> (history/commit-records [[:commit "%H"] [:author-name "%an"] [:author-email "%ae"] [:message "%B"]]
+                              refs true)
+       (map (fn [{:keys [commit author-name author-email message]}]
+              {:commit commit
+               :author {:name author-name :email author-email}
+               :message message}))))
 
 (defn parsed-trailers
   [message]
-  (->> (shell {:in message
-               :out :string
-               :err :string
-               :continue true}
-              "git"
-              "interpret-trailers"
-              "--parse")
+  (->> (history/shell {:in message
+                       :out :string
+                       :err :string
+                       :continue true}
+                      "git"
+                      "interpret-trailers"
+                      "--parse")
        ((fn [{:keys [exit out err]}]
           (if (zero? exit)
             out
@@ -155,16 +125,12 @@
           ".json"
           (make-array java.nio.file.attribute.FileAttribute 0)))))
 
-(defn clean-worktree? []
-  (str/blank? (git "status" "--porcelain=v1")))
-
 (defn apply-rewrite!
   [opts candidates]
   (when-not (seq candidates)
     (println "Nothing to rewrite.")
     (System/exit 0))
-  (when-not (clean-worktree?)
-    (throw (ex-info "Refusing to rewrite history with a dirty Git worktree." {})))
+  (history/require-clean-worktree!)
   (let [data-path (temp-data-path)
         data {:authors (into {} (map (fn [{:keys [commit new-author]}]
                                       [(str/trim commit) new-author])
@@ -172,12 +138,10 @@
               :keep-trailer (:keep-trailer? opts)}]
     (try
       (spit data-path (json/generate-string data))
-      (apply sh
-             {:extra-env {"COAUTHORED_BY_AUTHOR_DATA" data-path}}
-             "git"
-             "filter-repo"
-             "--refs"
-             (concat (:refs opts) ["--commit-callback" (callback-path)]))
+      (history/filter-repo!
+       ["git" "filter-repo"]
+       {:extra-env {"COAUTHORED_BY_AUTHOR_DATA" data-path}}
+       [] (:refs opts) (callback-path))
       (finally
         (fs/delete data-path)))))
 
@@ -187,15 +151,8 @@
     (if (:help? opts)
       (usage)
       (let [candidates (vec (candidates opts))]
-        (if (seq candidates)
-          (run! print-candidate candidates)
-          (println "No matching Co-Authored-By trailers found."))
+        (history/preview! candidates print-candidate "No matching Co-Authored-By trailers found.")
         (when (:apply? opts)
           (apply-rewrite! opts candidates))))))
 
-(try
-  (apply -main *command-line-args*)
-  (catch Exception e
-    (binding [*out* *err*]
-      (println (.getMessage e)))
-    (System/exit 1)))
+(history/run-main! -main *command-line-args*)
