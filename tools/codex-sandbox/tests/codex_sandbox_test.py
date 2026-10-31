@@ -1668,7 +1668,7 @@ class CodexSandboxTest(unittest.TestCase):
                 exit
             fi
             if [ "$1 $2" = "info --format" ]; then
-                printf '%s\n' linux/arm64
+                printf '%s\n' linux/amd64
                 exit
             fi
             if [ "$1 $2" = "image exists" ]; then
@@ -1688,9 +1688,9 @@ class CodexSandboxTest(unittest.TestCase):
                 esac
                 case "$image" in
                     caddy@sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba)
-                        printf '%s\n' '[{"Id":"sha256:6b08c1b9858ca9a7d99c1da13c3695081e0e604c6cf214ca26a7ce0e2c4fd9b4","RepoDigests":["caddy@sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba"],"RootFS":{"Layers":["sha256:0000000000000000000000000000000000000000000000000000000000000001"]},"Os":"linux","Architecture":"arm64"}]'
+                        printf '%s\n' '[{"Id":"sha256:6b08c1b9858ca9a7d99c1da13c3695081e0e604c6cf214ca26a7ce0e2c4fd9b4","RepoDigests":["caddy@sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba"],"RootFS":{"Layers":["sha256:0000000000000000000000000000000000000000000000000000000000000001"]},"Os":"linux","Architecture":"amd64"}]'
                         ;;
-                    *) printf '[{"Id":"sha256:%064d","RootFS":{"Layers":["sha256:%064d"]},"Os":"linux","Architecture":"arm64"}]\n' 0 1 ;;
+                    *) printf '[{"Id":"sha256:%064d","RootFS":{"Layers":["sha256:%064d"]},"Os":"linux","Architecture":"amd64"}]\n' 0 1 ;;
                 esac
                 exit 0
             fi
