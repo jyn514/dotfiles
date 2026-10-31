@@ -1,6 +1,6 @@
 ---
 name: audit-spec-against-impl
-description: Compare implementation and tests with the current normative specification for missing or partial implementation, undocumented intentional behavior, spec lag, and obsolete requirements. Use for bounded or whole-spec conformance audits and bidirectional drift. A review request authorizes findings only; reconcile specification text or file issues only when requested. Do not implement fixes. Not for critiquing a specification's design or auditing completion of an owned change.
+description: Compare what the current normative specification promises with implementation and tests, in both directions. Check for missing or partial implementation, undocumented intentional behavior, spec lag, and obsolete requirements. Use for bounded or whole-spec conformance audits and bidirectional drift. A review request authorizes findings only; reconcile specification text or file issues only when requested. Do not implement fixes. Not for critiquing a specification's design or auditing completion of an owned change.
 ---
 
 # Audit specification against implementation

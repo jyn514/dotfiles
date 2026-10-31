@@ -1,6 +1,6 @@
 ---
 name: completion-audit
-description: Audit completed substantial owned changes against the original request, governing requirements, and acceptance conditions. Use after multi-component implementation, refactoring, or migration, or for an explicit completion-audit request. Map requirements to concrete final-state evidence and report unmet outcomes. Routine localized edits need diff review and native validation, not this audit. Not for standalone specification critique or a whole-spec conformance survey.
+description: Check whether a completed substantial owned change fulfills the original request, governing requirements, and acceptance conditions, using final-state evidence. Use after multi-component implementation, refactoring, or migration, or for an explicit completion-audit request. Map requirements to concrete final-state evidence and report unmet outcomes. Routine localized edits need diff review and native validation, not this audit. Not for standalone specification critique or a whole-spec conformance survey.
 ---
 
 # Completion audit

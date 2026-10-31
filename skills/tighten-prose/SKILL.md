@@ -1,6 +1,6 @@
 ---
 name: tighten-prose
-description: Polish wording, diction, sentence rhythm, repetition, and local clarity in existing prose. Use for explicit local edits to sentences or short passages within an established explanation, including docs, reports, specifications, prompts, instructions, and skills. Do not use for whole-artifact editorial judgment, restructuring, developing missing explanations, or consolidating policies; use holistic-writing. Do not apply to code, generated files, or machine-owned data.
+description: Polish wording, diction, sentence rhythm, repetition, and local clarity in existing prose. Use for explicit local edits to sentences or short passages within an established explanation, including docs, reports, specifications, prompts, instructions, and skills. Do not use for whole-artifact editorial judgment, restructuring, developing missing explanations, or consolidating policies. Do not apply to code, generated files, or machine-owned data.
 ---
 
 # Tighten prose
@@ -23,7 +23,8 @@ A polished passage does not establish that the whole artifact works.
    Restore anything that sounded better before; leave the passage unchanged if no edit earns its cost.
    Explain consequential choices and any unresolved issue, not an edit count.
 
-If the problem requires different content, organization, or a developed explanation, flag it for `holistic-writing` rather than trying to solve it through wording alone.
+If the problem requires different content, organization, or a developed explanation, flag the broader work rather than trying to solve it through wording alone.
+Use a dedicated skill when it owns the requested work; otherwise use `holistic-writing`.
 Do not claim the whole artifact has passed editorial review.
 
 ## Example: name the distinction directly

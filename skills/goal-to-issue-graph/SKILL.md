@@ -1,6 +1,6 @@
 ---
 name: goal-to-issue-graph
-description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work in the repository's default issue tracker, or TicGit if none is specified. Not for a selected change's file/commit plan, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
+description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work in the repository's default issue tracker, or TicGit if none is specified. Not for working out one ticket's implementation path, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
 ---
 
 # Goal to issue graph
@@ -19,7 +19,8 @@ Use the repository's default issue tracker, or TicGit if none is specified.
 Follow the repository's tracker guidance; for TicGit, use [ticgit](../ticgit/SKILL.md).
 Inspect the existing graph and reuse matching issues.
 Do not require separate approval to materialize the graph within that work; an explicit read-only or proposal-only request still forbids tracker mutation.
-Use `implementation-plan` for a selected change's detailed plan.
+Use `implementation-plan` when explicitly asked to work out or review one ticket's implementation plan.
+An already-actionable ticket needs no separate plan; keep any needed implementation detail in its existing record rather than a parallel artifact.
 Represent an unsettled architecture as a decision task; use [independent design deliberation](../architecture-design/references/deliberation.md) when design selection is also authorized.
 For a staged new-tool project, follow `new-tool-development` rather than inventing a parallel approval process.
 

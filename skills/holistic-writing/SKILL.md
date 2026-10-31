@@ -1,6 +1,6 @@
 ---
 name: holistic-writing
-description: Author, substantially revise, or editorially review whole prose artifacts, including reports, essays, prompts, instructions, skills, and documentation. Use also for reader-facing documentation usability or correctness reviews. A contract, conformance, or completion audit alone does not trigger this skill unless it also concerns the artifact’s explanation or reading experience. Use whenever creating a new standalone prose artifact, regardless of length, and for selection, explanatory development, causal relationships, diction, rhythm, voice, factual fidelity, or the complete reading experience. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing; use the relevant owner or tighten-prose.
+description: Author, substantially revise, or editorially review standalone prose when no dedicated skill owns the requested writing or review. Covers whole-artifact explanation and reading experience, including reader-facing documentation usability and correctness. For writing or review covered by a dedicated skill, start there and follow its editorial-pass route rather than starting a second workflow here. This skill covers selection, explanatory development, causal relationships, diction, rhythm, voice, and factual fidelity. A contract, conformance, or completion audit alone does not trigger it. Specialized owners retain authority over substance and behavior. Not for documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing.
 ---
 
 # Holistic writing
@@ -16,7 +16,9 @@ For review-only work, report findings, evidence, consequences, and the smallest 
 For authoring with no named artifact, establish the intended reader, purpose, and deliverable before drafting.
 Ask when missing context would materially change the result rather than inventing its audience or authority.
 
+When a dedicated skill owns the requested writing or review, start there rather than running this workflow separately.
 Specialized owners link directly to the [shared editorial pass](references/editorial-pass.md) under their own invocation conditions.
+An editorial-only request can start here when the artifact's dedicated skill does not cover that review.
 Reuse established decisions rather than restarting their workflows.
 For documentation-specific reader tasks, forms, prerequisites, commands, links, and workflow checks, use [Documentation](references/documentation.md).
 For placement alone, use [Documentation placement](../references/documentation-placement.md); a small addition or new heading does not require this whole-artifact workflow.

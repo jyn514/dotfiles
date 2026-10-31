@@ -1,22 +1,29 @@
 ---
 name: implementation-plan
-description: Create or review a concrete, repository-specific implementation plan for a selected change. Use for requests such as “create a plan,” “show me a plan; do not implement,” “what are the next steps?” after investigation, saving a plan, identifying affected files and tests, or breaking work into logical commits. Do not use to choose among materially different architectures, directly create the selected design's implementation artifact, or execute an existing plan.
+description: Work out or review how to implement a given ticket in the current repository. Use when explicitly asked to plan a ticket's implementation or review its implementation plan. Identify the existing code path, required changes, verification, and material unresolved choices. A concrete requested change can supply the task when no ticket exists; do not require ticket creation. Not for decomposing a broad goal, selecting product scope or architecture, ordinary ticket refinement, executing agreed work, or adding a mandatory planning stage to an already-actionable ticket.
 ---
 
 # Implementation Plan
 
-Turn a selected design into the smallest complete repository-specific plan another engineer can implement and review without reconstructing hidden decisions.
-Keep a working caller-to-result path throughout planning; inspection, verification, and commit structure must earn any additions to it.
+Work out how to implement one ticket using the current repository's code and test facilities.
+Consume the ticket's outcome, acceptance conditions, and settled design; supply only the missing execution detail.
+A concrete requested change can serve as the task when no ticket exists; do not create a ticket just to use this procedure.
+Use this procedure when planning or plan review is requested; ordinary investigation during implementation does not require it.
+An already-actionable ticket needs no separate planning stage.
+Keep a working caller-to-result path throughout planning; inspection, verification, and any proposed commit structure must earn additions to it.
 Simplicity concerns the proposed work, not just the length of the document, and must not change the selected design or weaken required behavior or verification.
 
 For a staged new-tool workflow only, require a ready implementation specification before planning. It is the design authority; the plan remains optional and must not alter requirements or design or become another human gate.
 
 ## Procedure
 
-1. **Establish the outcome and constraints.** Consume the selected design and repository guidance; reuse settled decisions, contracts, and non-goals.
+1. **Establish the ticket's outcome and constraints.** Read its current acceptance conditions, linked design, existing implementation detail, and repository guidance.
+   Reuse settled decisions, contracts, and non-goals; do not reconstruct the wider goal's decomposition.
    Identify required observable results and known preservation requirements before choosing implementation machinery.
    Classify material choices as `decided`, `conservative default`, or `unresolved`; mark unresolved choices as blocking or non-blocking.
-   Return to architecture design only for a concrete unresolved choice or contradictory evidence that changes implementation.
+   If inspection exposes an unsettled architecture, a missing prerequisite, or a necessary change to the ticket's boundary, report it and stop dependent planning.
+   Do not silently expand the ticket, select a replacement architecture, or revise the issue graph.
+   Continue independent planning within the settled scope.
 2. **Start with a complete working path.** Sketch how the caller reaches the required result using existing facilities and the selected design.
    Carry forward known error, lifecycle, and compatibility requirements, not just the successful request.
    Name uncertainties that could change this candidate; do not fill them with speculative components or interfaces.
@@ -56,10 +63,15 @@ For a staged new-tool workflow only, require a ready implementation specificatio
    Require generated properties or action sequences only for identified invariants or combinations those cases cannot adequately cover.
    When justified, use [property-based-testing](../property-based-testing/SKILL.md) to choose properties and generators within scope.
    Use integration, pseudo-terminal, migration, or real-service tests when the observable boundary requires them, not merely because those tools exist.
-6. **Organize the required work into independently valid commits.** For each commit, give an imperative subject, useful result, principal files or subsystem, and verification that passes at that point.
+6. **Order the required edits.** Identify the affected files or subsystems and the useful intermediate results.
+   Include commit boundaries only when requested or when they materially help implementation or review.
+   For proposed commits, give an imperative subject and verification that passes at that point; use `commit-quality` for commit boundaries and messages.
    Land tests with their behavior; keep preparatory refactors independently justified and behavior-preserving.
    Commit boundaries organize the candidate; they do not justify extra architecture, fixtures, or deliverables to make a commit look self-contained.
-7. **Write the compact plan.** Give each rule one canonical home beside the contract or work it constrains.
+7. **Record only the missing implementation detail.** Use the existing ticket as its canonical home when updates are authorized.
+   A read-only or proposal-only request requires reporting the proposed detail without changing the ticket.
+   Do not maintain a parallel plan; create a separate artifact only when requested or needed by a concrete reader, and link it from the ticket when authorized.
+   Give each rule one canonical home beside the contract or work it constrains.
    Group related failures under their governing invariant; keep reproductions and expected outcomes in one acceptance section.
    Let steps identify the work and reference its checks rather than restating the rules.
    Retain decision-changing rationale; omit investigation chronology, speculative extensions, and unsupported safeguards.
@@ -71,14 +83,16 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 
 Default to a compact plan containing:
 
-- **Contract:** objective, scope, behavior, and material decisions, with source paths where they explain a constraint.
-- **Implementation steps and logical commits:** affected files, useful intermediate results, and checks that pass at each step.
+- **Task and constraints:** reference the ticket's outcome, acceptance conditions, and settled design rather than copying them; identify material implementation decisions.
+- **Implementation steps:** affected files, useful intermediate results, and checks that pass at each step; include logical commits only when useful or requested.
 - **Verification:** concrete acceptance cases and required repository checks.
 - **Material unresolved questions:** only those that can change implementation, marked blocking or non-blocking; omit if none remain.
 
 Put storage, lifecycle, and compatibility details beside the contract or step they constrain.
 Add separate sections only when they make the implementation easier to follow; the above is not a mandatory heading template.
-Save plans in the requested format and location; otherwise follow repository conventions, defaulting to concise Markdown.
+Keep implementation detail in the ticket when one exists and updates are authorized.
+Otherwise return a concise proposal in the requested format and location, following repository conventions.
+For a task without a ticket, do not create tracker work or a separate maintained artifact unless authorized.
 Separate docs from behavior only when repository practice or generated output warrants it.
 
 ## Constraints

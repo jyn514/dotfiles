@@ -1,6 +1,6 @@
 ---
 name: spec-review
-description: Audit a supplied specification for internal consistency, traceability to governing requirements, unsupported restrictions, and completeness appropriate to its declared stage. Subject-specific design critique stays with the relevant subject skill; use this skill when the requested result is an assessment of the specification's contract. Not for comparing implementation with a specification or auditing completed work.
+description: Review what a supplied specification promises, against its own statements and governing requirements. Audit internal consistency, traceability, unsupported restrictions, and completeness appropriate to its declared stage. For an unqualified request to review a specification, start with its contract; do not automatically add separate design or editorial reviews. Not for choosing an architecture, comparing implementation with a specification, auditing completion of an owned change, or reviewing only the explanation and reading experience.
 ---
 
 # Specification review
@@ -8,6 +8,8 @@ description: Audit a supplied specification for internal consistency, traceabili
 Use [evidence standards](../references/review-evidence.md) to support findings and state what each check establishes.
 
 Audit the specification's contract: its declared requirements, supported cases, ownership, interfaces, failure behavior, and verification obligations.
+For an unqualified specification-review request, start with this contract audit.
+Consult design or editorial guidance only for a concrete design or explanation question; do not automatically run adjacent review workflows.
 Report findings; revise the artifact only when requested, except for the TODO comments that `new-tool-development` permits agents to add to human-authored product briefs.
 
 ## Read First

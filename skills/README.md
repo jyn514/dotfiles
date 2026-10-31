@@ -38,9 +38,11 @@ Use it when exploring possibilities, examining assumptions, or asking whether th
 [Work selection](work-selection/SKILL.md) makes a more immediate comparison: whether another investigation, workaround, or prerequisite
 is a better next action than a smaller way to reach the requested outcome.
 
-Once a change is selected, [implementation planning](implementation-plan/SKILL.md) turns it into a repository-specific plan
-with affected files, tests, and logical commits.
-An architecture assessment does not automatically call for a plan, and a request for a plan does not authorize implementation.
+[Implementation planning](implementation-plan/SKILL.md) works out how to implement one ticket when a plan or plan review is explicitly requested.
+Ordinary code investigation during implementation does not require this skill.
+It supplies missing execution detail—affected files, edit order, and verification—in the ticket rather than a parallel plan.
+An already-actionable ticket needs no planning stage, and a concrete request can supply the task without creating a ticket.
+A request for a plan does not authorize implementation.
 
 If you have not selected an improvement, [opportunity scan](opportunity-scan/SKILL.md) compares opportunities across the project.
 For an area already selected for cleanup, [cleanup triage](cleanup-triage/SKILL.md) prioritizes concrete work.
@@ -55,7 +57,8 @@ These are for developing a new tool, not prerequisites for every feature or scri
 
 [Holistic writing](holistic-writing/SKILL.md) works on the whole artifact: what it explains, how the explanation develops,
 and whether the prose is worth following.
-Use it for reports, essays, instructions, prompts, and substantial revisions.
+Use it for reports, essays, instructions, prompts, and substantial revisions when no dedicated skill owns the requested writing or review.
+When a dedicated skill owns that work, start there and use its editorial-pass route instead of a second workflow.
 [Tighten prose](tighten-prose/SKILL.md) is for local wording, rhythm, repetition, and clarity when the surrounding explanation already works.
 
 [README writing](readme-writing/SKILL.md) introduces a project to someone deciding whether or how to use it.
