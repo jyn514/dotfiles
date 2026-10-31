@@ -73,6 +73,10 @@ For an overview, link to that record in its chosen home, such as ticket comments
 
 ## Create And Edit Tickets
 
+For new or substantially rewritten ticket titles and descriptions, use [holistic-writing](../holistic-writing/SKILL.md) before submitting them.
+Tracker mechanics do not replace editorial review.
+State changes, tags, and routine progress comments do not require that pass.
+
 For proxy calls, save input files inside the shared checkout and use paths relative to the caller's cwd.
 Guest-only temporary files are unavailable.
 Create a ticket from a UTF-8 file whose first line is the title and remaining lines are the description:
