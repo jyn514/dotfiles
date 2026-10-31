@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+const { realpathSync } = require("node:fs");
+const { createRequire, registerHooks } = require("node:module");
+const { homedir } = require("node:os");
+const { dirname, join } = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+async function main() {
+	const root = dirname(dirname(realpathSync(__filename)));
+	const sdk = process.env.PI_PACKAGE_DIR || join(homedir(),
+		".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent");
+	// Native Node imports do not use Pi's extension-loader peer aliases.
+	// Resolve the CLI's sole runtime peer from the same installed Pi instead.
+	const piRequire = createRequire(realpathSync(join(sdk, "package.json")));
+	const typebox = pathToFileURL(piRequire.resolve("typebox")).href;
+	registerHooks({
+		resolve(specifier, context, nextResolve) {
+			return nextResolve(specifier === "typebox" ? typebox : specifier, context);
+		},
+	});
+	process.argv[1] = join(root, "tools/pi-session-search/cli.ts");
+	await import(pathToFileURL(process.argv[1]).href);
+}
+
+main().catch(error => {
+	console.error(`pi-session-search: ${error.message}`);
+	process.exitCode = 1;
+});

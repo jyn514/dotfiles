@@ -17,12 +17,12 @@
   ],
   "packages": [
     "./pi-link",
-    "git:github.com/jyn514/pi-codex-goal@main",
-    "git:github.com/jyn514/pi-session-search@main",
+    "./packages/pi-codex-goal",
+    "./packages/pi-session-search",
     {
-      "source": "git:github.com/jyn514/pi-extensions@working",
+      "source": "./packages/pi-codex-subagents",
       "extensions": [
-        "packages/pi-codex-subagents/index.ts"
+        "index.ts"
       ],
       "skills": []
     },

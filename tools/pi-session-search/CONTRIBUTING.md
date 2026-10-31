@@ -18,16 +18,25 @@ consensus around project direction and issue solutions within issue threads
 
 ## Development checks
 
-Run from the repository root:
+For this maintained dotfiles copy, run from the dotfiles root:
 
 ```bash
-npm install
+dev/pytest -q tests/native/test_native_pi_session_search.py
+```
+
+The adapter runs the upstream suite in a disposable copy with the installed Pi peers.
+For an additional upstream typecheck, copy this package into disposable storage first and run the following from that copy through dotfiles' `dev/test-environment`:
+
+```bash
+npm install --ignore-scripts --no-audit --no-fund
 npm run typecheck
 npm test
 ```
 
-The pinned development dependencies provide the local TypeScript compiler and
-Node.js type declarations. No global `tsc` installation is required.
+The pinned development dependencies provide the local TypeScript compiler and Node.js type declarations.
+No global `tsc` installation is required.
+Do not install dependencies or generate artifacts in the authoritative `tools/pi-session-search` directory.
+The remaining contribution and licensing sections preserve upstream policy; dotfiles' repository guidance owns local changes.
 
 For automated probes that parse Node test output, select TAP explicitly. Do not
 assume the default reporter emits `ok`/`not ok`; a human-readable default caused
@@ -53,7 +62,7 @@ If a `SessionManager` must continue appending, call `setSessionFile(sessionFile)
 To check real Codex recordings without adding their contents to the test suite, supply a read-only corpus explicitly:
 
 ```bash
-PI_SESSION_SEARCH_TEST_CODEX_ROOT="$PWD/private/codex-sessions" npm test
+PI_SESSION_SEARCH_TEST_CODEX_ROOT=/absolute/path/to/read-only/codex-sessions dev/pytest -q tests/native/test_native_pi_session_search.py
 ```
 
 The optional test checks search-to-read round trips through Pi's loader, paging, version selection, and unchanged file checksums.

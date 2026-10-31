@@ -1,5 +1,12 @@
 # pi-session-search
 
+This is the maintained dotfiles copy of `jyn514/pi-session-search`.
+Its 24 commits were imported with `bin/transplant-commits` from committed source revision
+`3782f1aa85886b26b042ea204da05985e7dd41e8`, “feat: expose earlier edit candidates to codemode”.
+The original upstream is `adobe/pi-session-search`.
+Adobe's [Apache-2.0 license](LICENSE), [copyright notice](COPYRIGHT), changelog, and upstream contribution documents are retained.
+The old standalone checkout is not required at runtime or for tests.
+
 A [pi-coding-agent](https://github.com/earendil-works/pi) extension for searching
 prior Pi and Codex transcripts on disk **without resuming them**.
 
@@ -51,37 +58,27 @@ npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.0.2
 
 ## Installation
 
-### Option A — install from npm (recommended)
+Use the dotfiles [setup commands](../../README.md#setup-and-configuration) to install or refresh configuration links and Pi dependencies.
+Setup links `~/.pi/agent/packages/pi-session-search` to this directory.
+Pi settings select `./packages/pi-session-search`; the package declares `index.ts` as its extension and `cli.ts` as the `pi-session-search` command.
+Reload Pi or restart after setup.
+No separate clone, `pi install` call, or machine-specific checkout path is required.
+The npm package and original repositories do not select this maintained copy.
+
+## Development checks
+
+From the dotfiles root, use the registered native-suite adapter:
 
 ```bash
-pi install npm:@adobe/pi-session-search
+dev/pytest -q tests/native/test_native_pi_session_search.py
 ```
 
-Then `/reload` in pi (or restart). The tools and command will appear. Update
-later with `pi update npm:@adobe/pi-session-search`.
-
-### Option B — clone into your pi extensions directory
-
-```bash
-mkdir -p ~/.pi/agent/extensions
-cd ~/.pi/agent/extensions
-git clone https://github.com/adobe/pi-session-search.git
-```
-
-Then `/reload` in pi (or restart).
-
-### Option C — symlink from anywhere
-
-```bash
-git clone https://github.com/adobe/pi-session-search.git ~/code/pi-session-search
-ln -s ~/code/pi-session-search ~/.pi/agent/extensions/pi-session-search
-```
-
-### Option D — one-off
-
-```bash
-pi -e ~/code/pi-session-search/index.ts
-```
+The adapter runs the existing `npm test` suite, including the real Pi extension loader, codemode consumer, and executable CLI tests.
+It uses a disposable copy of this package and links its peers from the installed Pi selected by `PI_PACKAGE_DIR`.
+The test-environment wrapper discovers that installation before isolating HOME; set `PI_PACKAGE_DIR` explicitly if Pi is installed elsewhere.
+Dotfiles' older root unit-test SDK is not a substitute for the installed Pi consumer.
+Generated npm artifacts and dependency links stay outside this source directory.
+See [CONTRIBUTING.md](CONTRIBUTING.md#development-checks) for additional upstream fixture and typecheck guidance.
 
 ## Usage
 

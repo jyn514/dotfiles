@@ -2,30 +2,25 @@
 
 Pi extension: Codex-style `/goal` command and `get_goal` / `create_goal` / `update_goal` tools. State lives in pi session custom entries.
 
-## Local pi install policy
+## Dotfiles installation and tests
 
-On this machine, the canonical active install is the global/user Git package `git:github.com/fitchmultz/pi-codex-goal`, checked out at:
+This tree is the authoritative dotfiles package, installed by setup at `~/.pi/agent/packages/pi-codex-goal`.
+The user settings source is `./packages/pi-codex-goal`; preserve both extension and prompt resources.
+Do not add a second npm, Git, or project-local install: duplicate packages register conflicting goal tools.
+The original standalone checkout is historical, not an installed dependency.
 
-```text
-~/.pi/agent/git/github.com/fitchmultz/pi-codex-goal
-```
-
-Do not leave project-local installs of this package in this repo. In particular, avoid release verification commands such as:
-
-```sh
-pi install -l npm:pi-codex-goal
-pi install -l https://github.com/fitchmultz/pi-codex-goal@vX.Y.Z
-```
-
-Those write duplicate package entries under `.pi/` for the current project, causing `get_goal`, `create_goal`, and `update_goal` tool-registration conflicts with the global local-checkout install. For install-path release verification, use an isolated temp project/config directory or remove the project-local entries immediately after the check. Pass `--approve` for isolated project-local package install/list/non-interactive smoke commands when those commands must load `.pi/settings.json`. If conflicts appear, inspect `pi list --approve` and `.pi/settings.json`, then remove any project-local `pi-codex-goal` npm/GitHub installs so only the global local-checkout package remains active.
+Follow the repository's `dev/README.md` and run tests through `dev/test-environment`.
+The native adapter `tests/native/test_native_pi_codex_goal.py` copies this package to disposable storage before running its checks.
+Do not run dependency installation, generated-output checks, or package tests against the authoritative tree as a test fixture.
 
 ## Verify before finishing
 
 ```sh
-npm run check
+# From the dotfiles repository root:
+dev/pytest -q tests/native/test_native_pi_codex_goal.py
 ```
 
-Runs the full Node test suite (`test/*.test.ts`, via Node's native type stripping), `tsc`, and an `npm pack` dry run. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
+The adapter runs `npm run check`: the full Node test suite (`test/*.test.ts`, via Node's native type stripping), `tsc`, and an `npm pack` dry run. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
 
 ## Pi 1.0 contracts
 

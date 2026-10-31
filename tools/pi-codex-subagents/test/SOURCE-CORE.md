@@ -3,35 +3,35 @@
 From the repository root, run:
 
 ```sh
-bun run test:subagents
+dev/pytest -q tests/native/test_native_pi_codex_subagents.py
 ```
 
 For a focused suite, pass its path and optional Bun flags to the driver:
 
 ```sh
-bun packages/pi-codex-subagents/test/run-source-tests.ts packages/pi-codex-subagents/test/parent-child-roundtrip.test.ts --rerun-each=5
+dev/test-environment bun tools/pi-codex-subagents/test/run-source-tests.ts tools/pi-codex-subagents/test/parent-child-roundtrip.test.ts --rerun-each=5
 ```
 
-To include the independently deployed pi-link source in the cross-package native test:
+The driver selects this checkout's pi-link, instruction-includes, and commit-boundary sources by default.
+To select another pi-link source for the cross-package native test:
 
 ```sh
-PI_TEST_LINK_SOURCE=/src/dotfiles/tools/pi-link/index.ts bun run test:subagents
+PI_TEST_LINK_SOURCE=/path/to/pi-link/index.ts dev/pytest -q tests/native/test_native_pi_codex_subagents.py
 ```
 
-To test the shared/root split with the independently deployed dotfiles instruction-includes extension:
+To select another instruction-includes extension for shared/root composition tests:
 
 ```sh
-PI_TEST_INSTRUCTION_INCLUDES_SOURCE=/src/dotfiles/config/pi-agent/pi-extensions/pi-instruction-includes.ts bun run test:subagents
+PI_TEST_INSTRUCTION_INCLUDES_SOURCE=/path/to/pi-instruction-includes.ts dev/pytest -q tests/native/test_native_pi_codex_subagents.py
 ```
 
 The path selects the actual extension source, not a copied implementation.
 The discovery suite creates disposable global/project instructions, ROOT, a child-role file, and symlinked/nested includes.
-Without this variable, the include-specific composition cases report skips; the native no-include cases still run.
 
 To exercise the independently deployed commit-boundary controller and actual native/guest tools with local JJ:
 
 ```sh
-PI_TEST_COMMIT_BOUNDARY_SOURCE=/path/to/dotfiles /path/to/dotfiles/dev/test-environment bun run test:subagents
+PI_TEST_COMMIT_BOUNDARY_SOURCE=/path/to/other/dotfiles dev/pytest -q tests/native/test_native_pi_codex_subagents.py
 ```
 
 `PI_TEST_COMMIT_BOUNDARY_SOURCE` is the absolute dotfiles checkout root, not an extension file.
@@ -39,15 +39,13 @@ Its `dev/test-environment` supplies native JJ/Babashka with disposable configura
 The phase loads the real `commit-boundary.ts` and, in guest mode, `guest-tools.ts` through template extensions.
 The guest tool worker uses the selected Pi source public entry and the driver's source aliases, not installed SDK artifacts.
 Only owned disposable repositories and Unix sockets are created.
-For a focused run, pass `packages/pi-codex-subagents/test/boundary-integration.test.ts` to the driver.
+For a focused run, pass `tools/pi-codex-subagents/test/boundary-integration.test.ts` to the driver.
 
-Without the corresponding `PI_TEST_LINK_SOURCE` or `PI_TEST_COMMIT_BOUNDARY_SOURCE`, those integration cases report skips.
-The manager/helper suites still run.
 The supplied pi-link directory must have its installed `ws` dependency.
-The fixture copies its TypeScript files into disposable storage, verifies the copies, and substitutes only the loopback port.
+The fixture copies its JavaScript and TypeScript modules into disposable storage, verifies the copies, and substitutes only the loopback port.
 It never changes the pi-link checkout or binds its usual port.
 
-`PI_TEST_CORE_ROOT` selects the core checkout (default `/src/llms/pi`).
+`PI_TEST_CORE_ROOT` overrides the Pi source checkout discovered through `PI_PACKAGE_DIR` by `dev/test-environment`.
 The driver reads its authoritative tsconfig aliases, rebases them to absolute source paths, and supplies an ephemeral config via Bun's `--tsconfig-override` to tests and child processes.
 Transitive workspace imports use source; no build or dependency changes are needed.
 `--no-install` disables Bun auto-installation.

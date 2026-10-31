@@ -6,15 +6,10 @@
 
 Requires Pi 1.0.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24 or later.
 
-```sh
-# Latest npm release
-pi install npm:pi-codex-goal
-
-# Current GitHub default branch
-pi install https://github.com/fitchmultz/pi-codex-goal
-```
-
-The GitHub default branch can include unreleased changes even when `package.json` still identifies the latest published version.
+Dotfiles setup installs this tracked package through `~/.pi/agent/packages/pi-codex-goal`.
+The user settings source is `./packages/pi-codex-goal`, which loads both extensions and prompts.
+Do not also install the upstream npm or Git package into the same profile.
+The [upstream project](https://github.com/fitchmultz/pi-codex-goal) continues to own its independent npm and Git release channels.
 
 npm, Git, and local directory installs all load the TypeScript source (`extensions/index.ts` and `src/`) through Pi's extension loader. There is no build step or production TypeScript dependency. See [development setup](development.md#local-setup) for local checkouts and duplicate-install precautions.
 

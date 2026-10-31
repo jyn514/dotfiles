@@ -52,5 +52,6 @@
     "peek.ts",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "private": true
 }

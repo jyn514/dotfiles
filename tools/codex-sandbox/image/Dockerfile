@@ -82,6 +82,12 @@ ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
 WORKDIR /workspace
 COPY --from=pi-extensions /opt/pi-link /home/codex/.pi/agent/pi-link
+COPY ./tools/pi-codex-subagents/package.json ./tools/pi-codex-subagents/index.ts ./tools/pi-codex-subagents/implementation.ts ./tools/pi-codex-subagents/core.ts ./tools/pi-codex-subagents/handoff.ts ./tools/pi-codex-subagents/child-helper.ts ./tools/pi-codex-subagents/child-prompt.ts ./tools/pi-codex-subagents/child-link.ts ./tools/pi-codex-subagents/link.ts ./tools/pi-codex-subagents/suspension.ts ./tools/pi-codex-subagents/peek.ts /home/codex/.pi/agent/packages/pi-codex-subagents/
+COPY ./tools/pi-codex-goal/package.json /home/codex/.pi/agent/packages/pi-codex-goal/
+COPY ./tools/pi-codex-goal/extensions /home/codex/.pi/agent/packages/pi-codex-goal/extensions
+COPY ./tools/pi-codex-goal/src /home/codex/.pi/agent/packages/pi-codex-goal/src
+COPY ./tools/pi-codex-goal/prompts /home/codex/.pi/agent/packages/pi-codex-goal/prompts
+COPY ./tools/pi-session-search/package.json ./tools/pi-session-search/index.ts ./tools/pi-session-search/cli.ts /home/codex/.pi/agent/packages/pi-session-search/
 COPY ./config/pi-agent/settings.json /home/codex/.pi/agent/settings.json
 COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
 RUN node /opt/cache-pi-extensions.mjs install

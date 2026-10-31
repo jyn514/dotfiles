@@ -309,6 +309,8 @@ Source discovery for `rg`, `java`, `bb`, and the JJ routing helper uses `realpat
 Refresh the sandbox image after changing the wrappers.
 
 The image build installs the packages selected by `config/pi-agent/settings.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
+The local goal, session-search, and subagent sources are copied from `tools/` to the same `packages/<name>` paths that dotfile setup creates under `~/.pi/agent/`.
+Pi supplies their peer dependencies through its extension loader; these packages do not need separate npm installs.
 The cache consumer excludes only the exact `./pi-dashboard` source: setup creates that package link on the host, and Dashboard and its bridge are not copied into the guest.
 The shared settings declaration stays intact; normal guest discovery skips the absent local link, so the guest does not load the bridge.
 Every other declared package remains a required cache input; missing inputs fail installation or offline warming.
@@ -319,8 +321,10 @@ Pi loads the installed host extensions and `/reload` uses Pi's normal host cache
 Local extension and settings changes invalidate the image;
 moving Git refs are captured when the package-install layer builds and may produce runtime cache misses after an upstream update.
 
-The goal extension uses the precompiled npm release pinned in `config/pi-agent/settings.json`.
-Its Git distribution loads TypeScript, making cache misses more expensive.
+The goal extension loads the checked-in TypeScript and retains its prompt templates.
+Changes to any copied local package source invalidate the image cache.
+Before switching a live-linked settings file to the local sources, refresh the package aliases with `./setup dotfiles` and verify they resolve.
+The `pi-session-search` command uses the checked-in CLI and resolves its runtime typebox peer from the installed host Pi SDK.
 
 ## Common commands
 

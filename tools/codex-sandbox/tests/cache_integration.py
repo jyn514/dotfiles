@@ -76,10 +76,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as empty_packages:
         missing = run(args.builder, "/opt/cache-pi-extensions.mjs", "warm",
                       entrypoint="node", mounts=(
-            f"type=bind,src={empty_packages},dst=/home/codex/.pi/agent/npm,readonly",
+            f"type=bind,src={empty_packages},dst=/home/codex/.pi/agent/packages,readonly",
         ))
     assert missing.returncode != 0, missing.stdout
-    assert "Missing cache input: npm:" in missing.stdout, missing.stdout
+    assert "Missing cache input: ./packages/" in missing.stdout, missing.stdout
     print("Image cache: reuse, invalidation, isolation, and source/package failures passed")
 
 

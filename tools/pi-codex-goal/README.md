@@ -8,10 +8,10 @@ pi-codex-goal adds a persistent goal to [Pi](https://github.com/earendil-works/p
 
 Use Pi 1.0.0 or later and Node.js 24 or later. The extension supports official Pi releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi).
 
-```sh
-pi install npm:pi-codex-goal
-pi
-```
+This copy is maintained in dotfiles at `tools/pi-codex-goal`.
+Dotfiles setup links it to `~/.pi/agent/packages/pi-codex-goal`; Pi settings load `./packages/pi-codex-goal`, including its extensions and prompts.
+Do not add a separate npm, Git, or project-local install of the same package.
+Start `pi` after setup.
 
 Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 
@@ -70,6 +70,16 @@ Read the [reference](docs/reference.md) for installation options, budget policy,
 Read the [development guide](docs/development.md) for checks, compatibility qualification, smoke tests, and releases.
 
 See the [changelog](CHANGELOG.md) for version history. Report problems in [Issues](https://github.com/fitchmultz/pi-codex-goal/issues).
+
+## Source provenance
+
+History was imported into dotfiles with `bin/transplant-commits` on October 31, 2026, from the standalone `pi-codex-goal` repository.
+The committed source revision is `9fb0751dbfc30ceef480105c5c2296ae581730e2`, “Document runtime harness state and lifecycle semantics”.
+The import includes 169 non-merge commits; 32 merge commits were omitted.
+The upstream project is [fitchmultz/pi-codex-goal](https://github.com/fitchmultz/pi-codex-goal), version 0.6.1.
+Its license, changelog, source, tests, prompts, and historical release workflows remain here; the nested workflows are provenance, not dotfiles release automation.
+Dotfiles owns installation of this copy; upstream release instructions describe the independent upstream package.
+Goal state stays in Pi session custom entries; this move does not copy, reset, or migrate sessions or runtime state.
 
 ## License
 

@@ -1,6 +1,8 @@
 """Developer artifacts must not select new runtime images."""
 
 import hashlib
+import json
+import os
 from pathlib import Path
 import runpy
 import shutil
@@ -17,6 +19,40 @@ from bake import _capture
 
 
 class ImageInputsTest(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('PI_PACKAGE_DIR'), 'installed Pi SDK required')
+    def test_copied_portable_packages_load_with_pi_providers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            agent = root / 'home/.pi/agent'
+            prefix = '/home/codex/.pi/agent/'
+            dockerfile = ROOT / 'tools/codex-sandbox/image/Dockerfile'
+            # Consume the actual cache-stage COPY operands, so a missing runtime
+            # file fails resource loading even when the checkout has that file.
+            for line in dockerfile.read_text().splitlines():
+                fields = line.split()
+                if not fields or fields[0] != 'COPY' or not fields[-1].startswith(prefix + 'packages/'):
+                    continue
+                destination = agent / fields[-1].removeprefix(prefix)
+                for operand in fields[1:-1]:
+                    source = ROOT / operand
+                    if source.is_dir():
+                        shutil.copytree(source, destination, dirs_exist_ok=True)
+                    else:
+                        destination.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, destination / source.name)
+            settings = json.loads((ROOT / 'config/pi-agent/settings.json').read_text())
+            packages = [entry for entry in settings['packages']
+                        if (entry if isinstance(entry, str) else entry['source']).startswith('./packages/')]
+            self.assertEqual(3, len(packages))
+            (agent / 'settings.json').write_text(json.dumps({'packages': packages}))
+            result = subprocess.run(
+                ['node', str(ROOT / 'tests/setup/pi_package_resources.mjs'), str(agent), str(root)],
+                env={**os.environ, 'HOME': str(root / 'home'), 'PI_CODING_AGENT_DIR': str(agent),
+                     'PI_OFFLINE': '1'},
+                text=True, capture_output=True, timeout=60,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_gateway_source_invalidates_the_shared_auth_image(self):
         declaration = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['declaration']
         with tempfile.TemporaryDirectory() as directory:
@@ -56,6 +92,13 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/codex-sandbox/image/agent-entrypoint',
                        'tools/codex-sandbox/image/stage-pi-runtime.mjs',
                        'tools/extract-chat/extract-chat',
+                       'tools/pi-codex-subagents/index.ts',
+                       'tools/pi-codex-subagents/implementation.ts',
+                       'tools/pi-codex-subagents/child-link.ts',
+                       'tools/pi-codex-goal/src/index.ts',
+                       'tools/pi-codex-goal/prompts/create-goal.md',
+                       'tools/pi-session-search/index.ts',
+                       'tools/pi-session-search/cli.ts',
                        'libexec/chat-history.clj',
                        'bin/codex-to-pi',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
@@ -64,16 +107,43 @@ class ImageInputsTest(unittest.TestCase):
                        'libexec/sandbox-wrappers/gateway-transport',
                        'libexec/sandbox-wrappers/docker-ssh']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',
+                     'tools/pi-codex-subagents/index.test.ts',
+                     'tools/pi-codex-subagents/node_modules/typebox/index.js',
+                     'tools/pi-codex-goal/test/state.test.ts',
+                     'tools/pi-session-search/test/cli.test.ts',
                      'libexec/agent-wrappers/__pycache__/jj.pyc',
                      'libexec/sandbox-wrappers/__pycache__/docker.pyc']
             for name in runtime + noise:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('fixture')
-            with patch.dict(sources.__globals__, ROOT=root):
-                selected = set(map(str, sources()))
+            selected = set(map(str, sources(root)))
             self.assertTrue(set(runtime) <= selected)
             self.assertFalse(set(noise) & selected)
+
+    def test_portable_pi_packages_invalidate_image_identity(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dockerfile = root / 'tools/codex-sandbox/image/Dockerfile'
+            dockerfile.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / dockerfile.relative_to(root), dockerfile)
+            names = ('tools/pi-codex-subagents/core.ts',
+                     'tools/pi-codex-goal/src/index.ts',
+                     'tools/pi-codex-goal/prompts/create-goal.md',
+                     'tools/pi-session-search/index.ts')
+            for name in names:
+                destination = root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text('original')
+            base = SimpleNamespace(content='base', config='config', rootfs='rootfs')
+            key = lambda: owned['agent_cache_key'](
+                1000, 1000, 'linux/amd64', base, 'a' * 40,
+                jj_image='jj@sha256:' + '1' * 64, root=root)
+            for name in names:
+                before = key()
+                (root / name).write_text('changed source')
+                self.assertNotEqual(before, key(), name)
 
     def test_jj_router_and_native_configuration_invalidate_agent_image(self):
         owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import json
 import shlex
 import shutil
 import sys
@@ -111,6 +112,11 @@ class DotfileSetupTests(unittest.TestCase):
         self.assertFalse(agent.is_symlink())
         self.assertTrue((agent / "pi-link").is_symlink())
         self.assertEqual((ROOT / "tools/pi-link").resolve(), (agent / "pi-link").resolve())
+        for package in ("pi-codex-subagents", "pi-codex-goal", "pi-session-search"):
+            installed = agent / "packages" / package
+            self.assertTrue(installed.is_symlink(), installed)
+            self.assertEqual((ROOT / "tools" / package).resolve(), installed.resolve())
+        self.assertFalse((agent / "pi-codex-subagents").is_symlink())
         self.assertTrue(templates.is_symlink())
         self.assertEqual((ROOT / "config/pi-agent/pi-codex-subagents/agents").resolve(), templates.resolve())
         for name in ("settings.json", "AGENTS.md", "breq.md", "mcp.json", "keybindings.json",
@@ -118,6 +124,79 @@ class DotfileSetupTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((agent / name).is_symlink())
                 self.assertEqual((ROOT / "config/pi-agent" / name).resolve(), (agent / name).resolve())
+
+    @unittest.skipUnless(os.environ.get("PI_PACKAGE_DIR"), "installed Pi SDK required")
+    def test_portable_pi_packages_load_through_setup_aliases(self) -> None:
+        result = self.run_setup()
+        self.assertEqual(0, result.returncode, result.stderr)
+        agent = self.home / ".pi/agent"
+        settings = json.loads((agent / "settings.json").read_text())
+        selected = []
+        for entry in settings["packages"]:
+            source = entry if isinstance(entry, str) else entry["source"]
+            if source.startswith("./packages/"):
+                selected.append(entry)
+        self.assertEqual({"./packages/pi-codex-goal", "./packages/pi-session-search",
+                          "./packages/pi-codex-subagents"},
+                         {entry if isinstance(entry, str) else entry["source"] for entry in selected})
+        subagents, = [entry for entry in selected if isinstance(entry, dict)
+                      and entry["source"] == "./packages/pi-codex-subagents"]
+        self.assertEqual(["index.ts"], subagents["extensions"])
+        self.assertEqual([], subagents["skills"])
+        # Keep resource discovery focused on the three migrated packages.
+        settings = {"packages": selected}
+        (agent / "settings.json").unlink()
+        (agent / "settings.json").write_text(json.dumps(settings))
+        result = subprocess.run(
+            ["node", str(ROOT / "tests/setup/pi_package_resources.mjs"),
+             str(agent), str(self.home)],
+            env={**os.environ, "HOME": str(self.home), "PI_OFFLINE": "1"},
+            text=True, capture_output=True, timeout=60,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    @unittest.skipUnless(os.environ.get("PI_PACKAGE_DIR"), "installed Pi SDK required")
+    def test_session_search_wrapper_uses_installed_pi_peer_in_a_relocated_checkout(self) -> None:
+        checkout = Path(self.tempdir.name) / "relocated checkout"
+        (checkout / "bin").mkdir(parents=True)
+        shutil.copy2(ROOT / "bin/pi-session-search", checkout / "bin/pi-session-search")
+        package = checkout / "tools/pi-session-search"
+        package.mkdir(parents=True)
+        for name in ("cli.ts", "index.ts", "package.json"):
+            shutil.copy2(ROOT / "tools/pi-session-search" / name, package / name)
+        wrapper = self.bin / "pi-session-search"
+        wrapper.symlink_to(checkout / "bin/pi-session-search")
+        sdk = self.home / ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"
+        sdk.parent.mkdir(parents=True)
+        sdk.symlink_to(Path(os.environ["PI_PACKAGE_DIR"]).resolve(), target_is_directory=True)
+        session = self.home / ".pi/agent/sessions/project/session.jsonl"
+        session.parent.mkdir(parents=True)
+        session.write_text("\n".join(json.dumps(entry) for entry in [
+            {"type": "session", "id": "portable-session", "version": 3,
+             "timestamp": "2026-01-01T00:00:00Z", "cwd": "/fixture"},
+            {"type": "message", "id": "message-one", "parentId": None,
+             "timestamp": "2026-01-01T00:00:01Z", "message": {
+                 "role": "user", "content": [{"type": "text", "text": "portable-needle"}],
+                 "timestamp": 1767225601000}},
+        ]) + "\n")
+        env = {**os.environ, "HOME": str(self.home)}
+        for key in ("PI_SESSION_SEARCH_ROOT", "CODEX_HOME", "PI_CODING_AGENT_DIR", "NODE_PATH", "PI_PACKAGE_DIR"):
+            env.pop(key, None)
+        found = subprocess.run([str(wrapper), "search", "portable-needle"],
+                               env=env, text=True, capture_output=True, timeout=30)
+        self.assertEqual(0, found.returncode, found.stderr)
+        self.assertIn("portable-session", found.stdout)
+        read = subprocess.run([str(wrapper), "read", "--file", str(session),
+                               "--around-entry-id", "message-one"],
+                              env=env, text=True, capture_output=True, timeout=30)
+        self.assertEqual(0, read.returncode, read.stderr)
+        self.assertIn("portable-needle", read.stdout)
+        missing = subprocess.run([str(wrapper), "--help"],
+                                 env={**env, "PI_PACKAGE_DIR": str(self.home / "missing-sdk")},
+                                 text=True, capture_output=True, timeout=30)
+        self.assertEqual(1, missing.returncode)
+        self.assertIn("pi-session-search:", missing.stderr)
+        self.assertEqual("", missing.stdout)
 
     def test_grouped_configs_migrate_old_links_without_moving_local_resources(self) -> None:
         installed = {

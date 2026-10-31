@@ -1,16 +1,25 @@
 #!/usr/bin/env bun
 /** Run this package's test phases against changed core sources, never installed Pi artifacts. */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const coreRoot = resolve(process.env.PI_TEST_CORE_ROOT ?? "/src/llms/pi");
+const dotfilesRoot = resolve(here, "../../..");
+const coreRoot = resolve(process.env.PI_TEST_CORE_ROOT
+  ?? (process.env.PI_PACKAGE_DIR && existsSync(resolve(process.env.PI_PACKAGE_DIR, "../../tsconfig.json"))
+    ? resolve(process.env.PI_PACKAGE_DIR, "../..")
+    : existsSync("/src/llms/pi/tsconfig.json") ? "/src/llms/pi"
+    : join(process.env.HOME!, ".local/share/pi/source")));
+const includesSource = resolve(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE
+  ?? join(dotfilesRoot, "config/pi-agent/pi-extensions/pi-instruction-includes.ts"));
+const linkSource = resolve(process.env.PI_TEST_LINK_SOURCE ?? join(dotfilesRoot, "tools/pi-link/index.ts"));
+const boundarySource = resolve(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE ?? dotfilesRoot);
 // Short roots keep owned Unix sockets below the platform path-length limit.
 const root = mkdtempSync(join(tmpdir(), "pi-src-"));
 const defaults = [
-  "source-core.test.ts", "fork.test.ts", "discovery.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts",
+  "source-core.test.ts", "installed-package.test.ts", "fork.test.ts", "discovery.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts",
   "manager-single-suspension.test.ts", "manager-suspension.test.ts", "capture-retry.test.ts", "discard-live-child.test.ts",
   "restore-startup-failure.test.ts", "manager-link.test.ts", "link-integration.test.ts",
   "boundary-integration.test.ts",
@@ -55,9 +64,9 @@ try {
       PI_TEST_CORE_TSCONFIG: config,
       PI_TEST_BUN: process.execPath,
       PI_SUBAGENT_PI_BIN: join(here, "source-rpc-child.sh"),
-      ...(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE ? { PI_TEST_INSTRUCTION_INCLUDES_SOURCE: resolve(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE) } : {}),
-      ...(process.env.PI_TEST_LINK_SOURCE ? { PI_TEST_LINK_SOURCE: resolve(process.env.PI_TEST_LINK_SOURCE) } : {}),
-      ...(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE ? { PI_TEST_COMMIT_BOUNDARY_SOURCE: resolve(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE) } : {}),
+      PI_TEST_INSTRUCTION_INCLUDES_SOURCE: includesSource,
+      PI_TEST_LINK_SOURCE: linkSource,
+      PI_TEST_COMMIT_BOUNDARY_SOURCE: boundarySource,
       ...(process.env.DOTFILES_TEST_BB_REAL ? { DOTFILES_TEST_BB_REAL: process.env.DOTFILES_TEST_BB_REAL } : {}),
     };
     console.error(`\n[source tests ${index + 1}/${files.length}] ${file}`);

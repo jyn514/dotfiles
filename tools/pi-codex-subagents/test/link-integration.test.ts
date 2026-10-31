@@ -35,7 +35,7 @@ async function disposableLink(cwd: string): Promise<string> {
   mkdirSync(extensionDir);
   // The production extension has a fixed loopback port. Change only that value
   // in byte-verified disposable copies, never the authoritative checkout.
-  for (const name of readdirSync(dirname(linkSource!)).filter(name => name.endsWith(".ts"))) {
+  for (const name of readdirSync(dirname(linkSource!)).filter(name => /\.[cm]?[jt]s$/.test(name))) {
     const from = join(dirname(linkSource!), name);
     const to = join(extensionDir, name);
     copyFileSync(from, to);

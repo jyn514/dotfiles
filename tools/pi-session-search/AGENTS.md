@@ -17,13 +17,11 @@ Adobe-internal dependencies, no servers, no network calls.
 
 ## Build / test / typecheck
 
-```bash
-npm install        # if node_modules is missing
-npm test           # runs unit + integration tests
-npm run typecheck  # tsc --noEmit against tsconfig.check.json
-```
-
-`npm test` must stay green on every PR. Don't merge red.
+This package is maintained inside dotfiles; the root `AGENTS.md` and `dev/README.md` own repository operations and test isolation.
+Run `dev/pytest -q tests/native/test_native_pi_session_search.py` from the dotfiles root.
+The adapter runs the existing `npm test` suite against installed Pi peers in a disposable package copy.
+Install test dependencies and run `npm run typecheck` only in a disposable copy through `dev/test-environment`, not in this authoritative source tree.
+See [README.md](README.md#development-checks) and [CONTRIBUTING.md](CONTRIBUTING.md#development-checks).
 
 ## Packaging & runtime (read before touching `engines` or the loader)
 
@@ -32,8 +30,8 @@ npm run typecheck  # tsc --noEmit against tsconfig.check.json
   `engines.node` must mirror the supported host CLI's manifest, **not** the
   Node version the test script happens to need. Check the installed host's
   loader and manifest before changing this boundary.
-- pi has first-class npm support: `pi install npm:@adobe/pi-session-search`
-  is the primary install path. Keep the published tarball loadable as-is
+- Dotfiles setup owns installation of this copy; npm installation selects upstream instead.
+  Preserve the npm package interface and keep the tarball loadable as-is
   (no build step) — ship the `.ts` sources, not compiled JS.
 - The `files` whitelist in `package.json` is what ends up in the npm tarball.
   If you add a runtime file the extension needs, add it to `files` too, or it

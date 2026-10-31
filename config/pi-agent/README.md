@@ -52,7 +52,7 @@ being changed; a test dependency update does not update the running application.
 | Guest tool worker | [Sandbox operator guide](../../tools/codex-sandbox/README.md#purpose) | Fresh sandboxes use the installed host Pi commit; existing workers require the documented restart. |
 | Libraries used by dotfiles tests | [Manifest](../../package.json) and [lockfile](../../package-lock.json) | Update the manifest and lockfile, then install locked dependencies through the [testing guide](../../dev/README.md#testing-and-probes). |
 | Dotfiles' local extensions | [Extension bundle](pi-extensions/README.md) | Setup links new files; `/reload` loads code changes in Pi. |
-| Separately packaged extensions | [Package references](settings.json) | Settings select sources; `pi update --extensions` updates host package checkouts. Reload Pi afterwards. |
+| Maintained extension packages | [Package references](settings.json) and [setup links](../../install.conf.json) | Setup links `tools/pi-link` and the tracked goal, session-search, and subagent packages; `/reload` loads their checkout changes. The latter three use `~/.pi/agent/packages/<name>`. |
 | Dashboard application and bridge | [Mise pin](../mise.toml) and [versioned patch](../../libexec/setup/patches/) | Ordinary package setup installs the patched application; `./setup services` reconciles its machine-local configuration. See [Browser and phone access](#browser-and-phone-access). |
 
 For package-update options, use the installed Pi's `pi update --help`.

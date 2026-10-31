@@ -7,20 +7,19 @@ Ordinary subagent tools require Pi 0.80.4 or newer and Node.js 22.19 or newer.
 
 ## Install
 
-```bash
-pi install npm:@ogulcancelik/pi-codex-subagents
-```
+Dotfiles setup links this tracked package to `~/.pi/agent/packages/pi-codex-subagents`.
+The Pi settings entry `./packages/pi-codex-subagents` selects its `index.ts` extension.
+User roles and saved runs stay in the separate `~/.pi/agent/pi-codex-subagents` directory.
+See [dotfiles setup](../../README.md#setup-and-configuration).
 
-For local development:
-
-```bash
-pi install /absolute/path/to/pi-extensions/packages/pi-codex-subagents
-```
+The maintained fork's path history through `jyn514/pi-extensions` commit `af2e51c2aaec6907017390dafd6440314636e010` was imported with `bin/transplant-commits`.
+The original authors, author dates, and commit messages remain in the imported patch series.
+The upstream package is `@ogulcancelik/pi-codex-subagents`; install only one copy to avoid duplicate tools.
 
 To smoke-test uncommitted changes without installing or updating a package, start a fresh Pi process from the repository root:
 
 ```sh
-pi --no-extensions --extension ./packages/pi-codex-subagents/index.ts
+pi --no-extensions --extension ./tools/pi-codex-subagents/index.ts
 ```
 
 This loads the checkout directly and disables other parent extensions for this run, avoiding a second copy from configured packages.
@@ -371,9 +370,9 @@ Automatic completions, wait tools, and response tools follow Pi's standard 50 KB
 
 ## Development tests
 
-From the repository root, run `bun run test:subagents`.
+From the dotfiles root, run `dev/pytest -q tests/native/test_native_pi_codex_subagents.py`.
 The suite uses changed Pi sources, the real RPC/session runtime, a local faux provider, and disposable state without provider credentials.
-Set `PI_TEST_CORE_ROOT` to the companion Pi checkout if it is not `/src/llms/pi`.
+The driver uses the Pi source checkout discovered through `PI_PACKAGE_DIR`; `PI_TEST_CORE_ROOT` overrides that selection.
 See [the source-test instructions](test/SOURCE-CORE.md) for prerequisites, focused runs, and fixture limits.
 Installed package artifacts are not sufficient evidence for the pause workflow.
 

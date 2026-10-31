@@ -414,7 +414,8 @@ python3 tools/codex-sandbox/tests/cache_integration.py --runtime <sandbox-image>
 docker image rm pi-cache-test
 ```
 
-This checks Alpine bytecode reuse, first-launch extension cache hits, edited source, isolation between containers, and build failure on missing packages or extension errors.
+This checks Alpine bytecode reuse, first-launch extension cache hits, edited source, isolation between containers, and build failure on missing local packages or extension errors.
+The cache stage copies the portable packages before installation and warming; their source files and goal prompts also participate in image identity.
 
 ## Model authentication checks
 

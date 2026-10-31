@@ -6,23 +6,22 @@
 
 Use Node.js 24 (`.nvmrc`) and the npm version in `packageManager`.
 
+From the dotfiles repository root:
+
 ```sh
-npm ci --ignore-scripts
-npm run check
+dev/pytest -q tests/native/test_native_pi_codex_goal.py
 ```
+
+The adapter uses a disposable package copy and its locked development dependencies.
+It runs `npm run check` without writing dependencies or package artifacts into this authoritative tree.
+The installed-Pi probe also checks the setup-style relative package alias, extension and prompt discovery, and persisted goal reload without live model calls.
 
 `npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. It also runs an `npm pack` dry run. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
-To load a development checkout in Pi:
-
-```sh
-npm install --ignore-scripts
-pi install .
-```
-
-Install the checkout in only one Pi configuration scope at a time. Different local, npm, or Git sources can try to register the same `get_goal`, `create_goal`, and `update_goal` tools, causing conflicts. For install-path release checks, use an isolated temporary project/config directory or remove the project-local entry immediately afterward.
-
-On this maintainer machine, the active global/user Git package already points at `~/.pi/agent/git/github.com/fitchmultz/pi-codex-goal`. Do not also leave a project-local install in this repository's `.pi/` settings. See [AGENTS.md](../AGENTS.md) for machine-specific install policy and the module map.
+Dotfiles setup installs the local package alias `~/.pi/agent/packages/pi-codex-goal`.
+The settings source `./packages/pi-codex-goal` loads both declared resource types without a build or production dependency install.
+Keep only that source active: additional npm, Git, or project-local installs register conflicting goal tools.
+Use disposable profiles for installation checks; see [AGENTS.md](../AGENTS.md) for the module map.
 
 ## Goal-scope behavior checks
 
