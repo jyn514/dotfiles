@@ -1,0 +1,25 @@
+{
+  "rateLimits": {
+    "limitId": "codex",
+    "limitName": "Codex",
+    "primary": null,
+    "secondary": { "usedPercent": 4, "windowDurationMins": 10080, "resetsAt": 1791970680 },
+    "credits": { "hasCredits": true, "unlimited": false, "balance": "62500" }
+  },
+  "rateLimitsByLimitId": {
+    "codex": {
+      "limitId": "codex",
+      "limitName": "Codex",
+      "primary": null,
+      "secondary": { "usedPercent": 4, "windowDurationMins": 10080, "resetsAt": 1791970680 },
+      "credits": { "hasCredits": true, "unlimited": false, "balance": "62500" }
+    },
+    "codex_reserve": {
+      "limitId": "codex_reserve",
+      "limitName": "gpt-reserve",
+      "primary": { "usedPercent": 0, "windowDurationMins": 10080, "resetsAt": 1792001400 },
+      "secondary": null,
+      "credits": null
+    }
+  }
+}

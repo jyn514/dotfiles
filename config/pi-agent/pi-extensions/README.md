@@ -266,20 +266,27 @@ It never fetches the reader package or assumes a neighboring checkout.
 
 ## Subscription usage: `/usage`
 
-`/usage` fetches your ChatGPT account limits, credit balance, and additional limits
-such as Luna Reserve. Bars show the percentage **left**, with reset times in the
-host's local time zone. Missing limits or balances are not treated as zero.
+`/usage` shows the host Codex account's subscription limits, credit balance, and additional limits such as Luna Reserve.
+Bars show the percentage **left**, with reset times in the host's local time zone.
+Missing limits or balances are not treated as zero.
+The single-quota and multi-quota views returned by Codex are not displayed twice.
 
-Use Pi's `/login` with OpenAI Codex first. The command uses Pi's resolved provider
-credentials and token refresh; it does not read Codex CLI credentials. It requires
-the direct ChatGPT provider, not a custom authentication proxy. This is account-wide
-subscription usage, unlike the session token counts in `/session`.
+The host needs `codex` on Pi's PATH and an existing Codex ChatGPT login.
+If needed, run `codex login` on the host; Pi's `/login` does not configure this command.
+Output is labeled **Codex-account usage** because Codex and Pi can use different accounts.
+Pi's model login is unchanged.
 
-The command fetches only when invoked, makes no model request, and stores nothing
-in the session or on disk. It is interactive-only. It uses the same account-usage
-endpoint as Codex CLI; this is an undocumented backend API and can change.
-On the host, run `./setup dotfiles` from the repository root to link the new module.
-Then run `/reload` in Pi, followed by `/usage`.
+Each invocation starts a temporary host `codex app-server`, initializes its stdio connection, and calls `account/rateLimits/read`.
+Codex owns credential loading and token refresh; the extension does not read credential files or call the ChatGPT backend directly.
+The request does not opt into automatic Luna Reserve fallback or redeem credits.
+It makes no model request and starts no persistent daemon.
+The subprocess is stopped and reaped after success or failure, with a 30-second request timeout.
+Raw subprocess diagnostics and backend error bodies are not displayed.
+The extension stores no usage data in the session or on disk; Codex can refresh its own stored credentials normally.
+The command is interactive-only.
+
+Run `/reload` in Pi, then `/usage`.
+A missing CLI, missing Codex login, or unsupported app-server method reports what to fix on the host.
 
 ## Skill validation: `validate_skill`
 
