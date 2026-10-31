@@ -1,6 +1,6 @@
 ---
 name: new-tool-development
-description: Orchestrate lifecycle and stage gates for a newly introduced independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or governing product brief, requirements, implementation-spec, or implementation handoff work; do not use for substantive requirements, architecture, design, or implementation procedures. Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
+description: Orchestrate the lifecycle and stage checks for a newly introduced, independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or governing product brief, requirements, implementation-spec, or implementation handoff work; do not use for substantive requirements, architecture, design, or implementation procedures. Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
 ---
 
 # New tool development

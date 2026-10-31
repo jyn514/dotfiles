@@ -1,6 +1,6 @@
 ---
 name: readme-writing
-description: Write, substantially revise, or review a repository, package, or tool-entrypoint README that introduces a project and helps readers decide whether or how to use it. Use for introductory READMEs, including libraries, integrations, books, and non-executable collections. Not for API-reference-only tasks, general documentation restructuring, implementation, or verification of product claims.
+description: Write, substantially revise, or review a repository, package, or tool-entrypoint README that introduces a project and helps readers decide whether or how to use it. Use for introductory READMEs, including those for libraries, integrations, books, and non-executable collections. Not for API-reference-only tasks, general documentation restructuring, implementation, or verification of product claims.
 ---
 
 # Write a README for someone arriving

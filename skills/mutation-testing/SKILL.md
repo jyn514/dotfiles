@@ -1,6 +1,6 @@
 ---
 name: mutation-testing
-description: Set up, scope, run, and analyze mutation-testing campaigns using project-compatible tools or bounded hand-selected mutations. Use for mutation testing, surviving or equivalent mutants, questions about assertion usefulness or whether tests catch plausible implementation mistakes, or diagnosing test sensitivity after a reproduced bug escaped passing tests. Not for ordinary test writing, confirming a single regression, line-coverage review, property-test authoring alone, or vulnerability discovery without mutation evidence.
+description: Set up, scope, run, and analyze mutation-testing campaigns using project-compatible tools or bounded hand-selected mutations. Use for mutation testing, surviving or equivalent mutants, questions about whether assertions are useful or tests catch plausible implementation mistakes, or diagnosing test sensitivity after a reproduced bug escaped passing tests. Not for ordinary test writing, confirming a single regression, line-coverage review, property-test authoring alone, or vulnerability discovery without mutation evidence.
 ---
 
 # Mutation testing

@@ -1,6 +1,6 @@
 ---
 name: pain-axis
-description: Analyze code history to learn from failures, repair sequences, and successful designs. Use before redesigning a legacy or failure-prone subsystem to identify recurring architectural pain and candidate invariants, or for open-ended research into historical defects, regressions, reverts, and preserved guarantees across codebases. Not ordinary line provenance, current-change review, design selection, or agent-compliance research.
+description: Analyze code history to learn from failures, repair sequences, and successful designs. Use before redesigning a legacy or failure-prone subsystem to identify recurring architectural pain and candidate invariants, or for open-ended research into historical defects, regressions, reverts, and preserved guarantees across codebases. Not for ordinary line provenance, current-change review, design selection, or agent-compliance research.
 ---
 
 # Pain axis

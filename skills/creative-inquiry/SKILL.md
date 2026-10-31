@@ -1,6 +1,6 @@
 ---
 name: creative-inquiry
-description: Explore a task's purpose, assumptions, and unexpected connections to discover possible approaches. Use for open-ended design, writing, research, or brainstorming; when comparing trade-offs or investigating uncertain framing; or when the user questions whether we are solving the right problem. Use work-selection before adding another substantive prerequisite, workaround, or diagnostic round to an existing approach. Do not use for precise, settled edits.
+description: Explore a task's purpose, assumptions, and unexpected connections to discover possible approaches. Use for open-ended design, writing, research, or brainstorming; when purpose, assumptions, or framing need exploration; or when the user questions whether we are solving the right problem. Use work-selection before adding another substantive prerequisite, workaround, or diagnostic round to an existing approach. Do not use for precise, settled edits.
 ---
 
 # Creative inquiry

@@ -1,6 +1,6 @@
 ---
 name: cleanup-triage
-description: Find, prioritize, and slice cleanup work. Use after cleanup has been selected as the target, for a messy subsystem, cleanup roadmap, or opening and refining cleanup issues. For broad project opportunity discovery, use opportunity-scan first.
+description: Find, prioritize, and break cleanup work into tasks. Use after cleanup has been selected as the target, for a messy subsystem, cleanup roadmap, or opening and refining cleanup issues. For broad project opportunity discovery, use opportunity-scan first.
 ---
 
 # Cleanup triage

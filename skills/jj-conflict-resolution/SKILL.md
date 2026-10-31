@@ -1,6 +1,6 @@
 ---
 name: jj-conflict-resolution
-description: Resolve Jujutsu conflicts semantically by composing snapshots and diffs, never ours/theirs or union heuristics. Use for jj rebase, merge, restack, or conflict-resolution tasks; route history design and general provenance work to jj-workflow.
+description: Resolve Jujutsu conflicts semantically by composing snapshots and diffs, never with ours/theirs or union heuristics. Use for jj rebase, merge, restack, or conflict-resolution tasks; route history design and general provenance work to jj-workflow.
 ---
 
 # Jujutsu conflict resolution
