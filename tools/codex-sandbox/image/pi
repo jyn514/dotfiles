@@ -59,7 +59,7 @@ if [ ! -e /etc/alpine-release ]; then
     exec /opt/agent-pi/standalone/pi "$@"
 fi
 
-# The image build validates Node and seeds this disposable bytecode cache.
+# Node CLI calls share this disposable bytecode cache within the container.
 export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-/tmp/pi-node-cache}"
 # Binary asset staging puts another package.json under dist; keep Node's
 # asset lookup rooted at the source package when using the published bundle.

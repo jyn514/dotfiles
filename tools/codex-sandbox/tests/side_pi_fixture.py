@@ -43,7 +43,7 @@ def owner_main(arguments, bootstrap):
     succeeded = False
     with (runtime / "worker.log").open("w") as log:
         try:
-            worker = subprocess.Popen(["node", str(ROOT / "image/tool-worker.mjs")],
+            worker = subprocess.Popen(["bun", str(ROOT / "image/tool-worker.mjs")],
                                       cwd=config["guest_cwd"], env=environment,
                                       stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             receipt["worker_pid"] = worker.pid

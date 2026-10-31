@@ -20,12 +20,6 @@ function loadToolModule() {
   return toolModulePromise;
 }
 
-// Image builds warm the same module graph without opening a socket or creating a session.
-if (process.argv[2] === "--warm-cache") {
-  await loadToolModule();
-  process.exit(0);
-}
-
 const socketPath = process.env.CODEX_SANDBOX_TOOL_SOCKET ?? "/tmp/codex-tool-worker.sock";
 const maxRequestBytes = 8 * 1024 * 1024;
 

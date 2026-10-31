@@ -14,7 +14,7 @@ import unittest
 HERE = Path(__file__).resolve().parent
 
 
-@unittest.skipUnless(shutil.which("node"), "requires Node")
+@unittest.skipUnless(shutil.which("node") and shutil.which("bun"), "requires Node and Bun")
 class SidePiConnectorTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="side-connector-")
@@ -50,7 +50,7 @@ class SidePiConnectorTest(unittest.TestCase):
                 stream.close()
 
     def worker(self):
-        child = self.process(["node", str(HERE.parent / "image/tool-worker.mjs")])
+        child = self.process(["bun", str(HERE.parent / "image/tool-worker.mjs")])
         deadline = time.monotonic() + 5
         while not self.socket.exists():
             self.assertIsNone(child.poll(), "worker exited before creating its socket")

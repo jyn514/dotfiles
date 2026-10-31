@@ -191,14 +191,8 @@ ENV JJ_ROUTE_HELPER=/tools/jj-proxy/route.py
 ENV RG_REAL=/opt/agent-tools/libexec/rg
 ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
-ENV NODE_COMPILE_CACHE=/tmp/pi-node-cache
-
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /workspace
-
-# Warm the Alpine worker SDK with the final Node version, paths, and UID.
-# The Debian compatibility probe uses Bun because its Node 20 cannot load the SDK.
-RUN --network=none if [ -e /etc/alpine-release ]; then node /opt/agent-tools/bin/tool-worker.mjs --warm-cache; fi
 
 ENV COLORTERM=truecolor
 ENV TERM=xterm-256color

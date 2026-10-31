@@ -66,6 +66,7 @@ from dotfile_links import configured_links
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 SANDBOX_NETWORK = "codex-public-only"
 GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
+TOOL_WORKER_COMMAND = ("bun", "/opt/agent-tools/bin/tool-worker.mjs")
 GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 # Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
@@ -1887,8 +1888,8 @@ def build_agent_command(
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
            "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime) and state.github_credential is not None
-          else (["--secret", "codex-github-token,type=env,target=GH_TOKEN", "--entrypoint", "node"]
-                if not isinstance(OUTER_RUNTIME, VMRuntime) else ["--entrypoint", "node"])),
+          else (["--secret", "codex-github-token,type=env,target=GH_TOKEN", "--entrypoint", TOOL_WORKER_COMMAND[0]]
+                if not isinstance(OUTER_RUNTIME, VMRuntime) else ["--entrypoint", TOOL_WORKER_COMMAND[0]])),
         "--env", "JJ_AGENT=pi",
         "--env", "CODEX_SANDBOX_TOOL_WORKER=1",
         "--env", "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready",
@@ -2080,10 +2081,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
         # Startup retains the build terminal, but this transport outlives it.
         worker_io = {"stdin": subprocess.DEVNULL,
                      "stdout": OWNER_LOG_FD, "stderr": OWNER_LOG_FD}
-    worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
+    worker_command = (list(TOOL_WORKER_COMMAND)
                       if isinstance(OUTER_RUNTIME, VMRuntime)
                       and state.github_credential is not None
-                      else ["/opt/agent-tools/bin/tool-worker.mjs"])
+                      else list(TOOL_WORKER_COMMAND[1:]))
     with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
         if overlap_pi_startup:
             from host_pi_owner import send
@@ -2393,7 +2394,7 @@ def execute(state: State) -> int:
         if (gateway_handle is not None and not gateway_handle.started
                 and gateway_handle.build_bridge is not None):
             executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
-        agent_command = ["node", "/opt/agent-tools/bin/tool-worker.mjs"]
+        agent_command = list(TOOL_WORKER_COMMAND)
         arguments = [*gateway_arguments, *keychain_arguments, *tic_arguments, state.image,
                      *agent_command]
         arguments = [*sidecar_arguments, *arguments]

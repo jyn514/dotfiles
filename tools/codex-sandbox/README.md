@@ -15,6 +15,7 @@ Choose the section for your task:
 
 `codex-sandbox` runs Pi on the host with its native providers and authentication,
 while its built-in tools and human `!` shell commands run in the guest container.
+The guest tool worker runs under Bun, using the binary built for the image's libc.
 `pi` requires an existing Git working tree and rejects other directories before
 accessing Lima or Docker. In a Git repository without Jujutsu, it runs
 `jj git init --colocate` at the Git root, including when launched from a subdirectory.

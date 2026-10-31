@@ -14,13 +14,17 @@ test ! -e /opt/agent-pi/src/node_modules/typescript/package.json
 test ! -d /opt/agent-pi/src/scripts
 if [ -e /etc/alpine-release ]; then
     node "$probe_root/pi-runtime-package.mjs"
-    node "$probe_root/pi-runtime-worker.mjs"
 else
-    # Debian's Node 20 uses the standalone Bun entrypoint for Pi.
     bun "$probe_root/pi-runtime-package.mjs"
-    bun "$probe_root/pi-runtime-worker.mjs"
 fi
-python3 "$probe_root/node-cache.py" >&2
+bun "$probe_root/pi-runtime-worker.mjs"
+if denied=$(pi --offline --print forbidden 2>&1); then
+    echo 'worker container allowed a Pi session' >&2
+    exit 1
+else
+    test "$?" -eq 64
+fi
+test "$denied" = 'pi is unavailable in sandbox tool-worker containers'
 sha256sum /opt/agent-tools/libexec/jj
 node --version
 cat /opt/agent-pi/REVISION

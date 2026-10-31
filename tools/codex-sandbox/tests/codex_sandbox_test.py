@@ -1152,7 +1152,7 @@ class BackgroundRelayTest(unittest.TestCase):
             with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
         self.assertEqual(1, len(calls))
-        self.assertEqual(["node", "/opt/agent-tools/bin/tool-worker.mjs"], calls[0][-2:])
+        self.assertEqual(["bun", "/opt/agent-tools/bin/tool-worker.mjs"], calls[0][-2:])
 
     def test_fresh_session_reports_image_and_proxy_preparation(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]

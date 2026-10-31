@@ -124,7 +124,7 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
     writeFileSync(file("note.txt"), dirtyBase);
     writeFileSync(file("unrelated.txt"), "formatting  \n");
     if (mode === "guest") {
-      worker = spawn("node", [join(root, "tools/codex-sandbox/image/tool-worker.mjs")], {
+      worker = spawn("bun", [join(root, "tools/codex-sandbox/image/tool-worker.mjs")], {
         cwd: repo, env: process.env, stdio: ["ignore", "ignore", "pipe"],
       });
       worker.stderr!.on("data", data => { workerErrors += data.toString(); });

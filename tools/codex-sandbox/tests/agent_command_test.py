@@ -133,6 +133,20 @@ class AgentCommandTest(unittest.TestCase):
                 )
 
             self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", command)
+            self.assertEqual("bun", command[command.index("--entrypoint") + 1])
+            with mock.patch.dict(build.__globals__, {
+                "OUTER_RUNTIME": SimpleNamespace(nonrecursive_bind="bind-nonrecursive"),
+                "TOOL_WORKER_COMMAND": ("fixture-runtime", "/opt/fixture-worker.mjs"),
+                "proxy_flags": lambda: [],
+                "staged_config_path": lambda _state, _role: root / "config",
+                "installed_config_source": lambda _path: root / "installed-config",
+            }):
+                selected = build(
+                    state, ["image", "pi"], timing=False,
+                    resource_paths=resource_paths,
+                    guest_working_directory=Path("/src/repository"), pi_extensions=extensions,
+                )
+            self.assertEqual("fixture-runtime", selected[selected.index("--entrypoint") + 1])
             self.assertIn(
                 "CARGO_TARGET_DIR=/src/repository/work/cargo-target", command)
             self.assertIn("MYPY_CACHE_DIR=/src/repository/work/cache/mypy", command)

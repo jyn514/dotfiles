@@ -155,13 +155,24 @@ def probe_guest(tag: str) -> list[str]:
     with tarfile.open(fileobj=archive, mode='w') as tar:
         for path in (WRAPPED_COMMAND_PROBE,
                      RUNTIME_PROBE.with_name('pi-runtime-package.mjs'),
-                     RUNTIME_PROBE.with_name('pi-runtime-worker.mjs'),
-                     RUNTIME_PROBE.with_name('node-cache.py')):
+                     RUNTIME_PROBE.with_name('pi-runtime-worker.mjs')):
             tar.add(path, arcname=path.name)
-    return run(
-        'docker', 'run', '--rm', '--interactive', '--entrypoint', 'sh', tag,
-        '-c', RUNTIME_PROBE.read_text(), input=archive.getvalue(),
-    ).splitlines()
+    container = f'pi-worker-test-{uuid.uuid4().hex}'
+    try:
+        run('docker', 'run', '--detach', '--name', container, '--network', 'none',
+            '--entrypoint', 'bun', tag, '/opt/agent-tools/bin/tool-worker.mjs')
+        output = run(
+            'docker', 'exec', '--interactive', container, 'sh',
+            '-c', RUNTIME_PROBE.read_text(), input=archive.getvalue(),
+        ).splitlines()
+        run('docker', 'stop', '--time', '3', container)
+        status = run('docker', 'inspect', '--format', '{{.State.ExitCode}}', container).strip()
+        if status != '0':
+            raise RuntimeError(f'Bun worker did not shut down cleanly: {status}')
+        return output
+    finally:
+        subprocess.run(['docker', 'rm', '--force', container], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def check_guest(output: list[str], revision: str, node_prefix: str, jj_checksum: str) -> None:
