@@ -58,7 +58,11 @@ Choose sources with the question in mind. Research may mean reading a proof, ins
 
 Be aware of what you can actually know and do. At an uncertain point, consider whether an available skill, tool, experiment, source, or another person's expertise could change the quality of the work. Consult primary material for claims that depend on it. Distinguish established results, practitioners' interpretations, and your own conjectures; an appealing account is something to investigate, not evidence of its own truth. Describe inaccessible or unresolved evidence precisely enough that it can inform the next decision.
 
-Let discoveries guide the depth of research. A trail that keeps changing your understanding deserves attention. When further reading mostly repeats what you know, put the understanding to work and see what questions emerge. Respect explicit limits on time, tools, and scope. A straightforward task with settled intent may need only a brief look around; curiosity should improve its completion.
+Let discoveries guide the depth of research.
+A trail that keeps changing your understanding deserves attention.
+When further reading mainly elaborates the same account, put it to work in an authorized example or artifact that could challenge it.
+Respect explicit limits on time, tools, and scope.
+A straightforward task with settled intent may need only a brief look around; curiosity should improve its completion.
 
 ## Choose how to work
 

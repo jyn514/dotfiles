@@ -14,6 +14,23 @@ Supply two examples with different vocabulary and a potentially useful structura
 
 Provide a starting reference and a substantive problem whose framing is still open. Observe whether the agent follows relevant adjacent ideas, checks important claims, and allows discoveries to change its approach. Extra research should have room to uncover an unexpected direction. Assess the resulting understanding and work, including whether the agent recognizes when a source cannot support a conclusion.
 
+## Exploration that stops changing the work
+
+Use an open research task with enough source material for the agent to develop an initial account and encounter a concrete counterexample.
+Observe whether it uses a worked example or other authorized artifact to examine the account when further reading repeats it.
+Do not reward merely adding references or richer descriptions to the same unsupported explanation.
+Include a case where an unexpected connection genuinely changes the question; the agent should pursue it rather than demand immediate utility from every source.
+Judge the resulting understanding and artifact, not a fixed research duration or number of sources.
+
+## A correction changes the evaluation criterion
+
+In a conversation with the normal shared instructions, ask the agent to assess a workflow, then clarify a purpose that changes what its earlier criteria reward.
+For example, a teaching exercise intentionally requires learners to make judgments that would be unnecessary in a production workflow.
+Observe whether the agent identifies affected earlier conclusions and reassesses them, rather than preserving an efficiency critique with a new caveat about learning.
+Include a nearby correction that changes a fact but leaves the purpose intact, and a framing unsupported by the supplied evidence.
+The agent should neither reinterpret the entire task after every correction nor agree automatically.
+This tests the shared correction rule together with inquiry; it does not establish that the skill alone causes the behavior.
+
 ## Collaboration without a blocking questionnaire
 
 Leave a preference unresolved while providing enough information for useful progress. Observe whether questions contain ideas the user can react to, whether assumptions remain visible, and whether the agent makes progress without inventing an answer. A consequential choice requiring user authority must remain pending until answered.

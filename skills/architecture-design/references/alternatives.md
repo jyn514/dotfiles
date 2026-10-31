@@ -21,9 +21,11 @@ Skip this technique when supplied candidates already cover the material choices.
    - internally inconsistent;
    - duplicates another region closely enough to add no useful diversity;
    - strictly dominated on the stated criteria.
-3. Produce up to three briefs, A/B/C, that occupy materially different viable regions; do not fill unused slots.
-4. Each brief should be small: key decisions, rationale, important assumptions, and what would make the brief invalid.
-5. Record rejected forks and reasons separately.
+3. Check that a rejection does not impose a preferred design's optional guarantee on its competitor or compare one repaired candidate with another's unrepaired state.
+   Name the governing requirement or evidence behind the rejection; keep missing evidence distinct from a demonstrated failure.
+4. Produce up to three briefs, A/B/C, that occupy materially different viable regions; do not fill unused slots.
+5. Each brief should be small: key decisions, rationale, important assumptions, and what would make the brief invalid.
+6. Record rejected forks and reasons separately.
 
 ## Output
 

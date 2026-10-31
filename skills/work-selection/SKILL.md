@@ -1,6 +1,6 @@
 ---
 name: work-selection
-description: Reassess the next action before adding another substantive prerequisite, workaround, or diagnostic round—even when earlier steps succeeded—or when decision-changing feedback is slow and supporting activity displaces the requested outcome. Compare faster, smaller approaches without weakening requirements. Expected runtime can still be an unacceptable feedback loop. Not for obvious mechanical repairs or straightforward execution of a settled change.
+description: Reassess the next action before adding another substantive prerequisite, workaround, or diagnostic round—even when earlier steps succeeded—or when a supposedly settled approach gains dependencies, results challenge its assumptions, or slow feedback lets supporting activity displace the requested outcome. Compare faster, smaller approaches without weakening requirements. Expected runtime can still be an unacceptable feedback loop. Not for obvious mechanical repairs or straightforward execution of a settled change.
 ---
 
 # Work selection
@@ -20,6 +20,14 @@ Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-
 Cite the source of consequential constraints before comparing actions.
 Repair obvious mechanical failures directly.
 Unrelated bugs and hypothetical failures do not establish prerequisites.
+
+### Examine what makes the approach settled
+
+Distinguish a settled outcome, an approach supported by applicable evidence, and an approach you have merely selected.
+User approval establishes permission; a plan or work already invested does not establish that its route works.
+Use existing implementation, established patterns, or representative results as evidence; do not add a trial merely to call routine work settled.
+When the route gains a substantive dependency or a result challenges an assumption that justified it, reopen the affected choice even if the overall plan is approved.
+An obvious mechanical repair restores an understood path without introducing a new mechanism or assumption; do not use that label to exempt a growing workaround.
 
 ### Construct alternatives that change the action
 
@@ -43,10 +51,25 @@ Check what the intended consumer needs, including required compatibility and acc
 The smallest alternative qualifies only if it meets the full governing outcome.
 When an existing route cannot do that, identify the concrete missing behavior before adding supporting work.
 
+Challenge how you constructed the comparison, not just which candidate wins:
+
+- Did you require an alternative to provide a guarantee introduced only by your preferred design?
+- Did you compare your approach after its proposed repairs with an alternative before equivalent repairs?
+- Which observed fact or governing requirement rules the strongest competitor out?
+- If you had not started this approach, would the remaining costs and evidence still favor choosing it?
+
+A credible comparison can favor continuing; do not invent a competitor or switch merely to demonstrate reconsideration.
+
 ### Establish which supporting work is needed
 
 Identify the unmet requirement, the dependency the proposed work addresses, and the evidence for each.
-For a diagnostic follow-up, name which possible findings would change the next action.
+For an uncertain supporting step, identify what you expect it to resolve and which possible results would change the next action.
+Afterward, compare the observation with that expectation before extending the approach.
+If the step reveals another dependency instead, inspect whether the assumption that justified the first step also creates the next one.
+For example, a fixture repair expected to enable a regression test instead requires a new process manager.
+Reconsider the fixture route before building that manager; do not treat the new dependency as proof that the manager is necessary.
+A successful diagnostic may explain a failure without advancing the requested result; check both what it established and what remains.
+Keep this comparison in working reasoning by default, not a separate report or prediction ledger.
 A chain of successful supporting tasks can still fail to advance the requested outcome.
 Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
 
@@ -129,6 +152,9 @@ Finding no better alternative is a successful result: continue when the existing
 
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.
 Neither is a default next phase of reassessment.
+
+For evaluating these judgments, use [behavioral checks](references/behavioral-checks.md).
+These checks are for skill evaluation, not another stage of ordinary work.
 
 ## Example: expected execution, slow learning
 

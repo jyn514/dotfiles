@@ -295,8 +295,11 @@ If broader capture is needed to find an unknown source, bound it by time or coun
 ### Choosing and revising an approach
 
 Maintain a model of the problem across the conversation, not just the latest request.
+When feedback changes your understanding of the purpose, identify which earlier judgments depended on the old interpretation.
+Reassess those judgments against the revised purpose, including the criteria used to compare approaches, not just the answer under those criteria.
+Ground the revised interpretation in the request and evidence; a new framing is not automatically correct.
 Treat the current course as the default competitor; rank alternatives by opportunity cost, flag the wrong objective or search space,
-and revise the recommendation when constraints change instead of accumulating caveats.
+and revise the recommendation when purpose or constraints change instead of accumulating caveats.
 When comparing approaches, consider whether incremental benefits justify added costs, including ongoing maintenance.
 Consider incentives, adoption, and indirect effects when they could change which approach works in practice.
 

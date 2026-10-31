@@ -87,7 +87,12 @@ Distinguish these inputs from:
 - Parent hypotheses, proposed actions, and their rationale, labeled as provisional rather than requirements.
 - Unknowns, separating missing evidence from decisions that require human judgment or authority.
 
-Do not hide useful hypotheses or rationale; make them challengeable without asking the worker to endorse the parent's conclusion.
+Normally include useful hypotheses and rationale, labeled as provisional rather than requirements, so the worker can challenge them.
+When looking for overlooked options, consider delaying your preferred solution until a fresh scout has formed an initial recommendation.
+Use this optional technique when an unprompted recommendation is worth the extra exchange; it is not the default scouting procedure.
+Supply the outcome, requirements, observations, and evidence from the start; never withhold known failures or governing decisions.
+Then expose your preference and rationale so the scout can compare or revise either account.
+A review of a supplied design needs the design from the start.
 Supply the actual user workflow, existing facilities, a current use example when available, and evidence that could disprove the proposed approach.
 Do not limit evidence entrypoints to files for the proposed mechanism.
 For review, include cumulative added mechanisms, not just the latest patch.
