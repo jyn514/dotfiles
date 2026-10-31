@@ -84,7 +84,7 @@ def execute():
             results.update({
                 'helper:' + name: reference
                 for name, reference in resolve_bake(
-                    runtime, ROOT, helpers, declaration=declaration(helpers),
+                    runtime, ROOT, helpers, declaration=declaration(helpers, platform=runtime.build_platform()),
                     captures=source_paths(helpers), operation=args.operation,
                 ).items()
             })

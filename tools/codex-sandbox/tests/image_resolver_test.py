@@ -475,7 +475,7 @@ class Runtime:
         self.inspected = []
 
     def build_platform(self):
-        return "linux/test"
+        return "linux/amd64"
 
     def upstream_image(self, reference):
         return reference + '@sha256:' + 'e' * 64
@@ -506,6 +506,26 @@ class ImageResolverTest(unittest.TestCase):
         self.enterContext(mock.patch('bake._cache_directory', return_value=cache))
         self.jj_image = Image('jj@sha256:' + '9' * 64, 'jj', 'jj-config', 'jj-rootfs')
         self.jj_resolver = self.enterContext(mock.patch('bake.resolve', return_value={'jj': self.jj_image.reference}))
+        self.release_args = self.enterContext(mock.patch.object(owned_images, 'jj_release_args',
+            side_effect=lambda platform: {
+                'JJ_' + {'linux/amd64': 'AMD64', 'linux/arm64': 'ARM64'}[platform] + '_URL':
+                    'https://example.invalid/jj-fixture.tar.gz',
+                'JJ_' + {'linux/amd64': 'AMD64', 'linux/arm64': 'ARM64'}[platform] + '_SHA256': 'a' * 64,
+            }))
+
+    def test_owned_jj_entrypoint_uses_the_selected_engine_platform(self):
+        runtime = Runtime()
+        output = io.StringIO()
+        with mock.patch('sandbox_runtime.image_runtime', return_value=runtime), \
+                mock.patch.object(sys, 'argv', ['owned_images.py', 'jj']), \
+                mock.patch('os.execv', side_effect=AssertionError('unexpected second image launcher')), \
+                redirect_stdout(output), self.assertRaises(SystemExit) as exited:
+            runpy.run_path(str(Path(owned_images.__file__)), run_name='__main__')
+        self.assertEqual(0, exited.exception.code)
+        self.assertEqual(self.jj_image.reference + '\n', output.getvalue())
+        target = self.jj_resolver.call_args.kwargs['declaration']['target']['jj']
+        self.assertEqual([runtime.build_platform()], target['platforms'])
+        self.assertEqual({'JJ_AMD64_URL', 'JJ_AMD64_SHA256'}, set(target['args']))
 
     def test_installed_pi_commit_selects_build_argument_and_cached_image(self):
         runtime = Runtime()
@@ -579,9 +599,10 @@ class ImageResolverTest(unittest.TestCase):
 
                 runtime.build = build
                 guest = owned_images.resolve_agent(runtime, 501, 20, 'base')
-                target = owned_images.declaration(['jj'])['target']['jj']
+                target = owned_images.declaration(['jj'], platform=runtime.build_platform())['target']['jj']
                 self.assertEqual(target['tags'][0], builds[0][0])
-                self.assertEqual([f'{name}={value}' for name, value in owned_images.jj_release_args().items()],
+                self.assertEqual([f'{name}={value}' for name, value in
+                                  owned_images.jj_release_args(runtime.build_platform()).items()],
                                  builds[0][1])
                 proxy = images[target['tags'][0]].reference
                 self.assertIn('JJ_IMAGE=' + proxy, builds[1][1])
@@ -595,13 +616,15 @@ class ImageResolverTest(unittest.TestCase):
 
     def test_legacy_proxy_build_failure_stops_guest_composition(self):
         runtime = ContainerRuntime()
+        runtime.build_platform = lambda: 'linux/arm64'
         runtime.image_if_available = lambda _tag: None
         runtime.inspect_image = lambda reference: Image(reference, 'base', 'config', 'rootfs')
         runtime.build = mock.Mock(side_effect=OSError('JJ build failed'))
         with self.assertRaisesRegex(OSError, 'JJ build failed'):
             owned_images.resolve_agent(runtime, 501, 20, 'base')
         self.assertEqual(1, runtime.build.call_count)
-        self.assertEqual([f'{name}={value}' for name, value in owned_images.jj_release_args().items()],
+        self.assertEqual([f'{name}={value}' for name, value in
+                          owned_images.jj_release_args(runtime.build_platform()).items()],
                          runtime.build.call_args.kwargs['build_args'])
         self.jj_resolver.assert_not_called()
 
@@ -648,6 +671,7 @@ class ImageResolverTest(unittest.TestCase):
         for available in (False, True):
             with self.subTest(available=available):
                 runtime = mock.Mock(provider='lima-docker')
+                runtime.build_platform.return_value = 'linux/amd64'
                 base = Image('sha256:' + 'a' * 64, 'base', 'config', 'rootfs')
                 local = {owned_images.DEFAULT_BASE: base} if available else {}
                 runtime.image_if_available.side_effect = lambda ref: local.get(ref)

@@ -248,7 +248,7 @@ def prepare_launch_images(
     helper_workers = ThreadPoolExecutor(max_workers=1) if image_policy is not None and owned else None
     helper_future = helper_workers.submit(
         resolve, runtime, owned_images.ROOT, list(owned.values()),
-        declaration=owned_images.declaration(owned.values()),
+        declaration=owned_images.declaration(owned.values(), platform=runtime.build_platform()),
         captures=owned_images.source_paths(owned.values()),
     ) if helper_workers is not None else None
     project: dict[str, Any] = {}
@@ -277,7 +277,7 @@ def prepare_launch_images(
     else:
         helpers = resolve(
             runtime, owned_images.ROOT, list(owned.values()),
-            declaration=owned_images.declaration(owned.values()),
+            declaration=owned_images.declaration(owned.values(), platform=runtime.build_platform()),
             captures=owned_images.source_paths(owned.values()),
         ) if owned else {}
 

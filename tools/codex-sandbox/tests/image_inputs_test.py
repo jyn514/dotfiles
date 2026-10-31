@@ -178,27 +178,33 @@ class ImageInputsTest(unittest.TestCase):
                 subprocess.run(['cmp', str(ROOT / source), str(destination)], check=True)
             lock = root / 'config/mise.lock'
             with patch.dict(owned['declaration'].__globals__, ROOT=root):
-                targets = []
-                for version, checksum in (('1.2.3', 'a' * 64), ('1.2.4', 'b' * 64)):
-                    data = ['[[tools."aqua:jj-vcs/jj"]]', f'version = "{version}"']
-                    expected = {}
-                    for architecture, platform in (('AMD64', 'linux-x64'), ('ARM64', 'linux-arm64')):
-                        url = f'https://example.invalid/{version}/{platform}.tar.gz'
-                        data.extend([f'[tools."aqua:jj-vcs/jj"."platforms.{platform}"]',
-                                     f'url = "{url}"', f'checksum = "sha256:{checksum}"'])
-                        expected[f'JJ_{architecture}_URL'] = url
-                        expected[f'JJ_{architecture}_SHA256'] = checksum
-                    lock.write_text('\n'.join(data) + '\n')
-                    target = owned['declaration'](['jj'])['target']['jj']
-                    self.assertEqual(expected, target['args'])
-                    targets.append(target)
-                self.assertNotEqual(targets[0]['tags'], targets[1]['tags'])
-                lock.write_text(lock.read_text().replace('sha256:' + checksum, 'sha256:bad'))
-                with self.assertRaisesRegex(ValueError, 'SHA-256 checksum'):
-                    owned['declaration'](['jj'])
-                lock.write_text('\n'.join(data[:-3]) + '\n')
-                with self.assertRaisesRegex(ValueError, 'lock JJ for linux-arm64'):
-                    owned['declaration'](['jj'])
+                for image_platform, architecture, lock_platform in (
+                    ('linux/amd64', 'AMD64', 'linux-x64'),
+                    ('linux/arm64', 'ARM64', 'linux-arm64'),
+                ):
+                    with self.subTest(platform=image_platform):
+                        targets = []
+                        for version, checksum in (('1.2.3', 'a' * 64), ('1.2.4', 'b' * 64)):
+                            url = f'https://example.invalid/{version}/{lock_platform}.tar.gz'
+                            data = ['[[tools."aqua:jj-vcs/jj"]]', f'version = "{version}"',
+                                    f'[tools."aqua:jj-vcs/jj"."platforms.{lock_platform}"]',
+                                    f'url = "{url}"', f'checksum = "sha256:{checksum}"']
+                            lock.write_text('\n'.join(data) + '\n')
+                            target = owned['declaration'](['jj'], platform=image_platform)['target']['jj']
+                            self.assertEqual([image_platform], target['platforms'])
+                            self.assertEqual({f'JJ_{architecture}_URL': url,
+                                              f'JJ_{architecture}_SHA256': checksum}, target['args'])
+                            targets.append(target)
+                        self.assertNotEqual(targets[0]['tags'], targets[1]['tags'])
+                        lock.write_text('\n'.join(data) + '\n[tools."aqua:jj-vcs/jj"."platforms.unused"]\n'
+                                        'checksum = "invalid-unused-checksum"\n')
+                        self.assertEqual(target['args'], owned['jj_release_args'](image_platform))
+                        lock.write_text('\n'.join(data).replace('sha256:' + checksum, 'sha256:bad'))
+                        with self.assertRaisesRegex(ValueError, 'SHA-256 checksum'):
+                            owned['declaration'](['jj'], platform=image_platform)
+                        lock.write_text('\n'.join(data[:2]) + '\n')
+                        with self.assertRaisesRegex(ValueError, f'lock JJ for {lock_platform}'):
+                            owned['declaration'](['jj'], platform=image_platform)
 
     def test_zulip_protocol_is_captured_and_changes_image_identity(self):
         owned_images = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))

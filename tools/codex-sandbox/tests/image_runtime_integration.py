@@ -37,9 +37,10 @@ def run(*args: str, input: str | bytes | None = None) -> str:
 
 
 def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> None:
+    platform = run('docker', 'version', '--format', '{{.Server.Os}}/{{.Server.Arch}}').strip()
     targets = {
         'jj': {'context': '.', 'dockerfile': 'tools/jj-proxy/Dockerfile',
-               'args': jj_release_args(), 'tags': list(tags['jj'])},
+               'args': jj_release_args(platform), 'tags': list(tags['jj']), 'platforms': [platform]},
     }
     for variant, base in (('pi-alpine', None), ('pi-debian', 'node:20-bookworm-slim')):
         if variant not in tags:
@@ -50,6 +51,7 @@ def build_images(pi_revision: str | None, tags: dict[str, tuple[str, str]]) -> N
         targets[variant] = {
             'context': '.', 'dockerfile': 'tools/codex-sandbox/image/Dockerfile',
             'args': arguments, 'tags': list(tags[variant]),
+            'platforms': [platform],
             # Consume the same JJ build result without a tag-resolution round trip.
             'contexts': {'jj-artifact': 'target:jj'},
         }

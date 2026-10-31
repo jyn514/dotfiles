@@ -101,12 +101,12 @@ def resolve_jj(runtime, *, operation="resolve"):
     from bake import _capture, resolve
     if runtime.provider == 'lima-docker':
         return resolve(
-            runtime, ROOT, ['jj'], declaration=declaration(['jj']),
+            runtime, ROOT, ['jj'], declaration=declaration(['jj'], platform=runtime.build_platform()),
             captures=source_paths(['jj']), operation=operation,
         )['jj']
     # The legacy helper uses this source-keyed tag with sandbox-image build.
     # Lima's nerdctl builder does not expose Docker Buildx/Bake.
-    target = declaration(['jj'])['target']['jj']
+    target = declaration(['jj'], platform=runtime.build_platform())['target']['jj']
     tag = target['tags'][0]
     existing = None if operation == 'clean' else runtime.image_if_available(tag)
     if existing is not None:
@@ -181,29 +181,29 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
     return sources
 
 
-def jj_release_args(root=None):
-    """Use mise's locked release URLs and checksums for both sandbox consumers."""
+def jj_release_args(platform, root=None):
+    """Use the lock entry for the selected Linux image platform."""
+    platforms = {'linux/amd64': ('AMD64', 'linux-x64'), 'linux/arm64': ('ARM64', 'linux-arm64')}
+    if platform not in platforms:
+        raise ValueError(f'unsupported JJ image platform: {platform}')
+    architecture, lock_platform = platforms[platform]
     root = ROOT if root is None else root
     with (root / 'config/mise.lock').open('rb') as stream:
         releases = tomllib.load(stream)['tools']['aqua:jj-vcs/jj']
     if len(releases) != 1:
         raise ValueError('config/mise.lock must select one JJ release')
-    arguments = {}
-    for architecture, platform in (('AMD64', 'linux-x64'), ('ARM64', 'linux-arm64')):
-        try:
-            artifact = releases[0][f'platforms.{platform}']
-            checksum = artifact['checksum']
-            url = artifact['url']
-        except KeyError as error:
-            raise ValueError(f'config/mise.lock must lock JJ for {platform}') from error
-        if re.fullmatch(r'sha256:[0-9a-f]{64}', checksum) is None:
-            raise ValueError(f'config/mise.lock must contain a JJ SHA-256 checksum for {platform}')
-        arguments[f'JJ_{architecture}_URL'] = url
-        arguments[f'JJ_{architecture}_SHA256'] = checksum.removeprefix('sha256:')
-    return arguments
+    try:
+        artifact = releases[0][f'platforms.{lock_platform}']
+        checksum = artifact['checksum']
+        url = artifact['url']
+    except KeyError as error:
+        raise ValueError(f'config/mise.lock must lock JJ for {lock_platform}') from error
+    if re.fullmatch(r'sha256:[0-9a-f]{64}', checksum) is None:
+        raise ValueError(f'config/mise.lock must contain a JJ SHA-256 checksum for {lock_platform}')
+    return {f'JJ_{architecture}_URL': url, f'JJ_{architecture}_SHA256': checksum.removeprefix('sha256:')}
 
 
-def declaration(requested=('auth', 'jj', 'zulip')):
+def declaration(requested=('auth', 'jj', 'zulip'), *, platform=None):
     targets = {}
     for name, paths in source_paths(requested).items():
         key = hashlib.sha256()
@@ -214,7 +214,8 @@ def declaration(requested=('auth', 'jj', 'zulip')):
                          'tags': [f'codex-{name}:{key.hexdigest()}'],
                          'platforms': ['${BUILDPLATFORM}']}
         if name == 'jj':
-            targets[name]['args'] = jj_release_args()
+            targets[name]['args'] = jj_release_args(platform)
+            targets[name]['platforms'] = [platform]
     return {'variable': {'BUILDPLATFORM': {'default': 'linux/arm64'}}, 'target': targets}
 
 
@@ -225,6 +226,10 @@ if __name__ == '__main__':
         except ValueError as error:
             print(error, file=sys.stderr)
             sys.exit(1)
+        sys.exit(0)
+    if sys.argv[1] == 'jj':
+        from sandbox_runtime import image_runtime
+        print(resolve_jj(image_runtime()))
         sys.exit(0)
     image = declaration([sys.argv[1]])['target'][sys.argv[1]]
     executable = str(ROOT / 'tools/codex-sandbox/sandbox-image')
