@@ -364,10 +364,11 @@ async function visible(client, id) {
 
 // Validate the real profile, source and cwd without starting Codex. This lets
 // the CLI check compatibility between input preparation and publication.
-export async function prepareSession(source, { cwd, signal, report = console.error, env = process.env } = {}) {
+export async function prepareSession(source, { cwd, signal, report = console.error, env = process.env,
+  python = "python3" } = {}) {
   const profilePath = join(env.CODEX_HOME || join(env.HOME || homedir(), ".codex"), "dotfiles.config.toml");
   // app-server rejects --profile. Its thread API accepts configuration overrides.
-  const { stdout } = await execute("python3", [join(dirname(fileURLToPath(import.meta.url)), "read-profile.py"),
+  const { stdout } = await execute(python, [join(dirname(fileURLToPath(import.meta.url)), "read-profile.py"),
     profilePath], { signal, env });
   const config = JSON.parse(stdout);
   source = await resolveSessionSource(source, signal, env);

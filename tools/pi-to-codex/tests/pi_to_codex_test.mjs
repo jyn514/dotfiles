@@ -640,6 +640,44 @@ async function noCompatibilityChildren(f) {
   }
 }
 
+test("preflight resolves Python before isolating mise trust state", async t => {
+  const { stdout } = await execute("python3", ["-c", "import sys; print(sys.executable)"]);
+  const python = stdout.trim();
+  for (const failResolution of [false, true]) await t.test(`resolution failure: ${failResolution}`, async t => {
+    const f = await compatibilityFixture(t);
+    const log = join(f.dir, "python.jsonl");
+    await writeFile(join(f.dir, "bin/python3"), `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+appendFileSync(${JSON.stringify(log)}, JSON.stringify({ home: process.env.HOME, args: process.argv.slice(2) }) + "\\n");
+if (process.env.HOME !== ${JSON.stringify(f.dir)}) {
+  console.error("mise config is not trusted in private HOME");
+  process.exit(1);
+}
+if (${failResolution} && process.argv[2] === "-c") {
+  console.error("Python resolution failed");
+  process.exit(1);
+}
+const result = spawnSync(${JSON.stringify(python)}, process.argv.slice(2), { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+    const result = await launch(f).done;
+    if (failResolution) {
+      assert.notEqual(result.code, 0);
+      assert.match(result.stderr, /Python resolution failed/);
+      assert.equal(existsSync(f.cache), false);
+      assert.equal(existsSync(join(f.home, "fixture-pids.jsonl")), false);
+    } else {
+      assert.equal(result.code, 0, result.stderr);
+      assert.match(result.stdout, /Imported 2 history items/);
+      assert.equal(existsSync(f.cache), true);
+    }
+    const invocations = await readLines(log);
+    assert.ok(invocations.every(row => row.home === f.dir), "private probe bypasses the shim");
+    await noCompatibilityChildren(f);
+  });
+});
+
 test("compatibility preflight imports once privately, captures local context, and skips probe startup on cache hits", async t => {
   const f = await compatibilityFixture(t);
   await writeFile(join(f.home, "dotfiles.config.toml"), 'model = "REAL_PROFILE_MUST_NOT_REACH_PROBE"\n');

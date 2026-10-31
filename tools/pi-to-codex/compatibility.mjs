@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { CodexClient, importSession, loadPiPackage } from "./importer.mjs";
 
@@ -111,7 +111,7 @@ async function continueThread(client, id, signal) {
   }
 }
 
-async function runProbe(root, env, sdk, signal) {
+async function runProbe(root, env, sdk, signal, python) {
   const requests = [];
   const server = createServer(async (request, response) => {
     try {
@@ -166,7 +166,7 @@ requires_openai_auth = false
     manager.appendMessage(assistant([{ type: "text", text: sample.assistant }]));
     const source = manager.getSessionFile();
     const original = await readFile(source);
-    const imported = await importSession(source, { env, signal, childCwd: root, report: () => {} });
+    const imported = await importSession(source, { env, signal, python, childCwd: root, report: () => {} });
     assert.equal(requests.length, 0, "importing must not make a provider request");
     const client = new CodexClient({ env, signal, cwd: root });
     let clientFailure;
@@ -242,7 +242,16 @@ export async function checkCompatibility({ env = process.env, signal, report = c
       const timeout = new AbortController();
       const timer = setTimeout(() => timeout.abort(new Error("compatibility check timed out after 30 seconds")), 30000);
       const bounded = AbortSignal.any([...(signal ? [signal] : []), timeout.signal]);
-      try { await runProbe(root, isolated, installed.sdk, bounded); bounded.throwIfAborted(); }
+      try {
+        // Resolve through mise while its normal configuration and trust state
+        // are available, then bypass shims inside the private environment.
+        const { stdout } = await execute("python3", ["-c", "import sys; print(sys.executable)"],
+          { env, signal: bounded });
+        const python = stdout.trim();
+        if (!python || !isAbsolute(python)) throw new Error("Python returned no absolute executable path");
+        await runProbe(root, isolated, installed.sdk, bounded, python);
+        bounded.throwIfAborted();
+      }
       finally { clearTimeout(timer); }
     }
   } catch (error) {
