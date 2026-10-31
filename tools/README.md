@@ -1,9 +1,23 @@
 # Tools reference
 
-Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and designs for operational or security detail.
+Find existing commands by task before writing a helper or assembling a workflow by hand.
+This index covers tracked `bin/` entrypoints, including aliases and platform-specific launchers, and `tools/` subsystems.
+Links lead to the executable source or the subsystem's operational documentation; command names alone do not imply that a helper supports `--help`.
+Keep this index current when adding, renaming, or removing a helper.
+
+- [Launch and manage agents](#agent-infrastructure)
+- [Move history and manage repositories or packages](#repository-and-package-commands)
+- [Build, test, and inspect code](#build-test-and-inspect-code)
+- [Control the desktop, clipboard, and shell](#desktop-and-shell-commands)
+- [Connect to remote machines and manage files](#remote-machines-and-files)
+- [Convert content and work with devices](#content-and-device-tools)
 
 ## Agent infrastructure
 
+- [`pi`](../bin/pi) launches host Pi with sandboxed tools through `codex-sandbox`; ordinary interactive startup can start the sandbox runtime.
+- [`codex`](../bin/codex) launches Codex with shared instructions, generated permissions, and the dotfiles profile; interactive startup repairs the session index.
+- [`claude`](../bin/claude) launches Claude Code with expanded shared instructions and generated permission settings; it writes generated settings and can remove the legacy settings symlink.
+- [`analyze-agent-permissions`](../bin/analyze-agent-permissions) analyzes Claude permission usage; implementation and policy live in [agent-permissions](agent-permissions/).
 - [`agent-permissions`](agent-permissions/) defines agent command policy, renders Codex rules or Claude settings, and audits Claude command history against generated Bash permissions. Policy changes alter agent authority.
 - [`agent-docker`](agent-docker/) manages the separate rootless Docker build VM on Linux and macOS. See the [setup and recovery guide](agent-docker/README.md).
 - [`agent-podman`](agent-podman/) retains lifecycle scripts for retired macOS Podman deployments. See its [teardown guide](agent-podman/README.md).
@@ -29,13 +43,35 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   It uses `CODEX_HOME` (default `~/.codex`) and requires `codex` and `python3`.
   The scan-and-repair behavior was verified with Codex 0.162.1; it depends on Codex's implementation of `thread/list`.
 - [`codex-sandbox`](codex-sandbox/) runs host Pi with a guest tool worker and trusted Git/Jujutsu proxies, optional Zulip authenticated egress, and nested Docker or R2 relays. Model providers and authentication stay native to host Pi; no Codex model broker is started. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
+- [`sandbox-image`](../bin/sandbox-image) resolves, builds, refreshes, or rebuilds sandbox images; it can pull images and start the configured runtime. See [image development](codex-sandbox/development.md).
+- [`sandbox-proxy-route`](../bin/sandbox-proxy-route) dispatches configured sandbox proxy requests; use the [sandbox proxy contract](codex-sandbox/spec/proxy-design.typ) before changing routing.
 - [`jj-proxy`](jj-proxy/) exposes restricted Jujutsu operations to untrusted containers without writable repository metadata. Start with the [operator guide](jj-proxy/README.md); the [design](jj-proxy/design.typ) covers its policy and threat model.
+- [`pi-codex-goal`](pi-codex-goal/README.md) provides persistent Pi goals and continuation; goal state is stored in session custom entries.
+- [`pi-codex-subagents`](pi-codex-subagents/README.md) spawns and manages child Pi sessions, including durable pause; children can execute their configured tools.
+- [`pi-session-search`](../bin/pi-session-search) searches and reads local Pi and Codex transcripts without resuming sessions; see the [CLI reference](pi-session-search/docs/cli-interface.md).
 - [`pi-link`](pi-link/) is a local fork of alvivar's live-session messaging extension, with message IDs and optional reply references in the transcript.
   Pi settings load the fork and its skill on startup; new sessions connect automatically.
 - [`pi-npm`](pi-npm/) pins npm dependencies installed in the sandboxed Pi image with `npm ci --ignore-scripts`. It has no user command.
 - [`zulip-proxy`](zulip-proxy/) provides bounded, read-only Zulip transcript and topic access through `bin/zulip`. It requires `~/.zuliprc`; exported private-channel content remains sensitive. See the [operator guide](zulip-proxy/README.md).
 
 ## Repository and package commands
+
+### Move and repair history
+
+Use the [Jujutsu workflow](../skills/jj-workflow/SKILL.md) to preserve authored work when integrating history changes.
+These specialized Git helpers can change Git history or metadata directly.
+
+| Task | Helper and important effects |
+| --- | --- |
+| Import commits between repositories, optionally selecting and relocating a directory | [`transplant-commits`](../bin/transplant-commits) pipes `format-patch` into `git am`; preserves authors, author dates, and message text, rewrites commit IDs, and omits merge commits. `--dry-run` prints the pipeline; applying writes target HEAD/index and can leave an interrupted `git am`. |
+| Correct commits attributed to jyn instead of their agent committer | [`rewrite-commits`](../bin/rewrite-commits) previews matches; `--apply` rewrites author/committer metadata and synchronizes Git/JJ. |
+| Promote a coauthor trailer to the primary author | [`coauthored-by-author`](../bin/coauthored-by-author) previews matches; `--apply` rewrites selected refs and removes the matching trailer unless `--keep-trailer` is supplied. |
+| Filter repository history | [`git-filter-repo`](../bin/git-filter-repo) invokes the vendored history rewriter; apply operations rewrite commit IDs and can change refs. |
+| Add Git colocation to an existing JJ workspace | [`jj-backfill-colocation`](../bin/jj-backfill-colocation) recreates the workspace, restores its files and sparse selection, and retains a recovery backup; changes workspace registration. |
+| Back up a repository under the historical command name | [`git-save`](../bin/git-save) uses the same bundle/archive implementation as [`git-backup`](git-backup/); writes a backup, not a commit. |
+| Show repository or directory status | [`show-status`](../bin/show-status) shows time-bounded JJ/Git status or lists a non-repository directory; requires a nonempty argument to run. |
+
+### Packages and repository services
 
 - [`cargo-aliases`](cargo-aliases/) implements `generate-cargo-fish-abbr [cargo-command]`, converting `cargo --list` aliases to Fish abbreviations on standard output.
 - [`fork-github`](fork-github/) implements `fork-github REPOSITORY [DIRECTORY]`, cloning a GitHub repository and configuring upstream and personal remotes.
@@ -48,7 +84,47 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`remote-git-url`](remote-git-url/) implements `remote-git-url FILE LINE-START [LINE-END]`, producing a GitHub or GitLab source link and opening it when a graphical display exists.
 - [`shell-boundaries`](shell-boundaries/) runs from `dev/test` and rejects new unsafe shell substitutions, filename pipelines, and persistent writes. `baseline.json` records existing debt.
 
+## Build, test, and inspect code
+
+| Task | Helper and important effects |
+| --- | --- |
+| Watch Rust builds from the workspace root | [`b`](../bin/b) resolves Cargo workspace metadata and launches Bacon there. |
+| Generate private Rust API documentation | [`cargo-doc-dev`](../bin/cargo-doc-dev) runs Cargo doc without dependencies and writes documentation output. |
+| Run a project's Gradle | [`gradle`](../bin/gradle) prefers `./gradlew`, falling back to `/usr/bin/gradle`; executes the requested build tasks. |
+| Start a Clojure REPL | [`clj`](../bin/clj) starts Rebel Readline with the development alias when available. |
+| Run Clojure tests from the repository root | [`kaocha`](../bin/kaocha) runs `clojure -M:test` at the Git root. |
+| Start Julia | [`jl`](../bin/jl) passes arguments to `julia`. |
+| Start a Perl debugger REPL | [`pl`](../bin/pl) enables strict mode and warnings. |
+| Profile a program's calls | [`callgraph`](../bin/callgraph) executes it under Valgrind and writes callgrind, DOT, and PNG files; installs `gprof2dot` with pip if absent. |
+| Compare call graphs | [`callgraph-cmp`](../bin/callgraph-cmp) compares unique DOT edges through Graphviz and diff using temporary files. |
+| Check a program for memory leaks | [`leak-check`](../bin/leak-check) executes it under Valgrind memcheck. |
+| Find a Typst package version for a compiler | [`supports-typst-version`](../bin/supports-typst-version) queries Typst Universe and caches its package index locally. |
+| Run the Lapwing learning sites locally | [`lapwing-start`](../bin/lapwing-start) starts mdBook and npm development servers from the configured personal checkout. |
+
 ## Desktop and shell commands
+
+| Task | Helper and important effects |
+| --- | --- |
+| Print terminal colors and control sequences | [`ansi`](../bin/ansi) invokes the vendored ANSI generator. |
+| Change volume or media playback | [`audio`](../bin/audio) controls ALSA/cmus and sends desktop notifications unless `--quiet` is supplied. |
+| Copy a terminal selection without Fish prompts | [`copy-terminal-selection`](../bin/copy-terminal-selection) strips prompt text and writes a tmux buffer and clipboard. |
+| Paste the primary selection into a graphical application | [`paste-primary`](../bin/paste-primary) temporarily swaps the clipboard, injects a paste key, then restores it. |
+| Decode a QR code from a clipboard image | [`decode-qr`](../bin/decode-qr) uses zbarimg, writes the result to the terminal, and replaces the primary selection. |
+| Find directory completion candidates | [`complete-fzf-dir`](../bin/complete-fzf-dir) lists fd directories and zoxide history. |
+| Generate Fish startup hooks | [`generate-fish-startup-cache`](../bin/generate-fish-startup-cache) writes generated shell code to stdout; the [shell cache](shell-cache/) owns persistent publication. |
+| Run a command on the user's D-Bus session | [`dbus-run-user`](../bin/dbus-run-user) supplies user runtime/bus environment variables; the command retains its own effects. |
+| List desktop application launchers | [`desktop-files`](../bin/desktop-files) searches XDG application directories for `.desktop` files. |
+| Launch KeePassXC from a desktop menu | [`keepassxc.desktop`](../bin/keepassxc.desktop) declares the launcher and KeePass database MIME type. |
+| Open a Linux path in Windows Firefox | [`firefox.sh`](../bin/firefox.sh) converts the path with `wslpath` and launches the configured executable. |
+| Restore a local Neovim session | [`nvim`](../bin/nvim) loads `Session.vim` or `.session.vim` when started without arguments; otherwise forwards arguments. |
+| Launch Helix through desktop/editor integration | [`hx-hax`](../bin/hx-hax) uses the [open dispatcher](open/README.md). |
+| Launch an editor through desktop/editor integration | [`editor-hax`](../bin/editor-hax) uses the same [open dispatcher](open/README.md). |
+| Run the window-session manager | [`lwsm`](../bin/lwsm) uses npm exec, which can download and execute `linux-window-session-manager`. |
+| Show PATH entries in order | [`show_path`](../bin/show_path) prints PATH components without sorting. |
+| Show the active Wi-Fi network | [`ssid`](../bin/ssid) reads NetworkManager's active SSID. |
+| Launch tmux with connection attribution | [`tmux`](../bin/tmux) records attachment provenance while forwarding native tmux arguments. |
+| Toggle GNOME notification banners | [`toggle-dnd`](../bin/toggle-dnd) changes and verifies the desktop notification setting. |
+| Start Zsh from Windows | [`zsh.bat`](../bin/zsh.bat) launches it through the Windows Bash/WSL entrypoint. |
 
 - [`copy`](../bin/copy) and [`paste`](../bin/paste) use the installed X11, Wayland, or macOS clipboard backend.
   Pass `--primary` for the primary selection, or `--type MIME` before it for xclip and Wayland backends.
@@ -70,7 +146,36 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`take-a-break`](take-a-break/) displays a modal Zenity reminder and uses `wmctrl`, when available, to keep it above other windows.
 - [`watch`](watch/) implements buffered `watch [-n INTERVAL] [-x SHELL] COMMAND...`, running commands in a PTY and replacing the terminal after each complete frame.
 
+## Remote machines and files
+
+| Task | Helper and important effects |
+| --- | --- |
+| Connect with SSH and diagnose an unavailable agent | [`ssh`](../bin/ssh) runs native SSH, then checks the configured authentication agent after connection failure. |
+| Open synchronized SSH panes | [`tmux-cssh`](../bin/tmux-cssh) creates synchronized tmux sessions/windows; typed commands reach multiple remote machines. |
+| Connect to the fixed personal SSH endpoint | [`connect`](../bin/connect) opens the host and port embedded in the script. |
+| Transfer files to or from that endpoint | [`get`](../bin/get) and its alias [`put`](../bin/put) open the same interactive SFTP connection; transfers can modify local or remote files. |
+| Connect through the legacy work VPN | [`ssh.sh`](../bin/ssh.sh) can start an SSH agent and OpenVPN system service with sudo, then cleans up resources it started. |
+| Start mosh from Windows | [`mosh.bat`](../bin/mosh.bat) sources the profile and launches mosh through Bash/WSL. |
+| Log in to an OverTheWire Bandit level | [`bandit`](../bin/bandit) reads the last credential in local `bandit.txt` and starts an SSH connection using sshpass. |
+| Create a user with an SSH key | [`makeuser`](../bin/makeuser) requires root, prompts, and creates the account and authorized key. |
+| Synchronize the legacy notes vault with Google Drive | [`backup-notes.sh`](../bin/backup-notes.sh) runs rclone bisync; can modify both copies and resolves conflicts in favor of newer files. |
+| Merge directory contents | [`merge`](../bin/merge) copies without overwriting destination entries and offers source removal only after a successful collision-free copy. |
+| Replace literal text recursively | [`replace`](../bin/replace) rewrites every regular file below the current directory in place, including hidden and ignored files. |
+| Inspect disk usage | [`usage`](../bin/usage) prints immediate filesystem usage in descending human-readable size. |
+
 ## Content and device tools
+
+| Task | Helper and important effects |
+| --- | --- |
+| Convert EDN to JSON | [`edn-to-json`](../bin/edn-to-json) reads stdin or named files and prints JSON using Babashka. |
+| Decode a printed character-code list | [`pretty.py`](../bin/pretty.py) parses a Python literal from stdin and prints the corresponding characters. |
+| Convert timesheet intervals to decimal hours | [`hours`](../bin/hours) reads newline-separated cells from stdin and prints hours. |
+| Format a copied GroupMe conversation | [`groupme2transcript`](../bin/groupme2transcript) reads stdin or `--input FILE` and writes a transcript to stdout. |
+| Download custom Discord emoji images | [`emojis`](../bin/emojis) reads markup through PowerShell and writes PNGs in the current directory; existing names can be overwritten. |
+| Search the web | [`ducker`](../bin/ducker), also [`ddg`](../bin/ddg), launches the installed Python search client. |
+| Search YouTube playlists | [`youtube_search`](../bin/youtube_search) sends a site-restricted query to ddg. |
+| Preview a Graphviz graph | [`view_dot`](../bin/view_dot) writes a sibling `.preview.svg` and opens it; replaces only its own marked previews. |
+| Preview Markdown | [`view_markdown`](../bin/view_markdown) writes a sibling `.preview.html` and opens it; replaces only its own marked previews. |
 
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
 - [`clean-discord`](../bin/clean-discord) converts Discord copy-pasted text to `[HH:MM] <name> message` lines; requires Babashka (`bb`).

@@ -7,6 +7,8 @@ For setup operations, read [Setup and configuration](README.md#setup-and-configu
 and the relevant setup function before using it on a new machine.
 
 - Use `jj` for change management.
+- Before writing a helper script or doing a manual migration, check the
+  [tools reference](tools/README.md) for an existing command.
 - Run tests and ad-hoc Pi probes through `dev/test-environment`.
   Use isolation for tests, not for ordinary repository operations.
   Read [Testing and probes](dev/README.md#testing-and-probes) for dependencies,
