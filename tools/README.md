@@ -38,7 +38,6 @@ Keep this index current when adding, renaming, or removing a helper.
 ### Sandbox runtimes and proxies
 
 - [`agent-docker`](agent-docker/) manages the separate rootless Docker build VM on Linux and macOS. See the [setup and recovery guide](agent-docker/README.md).
-- [`agent-podman`](agent-podman/) retains lifecycle scripts for retired macOS Podman deployments. See its [teardown guide](agent-podman/README.md).
 - [`codex-sandbox`](codex-sandbox/) runs host Pi with a guest tool worker and trusted Git/Jujutsu proxies, optional Zulip authenticated egress, and nested Docker or R2 relays. Model providers and authentication stay native to host Pi; no Codex model broker is started. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
 - [`sandbox-image`](../bin/sandbox-image) resolves, builds, refreshes, or rebuilds sandbox images; it can pull images and start the configured runtime. See [image development](codex-sandbox/development.md).
 - [`sandbox-proxy-route`](../bin/sandbox-proxy-route) dispatches configured sandbox proxy requests; use the [sandbox proxy contract](codex-sandbox/spec/proxy-design.typ) before changing routing.
@@ -189,8 +188,6 @@ These specialized Git helpers can change Git history or metadata directly.
 | --- | --- |
 | Connect with SSH and diagnose an unavailable agent | [`ssh`](../bin/ssh) runs native SSH, then checks the configured authentication agent after connection failure. |
 | Open synchronized SSH panes | [`tmux-cssh`](../bin/tmux-cssh) creates synchronized tmux sessions/windows; typed commands reach multiple remote machines. |
-| Connect to the fixed personal SSH endpoint | [`connect`](../bin/connect) opens the host and port embedded in the script. |
-| Connect through the legacy work VPN | [`ssh.sh`](../bin/ssh.sh) can start an SSH agent and OpenVPN system service with sudo, then cleans up resources it started. |
 | Start mosh from Windows | [`mosh.bat`](../bin/mosh.bat) sources the profile and launches mosh through Bash/WSL. |
 | Log in to an OverTheWire Bandit level | [`bandit`](../bin/bandit) reads the last credential in local `bandit.txt` and starts an SSH connection using sshpass. |
 
@@ -200,7 +197,6 @@ These specialized Git helpers can change Git history or metadata directly.
 
 | Task | Helper and important effects |
 | --- | --- |
-| Transfer files to or from the fixed personal endpoint | [`get`](../bin/get) and its alias [`put`](../bin/put) open the same interactive SFTP connection; transfers can modify local or remote files. |
 | Synchronize the legacy notes vault with Google Drive | [`backup-notes.sh`](../bin/backup-notes.sh) runs rclone bisync; can modify both copies and resolves conflicts in favor of newer files. |
 
 - [`backup`](backup/) backs up Documents and consistent Mica state to restic, using systemd timers on Linux and a LaunchDaemon on macOS.

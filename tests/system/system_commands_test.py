@@ -63,44 +63,6 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("usage:", result.stderr)
         self.assertFalse(calls.exists())
-    def test_ssh_wrapper_cleans_up_agents_and_propagates_startup_failure(self) -> None:
-        calls = self.directory / "ssh-wrapper-calls"
-        self.executable(
-            "ssh-add",
-            'printf "ssh-add %s\\n" "$*" >> "$SSH_WRAPPER_CALLS"\n'
-            'if [ "$1" = -l ] && [ ! -e "$AGENT_READY" ]; then exit 1; fi\n'
-            'touch "$AGENT_READY"\n',
-        )
-        self.executable(
-            "ssh-agent",
-            'printf "ssh-agent %s\\n" "$*" >> "$SSH_WRAPPER_CALLS"\n'
-            'if [ "$1" = -k ]; then exit 0; fi\n'
-            '[ -z "${AGENT_STATUS:-}" ] || exit "$AGENT_STATUS"\n'
-            'printf "SSH_AUTH_SOCK=/tmp/mock-agent; export SSH_AUTH_SOCK; SSH_AGENT_PID=123; export SSH_AGENT_PID;\\n"\n',
-        )
-        self.executable("systemctl", "exit 0\n")
-        self.executable("ssh", "exit 17\n")
-        environment = os.environ | {
-            "AGENT_READY": str(self.directory / "agent-ready"),
-            "SSH_WRAPPER_CALLS": str(calls),
-            "PATH": f"{self.directory}:{os.environ['PATH']}",
-        }
-
-        session = subprocess.run(
-            [str(ROOT / "bin/ssh.sh"), "host"], env=environment, check=False
-        )
-        call_text = calls.read_text()
-        calls.unlink()
-        (self.directory / "agent-ready").unlink(missing_ok=True)
-        startup_failure = subprocess.run(
-            [str(ROOT / "bin/ssh.sh"), "host"],
-            env=environment | {"AGENT_STATUS": "23"},
-            check=False,
-        )
-
-        self.assertEqual(17, session.returncode)
-        self.assertIn("ssh-agent -k", call_text)
-        self.assertEqual(23, startup_failure.returncode)
     def test_firefox_preserves_spaces_in_windows_path(self) -> None:
         calls = self.directory / "firefox-calls"
         self.executable("wslpath", "printf 'C:\\\\Users\\\\One Esk\\\\page.html\\n'\n")

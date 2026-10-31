@@ -437,8 +437,8 @@ run the real CLI beside that Docker daemon, where bind sources exist.
 Preserve its repository-independent path handling, exit status, cancellation,
 and per-run cleanup. Replace Podman socket/service assumptions and its SELinux
 relabel helper with the selected Docker backend's workspace-sharing behavior.
-The existing adapter contract is described in
-#link("../../agent-podman/ci-design.typ")[the local CI design].
+Current staging, cancellation, cleanup, and isolation behavior is described in
+#link("../../agent-docker/README.md#local-ci-and-isolation")[Agent Docker's local CI documentation].
 
 If `nested-containers` is selected but build-service access is absent, warn
 with the missing prerequisite and host setup action. Continue without that

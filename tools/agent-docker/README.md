@@ -90,6 +90,11 @@ Never point it at infrastructure VM state.
 
 ## Local CI and isolation
 
+The adapter accepts `woodpecker-cli exec` with exactly one `--repo-path` directory and a final pipeline file.
+It rejects `--local=false` and options that refer to additional unstaged local paths.
+The supplied repository must stay stable during transfer.
+Pipeline files outside the repository are transferred separately; paths referenced inside a pipeline are not discovered or synchronized.
+
 The agent's `woodpecker-cli exec` adapter transfers the supplied repository and
 pipeline into a private per-run directory beside the build daemon. Woodpecker
 uses that daemon's socket and guest-local bind sources. The adapter preserves
@@ -114,9 +119,10 @@ The boundary assumes the guest kernel and VM runtime enforce their isolation;
 a guest-root or VM escape can defeat it. Build inputs and the build account
 are untrusted. Do not share this VM across different trust domains.
 
-Persisted Podman access is never interpreted as Docker access. Existing macOS
-Podman deployments retain their [old teardown procedure](../agent-podman/README.md);
-new sandbox launches use only Agent Docker state.
+Persisted Podman access is never interpreted as Docker access.
+The retired Agent Podman implementation and its teardown procedure are available in repository history before their removal.
+Existing Podman installations require their original deployment scripts and configuration for teardown; Docker teardown does not manage them.
+Removing the old source does not delete an installed Podman machine, account, or access files.
 
 Run unit tests through `dev/test-environment`; the top-level test discovery
 includes this directory. The opt-in VM/gateway acceptance test is documented
