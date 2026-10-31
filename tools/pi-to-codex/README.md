@@ -33,7 +33,9 @@ Each invocation creates a distinct thread, including repeated imports of the sam
 
 Install Node, Pi, Codex, Python 3.11 or later, `cp`, and `cmp` on PATH.
 The repository's normal bin PATH setup exposes `bin/pi-to-codex`; no extra bootstrap mapping is needed.
-The importer loads Pi's installed public SDK, not the repository's older unit-test dependencies.
+The importer loads Pi's installed public `./session` SDK entrypoint, which provides session storage and model-context conversion without importing the interactive UI.
+It requires a fork build with that export; older builds fail with a rebuild instruction instead of falling back to the root SDK.
+It does not use the repository's older unit-test dependencies.
 It searches `~/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent` and `/opt/agent-pi/src/packages/coding-agent`.
 Set `PI_PACKAGE_DIR` to another installed package directory if necessary.
 `CODEX_HOME` selects the destination Codex home, as for Codex itself.

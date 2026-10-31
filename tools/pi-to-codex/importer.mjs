@@ -21,13 +21,14 @@ export async function loadPiPackage(env = process.env) {
   if (!found) throw new Error("installed Pi SDK not found; set PI_PACKAGE_DIR to its package directory");
   const directory = realpathSync(found);
   const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-  const entry = manifest.exports?.["."]?.import;
+  const entry = manifest.exports?.["./session"]?.import;
   if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof entry !== "string") {
-    throw new Error("installed Pi SDK has no public root import export");
+    throw new Error("installed Pi SDK has no public ./session export; rebuild and install the updated Pi fork");
   }
   const sdk = await import(pathToFileURL(resolve(directory, entry)).href);
-  if (typeof sdk.SessionManager?.open !== "function" || typeof sdk.convertToLlm !== "function") {
-    throw new Error("installed Pi SDK lacks SessionManager.open or convertToLlm");
+  if (typeof sdk.SessionManager?.open !== "function" || typeof sdk.convertToLlm !== "function" ||
+      !Number.isInteger(sdk.CURRENT_SESSION_VERSION)) {
+    throw new Error("installed Pi session SDK lacks SessionManager.open, convertToLlm, or CURRENT_SESSION_VERSION");
   }
   return { sdk, manifest, directory, installedDirectory: resolve(found) };
 }

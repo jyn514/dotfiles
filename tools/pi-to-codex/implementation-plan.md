@@ -48,7 +48,7 @@ Existing paths take precedence; missing and ambiguous IDs fail before publicatio
 ## Boundaries and invariants
 
 Pi owns the source format, migrations, branch selection, and compaction semantics.
-Load its installed package through the public root export, following the `PI_PACKAGE_DIR` and installed-package pattern in `session_side_test.ts`; do not import private SDK source paths or use the older locked test SDK accidentally.
+Load its installed package through the public `./session` export, following the `PI_PACKAGE_DIR` and installed-package pattern in `session_side_test.ts`; do not import the root SDK, private SDK source paths, or the older locked test SDK.
 Node and the installed Pi SDK suffice; no new runtime dependency is planned.
 
 The importer owns a private source snapshot, message conversion, and sequential temporary app-server processes.

@@ -69,6 +69,25 @@ async function noChildren(f) {
   assert.deepEqual(await readdir(f.temp), []);
 }
 
+test("Pi loading follows the public session export and never falls back to the root SDK", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-session-export-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const manifest = { name: "@earendil-works/pi-coding-agent", exports: {
+    ".": { import: "./root.mjs" }, "./session": { import: "./storage.mjs" },
+  } };
+  await writeFile(join(dir, "root.mjs"), 'throw new Error("root SDK loaded");\n');
+  await writeFile(join(dir, "storage.mjs"), `export const CURRENT_SESSION_VERSION = 3;
+export class SessionManager { static open() {} }
+export function convertToLlm() {}
+`);
+  await writeFile(join(dir, "package.json"), JSON.stringify(manifest));
+  const loaded = await loadPiPackage({ PI_PACKAGE_DIR: dir });
+  assert.equal(loaded.sdk.CURRENT_SESSION_VERSION, 3);
+  delete manifest.exports["./session"];
+  await writeFile(join(dir, "package.json"), JSON.stringify(manifest));
+  await assert.rejects(loadPiPackage({ PI_PACKAGE_DIR: dir }), /no public \.\/session export.*rebuild/);
+});
+
 test("CodexClient preserves stderr diagnostics across UTF-8 boundaries", async t => {
   const cases = [];
   for (const character of ["é", "中", "🙂"]) {
@@ -824,8 +843,8 @@ test("Pi overrides without recorded provenance remain supported but cannot reuse
   const override = join(f.dir, "unrecorded-sdk");
   await mkdir(override);
   await writeFile(join(override, "package.json"), JSON.stringify({ name: installed.manifest.name,
-    version: installed.manifest.version, type: "module", exports: { ".": { import: "./index.mjs" } } }));
-  await writeFile(join(override, "index.mjs"), `export * from ${JSON.stringify(pathToFileURL(join(installed.directory, installed.manifest.exports["."].import)).href)};\n`);
+    version: installed.manifest.version, type: "module", exports: { "./session": { import: "./index.mjs" } } }));
+  await writeFile(join(override, "index.mjs"), `export * from ${JSON.stringify(pathToFileURL(join(installed.directory, installed.manifest.exports["./session"].import)).href)};\n`);
   f.env.PI_PACKAGE_DIR = override;
   for (let repeat = 0; repeat < 2; repeat++) {
     const result = await launch(f).done;
