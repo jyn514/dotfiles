@@ -57,6 +57,12 @@ dir = "{{vars.dotfiles_root}}"
 tools.python = "{{vars.bootstrap_python}}"
 run = "python libexec/setup/install_pi.py"
 
+[tasks.ticgit-install]
+description = "Build and install the TicGit revision used by the sandbox"
+dir = "{{vars.dotfiles_root}}"
+tools.python = "{{vars.bootstrap_python}}"
+run = "python libexec/setup/install_ticgit.py"
+
 [settings]
 task.run_auto_install = false
 # Prefer available binaries on every host, including Alpine and NixOS.

@@ -5,6 +5,11 @@ For example, a guest `ti list` asks a host-side broker to run the approved nativ
 The patched native TicGit uses the Git common directory's `git-meta.sqlite`, so main and linked worktrees share tickets.
 An ordinary human `ti` command uses that same store independently of Pi, the broker, or a running VM.
 
+Run `mise run ticgit-install` on the host to install the pinned fork into Cargo's bin directory.
+The task reads `native-revision`, keeping the host CLI on the same revision as the sandbox.
+An older crates.io installation can use a separate database in a linked worktree.
+The fork refuses existing worktree-local stores rather than migrating or ignoring them; follow its diagnostic before relocating any database files.
+
 SQLite stays on the host rather than being opened through the VM's shared filesystem.
 The broker gives the guest selected ticket operations without giving it write access to protected Git metadata or a general host shell.
 TicGit itself remains a local CLI, not a Ticket API server.
