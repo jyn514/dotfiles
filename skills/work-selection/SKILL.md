@@ -37,6 +37,9 @@ Use existing evidence and rough comparisons when sufficient rather than creating
 
 Separate confidence in finishing a task from the value of finishing it.
 A well-defined defect with a certain repair can matter less than uncertain work addressing the main obstacle.
+“Bounded,” “concrete,” “measurable,” and “known defect” do not independently justify priority.
+Explain how the property changes total remaining cost, time to a useful result, or expected contribution under the actual objective.
+Apply comparable scope limits to the competing action where possible; do not compare a small repair with an unnecessarily broad audit.
 Prefer the strongest expected contribution within the available time, preserving required quality rather than optimizing a convenient proxy.
 Do not invent probabilities or numeric scores to make that judgment look precise.
 
@@ -76,6 +79,12 @@ Challenge how you constructed the comparison, not just which candidate wins:
 - Did you compare your approach after its proposed repairs with an alternative before equivalent repairs?
 - Which observed fact or governing requirement rules the strongest competitor out?
 - If you had not started this approach, would the remaining costs and evidence still favor choosing it?
+
+Identify the premise on which the ranking turns, and check it against the available evidence.
+Do not describe a possible benefit as an established useful outcome, or discard a competitor's supported advantage.
+A discrepancy does not yet establish which component is wrong or what correcting it will improve.
+For example, a fixed-sample review with a stopping condition does not become open-ended because a competing repair has a clear test.
+If correcting an unsupported description removes the reason for preferring an action, reopen the ranking rather than retain it with a caveat.
 
 A credible comparison can favor continuing; do not invent a competitor or switch merely to demonstrate reconsideration.
 
@@ -164,9 +173,14 @@ Compare the recommendation with continuing current work and the strongest credib
 Consider user benefit and its evidenced or estimated scale, plus delivery, verification, and coordination costs.
 A correct finding, novelty, or completed batch does not alone justify priority; a scout report is not the requested outcome.
 Keep missing evidence distinct from demonstrated failure, and do not assume an investigation will justify follow-up work.
-If uncertain benefit or cost determines the choice, use the smallest check that distinguishes the alternatives.
-Stop deliberating when evidence supports a bounded authorized action or identifies a concrete blocker; impose no fixed lookup limit.
-The parent retains selection authority and explains the decisive comparison without narrating a routine checklist.
+For a substantive recommendation, state why the chosen action beats the strongest available alternative.
+Name the deciding difference in expected contribution or total remaining cost, and the evidence or assumption supporting it.
+General relevance to the goal does not establish priority.
+Keep this explanation within the recommendation, not a separate reflection report or a checklist for routine actions.
+If the deciding difference remains uncertain, use the smallest useful check or make a provisional choice with the uncertainty stated.
+Use existing evidence and reasonable estimates; do not commission another investigation merely to make every ranking conclusive.
+Stop deliberating when evidence supports an authorized action or identifies a concrete blocker; impose no fixed lookup limit.
+The parent retains selection authority.
 Finding no better alternative is a successful result: continue when the existing approach wins.
 
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.

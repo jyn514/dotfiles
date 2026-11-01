@@ -118,6 +118,10 @@ Use the [measurement-scope check](../performance-investigation/references/measur
 Inspect returned work against the governing requirement and agreed boundaries, not only the worker's local criteria.
 For implementation, inspect the actual diff and acceptance evidence from the required checks through the intended interfaces.
 For research and review, inspect the supporting sources or raw evidence and distinguish observation from inference.
+When a scout changes its recommendation after a parent suggestion, identify the new evidence or corrected premise supporting the change.
+Agreement or adoption of the parent's descriptions is not itself comparative evidence.
+If the reversal drops a supported advantage of the alternative or assumes a useful outcome for the preferred action, correct the comparison before accepting the ranking.
+Use [work-selection](../work-selection/SKILL.md#choose-the-next-action) for the deciding comparison, not another scouting round by default.
 Use [review evidence standards](../references/review-evidence.md) to inspect underlying evidence, decide what needs rerunning, and report local-only, integrated, or blocked results.
 Consulting those standards does not start the full audit.
 Make parent verification address the remaining uncertainty: inspect the changed work and applicability of existing evidence, rather than repeat the worker's investigation.

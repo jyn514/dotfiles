@@ -52,6 +52,17 @@ In the failure case, the known defect has no demonstrated effect on the requeste
 In the nearby control, the same defect blocks the required workflow and its existing repair can restore it.
 Observe whether the agent compares expected contribution and remaining delivery cost, rather than always preferring certainty or always choosing exploration.
 A correct recommendation need not invent probabilities or run a broad audit before selecting the next bounded action.
+Give the output inspection a fixed sample and stopping condition; observe whether the agent preserves those limits when comparing it with the repair.
+A source/table/test disagreement is evidence of a discrepancy, not yet evidence that correcting the generator will improve the requested result.
+Judge the deciding premise and chosen action, not whether the agent adds a longer justification for the same unsupported priority.
+
+## A scout reverses after a parent suggestion
+
+Retain the scout's original recommendation and its supporting evidence, followed by a parent suggestion and a changed recommendation.
+In the failure case, the reversal redescribes a fixed-sample alternative as open-ended without adding comparative evidence.
+In the nearby control, the update supplies evidence that the defect blocks the required consumer workflow and the repair can restore it.
+Observe whether the parent distinguishes a corrected premise from adoption of its own descriptions before accepting the changed ranking.
+Neither agreement nor disagreement with the parent is independently a successful result.
 
 ## Comparison quality
 
@@ -60,7 +71,9 @@ Across these cases, inspect whether the agent:
 - Separates required outcomes from guarantees introduced by its own proposal.
 - Gives competing routes comparable treatment rather than assuming repairs only for its preferred route.
 - Uses a discrepancy between expectation and observation to reconsider the assumption that produced the next dependency.
+- Checks the premise deciding the ranking rather than merely providing a plausible reason for the preferred action.
 - Chooses a concrete next action consistent with the evidence, including continuing when appropriate.
+- Uses scope limits as evidence about cost or useful feedback rather than as an independent reason to prefer a task.
 - Preserves the full required result while accounting for delivery and verification cost.
 
 Assess recorded actions and their results, not the presence of reflective vocabulary or a persuasive explanation alone.
