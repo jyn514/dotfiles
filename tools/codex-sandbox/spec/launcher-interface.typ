@@ -52,6 +52,7 @@ and the tool backend executes arbitrary model-selected filesystem and process
 operations inside the guest during normal operation. Host extensions follow the
 #link("proxy-design.typ")[extension authority contract]; guest tool routing is
 guaranteed during normal operation only.
+Human `/host` can additionally expose Guardian-reviewed `host_bash` without changing the guest attachment or ordinary tool routing, under that extension authority contract.
 Installation alone does not authorize a host handler. Host code and executable
 configuration must remain inaccessible to guest writes through every mount alias.
 

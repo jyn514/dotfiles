@@ -24,7 +24,7 @@ export class CodexClient {
         const message = JSON.parse(line);
         if (message.method !== undefined) {
           if (message.id !== undefined) this.send({ id: message.id,
-            error: { code: -32601, message: "importer does not implement server requests" } });
+            error: { code: -32601, message: "client does not implement server requests" } });
           return;
         }
         const pending = this.pending.get(message.id);
@@ -36,7 +36,9 @@ export class CodexClient {
         else pending.reject(new Error("Codex returned a response without a result"));
       } catch (error) { this.fail(error); }
     });
-    this.abort = () => { this.fail(signal.reason); this.process.kill("SIGTERM"); };
+    // EOF lets app-server cancel reviews and terminate command process groups.
+    // Killing the server first can strand descendants; close() bounds shutdown.
+    this.abort = () => { this.fail(signal.reason); this.process.stdin.end(); };
     signal?.addEventListener("abort", this.abort, { once: true });
   }
 
@@ -51,14 +53,16 @@ export class CodexClient {
 
   send(message) { this.process.stdin.write(JSON.stringify(message) + "\n"); }
 
-  request(method, params) {
+  // Most importer calls are short. Review and command execution can supply their
+  // own deadline without changing the default for independently deployed callers.
+  request(method, params, { timeoutMs = 30000 } = {}) {
     if (this.failure) return Promise.reject(this.failure);
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Codex did not answer ${method} within 30 seconds`));
-      }, 30000);
+        reject(new Error(`Codex did not answer ${method} within ${timeoutMs / 1000} seconds`));
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.send({ id, method, params });
     });

@@ -108,6 +108,23 @@ hooks can consume model-writable data and must retain that data's authority.
    or authority. No arbitrary extension compatibility is promised.],
 )
 
+Human `/host` additionally admits `host_bash` alongside guest tools for the invoking Pi session.
+The extension submits the active conversation, exact host Bash command, and requested permissions for native exec-policy checking through `thread/guardianReview`.
+Default host commands execute through `command/exec` in the review thread's selected workspace sandbox; policy-skipped commands do not invoke Guardian.
+Both native permission resolutions stay bound to Pi's host workspace; a model-selected execution directory changes only the shell directory and cannot widen writable roots.
+Explicit command-rule prompts can require Guardian review without removing that sandbox.
+Only an explicit `require_escalated` request, allowed by Guardian or exec policy, permits full-access host execution; review errors, denials, and review cancellation prevent starting it.
+Failed sandboxed commands are returned without an automatic escalation or retry.
+Cancelling an executing host command interrupts it without undoing prior effects.
+The temporary review thread disables Codex hooks and verifies its hook inventory before review so hooks cannot rewrite the assessed command.
+New managed child processes inherit the parent's current selection and fixed writable host workspace, subject to their native tool allowlists.
+Each child command gets its own policy decision; approval decisions are not inherited.
+Child review retains a selected root-parent human branch, read through a verified private snapshot, while child task prompts remain agent assignments rather than human authorization.
+Missing inherited human context prevents execution instead of promoting task text.
+Reload, session replacement, and `/host off` revoke the invoking process's capability; existing child processes keep their own selection.
+This is human-selected host execution, not an additional guest proxy or an operating-system sandbox for approved commands.
+See #link("../../../config/pi-agent/pi-extensions/host-bash.md")[host-command usage and verification].
+
 Host-loaded Pi, extensions, dependencies, and executable configuration must come
 from a host-controlled installation inaccessible to guest writes through any
 mount alias. The current writable npm/Git package stores and a writable dotfiles

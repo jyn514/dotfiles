@@ -581,3 +581,8 @@ queue nothing. Invalid saved snapshots trigger a notification rather than
 restoring malformed questions. If saving after dispatch fails, the answer is not
 offered for duplicate submission; a notification warns reload may restore that
 question. Asynchronous delivery remains Pi's responsibility.
+
+## Host commands
+
+[`host-bash.ts`](host-bash.md) adds `/host` to enable Guardian-reviewed `host_bash` alongside guest tools.
+It requires Codex's experimental external-review API; the linked guide covers temporary binaries, hook isolation, and the opt-in smoke test.

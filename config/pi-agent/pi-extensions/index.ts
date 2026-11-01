@@ -6,6 +6,7 @@ import compactSession from "./compact-session.ts";
 import currentDate from "./current-date.ts";
 import detailedReasoning from "./detailed-reasoning.ts";
 import footer from "./footer.ts";
+import hostBash from "./host-bash.ts";
 import hostOS from "./host-os.ts";
 import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
 import instructionIncludes from "./pi-instruction-includes.ts";
@@ -33,6 +34,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   currentDate(pi);
   detailedReasoning(pi);
   footer(pi);
+  hostBash(pi);
   hostOS(pi);
   skillReferenceAutocomplete(pi);
   lunaCompaction(pi);

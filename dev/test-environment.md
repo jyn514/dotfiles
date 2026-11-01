@@ -38,6 +38,7 @@ Nested wrapper calls use the inner private HOME.
 The wrapper clears inherited `JJ_CONFIG` so Jujutsu reads user configuration from the private HOME and XDG directories.
 It also removes inherited sandbox credentials, JJ workspace routing and authority projections, Pi session selection, and personal configuration paths before starting the child.
 Guest tool transports (`CODEX_SANDBOX_TOOL_*`), Pi attachment leases and resource mappings, guest directory/handoff selectors, and `PI_SUBAGENT_PI_BIN` are removed too.
+The inherited `PI_HOST_BASH_WORKSPACE` and `PI_HOST_BASH_AUTHORITY_CONTEXT` selectors are removed so test children cannot acquire host execution or read human context from a live parent.
 Explicit socket and readiness paths can point outside HOME, so changing HOME alone does not isolate them.
 Fixtures must create and supply their own disposable attachments after the wrapper boundary; nested wrappers remove those attachments again.
 Unrelated runtime controls, Docker gateway routing, and `DOTFILES_TEST_*` overrides remain available.
