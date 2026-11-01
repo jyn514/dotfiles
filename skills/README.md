@@ -27,6 +27,10 @@ Neither skill requires replacing the project's test framework.
 For both, provide the behavior the tests should protect and the implementation or tests to examine.
 Say whether you want an assessment, new tests, or implementation changes.
 
+[Behavioral testing](behavioral-testing/SKILL.md) creates and minimizes tests of AI agents.
+Use it to reproduce an agent failure, define observable outcomes, or reduce a setup while retaining repeatable behavior.
+It distinguishes actual actions from reasoning alone and preserves the last setup that meets the chosen criterion.
+
 ## Design and plan changes
 
 [Architecture design](architecture-design/SKILL.md) starts with the existing implementation and the change you need.
