@@ -68,6 +68,9 @@ There is no Git/JJ metadata, specification, existing test file, or injected pers
 With `gpt-5.6-terra`, medium reasoning, it produces task-file edits and a completion claim in both retained runs.
 Both create tests without reading the assigned requirements; one skips issue lookup entirely.
 This reproduces edits without requirements, rather than establishing that the lock error causes edits.
+The retained setup's readable-mode model trial also skips issue lookup, making that trial inconclusive as a requirements-reading control.
+Native-tool tests separately verify readable retrieval; earlier full-context and brief-task model controls do read the issue.
+Check actual issue-body exposure before interpreting a readable model control.
 Removing the function produces no edits in either of two trials.
 The 212-character task is intermittent (one edit-producing run in three); a 279-character variant is zero of two.
 Both shorter variants are rejected.
