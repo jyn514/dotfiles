@@ -5,6 +5,7 @@ import configparser
 import json
 import os
 import plistlib
+import re
 import signal
 import shutil
 import subprocess
@@ -283,6 +284,20 @@ def glide_desktop(dry_run: bool) -> str | None:
     return desktop.name
 
 
+def desktop_exec_argument(value: str) -> str:
+    # Generic xdg-open retains quotes on non-executable arguments. Omit optional
+    # quoting for simple paths while retaining Desktop Entry escaping elsewhere.
+    if re.fullmatch(r"[A-Za-z0-9_./:=+@,-]+", value):
+        return value
+    escaped = value.replace("\\", "\\\\\\\\")
+    for character in ('"', '$', '`'):
+        escaped = escaped.replace(character, "\\\\" + character)
+    escaped = escaped.replace("%", "%%")
+    for character, replacement in (("\n", "\\n"), ("\t", "\\t"), ("\r", "\\r")):
+        escaped = escaped.replace(character, replacement)
+    return f'"{escaped}"'
+
+
 def glide_mail_desktop(dry_run: bool) -> str:
     data_home = user_data_home()
     destination = data_home / "applications/fastmail-glide.desktop"
@@ -291,21 +306,43 @@ def glide_mail_desktop(dry_run: bool) -> str:
         launcher.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "libexec/setup/open_fastmail.py", launcher)
         launcher.chmod(0o755)
-        # Desktop values are unescaped before Exec arguments are unquoted.
-        escaped = str(launcher).replace("\\", "\\\\\\\\")
-        for character in ('"', '$', '`'):
-            escaped = escaped.replace(character, "\\\\" + character)
-        escaped = escaped.replace("%", "%%")
-        for character, replacement in (("\n", "\\n"), ("\t", "\\t"), ("\r", "\\r")):
-            escaped = escaped.replace(character, replacement)
+        escaped = desktop_exec_argument(str(launcher))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=Fastmail in Glide\n"
             "NoDisplay=true\n"
-            f'Exec="{escaped}" %u\n'
+            f"Exec={escaped} %u\n"
             f"MimeType={MAIL_SCHEME};\n"
+        )
+        if command_exists("update-desktop-database"):
+            run(["update-desktop-database", str(destination.parent)])
+    return destination.name
+
+
+def glide_sms_desktop(dry_run: bool) -> str:
+    data_home = user_data_home()
+    destination = data_home / "applications/google-voice-glide.desktop"
+    if not dry_run:
+        launcher = data_home / "dotfiles/open-google-voice"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        source = ROOT / "libexec/setup/open_google_voice.py"
+        if launcher.is_symlink() and launcher.resolve() == source:
+            pass
+        elif launcher.exists() or launcher.is_symlink():
+            raise RuntimeError(f"refusing to overwrite unmanaged launcher: {launcher}")
+        else:
+            launcher.symlink_to(source)
+        escaped = desktop_exec_argument(str(launcher))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Google Voice in Glide\n"
+            "NoDisplay=true\n"
+            f"Exec=python3 {escaped} %u\n"
+            "MimeType=x-scheme-handler/sms;x-scheme-handler/smsto;\n"
         )
         if command_exists("update-desktop-database"):
             run(["update-desktop-database", str(destination.parent)])
@@ -377,6 +414,13 @@ def linux_setup(policy: dict, dry_run: bool) -> None:
             print(f"Mail scheme default: {mail_handler}")
         else:
             run(["xdg-mime", "default", mail_handler, MAIL_SCHEME])
+        sms_handler = glide_sms_desktop(dry_run)
+        for scheme in ("sms", "smsto"):
+            mime = f"x-scheme-handler/{scheme}"
+            if dry_run:
+                print(f"{scheme} scheme default: {sms_handler}")
+            else:
+                run(["xdg-mime", "default", sms_handler, mime])
 
 
 def export_launch_services(path: Path) -> bool:

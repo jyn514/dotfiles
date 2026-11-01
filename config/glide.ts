@@ -31,6 +31,7 @@ declare global {
 }
 
 glide.g.mapleader = ","
+glide.include("glide-sms.ts");
 glide.buf.keymaps.set("normal", ",.", async() => {
   await glide.commandline.show();
 });

@@ -16,6 +16,22 @@ matching the group's glob without adding manifest entries. The tmux script
 sources are symlinks to their implementations in `libexec/tmux/` and `bin/`;
 edit those implementations, not copies.
 
+With Glide installed, `./setup mimetypes` also registers Google Voice for `sms:` and `smsto:` links on Linux.
+The handler parses [RFC 5724](https://www.rfc-editor.org/rfc/rfc5724.html) recipient lists and a percent-encoded UTF-8 `body`.
+It also accepts recipientless `sms:`, `smsto:`, and Apple's `sms://open?addresses=NUMBER,NUMBER&body=TEXT` form.
+Unknown SMS fields are ignored; duplicate bodies and malformed encoding are rejected.
+It copies a supplied body with the existing `copy` command before opening Google Voice in the first Google account (`/u/0`).
+Clipboard failure warns and still tries prefill; links without a body preserve the clipboard.
+The [Glide script](glide-sms.ts) starts a new message, confirms each number in order, and fills an empty message field without sending.
+It preserves local phone contexts, extensions, ISDN subaddresses, and unknown mandatory telephone parameters for manual recipient selection.
+It does not guess a global number or discard those parameters to prefill a different recipient.
+Recipientless links open the To field; a supplied body remains on the clipboard for pasting after selecting recipients.
+After prefilling, it waits for 400 ms without compose-form mutations or focus changes before focusing the body once, with the cursor at the end.
+The wait stops after five seconds and cancels if you click or type; it enters insert mode only if that tab is still active.
+It stops on missing or ambiguous controls and preserves existing draft text; use the copied body to paste manually after checking the recipient.
+This depends on Google Voice's English UI and current form structure, rather than a supported SMS compose API.
+Reload Glide's configuration after installing the script.
+
 ## Mise
 
 `mise.toml` sets `all_compile = false` on every platform so Alpine and NixOS do not implicitly force source builds.
