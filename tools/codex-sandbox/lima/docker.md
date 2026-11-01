@@ -152,6 +152,21 @@ python3 tools/codex-sandbox/lima/docker_host.py stop
 python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
+On Linux, `./setup services` installs login startup for each provisioned Docker VM.
+VMs without provisioning state are skipped; run it again after provisioning another VM.
+To run only the Docker autostart installer:
+
+```sh
+python3 tools/codex-sandbox/lima/install-autostart.py
+```
+
+The installer enables and starts `sandbox-host-docker.service` and `agent-build-docker.service` in user systemd when their VMs are provisioned.
+They invoke the existing lifecycle controllers independently, preserving UID mapping and refreshing nested-build connection settings.
+The services record this checkout and the current Python and Lima paths; keep them available while enabled.
+They start VMs only; sandbox sessions still start through Pi.
+Inspect failures with `journalctl --user -u sandbox-host-docker -u agent-build-docker`.
+Disable login startup with `systemctl --user disable sandbox-host-docker.service agent-build-docker.service`; this leaves running VMs alone.
+
 ## Image and build-cache garbage collection
 
 New VMs and `upgrade` configure BuildKit's automatic garbage collection with a 10 GB cache budget.

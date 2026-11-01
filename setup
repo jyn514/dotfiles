@@ -382,6 +382,7 @@ setup_services () {
 		systemctl --user daemon-reload || return
 		systemctl --user enable tmux.service || return
 		echo 'tmux enabled for future boots; if no server is running, start it with systemctl --user start tmux.service'
+		python3 tools/codex-sandbox/lima/install-autostart.py || return
 	fi
 	python3 libexec/setup/setup_obsidian_sync.py || return
 	# Configure Dashboard policy only; it remains manually started, not a login service.

@@ -54,6 +54,7 @@ rootless engine before publishing its current SSH port. Restart the sandbox
 after a port change. Setup reruns start for a ready provision; it does not
 upgrade its immutable installation snapshot.
 `doctor` allows 30 seconds for its checks and fails immediately if another lifecycle operation holds its lock.
+For Linux login startup of both Docker VMs, use the [infrastructure autostart installer](../codex-sandbox/lima/docker.md).
 For QEMU VMs, it checks execution state through QMP before contacting the guest.
 Lima can report `Running` while QEMU is paused after a disk write failure.
 If it reports `io-error` with `nospace`, follow [resume after disk-space exhaustion](../codex-sandbox/lima/docker.md#resume-a-qemu-vm-after-disk-space-exhaustion).

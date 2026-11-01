@@ -294,7 +294,11 @@ class DotfileSetupTests(unittest.TestCase):
             "id": "echo test-user\n",
             "loginctl": 'echo "loginctl $*" >> "$HOME/service-commands"\n',
             "systemctl": 'echo "systemctl $*" >> "$HOME/service-commands"\n',
-            "python3": 'case "$1" in libexec/setup/setup_obsidian_sync.py|libexec/setup/setup_dashboard.py) exit 0;; esac\n'
+            "python3": 'case "$1" in\n'
+                       'tools/codex-sandbox/lima/install-autostart.py)\n'
+                       '  echo "sandbox autostart" >> "$HOME/service-commands"\n'
+                       f'  exit {1 if fail == "autostart" else 0};;\n'
+                       'libexec/setup/setup_obsidian_sync.py|libexec/setup/setup_dashboard.py) exit 0;; esac\n'
                        f'exec {python} "$@"\n',
         }.items():
             if name == fail:
@@ -317,7 +321,16 @@ class DotfileSetupTests(unittest.TestCase):
             "loginctl enable-linger test-user",
             "systemctl --user daemon-reload",
             "systemctl --user enable tmux.service",
+            "sandbox autostart",
         ] * 2, log.read_text().splitlines())
+
+    def test_services_reports_sandbox_autostart_failure(self) -> None:
+        log = self.service_commands(fail="autostart")
+
+        result = self.run_setup("services")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("sandbox autostart", log.read_text().splitlines()[-1])
 
     def test_services_stops_when_lingering_cannot_be_enabled(self) -> None:
         log = self.service_commands(fail="loginctl")
