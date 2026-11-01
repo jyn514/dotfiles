@@ -14,7 +14,13 @@ Shared internal implementations belong in `libexec/`, maintenance commands in
 `dev/`, and cross-cutting tests in `tests/<feature>/`. Configuration belongs in
 `config/`, system files in `global/`, sourced support and static assets in `lib/`,
 vendored code in `vendor/`, and package manifests in `install/`.
-Setup entry points are `setup`, `setup.ps1`, and `track`.
+
+Choose setup guidance by task:
+
+- Change Unix setup: [setup commands](../README.md#setup-commands) and [their implementation](../setup).
+- Change Windows setup: [PowerShell setup](../setup.ps1).
+- Add installed dotfiles: [configuration layout](../config/README.md#grouped-sources) and [`track`](../track).
+- Change user services: [service setup](../README.md#user-services) and [`setup_services`](../setup#L381).
 
 Command wrappers use the installed `realpath` to locate support beside the script target rather than implement symlink walks.
 Pass the original `$0`, not that target, to `shim_resolve` in `lib/shell/lib.sh` so PATH cleanup removes the invoked wrapper directory.

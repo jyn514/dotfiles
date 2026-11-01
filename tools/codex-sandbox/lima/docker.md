@@ -145,6 +145,8 @@ python3 tools/codex-sandbox/sandbox_credentials.py --provider lima-docker prepar
 python3 tools/codex-sandbox/sandbox_credentials.py --provider lima-docker invalidate
 ```
 
+## VM lifecycle and login startup
+
 Stop or resume this VM with:
 
 ```sh

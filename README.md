@@ -24,7 +24,7 @@ user services. It refreshes configuration links and, on Linux, enables lingering
 and tmux startup for future boots without disturbing running sessions. Install
 tmux first with the package setup. On Linux and macOS it also configures
 [headless Obsidian Sync](config/README.md#headless-obsidian-sync).
-On Linux it also enables [Docker VM autostart](tools/codex-sandbox/lima/docker.md) for provisioned sandbox and nested-build VMs.
+On Linux it also enables [Docker VM autostart](tools/codex-sandbox/lima/docker.md#vm-lifecycle-and-login-startup) for provisioned sandbox and nested-build VMs.
 Backup and sandbox provisioning retain their separate setup commands;
 `./setup all` does not enable user services.
 
