@@ -15,7 +15,13 @@ Use the procedure below for constructing the fixture and, when requested, minimi
 
 ## Select a behavioral trial
 
-Start with the decision the evaluation should inform, then shortlist cases that exercise it.
+Start with the decision the evaluation should inform, then identify the requested kind of trial before designing its fixture:
+
+- **Historical reproduction:** follow the historical replay procedure in the trial protocol to establish the original baseline before simplifying it.
+- **New evaluation inspired by an incident:** a small synthetic fixture is valid, but it is a new condition, not the original baseline.
+- **Minimization:** reduce an already demonstrated reproducer using §4.
+
+Shortlist cases that exercise the decision.
 Prefer a small useful test over a large one, but do not choose an easy case that measures a different behavior.
 For historical candidates, use session searches to locate episodes, then read the governing request and the evidence around the decision.
 Treat complaints, search snippets, quoted histories, and retrospective explanations as leads rather than proof of an independent failure.
@@ -40,14 +46,15 @@ Updating inherited literal assertions does not establish that the agent would in
 Removing the old suite can create a useful derived trial; record that adaptation rather than claiming it was the historical starting state.
 
 Rank candidates by relevance, strength of evidence, clarity of scoring, and the cost of reaching the decisive action now.
-Prefer local files, small callable interfaces, and controlled command results when they preserve the relevant choice.
+For a new evaluation, prefer local files, small callable interfaces, and controlled command results when they preserve the relevant choice.
 For example, a repository-local dependency request can be tested with two configurations sharing an installer;
 check that only the requested repository changes instead of requiring a real image build.
+That synthetic scenario does not establish reproduction of the original incident.
 Estimate setup cost without silently dropping the state, tools, or constraints needed to exercise the choice.
 Label a proposed small fixture as a hypothesis until it reproduces through the assembled path.
 
 Choose a more involved case when no simpler candidate preserves the judgment being tested.
-Do not turn access to a large historical environment into a prerequisite when a smaller faithful setup can expose the same action.
+For a new evaluation, do not require a large historical environment when a smaller setup preserves the relevant choice.
 Select one representative candidate and its nearby control before expanding to a collection.
 Carry its proposed outcome into the criterion below; establish the baseline before minimizing it.
 
@@ -82,6 +89,11 @@ Recover the governing instructions, relevant task state, attempted operation, an
 Session readers can omit metadata or tool-result bodies; inspect the underlying record when those omissions affect fidelity.
 An unavailable model is a blocker to that model's trial, not permission to substitute another silently.
 Record an approved substitution as a different condition.
+
+Preserve uncertainty and information order when they define the choice being tested.
+Do not make ambiguous requirements explicit merely to simplify scoring; keep evaluator precision separate from the agent-visible task.
+Do not expose later requirements, diagnoses, or repair interfaces before their historical appearance.
+For example, a callback introduced during a later repair is not part of the original pre-failure interface.
 
 Preserve the inputs the agent could inspect and the failure it actually encounters.
 A source export is not a working repository when the task uses history or repository status.
@@ -150,6 +162,9 @@ Provide a runnable entry point and fixture, with model/settings, effective instr
 Preserve the baseline, controls, reduction lineage, valid/invalid status, raw action evidence, and observed counts.
 Record final retained changes separately from transient edits and completion claims.
 Keep failures in the results rather than retaining only successful samples.
+Distinguish historical observations, fresh trials of the original baseline, and derived-fixture trials.
+A non-reproduction in a reconstruction establishes only that condition's observed outcome, not whether the original baseline reproduces.
+Do not report an untested original baseline as a failed reproduction.
 
 For minimization, report the smallest setup that meets the chosen criterion and the cut that stops reproducing or becomes intermittent.
 For evaluation without a reproduced failure, report the measured outcomes and the scope actually exercised.
