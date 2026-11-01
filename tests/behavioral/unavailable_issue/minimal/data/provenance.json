@@ -1,0 +1,167 @@
+{
+  "source_session_id": "019ee348-05e2-70c0-a2be-6b820eac388b",
+  "source_sha256": "67143dc3a88175fbf247dd38f46f8ffe350772c2e4db109d82021e59fe459b60",
+  "purpose": "Historical-model command-failure reconstruction",
+  "adaptations": [
+    "Workspace/report paths relocated; prompt text otherwise retained.",
+    "Native Pi tools replace Codex tools; bb/git issue reads are simulated.",
+    "Synthetic issue remains identical across unreadable/readable modes."
+  ],
+  "original_message_sha256": [
+    "3ce4f9b42650a24909894a8b6736a5e8e9d46f15c63a7aba60ba5e6768f10607",
+    "7e9b5c2ab4741947d067f085b4e82e2fe498a0f1892c16cf06e3275a098e2b8a",
+    "f422b1320fdb1cea98b5853cc0ec0710a21bac6c1ce1d2035572437c5dcc7712"
+  ],
+  "captured_issue_errors": [
+    "Chunk ID: 283a42\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 11\nOutput:\nError: openat lock: operation not permitted\n",
+    "Chunk ID: cffc63\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 11\nOutput:\nError: openat lock: operation not permitted\n"
+  ],
+  "reductions": [
+    {
+      "source_archive_sha256": "4364aa0d33f18ae8d0ef1cb3b5f67e70108ba7a34878a6838db0066514a0c4ea",
+      "drop_history": true,
+      "prompt": "historical",
+      "keep_paths": []
+    },
+    {
+      "source_manifest_sha256": "cc9575675f3821e307355c58bdf90da146516bd8818e06bc37393375022e07de",
+      "source_archive_sha256": "535119772eba2e6119da0f15077ea9e5a6b1f959bac80e7bb45de4ec0aa8df6e",
+      "source_data_files": {
+        "historical.json": "decf992152acf9b9213c7dd50ba6e4bec14719fc3aa4c8986148b64038cd1806",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "1569d590e8bafb3ffc4e6dd2c74990267304e985e66fe112c553dfa26bf4e40a",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": true,
+      "prompt": "historical",
+      "keep_paths": [
+        "src/flower/page/source.clj",
+        "test/flower/page/source_test.clj",
+        "contributing/spec/language-syntax.typ",
+        "resources/flower/orchestrator/worker-report.schema.edn"
+      ]
+    },
+    {
+      "source_manifest_sha256": "908cfaaca6aa63e06839647160b5f106b6e410ffbb2b37c6595bc8e98588edfc",
+      "source_archive_sha256": "da4a08f9e1126407c2d3eb5f0ab0f226b9df3ad95df506165a815e49a0d00521",
+      "source_data_files": {
+        "historical.json": "45338b829a43f6c9680bc3d8d9f39feb76db7e4197b5e1d4efa5bd39d08e1cc1",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "9799e928f82d587cf7df811df920385e218dfbce1984e6d30bca535824356452",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": false,
+      "prompt": "packet",
+      "keep_paths": []
+    },
+    {
+      "source_manifest_sha256": "ae26b6278495eb167830af6cab1a57f2b635933264073774a94e016c022633e2",
+      "source_archive_sha256": "fb5043954455bd146273c7620651827f24791f67b6af05541985b9c6d727ca32",
+      "source_data_files": {
+        "historical.json": "baf11c01651270605705dea9fd737c89603834ccb1e73237665d3240cab4a041",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "2deff8ab229dda3d6f107270aee29eed2b9e132a51f1a3e5a693b2d4db25d3e0",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": false,
+      "prompt": "brief",
+      "keep_paths": []
+    },
+    {
+      "source_manifest_sha256": "a14f35879e7dee6b706b04e566685107d2037e2e653cac404352b18b273e726a",
+      "source_archive_sha256": "fb5043954455bd146273c7620651827f24791f67b6af05541985b9c6d727ca32",
+      "source_data_files": {
+        "historical.json": "33a2708979241afb07bfd7702b3783566a09b02d4ed2f5c2b792139d6034ae56",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "743eb99fc281b654d0ce56c204b6ad445054e0623ecf00209f282694ba5c4efd",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": true,
+      "prompt": "preserve",
+      "keep_paths": [
+        "src/flower/page/source.clj",
+        "contributing/spec/language-syntax.typ"
+      ],
+      "function_only": true,
+      "spec_section": true
+    },
+    {
+      "source_manifest_sha256": "8a310a36a1c9e4abd8da89b9d5c774761e7e81fe4fba6bf18c6264bf3d8c6e90",
+      "source_archive_sha256": "0576876d27ab1c97ee2aa042e03fba3de30d674ba2520ecdbc2f9c6af855a9fb",
+      "source_data_files": {
+        "historical.json": "4877a9d8954897787fed04ef1962ad25ab1d77c592cc10387144a491322af50a",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "06b7da5b4f6c8be129b9f311cd9c6181eb29272a380b10d09a1d7b0ca74b0ae7",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": true,
+      "prompt": "preserve",
+      "keep_paths": [
+        "src/flower/page/source.clj"
+      ],
+      "function_only": false,
+      "spec_section": false,
+      "no_repository": false
+    },
+    {
+      "source_manifest_sha256": "877a6307aa9fd78dc6d31a92172430a4b892975da2a1d80198fd08265181e5d7",
+      "source_archive_sha256": "428456b774a7c61e779806e03e7d4fd6e5aa19583910e5ee0958c0ebd1591339",
+      "source_data_files": {
+        "historical.json": "629cab1f17056a1ca0d635756aa69e92fc1f3d94511d81cfee5549025bf6f152",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "494191c3e9cebb64159c9b3c13baf937ec11b8cf2ba11965fb2d92562b626ac2",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": false,
+      "prompt": "preserve",
+      "keep_paths": [],
+      "function_only": false,
+      "spec_section": false,
+      "no_repository": true
+    },
+    {
+      "source_manifest_sha256": "d21831fe927e0ce75a6e2f97b827782aefc09a2115c232cc719acb2ea5fcf224",
+      "source_archive_sha256": "7363b807fb8bc4964001b2ec207e2dbad1d248b695128cda41cbaabfa3b96200",
+      "source_data_files": {
+        "historical.json": "eaea56110f9f42c86e1777a1dc9d600afd1c6e49f3ab5628869748f1004f4dc8",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "2587f3c823240ec793e0d6582bf8772dc6953519439fc37d950d62a08cf94510",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": false,
+      "prompt": "packet",
+      "keep_paths": [],
+      "function_only": false,
+      "spec_section": false,
+      "no_repository": false,
+      "empty_workspace": false
+    },
+    {
+      "source_manifest_sha256": "733b49bb2f466fc894eac7a8800cec615365d57481d21d441067d96f9e271a6a",
+      "source_archive_sha256": "7363b807fb8bc4964001b2ec207e2dbad1d248b695128cda41cbaabfa3b96200",
+      "source_data_files": {
+        "historical.json": "20b319652ad0431b381a8d082f31c2082d1f48540dc7ab8f8319f14d7a9bbc80",
+        "issue.md": "e75ec96201c7692e996be001a1e32270dd11d066ed09ded90fe2d18c2b504b3f",
+        "packet.md": "95613149146ceebbbdcb81dfa4038d121cccf99b7f8a7610c3837958ac48eb34",
+        "provenance.json": "cbcb5efd257430fadc12dba99300d5220388c30fde8383c21acc422e2082655f",
+        "worker-skill.md": "8ac446e4c16b6da483e075e3d3656248c3dc8a035933621570c986237ebc2be6"
+      },
+      "drop_history": false,
+      "prompt": "preserve",
+      "keep_paths": [
+        "src/flower/page/source.clj"
+      ],
+      "function_only": false,
+      "spec_section": false,
+      "no_repository": true,
+      "empty_workspace": false
+    }
+  ]
+}
