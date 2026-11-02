@@ -62,6 +62,14 @@ Use disposable resources for state those actions can modify.
 A conversation fork preserves messages, not filesystem or runtime state.
 Relevant inputs can include current source files, unsolicited messages, and automatic context injection.
 
+### Choose the historical cut
+
+Trace the failure backward to the earliest unsupported inference or commitment the test asks a fresh continuation to make.
+Cut before that choice while retaining the feedback needed to reach it; the last user message is not automatically the right cut.
+Include preceding diagnostic results, user corrections, and recorded compaction when they occur before the chosen judgment.
+Do not include the original faulty plan or action when testing whether the continuation independently chooses it.
+A later-stage trial of carrying out an existing plan measures follow-through, not independent choice; label it separately.
+
 ### Choose the state and handoff method for the tested behavior
 
 Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
@@ -69,9 +77,15 @@ A handoff trial does not establish how the original agent would continue or whet
 If the original session is unavailable or cannot be resumed, report that limitation and label reconstructed inputs as an approximation.
 
 Neither history preservation nor mutation isolation by itself requires reconstructing the historical filesystem.
-Use current task state and report differences that could change the decision, or restore the relevant historical state.
-Choose according to the comparison question; these are alternatives, not sequential steps.
-Control relevant differences or disclose their limits on the comparison.
+Start with the closest available runnable state that preserves governing requirements and the evidence available at the chosen judgment.
+Restore relevant historical state when the comparison question requires it; otherwise disclose differences and their possible effects.
+For failure reproduction, try this condition before recovering unrelated environmental details.
+If a condition fails its reproduction check, use the trace to identify a concrete missing input or execution difference.
+Restore fidelity there if another reproduction attempt is warranted.
+Freeze each changed condition and report its counts separately.
+Once the failure meets the chosen repeatability check, stop fidelity recovery.
+Proceed to the requested comparison or minimization.
+If no supported, recoverable fidelity increment remains, report the reproduction limit rather than repeat unchanged trials just to obtain a failure.
 A bounded revised-only replay may use recorded earlier outputs for comparison; report it as a quality observation, not a controlled experiment.
 Do not block that replay solely because a fresh baseline is unavailable.
 

@@ -63,6 +63,9 @@ Carry its proposed outcome into the criterion below; establish the baseline befo
 Recover the request and decisive evidence before choosing the test.
 Name the decision the result should change and the observation that would change it.
 Define the failure in terms of inspectable actions or outputs.
+Set the observation endpoint at the judgment being tested, not at conversation completion.
+Capture enough evidence to score that judgment, then stop; do not require downstream implementation unless the criterion tests it.
+A run that stops before enough evidence exists is inconclusive; a later timeout does not erase an already validly observed judgment.
 
 Separate outcomes that can occur independently.
 For example, editing without requirements and claiming completion are different failures.
@@ -84,7 +87,8 @@ Reuse native model access, authentication, tools, and subagents where available.
 Do not introduce guest credentials, a new broker, or a replacement harness before checking what the existing route supports.
 Keep model calls and mutations within the authorized scope and use owned disposable state.
 
-For a historical case, recover the actual model and reasoning setting from recorded metadata rather than current defaults.
+For a historical case, use the trial protocol to choose the cut and adjust state fidelity.
+Recover the actual model and reasoning setting from recorded metadata rather than current defaults.
 Recover the governing instructions, relevant task state, attempted operation, and returned error from raw evidence.
 Session readers can omit metadata or tool-result bodies; inspect the underlying record when those omissions affect fidelity.
 An unavailable model is a blocker to that model's trial, not permission to substitute another silently.
@@ -113,7 +117,7 @@ For a file-editing test, verify the actual workspace and permission boundary thr
 An isolated helper test or container preflight does not establish model behavior through the assembled harness.
 
 Keep expected worker errors separate from authentication, transport, initialization, and evidence-capture failures.
-Validate each run against its declared fixture before scoring behavior.
+Validate each run against its declared fixture through the observation endpoint before scoring behavior.
 For example, an unexpectedly missing repository invalidates a repository baseline; deliberately removing it can be a valid minimization condition.
 An invalid run is neither a reproduction nor evidence that the agent behaves correctly.
 Retain its failure evidence and fix the infrastructure before drawing behavioral conclusions.
@@ -126,6 +130,10 @@ Begin minimization only when a failure meets the chosen criterion and repeatabil
 If the request is reproduction and that check fails, report the failure as unreproduced rather than weakening the criterion.
 
 ## 4. Minimize while preserving the failure
+
+Choose the reduction objective from the requested use: a clearer reproducer, less setup, fewer input tokens, or lower execution cost.
+Compare candidates against that objective and note material cost regressions.
+A shorter history can reopen resolved work and increase tool calls; do not prefer fewer messages automatically.
 
 Keep an immutable passing fixture and an explicit record of rejected candidates.
 Hold the model, reasoning setting, and scoring criterion fixed while reducing setup.
@@ -153,7 +161,8 @@ Do not add an obvious new defect, tell the agent to skip the missing requirement
 For code reductions, retain the relevant original behavior instead of substituting a different bug that is easier to trigger.
 
 Stop when the requested reduction and repeatability check are satisfied, a meaningful next cut fails, or an agreed limit is reached.
-Keep the smallest tested passing fixture and any smaller rejected case that demonstrates an observed boundary.
+Keep the tested passing fixture that best serves the reduction objective, with evidence for that choice.
+Preserve smaller tested conditions and any rejected case that demonstrates an observed boundary.
 Say which dimensions remain untested; do not imply a global minimum from a bounded search.
 
 ## 5. Leave a reproducible result
@@ -166,7 +175,8 @@ Distinguish historical observations, fresh trials of the original baseline, and 
 A non-reproduction in a reconstruction establishes only that condition's observed outcome, not whether the original baseline reproduces.
 Do not report an untested original baseline as a failed reproduction.
 
-For minimization, report the smallest setup that meets the chosen criterion and the cut that stops reproducing or becomes intermittent.
+For minimization, report the retained setup, what it improves, material cost regressions, and any tested cut that stops reproducing or becomes intermittent.
+Identify the smallest tested passing setup if it differs from the retained choice.
 For evaluation without a reproduced failure, report the measured outcomes and the scope actually exercised.
 State relevant validation limits in either case.
 Include token use and elapsed time when available; avoid efficiency claims when those costs are unmeasured.
