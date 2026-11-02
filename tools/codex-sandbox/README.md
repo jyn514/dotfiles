@@ -99,6 +99,8 @@ That active path remains the agent and proxy working directory.
 Dotfiles normally maps to `/src/dotfiles`; the launcher uses its existing source mapping where possible and allocates an unused `/src` path otherwise.
 A collision must neither hide another source entry nor reject an otherwise valid layout.
 When dotfiles is the active workspace, the launcher retains that path and deduplicates its mounts and authority.
+A worktree nested inside dotfiles also retains dotfiles' existing source path when the host and guest nesting agree.
+The parent checkout mounts writable there; the nested worktree keeps its own mount and read-only metadata and policy overlays.
 Use the launcher's selected path rather than assuming `/src/dotfiles`.
 Other source siblings remain inspection-only.
 Both writable checkouts retain protection for `.git`, `.jj`, external metadata backing paths, and `.agents/sandbox` through every exposed alias.

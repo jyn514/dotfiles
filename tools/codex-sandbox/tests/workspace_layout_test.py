@@ -151,6 +151,23 @@ class WorkspaceLayoutTest(unittest.TestCase):
             with self.subTest(active=active, dotfiles=dotfiles):
                 self.assertEqual(expected, workspace_guest_root(self.home, active, active_guest, dotfiles))
 
+    def test_parent_source_mapping_preserves_active_paths_and_metadata_reservations(self):
+        natural = Path("/src/team/main")
+        active_guest = natural / "target/worktree"
+        nested = self.main / "target/worktree"
+        foreign = self.home / "elsewhere"
+        cases = [
+            (nested, [], natural),
+            (foreign, [], Path("/src/dotfiles")),
+            (nested, [(foreign / ".git", active_guest / ".git")], natural),
+            (nested, [(self.main / ".git", natural / ".git")], natural),
+            (nested, [(foreign / ".git", natural / ".git")], Path("/src/dotfiles")),
+        ]
+        for active, reserved, expected in cases:
+            with self.subTest(active=active, reserved=reserved):
+                self.assertEqual(expected, workspace_guest_root(
+                    self.home, active, active_guest, self.main, reserved=reserved))
+
     def test_fallback_allocation_avoids_external_metadata_and_worktree_aliases(self):
         main = git_fixture(self.home / "outside/dotfiles-1")
         active = self.home / "outside/active"

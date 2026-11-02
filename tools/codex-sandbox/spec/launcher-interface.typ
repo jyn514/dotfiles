@@ -264,6 +264,8 @@ The active project's accepted policy alone selects optional services and credent
 Retain the active workspace's guest path and working directory.
 Prefer dotfiles' existing source-tree mapping, normally `/src/dotfiles`; otherwise allocate a destination unused by visible source entries and other mounts.
 A conventional-name collision must not hide another source tree or reject a valid layout.
+An active worktree nested inside dotfiles does not conflict with dotfiles' parent mapping when the relative host and guest paths agree.
+Retain the nested worktree's own mount and protected metadata and policy overlays within the writable parent checkout.
 When the active root is dotfiles, retain its guest path and deduplicate mounts and authority.
 Record the selected path once and derive all consumers from it.
 Reject remaining incompatible mount destinations before container creation.

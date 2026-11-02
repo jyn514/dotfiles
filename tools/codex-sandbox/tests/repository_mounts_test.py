@@ -131,6 +131,59 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                     )
                 self.assertFalse((home / "src/dotfiles-2").exists(), "scaffolding must not mutate host sources")
 
+    def test_nested_worktree_keeps_dotfiles_at_its_existing_source_path(self):
+        from workspace_layout_test import git_fixture, native
+        for layout in ("git-linked", "jj-linked"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                home = root / "home"
+                dotfiles = git_fixture(home / "src/dotfiles")
+                repo = dotfiles / "target/worktree"
+                repo.parent.mkdir()
+                if layout == "git-linked":
+                    native("git", "-C", str(dotfiles), "worktree", "add", "--quiet", "--detach", str(repo))
+                    native("jj", "git", "init", "--colocate", str(repo), cwd=repo)
+                else:
+                    native("jj", "workspace", "add", "--no-colocate", str(repo), cwd=dotfiles)
+                (repo / ".agents/sandbox").mkdir(parents=True, exist_ok=True)
+                staging = root / "staged"
+                staging.mkdir()
+                launcher = runpy.run_path(str(LAUNCHER))
+                discover = launcher["discover_launch_workspaces"]
+                with mock.patch.dict(discover.__globals__, DOTFILES=dotfiles):
+                    workspaces = discover(home, repo)
+                self.assertEqual(
+                    [Path("/src/dotfiles/target/worktree"), Path("/src/dotfiles")],
+                    [workspace.guest_root for workspace in workspaces],
+                )
+                state = SimpleNamespace(home=home, repository=repo,
+                    container_repository=workspaces[0].guest_root,
+                    skills_tmp=staging, workspaces=workspaces)
+                command = launcher["agent_repository_mounts"](state)
+                launcher["check_mount_destinations"](command)
+                records = [item for item in command if item.startswith("type=bind,")]
+                for workspace in workspaces:
+                    root_mounts = [item.split(",") for item in records
+                                   if f"dst={workspace.guest_root}" in item.split(",")]
+                    self.assertEqual(1, len(root_mounts))
+                    self.assertIn(f"src={workspace.host_root}", root_mounts[0])
+                    self.assertNotIn("readonly", root_mounts[0])
+                    self.assertIn(
+                        f"type=bind,src={workspace.host_root}/.jj,"
+                        f"dst={workspace.guest_root}/.jj,readonly", records)
+                    for source, target in workspace.metadata_mounts():
+                        self.assertIn(f"type=bind,src={source},dst={target},readonly", records)
+                    self.assertIn(
+                        f"type=bind,src={workspace.host_root}/.agents/sandbox,"
+                        f"dst={workspace.guest_root}/.agents/sandbox,readonly", records)
+                self.assertIn(
+                    f"type=bind,src={dotfiles}/.git,dst=/src/dotfiles/.git,readonly", records)
+                active_git = repo / ".git" if layout == "git-linked" else dotfiles / ".git"
+                self.assertIn(
+                    f"type=bind,src={active_git},dst=/src/dotfiles/target/worktree/.git,readonly",
+                    records)
+                self.assertFalse(any("dst=/src/dotfiles-1" in item for item in command))
+
     def test_workspace_work_volume_is_stable_guest_storage_and_refuses_hidden_host_data(self):
         from workspace_layout_test import git_fixture
         from workspace_layout import discover_workspace

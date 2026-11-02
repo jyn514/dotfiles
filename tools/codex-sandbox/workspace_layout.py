@@ -192,9 +192,16 @@ def workspace_guest_root(home: Path, active_host: Path, active_guest: Path, dotf
     source = (home / "src").resolve(strict=True)
 
     def collides(candidate):
-        if candidate.is_relative_to(active_guest) or active_guest.is_relative_to(candidate):
+        if candidate.is_relative_to(active_guest):
             return True
+        if active_guest.is_relative_to(candidate):
+            if active_host != dotfiles / active_guest.relative_to(candidate):
+                return True
         for host, guest in reserved or []:
+            # The active root and its read-only metadata overlays retain their
+            # existing mounts when dotfiles exposes their actual parent tree.
+            if guest.is_relative_to(active_guest):
+                continue
             if guest.is_relative_to(candidate):
                 if host != dotfiles / guest.relative_to(candidate):
                     return True
