@@ -60,6 +60,12 @@ pub fn install_inspect_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result
 
 #[cfg(target_os = "linux")]
 fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool, authority: Option<&[crate::workspaces::Workspace]>) -> Result<()> {
+    install_scoped_with_paths(repo, paths, writable, authority, None)
+}
+
+#[cfg(target_os = "linux")]
+fn install_scoped_with_paths(repo: &str, paths: &PolicyPaths<'_>, writable: bool,
+    authority: Option<&[crate::workspaces::Workspace]>, linked_root: Option<&std::os::fd::OwnedFd>) -> Result<()> {
     let trusted =
         PathFd::new(paths.trusted).wrap_err("cannot open trusted directory")?;
     let trusted_bin = PathFd::new(paths.trusted_bin)
@@ -68,10 +74,13 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool, 
     let mut grants = Vec::new();
     if let Some(workspaces) = authority {
         for workspace in workspaces {
-            for path in [&workspace.root, &workspace.git_dir, &workspace.common_dir, &workspace.jj_repo] {
-                grants.push(PathFd::new(path).wrap_err("cannot open authorized workspace path")?);
+            for path in [&workspace.git_dir, &workspace.common_dir, &workspace.jj_repo] {
+                grants.push(PathFd::new(path).wrap_err("cannot open authorized metadata path")?);
             }
-            grants.push(PathFd::new(format!("{}/.jj", workspace.root))?);
+            if linked_root.is_none() {
+                grants.push(PathFd::new(&workspace.root)?);
+                grants.push(PathFd::new(format!("{}/.jj", workspace.root))?);
+            }
         }
     } else {
         // Legacy helper surface retained for native policy tests, never used by serve.
@@ -133,6 +142,12 @@ fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool, 
     for grant in grants {
         ruleset = ruleset.add_rule(PathBeneath::new(grant, repository_access))?;
     }
+    if let Some(root) = linked_root {
+        // The guest can replace a new workspace or its .jj with a symlink.
+        // Only the already-open directory grants working-tree writes; never
+        // follow its pathname or add a separate .jj grant here.
+        ruleset = ruleset.add_rule(PathBeneath::new(root, repository_access))?;
+    }
     if let Some(workspaces) = authority.filter(|_| writable) {
         for workspace in workspaces {
             ruleset = ruleset.add_rule(PathBeneath::new(PathFd::new(&workspace.lock)?, AccessFs::ReadFile | AccessFs::WriteFile))?;
@@ -167,6 +182,20 @@ pub fn install_inspect_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Resu
 
 #[cfg(not(target_os = "linux"))]
 pub fn install_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+/// Narrow a linked-workspace child to its pinned directory and selected store.
+/// The caller must exclude other protected metadata beneath the directory.
+#[cfg(target_os = "linux")]
+pub fn install_linked_workspace_with_paths(workspace: &crate::workspaces::Workspace,
+    root: &std::os::fd::OwnedFd, paths: &PolicyPaths<'_>) -> Result<()> {
+    install_scoped_with_paths(&workspace.root, paths, true, Some(std::slice::from_ref(workspace)), Some(root))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn install_linked_workspace_with_paths(_: &crate::workspaces::Workspace,
+    _: &std::os::fd::OwnedFd, _: &PolicyPaths<'_>) -> Result<()> {
     Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
 }
 

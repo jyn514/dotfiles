@@ -138,14 +138,7 @@ fn prepare_inspection_config(workspace: &Path, jj: &Path, trusted_config: &Path,
 
 fn prepare_inspection_config_deadline(workspace: &Path, jj: &Path, trusted_config: &Path, config_home: &Path, deadline: Instant) -> Result<()> {
     let jj_dir = workspace.join(".jj");
-    let repo_entry = jj_dir.join("repo");
-    let repo_dir = if repo_entry.is_dir() {
-        repo_entry
-    } else {
-        let pointer = fs::read_to_string(&repo_entry).wrap_err("cannot read linked workspace repository pointer")?;
-        fs::canonicalize(jj_dir.join(pointer.trim_end()))
-            .wrap_err("cannot resolve linked workspace repository pointer")?
-    };
+    let repo_dir = workspaces::backing_repo(workspace)?;
     let repo_has_config = seed_inspection_config(&repo_dir.join("config-id"), "repos", config_home)?;
     let workspace_has_config = seed_inspection_config(&jj_dir.join("workspace-config-id"), "workspaces", config_home)?;
     let workspace = workspace.to_str().ok_or_else(|| eyre!("non-UTF-8 workspace path"))?;
@@ -196,7 +189,7 @@ fn workspace_for(path: &Path) -> Option<&Path> {
     path.ancestors().find(|ancestor| ancestor.join(".jj").is_dir())
 }
 
-fn select_repository(request: &Request, workspaces: &[Workspace], source_root: &Path, selector: Option<&str>) -> Result<(PathBuf, bool)> {
+fn select_repository<'a>(request: &Request, workspaces: &'a [Workspace], source_root: &Path, selector: Option<&str>) -> Result<(PathBuf, Option<&'a Workspace>)> {
     let invocation = Path::new(&request.cwd);
     let target = match selector {
         Some(value) => fs::canonicalize(invocation.join(value)).wrap_err("cannot resolve repository selector")?,
@@ -205,9 +198,9 @@ fn select_repository(request: &Request, workspaces: &[Workspace], source_root: &
     if !target.starts_with(source_root) { bail!("repository selector is outside /src"); }
     let workspace = workspace_for(&target).ok_or_else(|| eyre!("repository selector is not inside a Jujutsu workspace"))?;
     if !workspace.starts_with(source_root) { bail!("repository workspace is outside /src"); }
-    let inspect = matches!(request.mode, RequestMode::Inspect)
-        || !workspaces.iter().any(|entry| Path::new(&entry.root) == workspace);
-    Ok((workspace.to_path_buf(), inspect))
+    let authority = if matches!(request.mode, RequestMode::Inspect) { None }
+        else { workspaces::authority_for(workspace, workspaces)? };
+    Ok((workspace.to_path_buf(), authority))
 }
 
 #[cfg(test)]
@@ -362,6 +355,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
 
 struct Runtime<'a> {
     source: &'a Path,
+    mounts: &'a [workspaces::MountPoint],
     jj: &'a Path,
     config: &'a Path,
     config_home: &'a Path,
@@ -371,10 +365,32 @@ struct Runtime<'a> {
 
 impl Runtime<'_> {
     fn trusted() -> Runtime<'static> {
-        Runtime { source: Path::new("/src"), jj: Path::new("/trusted/bin/jj"), config: Path::new(TRUSTED_JJ_CONFIG), config_home: Path::new(CONFIG_HOME),
+        Runtime { source: Path::new("/src"), mounts: &[], jj: Path::new("/trusted/bin/jj"), config: Path::new(TRUSTED_JJ_CONFIG), config_home: Path::new(CONFIG_HOME),
             #[cfg(test)]
             after_author_update: None,
         }
+    }
+
+    fn mutation_command(&self, identity: Option<(&str, &str)>, authority: &Workspace, linked_root: Option<&OwnedFd>) -> Command {
+        // Native orchestration tests inject an untrusted-path JJ fixture; real
+        // container tests exercise the production self-exec and Landlock path.
+        #[cfg(test)]
+        if self.source != Path::new("/src") { return self.command(identity); }
+        let Some(root) = linked_root else { return self.command(identity); };
+        let fd = root.as_raw_fd();
+        let mut command = Command::new(TRUSTED_PROXY);
+        command.arg("mutate-jj")
+            .arg(serde_json::to_string(authority).expect("workspace authority serializes"))
+            .arg(fd.to_string())
+            .arg(serde_json::to_string(&identity).expect("identity serializes"));
+        // Preserve only this pinned descriptor across the trusted self-exec.
+        // fcntl is async-signal-safe; no policy construction runs after fork.
+        unsafe { command.pre_exec(move || {
+            nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::empty()))
+                .map_err(|error| io::Error::from_raw_os_error(error as i32))?;
+            Ok(())
+        }); }
+        command
     }
 
     fn command(&self, identity: Option<(&str, &str)>) -> Command {
@@ -388,6 +404,7 @@ impl Runtime<'_> {
     }
 }
 
+#[cfg(test)]
 fn execute(
     request: &Request,
     command_policy: &policy::Policy,
@@ -444,10 +461,20 @@ fn execute_with_runtime(
     if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
         return Response { version: 2, exit: 0, stdout: String::new(), stderr: String::new() };
     }
-    let (workspace, inspect) = match select_repository(request, workspaces, runtime.source, repository_selector.as_deref()) {
+    let (workspace, authority) = match select_repository(request, workspaces, runtime.source, repository_selector.as_deref()) {
         Ok(selection) => selection,
         Err(error) => return failure(error.to_string()),
     };
+    let inspect = authority.is_none();
+    let linked_root = if let Some(authority) = authority.filter(|entry| Path::new(&entry.root) != workspace) {
+        let fd = match open_cwd(root, workspace.to_str().unwrap(), runtime.source) {
+            Ok(fd) => fd, Err(error) => return failure(error.to_string()),
+        };
+        if let Err(error) = workspaces::validate_linked_scope(&fd, authority, workspaces, runtime.mounts) {
+            return failure(error.to_string());
+        }
+        Some(fd)
+    } else { None };
     let decision = if request.agent_split.is_none() {
         let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv) };
         match validation {
@@ -467,12 +494,11 @@ fn execute_with_runtime(
 
     // An owned descriptor covers every mutating action, including commands
     // without an author hook. Never acquire a second repository lock.
-    let _request_lock = if inspect { None } else {
-        let authority = workspaces.iter().find(|entry| Path::new(&entry.root) == workspace).unwrap();
+    let _request_lock = if let Some(authority) = authority {
         match acquire_lock_checked(Path::new(&authority.lock), deadline, || check_peer(peer)) {
             Ok(lock) => Some(lock), Err(error) => return failure(error.to_string()),
         }
-    };
+    } else { None };
     if !inspect {
         if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
     }
@@ -483,7 +509,7 @@ fn execute_with_runtime(
     }
     if !inspect && updates_author {
         if let Err(error) = check_peer(peer) { return failure(error.to_string()); }
-        let mut update = runtime.command(Some((user, email)));
+        let mut update = runtime.mutation_command(Some((user, email)), authority.unwrap(), linked_root.as_ref());
         update.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
         update.arg("--repository").arg(&workspace);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
@@ -507,7 +533,7 @@ fn execute_with_runtime(
         command.args(["inspect-jj", user, email]);
         command
     } else {
-        runtime.command(Some((user, email)))
+        runtime.mutation_command(Some((user, email)), authority.unwrap(), linked_root.as_ref())
     };
     if repository_selector.is_some() || request.agent_split.is_some() {
         command.arg("--repository").arg(&workspace);
@@ -546,7 +572,7 @@ fn execute_with_runtime(
         return failure("output limit exceeded".into());
     }
     if status == 0 && !inspect && updates_author {
-        let mut reset = runtime.command(None);
+        let mut reset = runtime.mutation_command(None, authority.unwrap(), linked_root.as_ref());
         reset.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
         reset.arg("--repository").arg(&workspace);
         reset.env_clear().envs(trusted_environment(temporary_directory))
@@ -580,6 +606,9 @@ fn serve() -> Result<()> {
     // The server retains its mutation policy; inspection children add a
     // read-only policy before executing Jujutsu.
     let workspaces = workspaces::load()?;
+    let mounts = workspaces::mount_points()?;
+    let mut runtime = Runtime::trusted();
+    runtime.mounts = &mounts;
     let source_root = File::open("/src").wrap_err("cannot open source")?;
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
@@ -609,13 +638,9 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(
-                &request,
-                &command_policy,
-                source_root.as_raw_fd(),
-                &workspaces,
-                TEMP_HOME,
-                Some(&stream),
+            Ok(request) => execute_with_runtime(
+                &request, &command_policy, source_root.as_raw_fd(), &workspaces,
+                TEMP_HOME, &runtime, Instant::now() + TIMEOUT, Some(&stream),
             ),
             Err(error) => Response { version: 2, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
@@ -686,6 +711,25 @@ fn inspect_jj(args: &[String]) -> Result<i32> {
     Err(command.exec().into())
 }
 
+fn mutate_jj(args: &[String]) -> Result<i32> {
+    if args.len() < 3 { bail!("invalid scoped mutation invocation"); }
+    let authority: Workspace = serde_json::from_str(&args[0])?;
+    let fd: RawFd = args[1].parse()?;
+    nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_GETFD).wrap_err("invalid workspace descriptor")?;
+    // SAFETY: the trusted server transfers this open descriptor across self-exec.
+    let root = unsafe { OwnedFd::from_raw_fd(fd) };
+    let identity: Option<(String, String)> = serde_json::from_str(&args[2])?;
+    execution_policy::install_linked_workspace_with_paths(&authority, &root, &execution_policy::PolicyPaths {
+        source: Path::new("/src"), trusted: Path::new("/trusted"), trusted_bin: Path::new("/trusted/bin"),
+        config: Path::new(CONFIG_HOME), socket: Path::new("/run/sandbox-proxy"),
+    })?;
+    // Do not leak the workspace capability to JJ or its helpers.
+    drop(root);
+    let mut command = Runtime::trusted().command(identity.as_ref().map(|(user, email)| (user.as_str(), email.as_str())));
+    command.args(&args[3..]);
+    Err(command.exec().into())
+}
+
 fn main() {
     color_eyre::install().expect("could not install error reporter");
     let executable = env::args().next().unwrap_or_default();
@@ -700,6 +744,8 @@ fn main() {
         serve().map(|_| 0)
     } else if args.first().map(String::as_str) == Some("inspect-jj") {
         inspect_jj(&args[1..])
+    } else if args.first().map(String::as_str) == Some("mutate-jj") {
+        mutate_jj(&args[1..])
     } else {
         client(std::mem::take(&mut args))
     };
@@ -837,7 +883,7 @@ mod tests {
         let selected = source.join("selected");
         let other = source.join("other");
         let outside = root.join("outside");
-        for path in [&selected, &other, &outside] { fs::create_dir_all(path.join(".jj")).unwrap(); }
+        for path in [&selected, &other, &outside] { fs::create_dir_all(path.join(".jj/repo")).unwrap(); }
         let source = fs::canonicalize(source).unwrap();
         let selected = source.join("selected");
         let other = source.join("other");
@@ -847,18 +893,21 @@ mod tests {
             version: 2, mode: RequestMode::Mutate, cwd: selected.join("nested").to_str().unwrap().into(),
             argv: vec!["status".into()], agent_split: None, user: None, email: None,
         };
-        let authority = vec![Workspace { root: selected.to_str().unwrap().into(), git_dir: String::new(), common_dir: String::new(), jj_repo: String::new(), lock: String::new() }];
-        assert_eq!((selected.clone(), false), select_repository(&request, &authority, &source, Some(".")).unwrap());
-        assert_eq!((other.clone(), true), select_repository(&request, &authority, &source, Some("../../other")).unwrap());
-        assert!(select_repository(&request, &authority, &source, Some(outside.to_str().unwrap())).is_err());
-        assert!(select_repository(&request, &authority, &source, Some("escape")).is_err());
+        let select = |request: &Request, authority: &[Workspace], source: &Path, selector: Option<&str>| {
+            select_repository(request, authority, source, selector).map(|(root, authority)| (root, authority.is_none()))
+        };
+        let authority = vec![test_authority(&source, "selected")];
+        assert_eq!((selected.clone(), false), select(&request, &authority, &source, Some(".")).unwrap());
+        assert_eq!((other.clone(), true), select(&request, &authority, &source, Some("../../other")).unwrap());
+        assert!(select(&request, &authority, &source, Some(outside.to_str().unwrap())).is_err());
+        assert!(select(&request, &authority, &source, Some("escape")).is_err());
         let mut both = authority.clone();
-        both.push(Workspace { root: other.to_str().unwrap().into(), ..authority[0].clone() });
-        assert_eq!((other.clone(), false), select_repository(&request, &both, &source, Some("../../other")).unwrap());
+        both.push(test_authority(&source, "other"));
+        assert_eq!((other.clone(), false), select(&request, &both, &source, Some("../../other")).unwrap());
         request.mode = RequestMode::Inspect;
-        assert_eq!((other.clone(), true), select_repository(&request, &both, &source, Some("../../other")).unwrap());
+        assert_eq!((other.clone(), true), select(&request, &both, &source, Some("../../other")).unwrap());
         request.cwd = other.to_string_lossy().into_owned();
-        assert_eq!((selected, true), select_repository(&request, &authority, &source, Some("../selected")).unwrap());
+        assert_eq!((selected, true), select(&request, &authority, &source, Some("../selected")).unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -958,6 +1007,61 @@ mod tests {
             jj_repo: repo.join(".jj/repo").to_str().unwrap().into(), lock: root.join(format!("{name}.lock")).to_str().unwrap().into() }
     }
 
+    #[test]
+    fn real_jj_linked_workspace_create_edit_and_record() {
+        let Some(jj) = real_jj() else { eprintln!("SKIP linked workspace sequence: no real JJ"); return; };
+        let root = env::temp_dir().join(format!("jj-proxy-linked-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        native(&jj, &root, &["git", "init", "--no-colocate", root.join("project").to_str().unwrap()]);
+        fs::write(root.join("project.lock"), "").unwrap();
+        fs::write(root.join("trusted.toml"), include_str!("../jj.toml")).unwrap();
+        let workspaces = vec![test_authority(&root, "project")];
+        let source = File::open(&root).unwrap();
+        let config = root.join("trusted.toml");
+        let config_home = root.join("config");
+        fs::create_dir_all(&config_home).unwrap();
+        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let run = |cwd: &str, args: &[&str]| {
+            let request = Request { version: 2, mode: RequestMode::Mutate,
+                cwd: root.join(cwd).to_str().unwrap().into(), argv: args.iter().map(|arg| (*arg).into()).collect(),
+                agent_split: None, user: Some("Linked agent".into()), email: Some("linked@example.test".into()) };
+            execute_with_runtime(&request, &policy, source.as_raw_fd(), &workspaces,
+                root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(10), None)
+        };
+        fs::create_dir(root.join("project/target")).unwrap();
+        let response = run("project", &["workspace", "add", "--no-colocate", "--name", "linked", "target/linked"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        let linked = root.join("project/target/linked");
+        fs::write(linked.join("edited"), "linked workspace edit\n").unwrap();
+        let response = run("project/target/linked", &["status"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert!(response.stdout.contains("edited"), "status omitted the disk edit: {}", response.stdout);
+        let response = run("project", &["-R", "target/linked", "diff", "--name-only"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert_eq!("target/linked/edited", response.stdout.trim());
+        // Snapshotting through a linked workspace uses its backing store's lock.
+        let lock = acquire_lock(Path::new(&workspaces[0].lock), Instant::now() + Duration::from_secs(1)).unwrap();
+        let request = Request { version: 2, mode: RequestMode::Mutate, cwd: linked.to_str().unwrap().into(),
+            argv: vec!["status".into()], agent_split: None, user: None, email: None };
+        let blocked = execute_with_runtime(&request, &policy, source.as_raw_fd(), &workspaces,
+            root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_millis(50), None);
+        assert_eq!(2, blocked.exit);
+        assert!(blocked.stderr.contains("lock"), "{}", blocked.stderr);
+        drop(lock);
+        let response = run("project/target/linked", &["commit", "-m", "Record linked edit"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert_eq!("linked workspace edit\n", native(&jj, &root, &["-R", linked.to_str().unwrap(), "file", "show", "-r", "@-", "root:edited"]));
+        assert_eq!("Linked agent|Linked agent", native(&jj, &root, &["-R", linked.to_str().unwrap(), "log", "-r", "@-", "--no-graph", "-T", "author.name() ++ \"|\" ++ committer.name()"]));
+        // An independent repository nested under the same writable root has no authority.
+        let independent = root.join("project/independent");
+        native(&jj, &root, &["git", "init", independent.to_str().unwrap()]);
+        let response = run("project/independent", &["commit", "-m", "Denied"]);
+        assert_eq!(2, response.exit);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// Two independent request-owner processes exercise the real orchestration,
     /// real JJ attribution and the same flock inode. Container mount enforcement
     /// remains the container suite's responsibility.
@@ -977,7 +1081,7 @@ mod tests {
                 fs::write(root.join("paused"), "author hook complete").unwrap();
                 while !root.join("release").exists() { thread::sleep(Duration::from_millis(10)); }
             };
-            let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home,
+            let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
                 after_author_update: if role == "A" { Some(&pause) } else { None } };
             let argv: Vec<String> = match role.as_str() {
                 "A" => ["-R", "../relocated", "commit", "root:selected", "-m", "A commit"].into_iter().map(str::to_owned).collect(),
@@ -1009,7 +1113,7 @@ mod tests {
         let config = root.join("trusted.toml");
         let config_home = root.join("config");
         fs::create_dir_all(&config_home).unwrap();
-        let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let request_for = |cwd: &str, args: &[&str]| Request { version: 2, mode: RequestMode::Mutate,
             cwd: root.join(cwd).to_str().unwrap().into(), argv: args.iter().map(|arg| (*arg).into()).collect(),
@@ -1252,7 +1356,7 @@ mod tests {
                 require_eof(&mut server).unwrap();
                 let source = File::open(&worker_root).unwrap();
                 let config = worker_root.join("trusted.toml"); let config_home = worker_root.join("config");
-                let runtime = Runtime { source: &worker_root, jj: &worker_jj, config: &config, config_home: &config_home, after_author_update: None };
+                let runtime = Runtime { source: &worker_root, mounts: &[], jj: &worker_jj, config: &config, config_home: &config_home, after_author_update: None };
                 let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
                 // The complete half-closed request is decoded while another
                 // owner holds the target lock. No JJ mutation can yet be admitted.
@@ -1289,7 +1393,7 @@ mod tests {
         let disconnect_after_hook = || { drop(client.borrow_mut().take()); };
         let source = File::open(&root).unwrap();
         let config = root.join("trusted.toml"); let config_home = root.join("config");
-        let runtime = Runtime { source: &root, jj: &jj, config: &config, config_home: &config_home,
+        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
             after_author_update: Some(&disconnect_after_hook) };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let started = Request { version: 2, mode: RequestMode::Mutate, cwd: repo.to_str().unwrap().into(),

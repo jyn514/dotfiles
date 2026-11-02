@@ -652,13 +652,17 @@ Repository binds preserve filesystem identity between each authorized worktree a
 The trusted launcher supplies `JJ_PROXY_REPO` as the active root and `JJ_PROXY_WORKSPACES` as a JSON array whose entries contain exactly
 `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
 Derive this set from the #link("launcher-interface.typ")[launcher workspace descriptions], deduplicating identical roots.
-Validate it before readiness; guest cwd, selectors, and shared-store membership cannot add roots.
+Validate it before readiness; guest cwd and selectors cannot add startup backing-repository authority.
+Linked workspaces inherit the matched backing repository's authority and request lock by filesystem identity without adding mounts.
 A fail-closed Landlock policy admits the authorized worktrees, resolved metadata, request locks, private configuration, socket directory, and trusted runtime files.
 Mutation execution may write ordinary files and metadata in the authorized workspaces.
 Inspection children apply a separate read-only policy and `--ignore-working-copy`, even for explicit inspection of an authorized root.
 Protocol version 2 carries a physical absolute invocation cwd under `/src` in both modes.
-The server derives mutation authority from exact resolved workspace roots, not cwd spelling or path-prefix membership.
-Other `/src` siblings remain inspection-only; independent guest repositories remain native.
+The server derives mutation authority from the resolved backing repository's device and inode, not cwd spelling or path-prefix membership.
+Linked mutation children restrict writes to a pinned workspace directory and its matched backing/Git metadata; mutable workspace pointers cannot enlarge those grants.
+Scopes containing nested mount aliases or another protected repository's metadata are rejected.
+Linked workspaces on read-only source mounts remain unable to snapshot or update files.
+Independent `/src` siblings remain inspection-only; independent guest repositories remain native.
 Execution is permitted only beneath `/trusted/bin`, giving the working tree the same effective `noexec` property under Docker and Podman without unsafe syscall bindings or a hard-coded kernel ABI.
 The `bug` protocol is narrower than Jujutsu's grammar: it forwards one bridge subcommand, rewrites body input, rejects `push` and `raw`, and leaves issue-operation validation to the trusted bridge.
 
@@ -683,8 +687,10 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 == Acceptance checks
 
 - The agent cannot directly modify `.git`, `.jj`, external backing metadata, or `.agents/sandbox` through any alias in either writable checkout
-- Ordinary files in the active workspace and launcher dotfiles remain writable; other source siblings remain inspection-only
-- Exact trusted workspace roots select JJ mutation access; unlisted linked workspaces do not inherit authority from a shared store
+- Ordinary files in the active workspace and launcher dotfiles remain writable; no linked-workspace request expands those mounts
+- JJ backing-repository filesystem identity selects mutation access and the existing request lock for startup and linked workspaces
+- Existing and newly created linked workspaces within writable mounts can snapshot disk edits and commit; independent nested repositories remain inspection-only
+- Linked mutation children reject overlapping protected metadata and nested mount aliases; mutable root or metadata pointers cannot grant writes to another protected store
 - Distinct JJ proxies serialize complete mutation-mode requests, including hooks, on the same persistent backing-repository lock
 - Independent repositories remain concurrent; the request lock does not promise coordination with arbitrary host writers or file edits
 - The generic host router runs `bb bug` locally while it owns the host lock and uses the recorded runtime to reach the proxy while a sandbox launcher owns that lock

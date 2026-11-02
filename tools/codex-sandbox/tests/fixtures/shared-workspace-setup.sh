@@ -9,6 +9,11 @@ config=${JJ_FIXTURE_CONFIG:-/trusted/jj.toml}
 for name in project sibling; do
 	"$jj" --config-file "$config" git init --colocate "$root/home/src/$name"
 done
+project=$root/home/src/project
+"$jj" --config-file "$config" --repository "$project" workspace add "$project/preexisting-child"
+# This workspace moves with the project bind, not its fixture's absolute path.
+printf '%s' '../../.jj/repo' >"$project/preexisting-child/.jj/repo"
+"$jj" --config-file "$config" git init --colocate "$project/independent-nested"
 if [ "$layout" = linked ]; then
 	main=$root/home/src/linked-source
 	"$jj" --config-file "$config" git init --colocate "$main"

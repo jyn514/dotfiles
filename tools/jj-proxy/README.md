@@ -47,8 +47,12 @@ A manually started proxy without the validated mounts and authority is not prote
 
 The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
 Protocol version 2 always carries a physical absolute invocation cwd under `/src`; cwd addressing does not grant write permission.
-The server grants mutation access only to exact resolved roots in its trusted workspace set, not to a path prefix or every workspace sharing a store.
-Other host-backed Jujutsu repositories under `/src` permit inspection only.
+The server grants mutation access to workspaces whose resolved JJ backing repository has the same filesystem identity as a trusted startup repository.
+Existing and newly created linked workspaces inherit that repository's request lock; nesting alone grants no access.
+Independent host-backed Jujutsu repositories under `/src` permit inspection only.
+Linked access does not widen mounts: workspaces on the read-only source view still cannot snapshot or update files.
+For linked mutation, a restricted child grants writes only to the pinned workspace directory and its authorized backing/Git metadata.
+It rejects scopes containing nested mounts or another protected repository's metadata rather than allowing a mutable workspace pointer to cross repository locks.
 Explicit inspection remains read-only even for an authorized root.
 Inspection uses `--ignore-working-copy` and a separate read-only Landlock policy; state-changing commands are rejected.
 Inspection of linked workspaces requires their metadata to be visible in the proxy container.
@@ -59,7 +63,7 @@ that cache.
 Use `jj -R /src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
 `--repository` is equivalent. A selector outside `/src` is refused, and mutation
-access is granted only to an exact authorized workspace root.
+access follows the selected workspace's authorized backing repository.
 One existing JJ service per active shared session knows both roots; other command proxies, services, and credentials remain active-project scoped.
 
 ## Independent container-local repositories
@@ -116,7 +120,8 @@ Only author prehooks and author reset target the resolved repository; a cross-re
 All mutation-mode requests, including commands without author hooks, acquire the target JJ backing repository's persistent request lock.
 The lock covers prehooks, command execution, and applicable author reset across distinct proxy services.
 Independent repositories remain concurrent; arbitrary host commands and ordinary file edits do not participate.
-Linked workspaces retain shared-history semantics, not history isolation.
+Linked workspaces share both history and the backing repository's request lock, not history isolation.
+A linked workspace's mutable metadata can change between the prehook, command, and reset; the child restriction prevents that from granting writes to another protected store, but does not make those phases a stable workspace transaction.
 Startup configuration shares one lock-wait/preparation deadline across both workspaces.
 The launcher supplies `JJ_PROXY_STARTUP_TIMEOUT_SECS` and gives JJ readiness checks that budget plus observation time, rather than the other command proxies' shorter readiness limit.
 
@@ -165,7 +170,7 @@ The native pytest adapter runs Cargo and passes the test environment's selected 
 Set `DOTFILES_TEST_JJ_REAL` to select a specific binary.
 Direct Cargo runs can report success while skipping real-JJ integration tests if no binary is found.
 
-The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. Native and mocked checks alone do not establish container acceptance; the `--jj-only` probe exercises real containers.
+The Rust suite covers command and Landlock execution policy, linked-workspace create/edit/record behavior, store selection and lock reuse, mutable-pointer isolation, and protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. Native and mocked checks alone do not establish container acceptance; the `--jj-only` probe exercises real containers.
 
 ## Design and reference
 

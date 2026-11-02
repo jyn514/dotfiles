@@ -44,6 +44,24 @@ def initialize_fixture_metadata(run, image: str, volume: str, root: Path, *, lin
         "linked" if linked else "ordinary", input=setup.read_text())
 
 
+def relocate_fixture_mounts(arguments: list[str], root: Path, daemon_root: Path,
+                            volume_names: dict[str, str]) -> list[str]:
+    """Relocate bind paths and require fixture-owned replacements for named volumes."""
+    result = []
+    for argument in arguments:
+        fields = argument.split(",")
+        for index, field in enumerate(fields):
+            if not field.startswith("src="):
+                continue
+            source = field.removeprefix("src=")
+            if "type=bind" in fields:
+                fields[index] = "src=" + str(daemon_root / Path(source).relative_to(root))
+            elif "type=volume" in fields:
+                fields[index] = "src=" + volume_names[source]
+        result.append(",".join(fields))
+    return result
+
+
 def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
     from docker_runtime import Docker
     from workspace_layout import discover_workspace, ensure_request_lock
@@ -79,10 +97,11 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             time.sleep(0.05)
         raise RuntimeError(f"timed out waiting for {name}")
 
-    def request(service, identity, *argv):
+    def request(service, identity, *argv, cwd="/src/project", inspect=False):
         process = subprocess.Popen([
-            "docker", "exec", "--workdir", "/src/project", "--env", "JJ_USER=" + identity,
-            "--env", "JJ_EMAIL=" + identity.lower() + "@example.test", service,
+            "docker", "exec", "--workdir", cwd, "--env", "JJ_USER=" + identity,
+            "--env", "JJ_EMAIL=" + identity.lower() + "@example.test",
+            *(["--env", "JJ_PROXY_INSPECT=1"] if inspect else []), service,
             "/trusted/bin/jj-proxy", *argv,
         ], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         clients.append(process)
@@ -169,16 +188,20 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             run(*seed, image, "chown", "-R", "65532:65532", "/fixture")
             daemon_root = Path(run("docker", "volume", "inspect", "--format", "{{.Mountpoint}}", volume).stdout.strip())
 
+            guest_volume_names = {}
+            for argument in guest_mounts:
+                fields = argument.split(",")
+                if "type=volume" not in fields:
+                    continue
+                source = next(field.removeprefix("src=") for field in fields if field.startswith("src="))
+                if source not in guest_volume_names:
+                    name = f"{prefix}-guest-volume-{len(guest_volume_names)}"
+                    run("docker", "volume", "create", name)
+                    volumes.append(name)
+                    guest_volume_names[source] = name
+
             def relocate(arguments):
-                result = []
-                for arg in arguments:
-                    fields = arg.split(",")
-                    for index, field in enumerate(fields):
-                        if field.startswith("src="):
-                            relative = Path(field.removeprefix("src=")).relative_to(root)
-                            fields[index] = "src=" + str(daemon_root / relative)
-                    result.append(",".join(fields))
-                return result
+                return relocate_fixture_mounts(arguments, root, daemon_root, guest_volume_names)
 
             authority = module["workspace_environment"](records)
             for service in services:
@@ -208,11 +231,54 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                     raise RuntimeError(f"workspace server not ready: {result.stderr}")
 
             finish(request(services[0], "Pi-D", "-R", "/src/sibling", "status"))
-            for unlisted in (["/src/sibling", "/src/linked-source"] if linked else ["/src/sibling"]):
+            for unlisted in ("/src/sibling", "/src/project/independent-nested"):
                 denied = request(services[0], "Pi-D", "-R", unlisted, "commit", "-m", "Must be rejected")
                 stdout, stderr = denied.communicate(timeout=20)
                 if denied.returncode == 0:
-                    raise RuntimeError(f"unlisted workspace became writable: {unlisted}: {stdout}\n{stderr}")
+                    raise RuntimeError(f"independent workspace became writable: {unlisted}: {stdout}\n{stderr}")
+            if linked:
+                # This root shares dotfiles' store, but its worktree remains on
+                # the read-only source mount. Do not demand a disk snapshot here.
+                finish(request(services[0], "Pi-D", "-R", "/src/linked-source", "root"))
+                readonly = run("docker", "exec", services[0], "/trusted/bin/busybox", "touch",
+                               "/src/linked-source/must-stay-readonly", check=False)
+                if readonly.returncode == 0:
+                    raise RuntimeError("linked source worktree mount became writable")
+
+            def commit_child_edit(child, description):
+                content = description + " disk content\n"
+                run("docker", "exec", "--interactive", services[0], "/trusted/bin/busybox", "tee",
+                    child + "/acceptance.txt", input=content)
+                # Explicit inspection must neither snapshot the disk edit nor
+                # turn a linked workspace into a mutation-capable request.
+                before = query(services[0], child, "@", "commit_id")
+                finish(request(services[0], "Pi-D", "-R", child, "status", cwd=child, inspect=True))
+                if query(services[0], child, "@", "commit_id") != before:
+                    raise RuntimeError(f"explicit inspection snapshotted linked workspace: {child}")
+                denied = request(services[0], "Pi-D", "-R", child, "commit", "-m", "Inspection must reject",
+                                 cwd=child, inspect=True)
+                stdout, stderr = denied.communicate(timeout=20)
+                if denied.returncode == 0:
+                    raise RuntimeError(f"explicit inspection committed linked workspace: {child}: {stdout}\n{stderr}")
+                status = finish(request(services[0], "Pi-D", "-R", child, "status", cwd=child))
+                diff = finish(request(services[0], "Pi-D", "-R", child, "diff", cwd=child))
+                if "acceptance.txt" not in status or content.strip() not in diff:
+                    raise RuntimeError(f"linked workspace disk edit missing: {child}: {status}\n{diff}")
+                finish(request(services[0], "Pi-D", "-R", child, "commit", "-m", description, cwd=child))
+                recorded = finish(request(services[0], "Pi-D", "-R", child, "file", "show",
+                                          "-r", fixture_commit_revision(description), "acceptance.txt",
+                                          cwd=child, inspect=True))
+                if recorded != content:
+                    raise RuntimeError(f"linked workspace committed wrong content: {child}: {recorded!r}")
+
+            commit_child_edit("/src/project/preexisting-child", "Preexisting linked child")
+            child = "/src/project/runtime-child"
+            finish(request(services[0], "Pi-D", "workspace", "add", child))
+            commit_child_edit(child, "Runtime linked child")
+            # A second linked child shares dotfiles' lock, not project's lock,
+            # despite living beneath the writable project worktree.
+            lock_child = "/src/project/shared-lock-child"
+            finish(request(services[0], "Pi-D", "-R", "/src/dotfiles", "workspace", "add", lock_child))
             before = query(services[0], "/src/project", "@", "commit_id ++ author.name()")
             a = request(services[0], "Pi-A", "-R", "/src/dotfiles", "commit", "root:skills/example", "-m", "A skill")
             wait_marker(services[0], "paused-a", a)
@@ -245,13 +311,31 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             wait_marker(services[0], "paused-a", a)
             independent = request(services[1], "Pi-C", "new", "-m", "Independent project")
             finish(independent)
-            b = request(services[1], "Pi-B", "-R", "/src/dotfiles", "new", "-m", "B new")
+            b = request(services[1], "Pi-B", "-R", lock_child, "new", "-m", "B new", cwd=lock_child)
             time.sleep(0.3)
             if b.poll() is not None or marker(services[1], "entered-b"):
                 raise RuntimeError("non-hook mutation bypassed the shared repository lock")
             run("docker", "exec", services[0], "/trusted/bin/busybox", "touch", "/run/sandbox-proxy/release-a")
             finish(a)
             finish(b)
+
+            if linked:
+                # `root` does not snapshot the read-only source worktree, but a
+                # non-inspection request still takes its authorized store's lock.
+                # Keep it separate from B: each server handles requests serially.
+                for marker_name in ("paused-a", "release-a", "pause-complete"):
+                    run("docker", "exec", services[0], "/trusted/bin/busybox", "rm", "-f",
+                        "/run/sandbox-proxy/" + marker_name)
+                a = request(services[0], "Pi-A", "-R", "/src/dotfiles", "commit", "-m", "A source lock")
+                wait_marker(services[0], "paused-a", a)
+                source = request(services[1], "Pi-D", "-R", "/src/linked-source", "root")
+                time.sleep(0.3)
+                if source.poll() is not None:
+                    stdout, stderr = source.communicate()
+                    raise RuntimeError(f"same-store source alias bypassed the shared repository lock: {stdout}\n{stderr}")
+                run("docker", "exec", services[0], "/trusted/bin/busybox", "touch", "/run/sandbox-proxy/release-a")
+                finish(a)
+                finish(source)
 
             # Exercise actual guest worktree/metadata/policy modes, not only argument strings.
             guest = prefix + "-guest"
@@ -264,7 +348,8 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             if result.stdout != "shared-workspace-guest-ok\n":
                 raise RuntimeError(f"unexpected guest workspace result: {result.stdout}\n{result.stderr}")
             layout = "linked absolute-pointer bind aliases" if linked else "ordinary metadata"
-            print(f"PASS: {layout}; two roots, cross-proxy attribution/locking, scoped filesets, sibling inspection, guest protection", flush=True)
+            print(f"PASS: {layout}; linked child disk edits/commits, shared-store cross-proxy locking, "
+                  "scoped filesets, independent repository denial, explicit inspection, guest protection", flush=True)
         except BaseException:
             for service in containers:
                 logs = run("docker", "logs", service, check=False)

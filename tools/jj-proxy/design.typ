@@ -127,8 +127,10 @@ that cannot establish this invariant must instead put the writable working tree
 on a distinct filesystem or copy-up layer from the protected metadata.
 
 Protection covers the active workspace and launcher dotfiles, including external metadata and policy through every exposed alias.
-Other source siblings remain inspection-only.
-Nested repositories are out of scope unless the launcher discovers and overlays every nested metadata path before Codex starts.
+Independent source siblings remain inspection-only.
+Linked workspaces inherit mutation authority from an authorized backing repository, subject to existing writable mounts.
+Their newly created workspace-local metadata is not protected by startup overlays; the backing repositories remain protected.
+Independent nested repositories remain inspection-only through the proxy and are out of scope for direct metadata protection unless the launcher overlays them before Codex starts.
 Writable files remain shared host state; access does not authorize unrelated edits or ownership of another contributor's changes.
 
 The launcher supplies `JJ_PROXY_REPO` as the active guest root.
@@ -136,7 +138,9 @@ Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `g
 Each entry binds an exact guest workspace root, its resolved metadata paths, and a persistent request-lock path.
 Validate all entries and prepare secure configuration for both workspaces before readiness.
 Accepted-session authority binds the exact set, metadata layouts, lock mounts, and live trusted environment.
-Guest request fields cannot add entries; a shared JJ store does not authorize an unlisted linked workspace.
+Guest request fields cannot add entries or backing repositories.
+A linked workspace inherits the authority and persistent lock of an entry whose resolved JJ repository has the same device and inode.
+Existing mounts still bound filesystem access; store membership does not make a read-only source worktree writable.
 
 Container root must not receive `CAP_SYS_ADMIN`. Passwordless `sudo` inside a
 VM-backed Codex container therefore does not permit remounting metadata
@@ -204,8 +208,15 @@ secret token or from trusting the wrapper.
 == Repository access modes
 
 The proxy distinguishes mutation access from read-only inspection access.
-A mutation request resolves to an exact root in trusted `JJ_PROXY_WORKSPACES`.
-It receives read-write Landlock access to the authorized worktrees, JJ stores, resolved Git metadata, and required request locks.
+A mutation request resolves its workspace's backing JJ repository and matches its device and inode against trusted `JJ_PROXY_WORKSPACES`.
+The matched entry owns its persistent request lock, regardless of workspace nesting or bind-alias spelling.
+Startup workspaces receive read-write Landlock access to their authorized worktrees, JJ stores, resolved Git metadata, and required request locks.
+A linked workspace runs prehooks, commands, and author reset in restricted children that grant writes to a pinned workspace directory and the matched entry's backing/Git metadata.
+The server opens that workspace component-by-component without following symlinks and passes its directory descriptor across trusted self-exec.
+The child never opens the mutable workspace pathname or its `.jj` as an additional writable grant.
+The server pins mount destinations before Landlock and rejects linked scopes containing a nested mount or another independently locked repository's protected metadata.
+These restrictions prevent mutable child pointers from obtaining writes to another protected backing store under the wrong lock.
+They do not freeze workspace selection across phases or protect newly created workspace-local metadata from direct guest edits.
 Only mutation mode may snapshot a working copy or change repository state.
 
 The launcher admits repositories by mounting the host source tree read-only at
@@ -216,7 +227,7 @@ second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces
 whose metadata is outside the mounted tree are not admitted by this mechanism.
 The trusted proxy may also resolve a single `-R` or `--repository` selector
 against the invocation directory. It canonicalizes the target, requires a
-workspace under `/src`, and derives mutation permission from exact trusted root membership rather than a path prefix or store identity.
+workspace under `/src`, and derives mutation permission from backing-repository filesystem identity, not a path prefix.
 A client may request stricter inspection, including for an authorized root, but cannot grant additional mutation access.
 Inspection requests are restricted to commands whose reviewed grammar has no
 repository mutation path, initially `status`, `diff`, `log`, `show`,
@@ -229,7 +240,7 @@ Read-only classification is an enforced command-policy property, not a label
 in the client. The proxy must reject commands that can snapshot, update stores,
 write configuration, invoke helpers, or access credentials even when their
 usual invocation appears observational. The `/src` mount defines inspection
-admission; only exact trusted workspace roots permit mutation.
+admission; mutation requires a backing repository authorized at startup.
 
 == Mutation ownership across proxies
 
@@ -389,7 +400,7 @@ surfaces:
 - `debug`;
 - configuration mutation and all command-line configuration overrides;
 - alternate workspace or config paths; a repository selector is accepted only
-  when it resolves to an exact authorized mutable workspace or an inspection workspace
+  when it resolves to a workspace of an authorized backing repository or an inspection workspace
   beneath the read-only `/src` mount;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
@@ -479,7 +490,7 @@ Existing accepted sessions without workspace authority reject new joins without 
 == Implementation stages
 
 + Build the proxy and client with protocol framing, descriptor-relative
-  checked absolute-cwd execution, exact workspace authority, environment scrubbing, per-command grammar
+  checked absolute-cwd execution, backing-repository authority, environment scrubbing, per-command grammar
   validation, serialization, process-group cleanup, and resource limits.
 + Add unit tests for every rejected escape surface and malformed request.
 + Add an integration fixture containing colocated `.jj` and `.git` metadata.
@@ -539,8 +550,12 @@ Existing accepted sessions without workspace authority reject new joins without 
   Timed-out, oversized, and interrupted requests leave neither the proxy wedged nor descendant processes running.
 - Cross-repository commits with `root:` filesets affect only selected paths and target attribution.
   Other filesets and errors agree with native JJ at the original invocation cwd.
-- Both trusted workspace roots permit mutation, while an unlisted sibling or linked workspace remains inspection-only.
-  Explicit inspection of an authorized root remains read-only.
+- Both startup workspace roots and linked workspaces with the same backing-repository identity permit mutation within existing writable mounts.
+  Existing and newly created linked children can snapshot disk edits and commit them through the backing repository's lock.
+  Independent nested repositories and siblings remain inspection-only.
+  Explicit inspection of an authorized workspace remains read-only.
+- Linked mutation children cannot obtain writes to another protected store by replacing the workspace root, `.jj`, or `.jj/repo` with a symlink or pointer.
+  Scopes containing nested mount aliases or another protected repository's metadata fail before execution.
 - Old accepted sessions cannot acquire new workspace authority from worker mounts or `/reload`.
 - Proxy failure is fail-closed, and launcher cleanup removes only resources for
   its own session.
