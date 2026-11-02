@@ -90,9 +90,11 @@ FROM agent-deps AS pi-runtime
 COPY ./tools/codex-sandbox/image/stage-pi-runtime.mjs /opt/stage-pi-runtime.mjs
 # Select runtime files directly from the build mount, without an intermediate copy.
 RUN --mount=type=bind,from=pi-build,source=/opt/agent-pi,target=/opt/pi-build \
+    --mount=type=bind,from=pi-build,source=/usr/local/lib/node_modules/npm,target=/opt/npm \
     --mount=type=bind,from=pi-extensions,source=/opt/pi-npm/package.json,target=/opt/pi-npm/package.json \
     if [ -e /etc/alpine-release ]; then set -- --omit-standalone; else set --; fi \
-    && node /opt/stage-pi-runtime.mjs /opt/pi-build /opt/agent-pi --extensions /opt/pi-npm "$@" \
+    && node /opt/stage-pi-runtime.mjs /opt/pi-build /opt/agent-pi \
+        --npm-cli /opt/npm/bin/npm-cli.js --extensions /opt/pi-npm "$@" \
     && rm /opt/stage-pi-runtime.mjs
 COPY --from=pi-extensions /opt/pi-npm /opt/pi-npm
 # Runtime libc follows BASE_IMAGE. Select the matching binary rather than using

@@ -7,14 +7,19 @@ import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const { values, positionals } = parseArgs({
-    options: { "omit-standalone": { type: "boolean" }, extensions: { type: "string" } },
+    options: {
+        "omit-standalone": { type: "boolean" }, extensions: { type: "string" },
+        "npm-cli": { type: "string" },
+    },
     allowPositionals: true,
 });
 if (positionals.length !== 2) throw new Error("Pass the built Pi tree and runtime destination");
+if (!values["npm-cli"]) throw new Error("Pass --npm-cli with npm's CLI module path");
 const [built, output] = positionals.map(path => resolve(path));
 const source = join(built, "src");
 const destination = join(output, "src");
-const npm = args => execFileSync("npm", args, {
+// The runtime base provides Node; npm is mounted from the build toolchain.
+const npm = args => execFileSync(process.execPath, [resolve(values["npm-cli"]), ...args], {
     cwd: source, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "inherit"],
 });

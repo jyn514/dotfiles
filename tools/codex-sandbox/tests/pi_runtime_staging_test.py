@@ -1,6 +1,7 @@
 """Runtime packaging keeps production packages and their inspectable workspace sources."""
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -95,6 +96,12 @@ class PiRuntimeStagingTest(unittest.TestCase):
             (extension_external / "index.js").write_text("export const external = 99;\n")
 
             # Changing the package's published file list needs no staging-code edit.
+            node = shutil.which("node")
+            npm_cli = subprocess.run([
+                "npm", "exec", "--offline", "--", "node", "--print", "process.env.npm_execpath",
+            ], check=True, capture_output=True, text=True).stdout.strip()
+            # Runtime bases supply Node but need not install npm on PATH.
+            staging_env = {**os.environ, "PATH": ""}
             for include_asset, omit_standalone in ((False, False), (False, True), (True, False), (True, True)):
                 with self.subTest(include_asset=include_asset, omit_standalone=omit_standalone):
                     if include_asset and not (agent / "extra-runtime.json").exists():
@@ -104,9 +111,10 @@ class PiRuntimeStagingTest(unittest.TestCase):
                         (agent / "extra-runtime.json").write_text("{}")
                     output = Path(directory) / f"runtime-{include_asset}-{omit_standalone}"
                     options = ["--omit-standalone"] if omit_standalone else []
-                    staged_result = subprocess.run(["node", str(STAGE), str(built), str(output),
+                    staged_result = subprocess.run([node, str(STAGE), str(built), str(output),
+                                                    "--npm-cli", npm_cli,
                                                     "--extensions", str(extensions), *options],
-                                                   capture_output=True, text=True)
+                                                   env=staging_env, capture_output=True, text=True)
                     self.assertEqual(0, staged_result.returncode, staged_result.stderr)
                     staged = output / "src/packages/coding-agent"
                     self.assertTrue((staged / "docs/usage.md").is_file())
@@ -145,8 +153,9 @@ class PiRuntimeStagingTest(unittest.TestCase):
             (extensions / "package.json").write_text(json.dumps({
                 "dependencies": {"@fixture/external": "2.0.0"},
             }))
-            collision = subprocess.run(["node", str(STAGE), str(built), str(Path(directory) / "collision"),
-                                        "--extensions", str(extensions)], capture_output=True, text=True)
+            collision = subprocess.run([node, str(STAGE), str(built), str(Path(directory) / "collision"),
+                                        "--npm-cli", npm_cli, "--extensions", str(extensions)],
+                                       env=staging_env, capture_output=True, text=True)
             self.assertNotEqual(0, collision.returncode)
             self.assertIn("EEXIST", collision.stderr)
 
