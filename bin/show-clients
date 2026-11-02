@@ -1,0 +1,81 @@
+#!/usr/bin/env fish
+
+function find_client_ancestry
+    set -l current $argv[1]
+    set -l current_comm ""
+
+    if test -z "$current"
+        echo "[-] Error: No PID provided to find_client_ancestry." >&2
+        return 1
+    end
+
+    # echo "[*] Tracing ancestry starting from PID: $current"
+
+    while test -n "$current" -a "$current" -gt 1
+        if not test -d "/proc/$current"
+            echo "[-] /proc/$current does not exist or cannot be accessed." >&2
+            return 1
+        end
+
+        # 1. Read process command name
+        set -l comm ""
+        if test -r "/proc/$current/comm"
+            set comm (cat /proc/$current/comm | string trim)
+        end
+
+        if test "$comm" = systemd -o "$comm" = init
+          break
+        end
+
+        set current_comm $comm
+
+        # 2. Read stat and extract PPID safely
+        set -l stat_line (cat /proc/$current/stat 2>/dev/null)
+        if test -z "$stat_line"
+            echo "[-] Failed to read /proc/$current/stat" >&2
+            return 1
+        end
+
+        set -l ppid (echo "$stat_line" | awk -F') ' '{print $2}' | awk '{print $2}' | string trim)
+
+        if test "$ppid" = 1
+          break
+        end
+        set current $ppid
+    end
+
+    echo $current_comm
+end
+
+tmux list-clients -F "#{client_session}|#{client_pid}" | while read -l line
+    set -l parts (string split "|" $line)
+    set -l session $parts[1]
+    set -l pid $parts[2]
+
+    set -l ip ""
+    if test -r "/proc/$pid/environ"
+        set -l env_str (tr '\0' '\n' < /proc/$pid/environ 2>/dev/null | grep '^SSH_CONNECTION=')
+        if test -n "$env_str"
+            set -l ssh_vars (string split " " (string replace 'SSH_CONNECTION=' '' $env_str))
+            set ip $ssh_vars[1]
+        end
+    end
+
+    if test -z "$ip"
+        set ip "127.0.0.1"
+    end
+
+    set -l client_name
+    if test "$ip" = "127.0.0.1" -o "$ip" = "::1"
+        set client_name "$(set_color yellow)$(hostname)$(set_color normal): $(find_client_ancestry $pid)"
+    else
+        set client_name (nslookup $ip 2>/dev/null | awk '/name =/{print $NF}' | string trim -r -c '.')
+        if test -z "$client_name"
+            set client_name "$(set_color red)No PTR record found"
+        else
+            set client_name "$(set_color yellow)$(string replace -r '\.?tail.*\.ts\.net$' '' $client_name)"
+        end
+    end
+
+    echo "$(set_color green)$session$(set_color normal) | $client_name"
+end | column -t -s '|' -o '|'

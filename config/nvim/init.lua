@@ -22,6 +22,7 @@ local config_group = vim.api.nvim_create_augroup('dotfiles_config', { clear = tr
 -- misc
 vim.opt.undofile = true
 vim.opt.title = true      -- allows M-d to search for a file
+vim.opt.titlestring = "%t%{&modified ? ' [+]' : ''}"
 -- see `:help zo` for keybinds
 
 -- folds

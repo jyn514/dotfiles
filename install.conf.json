@@ -77,7 +77,7 @@
       "$HOME/.keybindings.ahk": "config/keybindings.ahk",
       "$HOME/.config/kitty/": {
         "glob": true,
-        "path": "config/kitty/*.conf"
+        "path": "config/kitty/*"
       },
       "$HOME/.config/lesskey": "config/lesskey",
       "$HOME/.config/nvim/": {

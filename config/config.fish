@@ -516,6 +516,10 @@ function __dotfiles_render_prompt
 	end
 end
 
+function fish_title
+  echo
+end
+
 function fish_prompt
 	set -l last_status $status
 	if contains -- --final-rendering $argv
