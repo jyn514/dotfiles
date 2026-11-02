@@ -103,6 +103,10 @@ If isolation changes either, record the differences and do not attribute the res
 
 For paired behavioral trials, fix the comparison question, outcome criteria, historical cut, model, and task inputs before generation;
 vary only the instruction change under test.
+For a prompt-only comparison, replace the original prompt at the same point in otherwise unchanged context.
+Appending a corrective message, removing prior investigation, or moving evidence earlier tests a different intervention.
+Disclosing those differences does not restore comparability.
+If the available harness cannot perform the replacement, report that limitation before substituting a different trial.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
 Judge actual decisions and actions afterward, not just formatting or workflow compliance.
 For compound outcomes, distinguish evidence for individual causal links from evidence that the links occur together.
