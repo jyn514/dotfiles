@@ -1097,6 +1097,12 @@ describe("extension completion delivery and TUI", () => {
       // The values live in the schema, but the description has to say the capability exists.
       expect(tools.get("spawn_agent").description).toContain("`model` takes one of the values its schema lists");
       expect(commands.has("subagents")).toBe(true);
+      expect(tools.has("steer_subagent")).toBe(true);
+      expect(tools.has("send_message")).toBe(false);
+      const steeringTool = tools.get("steer_subagent");
+      expect(steeringTool.parameters.required).toEqual(["target", "message"]);
+      expect(steeringTool.parameters.properties.target.type).toBe("string");
+      expect(steeringTool.parameters.properties.message.type).toBe("string");
       expect(commands.get("pause").allowedWhilePaused).toBe(true);
       expect(commands.get("unpause").allowedWhilePaused).toBe(true);
       expect(commands.has("resume")).toBe(false);
@@ -1345,6 +1351,28 @@ describe("extension completion delivery and TUI", () => {
         task_name: "removed-skill", message: "work", skills: ["tighten-docs"],
       }, undefined, undefined, ctx)).rejects.toThrow("skills are not loaded in the parent session");
       expect(getAgent("removed-skill", parentSessionId)).toBeNull();
+
+      // Exercise the renamed public tool in both delivery modes without changing
+      // the completion counts asserted above. A held child cannot settle early.
+      await tools.get("spawn_agent").execute("spawn-steering", {
+        task_name: "steering-target", message: "tool hold for steering",
+      }, undefined, undefined, ctx);
+      const steered = await steeringTool.execute("steer-active", {
+        target: "steering-target", message: "check cancellation too",
+      }, undefined, undefined, ctx);
+      expect(steered.details).toEqual({ target: "steering-target", delivery: "steer" });
+      await tools.get("interrupt_agent").execute("interrupt-steering", {
+        target: "steering-target",
+      }, undefined, undefined, ctx);
+      const resumed = await steeringTool.execute("steer-settled", {
+        target: "steering-target", message: "resumed work",
+      }, undefined, undefined, ctx);
+      expect(resumed.details).toEqual({ target: "steering-target", delivery: "prompt" });
+      await waitUntil(() => getAgent("steering-target", parentSessionId)?.status === "completed");
+      expect(sentMessages.some(({ message }) => message.content.includes("response:resumed work"))).toBe(true);
+      await expect(steeringTool.execute("steer-unknown", {
+        target: "missing-steering-target", message: "work",
+      }, undefined, undefined, ctx)).rejects.toThrow("steer_subagent failed:");
 
       // Unconfigured takes both runtime arguments away again even though Pi still has enabledModels.
       fs.writeFileSync(configFile, "{}");

@@ -48,10 +48,10 @@ export default function heldToolExtension(pi: ExtensionAPI): void {
     }
   });
   pi.registerTool({
-    name: "faux_nested_send", label: "Nested integration send", description: "Exercise the public nested tool path into production send_message.",
+    name: "faux_nested_send", label: "Nested integration send", description: "Exercise the public nested tool path into production steer_subagent.",
     parameters: Type.Object({ target: Type.String(), message: Type.String() }),
     async execute(_toolCallId, args, signal, _onUpdate, ctx) {
-      const outcome = await ctx.executeTool("send_message", args, { signal });
+      const outcome = await ctx.executeTool("steer_subagent", args, { signal });
       if (outcome.isError) throw new Error(JSON.stringify(outcome.result.content));
       return outcome.result;
     },

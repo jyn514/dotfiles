@@ -92,9 +92,9 @@ A later provider request produces normal text, not another tool.
 Provider-call and template-start journals derive from the existing session path.
 
 The fixed `parent-held-task:<owned-path>` input scripts real parent tools: `spawn_agent` with the
-owned `source-parent-roundtrip` template, then one assistant batch containing `[wait_agent, send_message]`.
+owned `source-parent-roundtrip` template, then one assistant batch containing `[wait_agent, steer_subagent]`.
 Pause releases the wait, while the later admitted call must still steer the child before capture.
-`parent-nested-held-task:<owned-path>` uses a packaged test tool to call production `send_message`
+`parent-nested-held-task:<owned-path>` uses a packaged test tool to call production `steer_subagent`
 through public `ctx.executeTool`, covering its independently assigned nested drain token.
 Native nested-call events and persisted `nestedCalls` verify this path.
 `parent-blocked-held-task:<owned-path>` holds another parent tool between the wait and send.

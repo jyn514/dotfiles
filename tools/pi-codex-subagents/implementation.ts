@@ -574,8 +574,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   });
 
   pi.registerTool({
-    name: "send_message",
-    label: "Send Message",
+    name: "steer_subagent",
+    label: "Steer Subagent",
     description: "Send a message to a session-owned agent. Steers the current run when active; otherwise starts a new turn.",
     parameters: Type.Object({
       target: Type.String({ description: "Session-owned agent task name." }),
@@ -586,10 +586,10 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
         const result = await manager.sendMessage(parentSessionId(ctx), cleanTarget(params.target), params.message, _id);
         return textResult(result.delivery === "steer" ? "Message steered into the running agent." : "Message started a new agent turn.", { target: params.target, ...result });
       } catch (error) {
-        throw new Error(`send_message failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`steer_subagent failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     },
-    renderCall(args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("send_message ")) + theme.fg("accent", args.target || "?"), 0, 0); },
+    renderCall(args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("steer_subagent ")) + theme.fg("accent", args.target || "?"), 0, 0); },
     renderResult(result: any, _options: any, theme: Theme) {
       if (result.isError) return new Text(theme.fg("error", "✗ send failed"), 0, 0);
       return new Text(theme.fg("success", result.details?.delivery === "steer" ? "✓ steered" : "✓ started"), 0, 0);
@@ -599,7 +599,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   pi.registerTool({
     name: "interrupt_agent",
     label: "Interrupt Agent",
-    description: "Abort a session-owned agent's current turn while keeping its session available for later send_message calls.",
+    description: "Abort a session-owned agent's current turn while keeping its session available for later steer_subagent calls.",
     parameters: Type.Object({ target: Type.String({ description: "Session-owned agent task name." }) }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {

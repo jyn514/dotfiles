@@ -23,7 +23,7 @@ const steeringHistory = (file: string) => SessionManager.open(file).getBranch().
 sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator saves active parent+child and drains %s same-batch steering before capture", async (mode) => {
   const nested = mode === "nested";
   const blocked = mode === "blocked";
-  const laterTool = nested ? "faux_nested_send" : "send_message";
+  const laterTool = nested ? "faux_nested_send" : "steer_subagent";
   const parentExtensions = nested || blocked ? [productionIndex, heldExtension] : [productionIndex];
   const { getAgent, getRunsDir, parentScopeKey } = await import("../core.ts");
   const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "parent-child-"));
@@ -98,12 +98,12 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
     expect(drainedSend[0].message.isError).not.toBe(true);
     expect(drainedSend[0].message.details.delivery).toBe("steer");
     if (nested) {
-      expect(toolResults(parentFile, "send_message")).toHaveLength(0); // Nested results are not transcript entries.
+      expect(toolResults(parentFile, "steer_subagent")).toHaveLength(0); // Nested results are not transcript entries.
       expect(drainedSend[0].message.nestedCalls.calls).toHaveLength(1);
       expect(drainedSend[0].message.nestedCalls.calls[0]).toMatchObject({
-        name: "send_message", status: "ok", arguments: { target: "native-child", message: lateSteering },
+        name: "steer_subagent", status: "ok", arguments: { target: "native-child", message: lateSteering },
       });
-      expect(rpc.records.filter(record => record.type === "tool_execution_end" && record.toolName === "send_message"
+      expect(rpc.records.filter(record => record.type === "tool_execution_end" && record.toolName === "steer_subagent"
         && record.parentToolCallId === drainedSend[0].message.toolCallId)).toHaveLength(1);
     }
     expect(jsonl(providerCallsFile(parentFile))).toHaveLength(2);

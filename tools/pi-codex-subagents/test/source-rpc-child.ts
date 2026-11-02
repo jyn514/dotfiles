@@ -156,7 +156,7 @@ const respond: FauxResponseFactory = (context) => {
     if (!completed("wait_agent")) return fauxAssistantMessage([
       fauxToolCall("wait_agent", { targets: ["native-child"] }),
       ...(parentTask[1] === "blocked-" ? [fauxToolCall("faux_hold", { path: `${parentTask[2]}.parent` })] : []),
-      fauxToolCall(parentTask[1] === "nested-" ? "faux_nested_send" : "send_message", { target: "native-child", message: "same-batch steering after pause" }),
+      fauxToolCall(parentTask[1] === "nested-" ? "faux_nested_send" : "steer_subagent", { target: "native-child", message: "same-batch steering after pause" }),
     ], { stopReason: "toolUse" });
     return fauxAssistantMessage("faux:parent-complete");
   }

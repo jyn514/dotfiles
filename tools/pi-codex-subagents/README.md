@@ -35,7 +35,7 @@ Children still use the resource-discovery rules described under [Agent templates
 | `wait_all_agents` | Block until every selected agent finishes |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
 | `read_agent_response` | Read an agent's latest final raw text response |
-| `send_message` | Steer a running agent or start another turn when settled |
+| `steer_subagent` | Steer a running agent or start another turn when settled |
 | `interrupt_agent` | Abort the current turn while preserving its session for later messages |
 
 Agent names are unique within their parent session. The same task name can exist safely in different Pi sessions. Read and control tools are always scoped to the current parent session; only `list_agents(include_all: true)` crosses session boundaries, and that view is read-only.
@@ -290,7 +290,7 @@ While agents are starting or running, a compact one-line indicator appears above
 
 The overlay uses the child working directory for tool rendering and synchronizes in-progress output when opened midway through a run. Use Left/Right to switch between agents in the current browser scope.
 
-Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `send_message` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
+Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `steer_subagent` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
 
 ### Working-copy commit-boundary protection
 
