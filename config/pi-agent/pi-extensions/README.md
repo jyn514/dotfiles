@@ -586,3 +586,9 @@ question. Asynchronous delivery remains Pi's responsibility.
 
 [`host-bash.ts`](host-bash.md) adds `/host` to enable Guardian-reviewed `host_bash` alongside guest tools.
 It requires Codex's experimental external-review API; the linked guide covers temporary binaries, hook isolation, and the opt-in smoke test.
+
+## Design proposals
+
+[Explicit evidence collection](evidence.md) proposes `collect_evidence`,
+`show_evidence`, and `/evidence`, with code-reuse candidates and unresolved
+report-input, storage, and execution boundaries. These interfaces are not implemented.
