@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import runpy
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -491,6 +492,29 @@ class SharedChatHistoryTests(unittest.TestCase):
             self.import_share_fixture([turn for turn in SHARE_TURNS if not turn["text"].strip()
                                        or turn["role"] == "system"])
         self.assertEqual("keep existing\n", self.output.read_text())
+
+    def test_conversion_prints_copyable_session_command(self):
+        main = runpy.run_path(str(CONVERT))["main"]
+        history = {"segments": [[{"type": "session_meta", "payload": {
+            "session_id": CHILD, "cwd": str(self.root)}}]]}
+        for output in (None, self.root / "pi's session $HOME; test.jsonl"):
+            with self.subTest(output=output):
+                arguments = [str(CONVERT), CHILD]
+                if output is not None:
+                    arguments.extend(["-o", str(output)])
+                with patch.dict(main.__globals__, read_history=lambda *args: history):
+                    with patch.dict(os.environ, PI_CODING_AGENT_DIR=str(self.root / "pi agent")):
+                        with patch.object(sys, "argv", arguments):
+                            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                                main()
+                command = stdout.getvalue().splitlines()[-1]
+                executable, option, session = shlex.split(command)
+                self.assertEqual(["pi", "--session"], [executable, option])
+                self.assertTrue(Path(session).is_absolute())
+                self.assertTrue(Path(session).is_file())
+                self.assertEqual(CHILD, json.loads(Path(session).read_text().splitlines()[0])["id"])
+                if output is not None:
+                    self.assertEqual(output, Path(session))
 
     def test_share_conversion_keeps_its_existing_message_policy(self):
         module = runpy.run_path(str(CONVERT))

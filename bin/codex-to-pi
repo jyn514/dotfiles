@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -244,6 +245,7 @@ def main():
         destination = agent_dir / "sessions" / safe_cwd / filename
     count = convert(segments, destination, args.normalize, history.get("branches"))
     print(f"wrote {count} messages to {destination}")
+    print(f"pi --session {shlex.quote(str(destination.resolve()))}")
 
 
 if __name__ == "__main__":
