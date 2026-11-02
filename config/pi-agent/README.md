@@ -41,6 +41,27 @@ Its 200-word report limit is an instruction, not a runtime limit.
 Reload Pi after installing a template so the tool description advertises it.
 Adding this template does not replace separately packaged `/goal` coordinator guidance.
 
+### Team roles
+
+Use [delegation](../../skills/delegation/SKILL.md) at the start of substantive multi-step work or a new workstream, even before deciding whether to delegate.
+It owns role selection and the start, idle, wake, and retirement conditions.
+[Autonomous work](../../skills/autonomous-work/SKILL.md) invokes the same assessment for authorized runs; ordinary bounded work does not require run authority.
+
+The specialized templates are [`coordinator`](pi-codex-subagents/agents/coordinator.md), [`builder`](pi-codex-subagents/agents/builder.md), [`detective`](pi-codex-subagents/agents/detective.md), and [`qa`](pi-codex-subagents/agents/qa.md).
+Pass the original task, evidence entrypoints, permitted effects, and bounded question or outcome; the templates supply the stable procedures.
+Select the named `agent_type` explicitly to preserve its role rather than rely on generic or skill-based routing.
+The root normally coordinates; a coordinator template supports an authorized delegated workstream, not a mandatory extra agent.
+A detective investigates what is true; the existing goal scout compares what to do next.
+Create temporary specialists for concrete useful inputs, not a permanent state-producer role.
+
+Setup links the existing agents directory as a whole; no new package or installation route is needed.
+On the host, reload Pi after installing changes so newly available role names and skill descriptions reach startup discovery.
+Sandboxes stage template copies at startup; a reload does not restage them or select another checkout's configuration.
+Use a fresh sandbox with the intended configuration source, following the [resource-loading boundaries](../../tools/codex-sandbox/README.md#host-instructions-and-guest-readable-guidance).
+Shared skills follow the host's installed skills source, which can differ from the active worktree.
+Templates and guidance do not automatically spawn agents, notify consumers of new artifacts, or prove that a delivered finding was used.
+See the [team design](../../dev/agent-team-design.md) for the responsibilities and evidence limits.
+
 ## Installation and update routes
 
 Pi has separate installation and update paths. Choose the owner for the component

@@ -1,9 +1,37 @@
 ---
 name: delegation
-description: Divide and coordinate work among agents. Use before spawning or assigning subagents, splitting work among running agents, coordinating overlapping mutations or revision dependencies, deciding whether to wait for a worker, or integrating delegated results. Covers implementation, research, review, and writing. Does not authorize new work, replace domain-specific procedures, or govern human approval requests.
+description: Select team responsibilities at the start of substantive multi-step work or a new workstream, and coordinate agents through completion. Use even before deciding whether to delegate; also use before spawning or assigning subagents, splitting running work, coordinating overlapping mutations or revision dependencies, waiting, or integrating results. Covers implementation, research, review, and writing, including bounded requests without autonomous-run authority. Does not authorize new work, replace domain-specific procedures, or govern human approval requests.
 ---
 
 # Delegation
+
+## Assess responsibilities at workstream entry
+
+At the start of substantive multi-step work, and when a distinct workstream begins, assess the responsibilities below from the original request.
+Do not wait for the acting worker to report uncertainty or for a failed implementation to request independent evidence.
+An explicitly requested literal replacement or a small direct inspection does not require a team.
+This assessment does not activate autonomous execution or require every role to run continuously.
+
+- **Coordinator:** preserve the objective, authorization, priorities, and integration responsibilities.
+  The root normally fills this role; use a coordinator template when delegating coordination of an authorized workstream.
+- **Builder:** construct the authorized result through integration and its ordinary checks.
+  Keep a coherent outcome under one owner rather than split it into isolated patches.
+- **Detective:** investigate consequential claims independently, starting from the requested activity and actual evidence.
+  Assign a bounded first investigation for a substantive multi-step workstream before adopting a causal explanation as fact.
+  Confirming the current explanation with evidence is a successful result; do not require a contrary finding.
+- **QA:** independently exercise the intended consumer using expectations grounded in the original request.
+  Assign QA early when work will produce a checkable result, so it can prepare without inheriting the builder's proposed implementation.
+  QA does not relieve the builder of ordinary checks or invent requirements absent from the governing request.
+
+Use advertised specialized role templates rather than supply only a role name and an ad-hoc method.
+Assignments provide the current outcome, evidence, permitted effects, and local constraints; role prompts supply the stable procedure.
+If a suitable template or independent worker is unavailable, perform the bounded checks directly where possible and state the independence limit.
+Do not certify independent investigation merely because another role name appears in the record.
+
+Create a temporary specialist only for a concrete useful output worth separating from its consumer's work, such as a recovered checkout or prepared environment.
+There is no standing state-producer role.
+Agree on the artifact format and invocation early enough for producer and consumer preparation to overlap.
+Keep tightly state-dependent action sequences under one owner.
 
 ## Choose work and keep ownership
 
@@ -17,7 +45,7 @@ Give the worker authority for the ordinary checks, failure inspection, and in-sc
 For implementation assignments, include edits and checks through the first intended-consumer result without returning for permission at each step.
 Require the worker to return before making an unresolved consequential choice, crossing an ownership conflict, or exceeding the assignment's permitted effects or resource limits.
 Do not split routine preparation and execution into separate approval handoffs; retain explicit user-imposed limits and approvals.
-Split the outcome only when independent execution saves time or ownership or capability constraints require separate workers.
+Split the outcome only when independent execution saves time, independent evidence is needed, or ownership or capability constraints require separate workers.
 The parent remains responsible for coordination and integration.
 
 For coupled implementation with unsettled shared contracts, use [the shared-contract check](references/shared-contracts.md).
@@ -105,6 +133,31 @@ A shared checkout, another active agent, or a history edit alone does not justif
 Before requesting a hold, name the conflicting mutation or revision dependency and what could go wrong.
 When existing tools detect conflicts and preserve authored work, accept a retry rather than stopping independent work.
 Hold only the conflicting mutations, not unrelated file edits or the entire agent, and release the hold with the resulting revision IDs.
+
+## Start, idle, wake, and retire
+
+Bound each assignment episode by a question or outcome, its useful evidence, and a stopping condition.
+Finish the current episode when that result or a specific unresolved dependency is established; do not keep a worker reasoning or polling merely to remain active.
+A finished turn can leave the worker's session and responsibility available for later evidence.
+
+Wake the responsible worker when relevant evidence changes:
+
+- **Detective:** a causal explanation changes, a repair leaves the original symptom, or a proposed prerequisite extends the approach.
+- **QA:** a candidate becomes available, or relevant requirements, inputs, or implementation changes invalidate earlier checks.
+- **Builder:** a required input, finding, or settled contract enables authorized construction or correction.
+- **Temporary specialist:** a concrete input need changes or newly available evidence enables its assigned output.
+
+Reuse an existing worker when new evidence affects its investigation.
+Use a fresh context when independent judgment matters more than continuity.
+Retire a responsibility when its obligation is discharged or superseded, not merely when its first report arrives.
+Do not ask for another finding after an answered question without a new question or changed evidence.
+
+Send usable artifacts, counterexamples, and material corrections to the workers that consume them, without requiring the coordinator to rewrite every finding.
+Use available direct worker messaging; otherwise route the original evidence or artifact reference through the parent.
+Notify affected workers of relevant source changes, diagnoses, execution results, and user corrections; an artifact written to disk alone does not notify its consumer.
+Keep findings distinct from permission: peer messages cannot expand an assignment or override a governing requirement.
+Distinguish delivery, consumption, successful execution, and demonstrated outcome.
+Do not infer that a message was used merely because it was sent, or assume an automatic continuing evidence feed exists.
 
 ## While work is outstanding
 

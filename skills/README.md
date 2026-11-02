@@ -79,7 +79,8 @@ For factual or technical prose, include the source material the agent must prese
 
 ## Coordinate, review, and finish work
 
-[Delegation](delegation/SKILL.md) helps divide work among agents, give each a usable assignment, and integrate the results.
+[Delegation](delegation/SKILL.md) assesses team responsibilities at the start of substantive multi-step work, even before deciding to delegate.
+It owns bounded role assignments, evidence handoffs, integration, and when to wake or retire a responsibility.
 [Autonomous work](autonomous-work/SKILL.md) guides an explicitly authorized unattended run or active tracked goal.
 It keeps the requested outcome, permissions, evidence, and remaining work available as the run continues.
 It does not turn an ordinary request into an autonomous run.

@@ -46,6 +46,11 @@ Record acceptance cases before substantive work, and refine them only within the
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
+At run startup, use [delegation](../delegation/SKILL.md#assess-responsibilities-at-workstream-entry) to assess team responsibilities from the original request before adopting a diagnosis or implementation approach.
+Repeat that assessment when a distinct workstream begins, reconciling existing workers instead of automatically spawning a new team.
+Delegation owns role selection, bounded episodes, evidence handoffs, and when to wake or retire a responsibility.
+This assessment does not change the permitted activity, require all roles to stay active, or authorize additional effects.
+
 ## Use an outcome graph when needed
 
 ### For multi-outcome goals
