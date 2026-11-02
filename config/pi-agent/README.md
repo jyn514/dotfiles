@@ -1,5 +1,8 @@
 # Pi configuration
 
+- Changing subagent templates: start with [Subagent templates](#subagent-templates).
+- Changing the subagent manager implementation: start with the [package guide](../../tools/pi-codex-subagents/README.md).
+
 This directory mirrors `~/.pi/agent/`. Setup links individual files with a
 recursive Dotbot glob, leaving sessions, credentials, installed packages, and
 other machine-local files in the home directory. The `pi-codex-subagents/agents/`
