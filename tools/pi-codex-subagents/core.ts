@@ -1519,7 +1519,7 @@ export class AgentManager {
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
     const childEnv: NodeJS.ProcessEnv = { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0",
-      PI_SUBAGENT_ID: info.id, PI_SUBAGENT_PARENT_SESSION_ID: info.parentSessionId };
+      PI_SUBAGENT_ID: info.id, PI_SUBAGENT_PARENT_SESSION_ID: info.parentSessionId, PI_SUBAGENT_TASK_NAME: info.taskName };
     delete childEnv.PI_LINK_NAME;
     let proc: ChildProcessWithoutNullStreams;
     try {

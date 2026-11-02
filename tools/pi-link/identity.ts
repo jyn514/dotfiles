@@ -86,7 +86,7 @@ export function applyAgentIdentity(
  * Match that ID so an ordinary nested terminal cannot inherit a worker default.
  * Missing, stale, or malformed handoffs keep the independent random default.
  */
-export function generatedName(suffix: string, parentSessionId?: string, parentIdentity?: string): string {
+export function generatedName(suffix: string, parentSessionId?: string, parentIdentity?: string, taskName?: string): string {
   const fallback = `t-${suffix}`;
   if (!parentSessionId || !parentIdentity) return fallback;
   let value: unknown;
@@ -99,7 +99,10 @@ export function generatedName(suffix: string, parentSessionId?: string, parentId
   const parent = splitName(combined);
   if (!parent.name) return fallback;
   const prefix = parent.name.startsWith("t-") ? parent.name : `t-${parent.name}`;
-  return fullName({ ...parent, name: `${prefix}-subagent-${suffix}`, nameOrigin: "generated", groupOrigin: "generated" });
+  const task = normalizeName(taskName);
+  // Older managers omit the task name. Never let a handoff change the group.
+  const child = task && !task.includes("@") ? task : `subagent-${suffix}`;
+  return fullName({ ...parent, name: `${prefix}-${child}`, nameOrigin: "generated", groupOrigin: "generated" });
 }
 
 /** Resolve CLI > environment > latest saved naming entry > session > generated. */

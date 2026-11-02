@@ -245,3 +245,75 @@ sourceTest("configured pi-link workers expose selected tools and reply through b
     rmSync(cwd, { recursive: true, force: true });
   }
 }, 45000);
+
+sourceTest("parent-assigned task names become generated worker endpoints with inherited groups and collision handling", async () => {
+  const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
+  const { SUBAGENT_DIR, getRunsDir } = await import("../core.ts");
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "link-names-"));
+  const fixtureLink = await disposableLink(cwd);
+  const settingsFile = join(getAgentDir(), "settings.json");
+  mkdirSync(dirname(settingsFile), { recursive: true });
+  writeFileSync(settingsFile, JSON.stringify({ extensions: [fixtureLink, heldExtension] }));
+  const template = `link-names-${randomUUID()}`;
+  const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);
+  mkdirSync(dirname(templateFile), { recursive: true });
+  // The worker never assigns its own identity. Its only operation holds it alive
+  // while the parent discovers the endpoint created by normal startup.
+  writeFileSync(templateFile, `---\nname: ${template}\ntools: faux_hold,link_list\n---\n`);
+  const peers: Peer[] = [];
+  const markers: string[] = [];
+  try {
+    const start = async (directory: string, name: string) => {
+      const dir = join(cwd, directory);
+      mkdirSync(dir);
+      const peer = sourceRpc(dir, join(dir, "session.jsonl"), false,
+        [productionIndex, fixtureLink, heldExtension], { PI_LINK_NAME: name });
+      peers.push(peer);
+      await peer.request({ type: "get_state" });
+      return peer;
+    };
+    // Vary the authoritative parent identity and spawn task, not a fixture copy
+    // of the manager's child environment. Expected names come from the contract.
+    for (const [parentName, group, taskName, preferredName, assignedName, collision] of [
+      ["atlas", "qa-blue", "verify/edges", "t-atlas-verify/edges", "t-atlas-verify/edges", false],
+      ["t-birch", "qa-green@nested", "scan_2", "t-birch-scan_2", "t-birch-scan_2", false],
+      ["cedar", "qa-collision", "report", "t-cedar-report", "t-cedar-report-2", true],
+    ] as const) {
+      const owner = await start(parentName, `${parentName}@${group}`);
+      const parentId = (await owner.request({ type: "get_state" })).sessionId;
+      await until(async () => Boolean((await tool(owner, "link_list", {})).details.sessionIds?.[`${parentName}@${group}`]),
+        `${parentName} joins its group`);
+      if (collision) {
+        const blocker = await start("collision-peer", `${preferredName}@${group}`);
+        const blockerId = (await blocker.request({ type: "get_state" })).sessionId;
+        await until(async () => (await tool(owner, "link_list", {})).details.sessionIds?.[`${preferredName}@${group}`] === blockerId,
+          "existing endpoint occupies the worker preference before spawning");
+      }
+      const marker = join(cwd, `${parentName}-held`);
+      markers.push(marker);
+      await tool(owner, "spawn_agent", { task_name: taskName, agent_type: template, message: `hold-tool:${marker}` });
+      await until(() => existsSync(heldToolFiles(marker).started), `${taskName} holds its native tool`);
+      const stored = readdirSync(getRunsDir(), { recursive: true }) as string[];
+      const info = stored.filter(name => name.endsWith(".info.json"))
+        .map(name => JSON.parse(readFileSync(join(getRunsDir(), name), "utf8")))
+        .find(info => info.parentSessionId === parentId && info.taskName === taskName);
+      expect(info).toBeDefined();
+      const nativeId = jsonl(info.sessionFile).find(entry => entry.type === "session").id;
+      let roster: Record<string, string> = {};
+      await until(async () => {
+        roster = (await tool(owner, "link_list", {})).details.sessionIds ?? {};
+        return Object.values(roster).includes(nativeId);
+      }, `${taskName} joins as an independently discoverable endpoint`);
+      expect(roster[`${assignedName}@${group}`]).toBe(nativeId);
+      const identity = jsonl(info.sessionFile).findLast(entry => entry.type === "custom" && entry.customType === "link-identity")?.data;
+      expect(identity).toMatchObject({ name: preferredName, group, nameOrigin: "generated", groupOrigin: "generated" });
+      if (collision) expect(roster[`${preferredName}@${group}`]).not.toBe(nativeId);
+    }
+  } finally {
+    for (const marker of markers) writeFileSync(heldToolFiles(marker).release, "release");
+    for (const peer of peers.reverse()) await peer.close();
+    rmSync(templateFile, { force: true });
+    rmSync(settingsFile, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 45000);

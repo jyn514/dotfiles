@@ -457,11 +457,13 @@ Client A            Hub              Client B
 The hub enforces unique terminal names via a `uniqueName()` function. If `"builder"` is already taken, the next terminal requesting that name is assigned `"builder-2"`, then `"builder-3"`, and so on.
 
 Root default names are random 4-character hex IDs: `t-a1b2`, `t-c3d4`, etc.
-Managed children default to `<parent-local-name>-subagent-<four-random-hex>` in the parent's group, prepending `t-` only if the parent name does not already start with it.
+Managed children default to `<parent-local-name>-<task-name>` in the parent's group, prepending `t-` only if the parent name does not already start with it.
+Task-name path separators remain unchanged.
+Older managers that omit the task name keep the `subagent-<four-random-hex>` suffix.
 This is only the generated fallback; startup overrides, saved identity, and Pi session names retain their existing precedence.
 
 **Parent handoff:** pi-link publishes `PI_LINK_PARENT_IDENTITY` as JSON `{ version: 1, sessionId, name }`, using its current assigned combined name, including collision suffixes.
-The subagent manager copies the environment at launch and supplies `PI_SUBAGENT_PARENT_SESSION_ID` for the immediate parent.
+The subagent manager copies the environment at launch and supplies `PI_SUBAGENT_PARENT_SESSION_ID` for the immediate parent and `PI_SUBAGENT_TASK_NAME` from the worker's normalized task name.
 The child uses the snapshot only when that ID matches; missing, malformed, unsupported, or mismatched snapshots keep the independent random default.
 This environment handoff is a naming hint, not proof of parentage for routing or access.
 Each child publishes its own snapshot for its children.

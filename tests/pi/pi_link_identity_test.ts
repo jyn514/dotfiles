@@ -111,6 +111,20 @@ describe("parent-derived generated names", () => {
     }
   });
 
+  test("uses the assigned task name, including path separators, without changing the parent's group", () => {
+    for (const [parent, task, expected] of [
+      ["ghost@review", "qa", "t-ghost-qa@review"],
+      ["t-b2c5@a@b", "review/api", "t-b2c5-review/api@a@b"],
+      ["ghost@", "builder", "t-ghost-builder@"],
+    ]) {
+      expect(generatedName("d8b7", "parent", snapshot(parent), task)).toBe(expected);
+    }
+    for (const task of [undefined, "", " ", "qa@other"]) {
+      expect(generatedName("d8b7", "parent", snapshot("ghost@review"), task)).toBe("t-ghost-subagent-d8b7@review");
+    }
+    expect(generatedName("d8b7", "parent", snapshot("ghost", "other"), "qa")).toBe("t-d8b7");
+  });
+
   test("missing, mismatched, or malformed parent handoffs keep the root default", () => {
     expect(generatedName("d8b7")).toBe("t-d8b7");
     expect(generatedName("d8b7", undefined, snapshot("ghost"))).toBe("t-d8b7");
@@ -123,9 +137,9 @@ describe("parent-derived generated names", () => {
   });
 
   test("is a generated fallback, not an override or a user ownership claim", () => {
-    const generated = generatedName("d8b7", "parent", snapshot("ghost@review"));
+    const generated = generatedName("d8b7", "parent", snapshot("ghost@review"), "qa");
     const first = initialIdentity({ generatedName: generated, entries: [] });
-    expect(first).toEqual({ name: "t-ghost-subagent-d8b7", group: "review", nameOrigin: "generated", groupOrigin: "generated" });
+    expect(first).toEqual({ name: "t-ghost-qa", group: "review", nameOrigin: "generated", groupOrigin: "generated" });
     expect(initialIdentity({ generatedName: "t-renamed-subagent-1234", entries: [saved(first)] })).toEqual(first);
     for (const override of [{ cliName: "chosen" }, { envName: "chosen" }, { sessionName: "chosen" }, { entries: [legacy("chosen")] }]) {
       expect(fullName(initialIdentity({ generatedName: generated, entries: [], ...override }))).toBe("chosen");

@@ -234,7 +234,7 @@ export default function (pi: ExtensionAPI) {
 
   let role: "hub" | "client" | "disconnected" = "disconnected";
   let terminalName = generatedName(crypto.randomUUID().slice(0, 4),
-    process.env.PI_SUBAGENT_PARENT_SESSION_ID, process.env.PI_LINK_PARENT_IDENTITY);
+    process.env.PI_SUBAGENT_PARENT_SESSION_ID, process.env.PI_LINK_PARENT_IDENTITY, process.env.PI_SUBAGENT_TASK_NAME);
   let publishedParentIdentity: string | undefined;
   let preferredName: string | null = null;
   let identity: LinkIdentity = initialIdentity({ generatedName: terminalName, entries: [] });

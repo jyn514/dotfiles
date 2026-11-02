@@ -613,9 +613,10 @@ The bundled skill tells agents not to repeat those messages in their ordinary re
 **Name precedence:** `pi --link-name` > `pi-link <name>` > saved link identity > Pi session name > generated default. _(The `pi-link` wrapper itself does not accept `--link-name`; pick one or the other.)_
 
 Root defaults are random names such as `t-a3f9`.
-Managed subagents inherit the parent's current local link name and group: `ghost-coordinator@review` produces `t-ghost-coordinator-subagent-d8b7@review`.
-A parent name already starting with `t-` keeps that prefix without adding another: `t-b2c5` produces `t-b2c5-subagent-d8b7`.
-The suffix is four random hex characters; normal collision handling still applies.
+Managed subagents use the parent's current local link name and their assigned task name: task `review/api` under `ghost-coordinator@review` produces `t-ghost-coordinator-review/api@review`.
+A parent name already starting with `t-` keeps that prefix without adding another: task `qa` under `t-b2c5` produces `t-b2c5-qa`.
+The parent's group and task-name path separators are preserved; normal collision handling still applies.
+Older managers that omit the task name keep the `subagent-<four-random-hex>` suffix.
 The child saves its own generated identity, so later parent renames do not rename existing children or change their names on reload/resume.
 Explicit or saved child names still take precedence, and generated link names do not set Pi session titles.
 Parents must load this version before spawning children; without a matching parent handoff, children keep the independent random default.
