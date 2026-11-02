@@ -5,6 +5,12 @@ description: Turn a brief or broad goal into an actionable issue graph with obse
 
 # Goal to issue graph
 
+The purpose of an issue graph is to enable sustained, substantive work without repeated human feedback.
+Ask consequential questions requiring human judgment up front; investigate discoverable facts instead of asking the human to supply them.
+For material uncertainty that execution must resolve, specify bounded investigations, how their results change the next action, and when to reconsider or stop the affected approach.
+Identify unavoidable later human-feedback points without making independent work wait for them.
+This purpose does not authorize execution.
+
 Work backward from the promised result, not forward from the current implementation's limitations.
 A graph is useful only if completing its tasks establishes the user's goal without redefining success.
 
@@ -110,6 +116,15 @@ Tracking parents and unresolved decision or decomposition work are not ready imp
 Name the first concrete action before marking a ticket ready.
 If measurement or reproduction is needed for a decision, make that evidence gathering an actionable child rather than marking the decision parent ready.
 After splitting, check each child's claims, prerequisites and first action against current code and inputs; a new child can inherit stale parent assumptions.
+
+For every implementation ticket marked ready, state the chosen approach and its basis in current code, an established pattern or applicable experimental evidence.
+Name the mechanism and the existing path it extends or replaces, where applicable; an outcome such as “support CSV import” does not settle how to implement it.
+Check that the cited basis supports the step this ticket must add, not merely a nearby helper or a manually supplied intermediate result.
+Record material implementation uncertainty and what finding would require reconsidering the approach.
+Treat an approach as settled when it is chosen and grounded, not proven successful in advance.
+If an unresolved choice could materially change scope, dependencies or maintenance costs, the ticket is not ready for implementation; give that choice a bounded discovery or decision task.
+Routine implementation choices and debugging remain part of implementation.
+Do not require a complete implementation plan, a prototype for every change or a new approval step to establish readiness.
 
 Each ticket needs enough detail for another agent to act without reconstructing hidden decisions:
 
@@ -250,11 +265,14 @@ Replaying one frozen snapshot proves reproducibility, not that updates are maint
 
 The preceding stages build a route from root outcomes through ticket deliverables to evidence.
 Review that route from both ends: every root criterion must reach proving work, and every required ticket must contribute to a root criterion.
+Ask whether an authorized agent can continue substantive work without the user present, including what consequential success or failure findings change its next action.
+Resolve missing human choices or result-dependent next actions rather than leaving the user to notice when the work needs redirection.
 
 Trace every root criterion backward to tickets and consumer-visible evidence.
 Trace every required ticket forward to a root criterion; remove unrelated work or mark it outside the required graph.
 Check dependency existence, direction, reasons and cycles, and ensure every required node reaches the root.
 Check every executable leaf for a specific deliverable, explicit scope and an observable stopping condition; recursively split any that still fail this check.
+For every implementation ticket marked ready, also check its stated approach, grounding and material uncertainty against the readiness requirements in §4; bounded acceptance cases alone do not establish readiness.
 An unbounded parent awaiting information needs an owned bounded discovery or decision task, and its implementation decomposition remains pending.
 Do not call the whole graph execution-ready while it still contains such unresolved decomposition.
 Structural validity does not prove scope completeness, feasibility or implementation correctness.
