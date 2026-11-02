@@ -59,16 +59,20 @@ pub fn backing_repo(root: &Path) -> Result<std::path::PathBuf> {
 
 /// A linked workspace inherits the startup authority and request lock of its
 /// backing repository, including when bind mounts give that repository aliases.
+/// Prefer its own startup entry when several authorized roots share that store;
+/// only an unlisted root needs the additional linked-workspace restriction.
 /// This does not grant filesystem access beyond the existing mounts and policy.
 pub fn authority_for<'a>(root: &Path, workspaces: &'a [Workspace]) -> Result<Option<&'a Workspace>> {
     let actual = fs::metadata(backing_repo(root)?)?;
+    let mut inherited = None;
     for workspace in workspaces {
         let expected = fs::metadata(&workspace.jj_repo)?;
         if (actual.dev(), actual.ino()) == (expected.dev(), expected.ino()) {
-            return Ok(Some(workspace));
+            if Path::new(&workspace.root) == root { return Ok(Some(workspace)); }
+            inherited.get_or_insert(workspace);
         }
     }
-    Ok(None)
+    Ok(inherited)
 }
 
 pub struct MountPoint {
@@ -247,6 +251,28 @@ mod tests {
         let linked = root.join("sibling");
         fs::write(linked.join(".jj/repo"), alias.to_str().unwrap()).unwrap();
         assert!(authority_for(&linked, &authority).unwrap().is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shared_store_startup_roots_keep_their_own_authority_in_either_order() {
+        let root = std::env::temp_dir().join(format!("jj-startup-authority-{}", std::process::id()));
+        let main = fixture_workspace(&root, "main");
+        let child_root = root.join("main/target/worktree");
+        fs::create_dir_all(child_root.join(".jj")).unwrap();
+        fs::write(child_root.join(".jj/repo"), "../../../.jj/repo").unwrap();
+        let child = Workspace { root: child_root.to_str().unwrap().into(), ..main.clone() };
+        for authorities in [[child.clone(), main.clone()], [main.clone(), child.clone()]] {
+            for expected in [&main, &child] {
+                let selected = authority_for(Path::new(&expected.root), &authorities).unwrap().unwrap();
+                assert_eq!(expected.root, selected.root);
+                assert_eq!(main.lock, selected.lock);
+            }
+        }
+        // A matching startup pathname is not authority for a substituted store.
+        let independent = fixture_workspace(&root, "independent");
+        fs::write(child_root.join(".jj/repo"), &independent.jj_repo).unwrap();
+        assert!(authority_for(&child_root, &[child, main]).unwrap().is_none());
         fs::remove_dir_all(root).unwrap();
     }
 

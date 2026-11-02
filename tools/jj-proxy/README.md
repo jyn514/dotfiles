@@ -48,6 +48,8 @@ A manually started proxy without the validated mounts and authority is not prote
 The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
 Protocol version 2 always carries a physical absolute invocation cwd under `/src`; cwd addressing does not grant write permission.
 The server grants mutation access to workspaces whose resolved JJ backing repository has the same filesystem identity as a trusted startup repository.
+When startup roots share a backing repository, selecting either root uses its own authority entry regardless of entry order.
+Only an unlisted linked root needs the additional pinned-directory restriction.
 Existing and newly created linked workspaces inherit that repository's request lock; nesting alone grants no access.
 Independent host-backed Jujutsu repositories under `/src` permit inspection only.
 Linked access does not widen mounts: workspaces on the read-only source view still cannot snapshot or update files.

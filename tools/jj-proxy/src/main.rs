@@ -1062,6 +1062,43 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn real_jj_shared_store_startup_roots_snapshot_through_either_selector() {
+        let Some(jj) = real_jj() else { eprintln!("SKIP shared-store startup roots: no real JJ"); return; };
+        let root = env::temp_dir().join(format!("jj-proxy-startup-roots-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        native(&jj, &root, &["git", "init", "--no-colocate", root.join("project").to_str().unwrap()]);
+        let main = test_authority(&root, "project");
+        let child_root = root.join("project/target/linked");
+        fs::create_dir_all(child_root.parent().unwrap()).unwrap();
+        native(&jj, &root, &["-R", &main.root, "workspace", "add", "--no-colocate", child_root.to_str().unwrap()]);
+        let child = Workspace { root: child_root.to_str().unwrap().into(), ..main.clone() };
+        fs::write(&main.lock, "").unwrap();
+        let config = root.join("trusted.toml");
+        fs::write(&config, include_str!("../jj.toml")).unwrap();
+        let config_home = root.join("config");
+        fs::create_dir_all(&config_home).unwrap();
+        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config,
+            config_home: &config_home, after_author_update: None };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let source = File::open(&root).unwrap();
+        for (order, workspaces) in [[child.clone(), main.clone()], [main.clone(), child.clone()]].iter().enumerate() {
+            for selected in [&main, &child] {
+                let name = format!("startup-edit-{order}");
+                fs::write(Path::new(&selected.root).join(&name), "disk edit\n").unwrap();
+                let request = Request { version: 2, mode: RequestMode::Mutate, cwd: child.root.clone(),
+                    argv: vec!["-R".into(), selected.root.clone(), "status".into()],
+                    agent_split: None, user: None, email: None };
+                let response = execute_with_runtime(&request, &policy, source.as_raw_fd(), workspaces,
+                    root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(10), None);
+                assert_eq!(0, response.exit, "{}: {}", selected.root, response.stderr);
+                assert!(response.stdout.contains(&name), "snapshot omitted edit: {}", response.stdout);
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// Two independent request-owner processes exercise the real orchestration,
     /// real JJ attribution and the same flock inode. Container mount enforcement
     /// remains the container suite's responsibility.

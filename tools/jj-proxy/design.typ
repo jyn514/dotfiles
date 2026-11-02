@@ -210,6 +210,8 @@ secret token or from trusting the wrapper.
 The proxy distinguishes mutation access from read-only inspection access.
 A mutation request resolves its workspace's backing JJ repository and matches its device and inode against trusted `JJ_PROXY_WORKSPACES`.
 The matched entry owns its persistent request lock, regardless of workspace nesting or bind-alias spelling.
+After verifying backing identity, prefer an exact startup-root match over inherited authority from another root sharing that repository.
+Startup roots must not be classified as later linked workspaces merely because another matching entry precedes them.
 Startup workspaces receive read-write Landlock access to their authorized worktrees, JJ stores, resolved Git metadata, and required request locks.
 A linked workspace runs prehooks, commands, and author reset in restricted children that grant writes to a pinned workspace directory and the matched entry's backing/Git metadata.
 The server opens that workspace component-by-component without following symlinks and passes its directory descriptor across trusted self-exec.
