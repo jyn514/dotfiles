@@ -53,6 +53,10 @@ Only an unlisted linked root needs the additional pinned-directory restriction.
 Existing and newly created linked workspaces inherit that repository's request lock; nesting alone grants no access.
 Independent host-backed Jujutsu repositories under `/src` permit inspection only.
 Linked access does not widen mounts: workspaces on the read-only source view still cannot snapshot or update files.
+The sandbox launcher shares its existing per-checkout `work/` volume with JJ at each authorized primary guest root.
+Linked workspaces beneath that path support create/edit/snapshot/commit while their working files stay invisible on the host.
+Their registrations and history remain shared, and ordinary host JJ operations from the main checkout remain usable.
+Use `target/` for host-visible working files; see [sandbox workspace access](../codex-sandbox/README.md#execution-model-and-workspace-access) for storage and alias behavior.
 For linked mutation, a restricted child grants writes only to the pinned workspace directory and its authorized backing/Git metadata.
 It rejects scopes containing nested mounts or another protected repository's metadata rather than allowing a mutable workspace pointer to cross repository locks.
 Explicit inspection remains read-only even for an authorized root.
@@ -70,7 +74,7 @@ One existing JJ service per active shared session knows both roots; other comman
 
 ## Independent container-local repositories
 
-Ordinary `jj` uses native JJ for independent guest repositories, including `/tmp`, private tmpfs, and guest-created volumes, even with the proxy mounted. The read-only router resolves repository selectors, symlinks, linked JJ stores, and Git indirections against effective mounts. A `/tmp` workspace sharing a host store still needs the proxy; its guest-only cwd is not admitted by the server. Run protected commands from the mounted workspace instead. The wrapper never changes cwd or retries a failed proxy command natively.
+Ordinary `jj` uses native JJ for independent guest repositories, including `/tmp`, private tmpfs, and guest-created volumes, even with the proxy mounted. The read-only router resolves repository selectors, symlinks, linked JJ stores, and Git indirections against effective mounts. A `/tmp` workspace sharing a host store still needs the proxy; unlike the launcher-shared `work/` volume, its guest-only cwd is not admitted by the server. Run protected commands from the mounted workspace instead. The wrapper never changes cwd or retries a failed proxy command natively.
 
 Bootstrap routing follows the destination rather than the invoking repository:
 
@@ -157,7 +161,7 @@ For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 
 Tracked configuration edits do not reload staged guest configuration or an existing proxy's startup authority.
 Deploy launcher, clients, router, and rebuilt guest/proxy images together in fresh sandboxes; `/reload` is insufficient.
-Existing accepted sessions lacking the workspace authority cannot join as new sessions; preserve their running attachments until they exit.
+Existing accepted sessions lacking the workspace authority or shared work-volume mounts cannot join as new sessions; preserve their running attachments until they exit.
 
 ## Tests
 

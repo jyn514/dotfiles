@@ -17,6 +17,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         native_run = subprocess.run
         archived = set()
         launches = []
+        created_volumes = set()
+        removed_volumes = set()
 
         def subprocess_run(command, **kwargs):
             if command[0] != 'docker':
@@ -30,6 +32,10 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
 
         def run(*command, **kwargs):
             self.assertEqual('docker', command[0])
+            if command[1:3] == ('volume', 'create'):
+                created_volumes.add(command[-1])
+            if command[1:3] == ('volume', 'rm'):
+                removed_volumes.add(command[-1])
             if command[1:3] == ('volume', 'inspect'):
                 return '/daemon/fixture\n'
             if command[1:3] == ('image', 'inspect'):
@@ -57,7 +63,14 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             mounts[values['dst']] = (values['src'], 'readonly' not in fields)
             # All bind sources, including the persistent lock and staged /src,
             # must have been copied before the Docker daemon consumes them.
-            self.assertIn(str(Path(values['src']).relative_to('/daemon/fixture')), archived)
+            if values['type'] == 'bind':
+                self.assertIn(str(Path(values['src']).relative_to('/daemon/fixture')), archived)
+            else:
+                self.assertEqual('volume', values['type'])
+                self.assertIn(values['src'], created_volumes)
+                self.assertEqual(authority['root'] + '/work', values['dst'])
+        self.assertEqual(created_volumes, removed_volumes)
+        self.assertEqual(2, len(created_volumes), 'host fixture and shared work storage are distinct')
         for key in ('root', 'git_dir', 'jj_repo', 'lock'):
             target = Path(authority[key])
             mountpoint = next(parent for parent in (target, *target.parents) if str(parent) in mounts)

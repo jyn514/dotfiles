@@ -12,6 +12,9 @@ import stat
 import subprocess
 
 
+WORK_DIRECTORY = "work"
+
+
 class WorkspaceError(ValueError):
     pass
 
@@ -90,6 +93,16 @@ class WorkspaceLayout:
                     if alias != self.guest_root:
                         aliases.append(alias)
         return list(dict.fromkeys(aliases))
+
+
+def workspace_work_volume(workspace: WorkspaceLayout) -> tuple[str, str]:
+    """Stable launcher-owned storage shared by the guest and trusted JJ proxy.
+
+    Only the launcher prepares or owns this volume. Proxy mounts at the primary
+    guest root must reuse it rather than create a second storage owner.
+    """
+    identity = hashlib.sha256(os.fsencode(workspace.host_root)).hexdigest()
+    return "codex-work-" + identity[:32], "codex-workspace:" + identity
 
 
 @dataclass(frozen=True)

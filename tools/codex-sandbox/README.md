@@ -114,7 +114,14 @@ jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 ```
 
 Ordinary filesets retain invocation-cwd semantics even with `-R`; only author hooks target the resolved repository.
-Writable files are shared host files, not isolated branches or permission to include another contributor's changes.
+Outside `work/`, writable files are shared host files, not isolated branches or permission to include another contributor's changes.
+The launcher mounts each writable checkout's existing `codex-work-*` volume at its primary guest path's `work/` in both the agent and JJ proxy.
+Use that path for guest-only caches, build outputs, and linked JJ workspaces; the same volume survives replacement of either consumer.
+Repository aliases retain their existing host-backed views and guest read-only modes; use the selected primary guest path for `work/` operations.
+Host `work/` stays empty, and startup refuses to hide pre-existing host files there rather than deleting or migrating them.
+A linked workspace under `work/` registers in the shared JJ store, so ordinary host `status`, `log`, `new`, and history edits still work from the main checkout.
+The host sees its last snapshot, not its working files; operations requiring that directory, such as removing the workspace from disk, need the guest/proxy view.
+Use `target/` instead when host tools or jyn need direct file access.
 Distinct proxies serialize all mutation-mode requests, including author hooks, with one persistent lock per JJ backing repository.
 Independent repositories remain concurrent; this lock does not coordinate arbitrary host writers or ordinary file edits.
 See the [JJ proxy contract](../jj-proxy/design.typ) for protocol and permission details.
@@ -166,7 +173,7 @@ A fresh sandbox launch updates the resource-path map and removes the old guest c
 `/reload` refreshes host resources, but does not restage configuration, replace guest mounts, or change accepted workspace authority.
 Editing tracked configuration through writable dotfiles does not reload its staged copy.
 Deploy shared-dotfiles support with rebuilt guest and proxy images and fresh sandboxes; `/reload` is insufficient.
-Existing accepted sessions without workspace authority cannot admit new sessions under this contract; let their attachments exit before starting fresh.
+Existing accepted sessions without workspace authority or the shared work-volume mounts cannot admit new sessions under this contract; let their attachments exit before starting fresh.
 An updated prompt can therefore point to a file that the guest cannot read.
 
 Guest visibility depends on how the resource is exposed:

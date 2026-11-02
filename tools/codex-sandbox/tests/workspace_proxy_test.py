@@ -115,7 +115,8 @@ class WorkspaceProxyTest(unittest.TestCase):
 
     def snapshot(self):
         return {"Config": {"Env": ["JJ_PROXY_REPO=/src/project", "JJ_PROXY_WORKSPACES=" + helpers.workspace_environment(self.records)]},
-                "Mounts": [{"Destination": item["dst"], "Source": item["src"], "RW": item["RW"]}
+                "Mounts": [{"Destination": item["dst"], "Source": item["src"], "RW": item["RW"],
+                            "Type": item["type"], **({"Name": item["src"]} if item["type"] == "volume" else {})}
                            for item in self.mounts()]}
 
     def test_missing_dotfiles_destination_is_scaffolded_without_host_placeholders(self):
@@ -142,6 +143,29 @@ class WorkspaceProxyTest(unittest.TestCase):
                 snapshot["Mounts"].append({"Source": "/outside", "Destination": "/src/unlisted", "RW": True})
             with self.subTest(mutation=mutation), self.assertRaises(helpers.ConfigError):
                 helpers.validate_workspace_snapshot(self.proxy(), snapshot)
+
+    def test_live_authority_requires_the_selected_launcher_work_volume(self):
+        expected = self.snapshot()
+        # Omitting the overlay recreates the original successful-but-invisible write.
+        # Wrong names/types, RO and duplicates are distinct invalid reuse states.
+        for record in self.records:
+            for mutation in ("missing", "name", "bind", "readonly", "duplicate"):
+                snapshot = deepcopy(expected)
+                target = record["guest_root"] + "/work"
+                work = next(item for item in snapshot["Mounts"] if item["Destination"] == target)
+                if mutation == "missing":
+                    snapshot["Mounts"].remove(work)
+                elif mutation == "name":
+                    work["Name"] = "unrelated-volume"
+                elif mutation == "bind":
+                    work.update(Type="bind", Source=record["host_root"] + "/work")
+                elif mutation == "readonly":
+                    work["RW"] = False
+                else:
+                    snapshot["Mounts"].append(deepcopy(work))
+                with self.subTest(target=target, mutation=mutation), self.assertRaisesRegex(
+                        helpers.ConfigError, "workspace work volume changed"):
+                    helpers.validate_workspace_snapshot(self.proxy(), snapshot)
 
     def test_recovery_cannot_remove_an_unrelated_directory_as_its_scaffold(self):
         proxy = self.proxy()

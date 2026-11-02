@@ -44,7 +44,7 @@ from caddy_foundation import (
 )
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 from source_view import check_mount_destinations, source_mounts
-from workspace_layout import jj_repository_path
+from workspace_layout import jj_repository_path, workspace_work_volume, WORK_DIRECTORY
 
 OUTER_RUNTIME = ContainerRuntime()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -1276,6 +1276,9 @@ def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path) ->
             continue
         mounts[target] = source
         arguments += ["--mount", f"type=bind,src={source},dst={target},{OUTER_RUNTIME.nonrecursive_bind}"]
+    for item in layouts:
+        volume, _ = workspace_work_volume(item)
+        arguments += ["--mount", f"type=volume,src={volume},dst={item.guest_root / WORK_DIRECTORY}"]
     locks: dict[Path, Path] = {}
     for item in layouts:
         target = Path(item.proxy_authority()["lock"])
@@ -2560,7 +2563,10 @@ def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any])
         raise ConfigError("active JJ workspace environment changed")
     mounts = snapshot.get("Mounts", [])
     expected: dict[str, str] = {}
+    work_volumes: dict[str, str] = {}
     for item in workspace_layouts(records):
+        volume, _ = workspace_work_volume(item)
+        work_volumes[str(item.guest_root / WORK_DIRECTORY)] = volume
         for source, target in [(item.host_root, item.guest_root), *item.metadata_mounts(),
                                *((item.host_root, alias) for alias in item.repository_aliases()),
                                (item.lock_file, Path(item.proxy_authority()["lock"]))]:
@@ -2569,12 +2575,17 @@ def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any])
         actual = [mount for mount in mounts if mount.get("Destination") == target]
         if (len(actual) != 1 or actual[0].get("Source") != source or actual[0].get("RW") is not True):
             raise ConfigError(f"active JJ workspace mount changed: {target}")
-    # Reject additional writable source-tree binds: source browsing is read-only.
+    for target, volume in work_volumes.items():
+        actual = [mount for mount in mounts if mount.get("Destination") == target]
+        if (len(actual) != 1 or actual[0].get("Type") != "volume" or
+                actual[0].get("Name") != volume or actual[0].get("RW") is not True):
+            raise ConfigError(f"active JJ workspace work volume changed: {target}")
+    # Reject additional writable source-tree mounts: source browsing is read-only.
     for mount in mounts:
         target = mount.get("Destination", "")
         if (mount.get("RW") is True and
                 (target == "/src" or target.startswith("/src/") or target.startswith("/run/jj-locks/")) and
-                target not in expected):
+                target not in expected and target not in work_volumes):
             raise ConfigError(f"unexpected writable JJ workspace mount: {target}")
 
 

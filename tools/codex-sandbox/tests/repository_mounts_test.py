@@ -109,6 +109,16 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                 launcher["check_mount_destinations"](command)
                 self.assertEqual(command, launcher["agent_repository_mounts"](state),
                                  "a second consumer must reuse the one source view")
+                proxy_staging = root / "proxy-staged"
+                proxy_staging.mkdir()
+                proxy = runpy.run_path(str(LAUNCHER.with_name("sandbox-proxies.py")))
+                with mock.patch.dict("os.environ", {"HOME": str(home)}):
+                    proxy_mounts = proxy["shared_workspace_mount_args"](
+                        [workspace.to_dict() for workspace in state.workspaces], proxy_staging)
+                self.assertEqual(
+                    [item for item in command if item.startswith("type=volume,")],
+                    [item for item in proxy_mounts if item.startswith("type=volume,")],
+                    "guest and JJ must consume the same launcher-owned work volumes")
                 records = [item for item in command if item.startswith("type=bind,")]
                 work_volumes = {
                     launcher["workspace_work_volume"](workspace)[0]
@@ -124,6 +134,13 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                     policy = workspace.host_root / ".agents/sandbox"
                     if policy.is_dir():
                         self.assertIn(f"type=bind,src={policy},dst={workspace.guest_root}/.agents/sandbox,readonly", records)
+                    for alias in workspace.repository_aliases():
+                        alias_mount = next(item for item in records if f"dst={alias}" in item.split(","))
+                        self.assertIn("readonly", alias_mount.split(","))
+                        self.assertFalse(any(
+                            f"dst={alias}/work" in item.split(",")
+                            for item in [*command, *proxy_mounts]),
+                            "work sharing must not change alias topology or guest read-only modes")
                     volume, _ = launcher["workspace_work_volume"](workspace)
                     self.assertIn(
                         f"type=volume,src={volume},dst={workspace.guest_root}/work",
@@ -199,6 +216,13 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                     OUTER_RUNTIME=runtime):
                 launcher["prepare_workspace_work_volumes"](state)
             volume, owner = launcher["workspace_work_volume"](workspace)
+            # Persisted names from older launchers remain valid even when the
+            # selected guest root changes. Different host roots must not merge.
+            from dataclasses import replace
+            self.assertEqual((volume, owner), launcher["workspace_work_volume"](
+                replace(workspace, guest_root=Path("/src/relocated"))))
+            self.assertNotEqual((volume, owner), launcher["workspace_work_volume"](
+                replace(workspace, host_root=home / "other")))
             self.assertEqual(
                 mock.call(volume, 501, 20, owner, role="workspace-work"),
                 runtime.create_owned_volume.call_args,

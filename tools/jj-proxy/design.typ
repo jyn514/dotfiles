@@ -137,7 +137,11 @@ The launcher supplies `JJ_PROXY_REPO` as the active guest root.
 Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
 Each entry binds an exact guest workspace root, its resolved metadata paths, and a persistent request-lock path.
 Validate all entries and prepare secure configuration for both workspaces before readiness.
-Accepted-session authority binds the exact set, metadata layouts, lock mounts, and live trusted environment.
+The launcher shares each checkout's existing launcher-owned work volume at its primary guest root's `work/` in the agent and JJ proxy.
+Repository aliases retain their existing host-backed views and guest read-only modes.
+Linked workspaces under the shared primary `work/` path can snapshot and commit through the proxy; their registrations and history remain host-visible, but their working files do not.
+Host main-checkout status, log, new, and history edits remain supported; host operations that require those guest-only working files are not.
+Accepted-session authority binds the exact set, metadata layouts, lock mounts, shared work-volume names and writable modes, and live trusted environment.
 Guest request fields cannot add entries or backing repositories.
 A linked workspace inherits the authority and persistent lock of an entry whose resolved JJ repository has the same device and inode.
 Existing mounts still bound filesystem access; store membership does not make a read-only source worktree writable.
@@ -285,8 +289,8 @@ invoking repository. Array aliases are read as inert data from the same native
 global configuration installed from `config/jj.toml`; execution retains the
 original argv and cwd. A read-only clone source does not make the destination
 host-backed. A guest workspace sharing a protected store routes to the proxy,
-but its guest-only cwd remains outside the server namespace and is rejected
-without changing cwd or enlarging admission.
+but a cwd in private tmpfs or an unshared guest volume remains outside the server namespace and is rejected without changing cwd or enlarging admission.
+The launcher's primary `work/` path is shared with the proxy and does not have this restriction.
 
 The shared router returns checked JSON containing backend, physical workspace,
 bootstrap destination, expanded command prefix, and whether native author hooks

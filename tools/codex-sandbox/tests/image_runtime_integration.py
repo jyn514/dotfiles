@@ -21,7 +21,9 @@ RUNTIME_PROBE = Path(__file__).with_name('fixtures') / 'image-runtime.sh'
 IMAGE_PREFIX = 'codex-sandbox'
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
 from owned_images import jj_release_args
-from shared_workspace_probe import probe_shared_workspaces
+from shared_workspace_probe import (
+    prepare_fixture_work_volumes, probe_shared_workspaces, relocate_fixture_mounts,
+)
 
 
 def run(*args: str, input: str | bytes | None = None) -> str:
@@ -81,6 +83,7 @@ def probe_jj_mounts(image: str) -> None:
                 arguments = [jj, *arguments[1:]]
             return subprocess.run(arguments, cwd=cwd, check=True, text=True, capture_output=capture)
 
+        (repo / 'work').mkdir()
         layout = discover_workspace(repo, container_repo, root, runner=native)
         ensure_request_lock(layout)
         records = [layout.to_dict()]
@@ -102,6 +105,7 @@ def probe_jj_mounts(image: str) -> None:
                 tar.add(path, arcname=path.name)
         name = 'jj-mount-fixture-' + uuid.uuid4().hex
         created = False
+        work_volumes = []
         try:
             run('docker', 'volume', 'create', name)
             created = True
@@ -113,16 +117,10 @@ def probe_jj_mounts(image: str) -> None:
             subprocess.run([*seed, '--interactive', image, 'tar', 'xf', '-', '-C', '/fixture'],
                            input=archive.getvalue(), check=True)
             run(*seed, image, 'chown', '-R', user, '/fixture')
-            # The daemon cannot see our temporary directory. Relocate only bind
-            # sources to its populated volume; retain every destination and mode.
-            relocated = []
-            for argument in mounts:
-                fields = argument.split(',')
-                for index, field in enumerate(fields):
-                    if field.startswith('src='):
-                        relative = Path(field.removeprefix('src=')).relative_to(root)
-                        fields[index] = 'src=' + str(daemon_root / relative)
-                relocated.append(','.join(fields))
+            # Keep production destinations/modes, replacing every volume name
+            # with disposable test storage rather than touching launcher-owned data.
+            names = prepare_fixture_work_volumes(run, image, mounts, name, work_volumes)
+            relocated = relocate_fixture_mounts(mounts, root, daemon_root, names)
             output = run(
                 'docker', 'run', '--rm', '--interactive', '--name', name, '--network', 'none',
                 '--cap-drop=ALL', '--read-only', '--tmpfs', '/tmp:mode=1777',
@@ -137,6 +135,8 @@ def probe_jj_mounts(image: str) -> None:
         finally:
             subprocess.run(['docker', 'rm', '-f', name], check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for work_volume in reversed(work_volumes):
+                run('docker', 'volume', 'rm', work_volume)
             if created:
                 run('docker', 'volume', 'rm', name)
 

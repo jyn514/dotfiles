@@ -62,6 +62,27 @@ def relocate_fixture_mounts(arguments: list[str], root: Path, daemon_root: Path,
     return result
 
 
+def prepare_fixture_work_volumes(run, image: str, arguments: list[str], prefix: str,
+                                 volumes: list[str]) -> dict[str, str]:
+    """Replace launcher-owned names with writable, disposable test volumes."""
+    names = {}
+    for argument in arguments:
+        fields = argument.split(",")
+        if "type=volume" not in fields:
+            continue
+        source = next(field.removeprefix("src=") for field in fields if field.startswith("src="))
+        if source in names:
+            continue
+        name = f"{prefix}-work-{len(names)}"
+        run("docker", "volume", "create", name)
+        volumes.append(name)
+        names[source] = name
+        run("docker", "run", "--rm", "--user", "0:0", "--network", "none",
+            "--mount", f"type=volume,src={name},dst=/work", "--entrypoint", "/trusted/bin/busybox",
+            image, "chown", "65532:65532", "/work")
+    return names
+
+
 def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
     from docker_runtime import Docker
     from workspace_layout import discover_workspace, ensure_request_lock
@@ -168,6 +189,8 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                        discover_workspace(dotfiles, Path("/src/dotfiles"), home, runner=metadata_runner)]
             for layout in layouts:
                 ensure_request_lock(layout)
+                # The launcher prepares empty host mountpoints before either consumer starts.
+                (layout.host_root / "work").mkdir()
             staging = root / "proxy-staging"
             staging.mkdir()
             records = [layout.to_dict() for layout in layouts]
@@ -188,35 +211,46 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             run(*seed, image, "chown", "-R", "65532:65532", "/fixture")
             daemon_root = Path(run("docker", "volume", "inspect", "--format", "{{.Mountpoint}}", volume).stdout.strip())
 
-            guest_volume_names = {}
-            for argument in guest_mounts:
-                fields = argument.split(",")
-                if "type=volume" not in fields:
-                    continue
-                source = next(field.removeprefix("src=") for field in fields if field.startswith("src="))
-                if source not in guest_volume_names:
-                    name = f"{prefix}-guest-volume-{len(guest_volume_names)}"
-                    run("docker", "volume", "create", name)
-                    volumes.append(name)
-                    guest_volume_names[source] = name
+            guest_volume_names = prepare_fixture_work_volumes(run, image, guest_mounts, prefix, volumes)
 
             def relocate(arguments):
                 return relocate_fixture_mounts(arguments, root, daemon_root, guest_volume_names)
 
             authority = module["workspace_environment"](records)
+            service_commands = {}
+            socket_volumes = {}
             for service in services:
-                run("docker", "run", "--detach", "--name", service, "--user", "65532:65532",
+                socket = service + "-socket"
+                run("docker", "volume", "create", socket)
+                volumes.append(socket)
+                socket_volumes[service] = socket
+                run("docker", "run", "--rm", "--user", "0:0", "--network", "none",
+                    "--mount", f"type=volume,src={socket},dst=/socket", "--entrypoint", "/trusted/bin/busybox",
+                    image, "chown", "65532:65532", "/socket")
+                service_commands[service] = ["docker", "run", "--detach", "--name", service, "--user", "65532:65532",
                     "--network", "none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-                    "--tmpfs", "/tmp:mode=1777", "--tmpfs", "/run/sandbox-proxy:mode=1777",
+                    "--tmpfs", "/tmp:mode=1777",
+                    "--mount", f"type=volume,src={socket},dst=/run/sandbox-proxy,volume-nocopy",
                     "--workdir", "/src/project", "--env", "JJ_PROXY_REPO=/src/project",
                     "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxy",
                     "--env", "JJ_PROXY_WORKSPACES=" + authority,
                     *relocate(mounts),
                     "--mount", f"type=bind,src={daemon_root / 'jj-shim'},dst=/trusted/bin/jj,readonly",
                     "--mount", f"type=bind,src={daemon_root / 'jj-real'},dst=/trusted/bin/jj-real,readonly",
-                    image)
+                    image]
+                run(*service_commands[service])
                 containers.append(service)
             for service in services:
+                snapshot = json.loads(run("docker", "inspect", service).stdout)[0]
+                # Translate fixture identities back, retaining Docker's actual
+                # mount types, names, modes and cardinality for reuse validation.
+                original_names = {value: key for key, value in guest_volume_names.items()}
+                for mount in snapshot["Mounts"]:
+                    if mount["Type"] == "bind" and Path(mount["Source"]).is_relative_to(daemon_root):
+                        mount["Source"] = str(root / Path(mount["Source"]).relative_to(daemon_root))
+                    if mount.get("Name") in original_names:
+                        mount["Name"] = original_names[mount["Name"]]
+                module["validate_workspace_snapshot"]({"workspaces": records}, snapshot)
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
                     result = run("docker", "exec", "--workdir", "/src/project", service,
@@ -245,33 +279,96 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 if readonly.returncode == 0:
                     raise RuntimeError("linked source worktree mount became writable")
 
+            guest = prefix + "-guest"
+            containers.append(guest)
+            guest_command = ["docker", "run", "--detach", "--name", guest,
+                             "--user", "65532:65532", "--network", "none", "--cap-drop=ALL",
+                             "--read-only", "--tmpfs", "/tmp:mode=1777", *relocate(guest_mounts),
+                             "--mount", f"type=volume,src={socket_volumes[services[0]]},dst=/run/sandbox-proxy,readonly,volume-nocopy",
+                             "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxy", "--workdir", "/src/project",
+                             "--entrypoint", "/trusted/bin/busybox", image, "sleep", "3600"]
+            run(*guest_command)
+
             def commit_child_edit(child, description):
                 content = description + " disk content\n"
-                run("docker", "exec", "--interactive", services[0], "/trusted/bin/busybox", "tee",
+                run("docker", "exec", "--interactive", guest, "/trusted/bin/busybox", "tee",
                     child + "/acceptance.txt", input=content)
                 # Explicit inspection must neither snapshot the disk edit nor
                 # turn a linked workspace into a mutation-capable request.
                 before = query(services[0], child, "@", "commit_id")
-                finish(request(services[0], "Pi-D", "-R", child, "status", cwd=child, inspect=True))
+                finish(request(guest, "Pi-D", "-R", child, "status", cwd=child, inspect=True))
                 if query(services[0], child, "@", "commit_id") != before:
                     raise RuntimeError(f"explicit inspection snapshotted linked workspace: {child}")
-                denied = request(services[0], "Pi-D", "-R", child, "commit", "-m", "Inspection must reject",
+                denied = request(guest, "Pi-D", "-R", child, "commit", "-m", "Inspection must reject",
                                  cwd=child, inspect=True)
                 stdout, stderr = denied.communicate(timeout=20)
                 if denied.returncode == 0:
                     raise RuntimeError(f"explicit inspection committed linked workspace: {child}: {stdout}\n{stderr}")
-                status = finish(request(services[0], "Pi-D", "-R", child, "status", cwd=child))
-                diff = finish(request(services[0], "Pi-D", "-R", child, "diff", cwd=child))
+                status = finish(request(guest, "Pi-D", "-R", child, "status", cwd=child))
+                diff = finish(request(guest, "Pi-D", "-R", child, "diff", cwd=child))
                 if "acceptance.txt" not in status or content.strip() not in diff:
                     raise RuntimeError(f"linked workspace disk edit missing: {child}: {status}\n{diff}")
-                finish(request(services[0], "Pi-D", "-R", child, "commit", "-m", description, cwd=child))
-                recorded = finish(request(services[0], "Pi-D", "-R", child, "file", "show",
+                finish(request(guest, "Pi-D", "-R", child, "commit", "-m", description, cwd=child))
+                recorded = finish(request(guest, "Pi-D", "-R", child, "file", "show",
                                           "-r", fixture_commit_revision(description), "acceptance.txt",
                                           cwd=child, inspect=True))
                 if recorded != content:
                     raise RuntimeError(f"linked workspace committed wrong content: {child}: {recorded!r}")
 
             commit_child_edit("/src/project/preexisting-child", "Preexisting linked child")
+            for repo in ("project", "dotfiles"):
+                work_child = f"/src/{repo}/work/consumer-child"
+                name = repo + "-work-child"
+                finish(request(guest, "Pi-D", "-R", f"/src/{repo}", "workspace", "add", "--name", name, work_child))
+                run("docker", "exec", guest, "/trusted/bin/busybox", "test", "-f", work_child + "/.jj/repo")
+                commit_child_edit(work_child, repo + " work linked child")
+                # Requests originate from the guest's actual cwd and cross its RO socket mount.
+                finish(request(guest, "Pi-D", "status", cwd=work_child))
+            target_child = "/src/project/target/consumer-child"
+            run("docker", "exec", guest, "/trusted/bin/busybox", "mkdir", "-p", "/src/project/target")
+            finish(request(guest, "Pi-D", "workspace", "add", target_child))
+            commit_child_edit(target_child, "Host-visible target linked child")
+
+            # Replace both consumers, retaining only launcher-owned storage and host metadata.
+            # A fresh proxy must accept the same volumes without deleting their files.
+            for container, command in ((guest, guest_command), (services[0], service_commands[services[0]])):
+                run("docker", "rm", "-f", container)
+                run(*command)
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                ready = run("docker", "exec", guest, "/trusted/bin/jj-proxy", ":ready", check=False)
+                if ready.returncode == 0:
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError(f"recreated proxy not ready: {ready.stderr}")
+            for repo in ("project", "dotfiles"):
+                work_child = f"/src/{repo}/work/consumer-child"
+                finish(request(guest, "Pi-D", "status", cwd=work_child))
+                content = run("docker", "exec", guest, "/trusted/bin/busybox", "cat", work_child + "/acceptance.txt").stdout
+                if content != repo + " work linked child disk content\n":
+                    raise RuntimeError(f"recreated consumers lost work content: {repo}: {content!r}")
+
+            # Native host-equivalent view mounts only the host fixture, not guest work volumes.
+            # Registered /src/.../work children are inaccessible here; ordinary main JJ still works.
+            host = [*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/jj", image,
+                    "--config-file", "/trusted/jj.toml"]
+            for args in (("status",), ("log",), ("workspace", "list"),
+                         ("describe", "-r", "project-work-child@", "-m", "Host history edit"),
+                         ("new", "-m", "Ordinary host new")):
+                run(*host, *args)
+            recorded = run(*host, "file", "show", "-r", fixture_commit_revision("project work linked child"),
+                           "acceptance.txt").stdout
+            if recorded != "project work linked child disk content\n":
+                raise RuntimeError(f"host cannot read the guest's last recorded snapshot: {recorded!r}")
+            for layout in layouts:
+                result = run(*fixture_jj_container(volume, root, project),
+                             "--entrypoint", "/trusted/bin/busybox", image,
+                             "ls", "-A", str(layout.host_root / "work"))
+                if result.stdout:
+                    raise RuntimeError(f"proxy wrote hidden host work files: {result.stdout}")
+            run(*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/busybox", image,
+                "test", "-f", str(project / "target/consumer-child/acceptance.txt"))
             child = "/src/project/runtime-child"
             finish(request(services[0], "Pi-D", "workspace", "add", child))
             commit_child_edit(child, "Runtime linked child")
@@ -338,18 +435,14 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 finish(source)
 
             # Exercise actual guest worktree/metadata/policy modes, not only argument strings.
-            guest = prefix + "-guest"
-            containers.append(guest)
             shell = DIRECTORY / "fixtures/shared-workspace-guest.sh"
-            result = run("docker", "run", "--rm", "--interactive", "--name", guest,
-                         "--user", "65532:65532", "--network", "none", "--cap-drop=ALL",
-                         "--read-only", *relocate(guest_mounts), "--workdir", "/src/project",
-                         "--entrypoint", "/trusted/bin/sh", image, input=shell.read_text())
+            result = run("docker", "exec", "--interactive", guest, "/trusted/bin/sh", input=shell.read_text())
             if result.stdout != "shared-workspace-guest-ok\n":
                 raise RuntimeError(f"unexpected guest workspace result: {result.stdout}\n{result.stderr}")
             layout = "linked absolute-pointer bind aliases" if linked else "ordinary metadata"
             print(f"PASS: {layout}; linked child disk edits/commits, shared-store cross-proxy locking, "
-                  "scoped filesets, independent repository denial, explicit inspection, guest protection", flush=True)
+                  "scoped filesets, independent repository denial, explicit inspection, guest protection; "
+                  "work/ guest transport/create/edit/record/recreate, empty host work, native host JJ, target/", flush=True)
         except BaseException:
             for service in containers:
                 logs = run("docker", "logs", service, check=False)

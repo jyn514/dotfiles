@@ -372,6 +372,10 @@ JJ-only mode builds, probes, and cleans only the JJ image; it retains the shared
 
 For shared-workspace fixtures, generate repository metadata and run JJ discovery with the tested image's pinned JJ.
 Do not substitute host JJ unless the test explicitly covers cross-version compatibility.
+The shared-workspace probe mounts separate disposable work volumes selected by the production guest and proxy planners, with fixture-only names and ownership.
+Its guest writes and invokes the proxy client across a read-only socket mount, then checks snapshots and recorded file contents.
+A host-equivalent container mounts only the host fixture: `work/` must stay empty while native main-checkout status/log/new/history edits still work.
+The probe also replaces guest and proxy containers to check work-volume reuse, retains the host-visible `target/` workflow, and checks metadata, source-sibling, and policy protection.
 
 For the full run, use the host commit recorded in `~/.local/share/pi/node/.source-revision`.
 The test passes that commit as the required `PI_REVISION` build argument and checks

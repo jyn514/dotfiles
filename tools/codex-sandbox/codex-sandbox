@@ -42,7 +42,7 @@ from relay_lifecycle import RelayResourcePlan
 from source_view import check_mount_destinations, source_mounts
 from workspace_layout import (
     WorkspaceLayout, WorkspaceError, discover_repository_metadata, discover_workspace,
-    ensure_request_lock, workspace_guest_root,
+    ensure_request_lock, workspace_guest_root, workspace_work_volume, WORK_DIRECTORY,
 )
 from keychain_bridge import HostKeychainBridge
 from host_tcp_bridge import FixedTcpBridge
@@ -72,7 +72,6 @@ PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 # Relative to both Pi agent directories; contents remain host-owned and guest-read-only.
 PI_SESSION_DIRS = ("sessions", "pi-codex-subagents/runs")
 PROXY_IDLE_SECONDS = 300.0
-WORK_DIRECTORY = "work"
 USER_CACHE_PATH = Path("/home/codex/.cache")
 USER_CACHE_VOLUME = "codex-user-cache-v1"
 USER_CACHE_OWNER = "codex-user-cache:v1"
@@ -1767,11 +1766,6 @@ def _workspace_mount_plan(state: State) -> dict[Path, tuple[Path, bool]]:
             if readonly and source.is_relative_to(skills_source):
                 add(source, GUEST_AGENT_SKILLS / source.relative_to(skills_source), True)
     return mounts
-
-
-def workspace_work_volume(workspace: WorkspaceLayout) -> tuple[str, str]:
-    identity = hashlib.sha256(os.fsencode(workspace.host_root)).hexdigest()
-    return "codex-work-" + identity[:32], "codex-workspace:" + identity
 
 
 def prepare_workspace_work_volumes(state: State) -> None:
