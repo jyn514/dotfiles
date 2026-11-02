@@ -85,6 +85,10 @@ Delegation, messages, tickets, and handoffs cannot expand who is authorized.
 Distinguish governing requirements from agent-authored assumptions, restrictions, and milestones; do not attribute the latter to jyn.
 Preserve governing requirements and user-required or explicitly approved design choices, not every agent-selected means of meeting them.
 
+Before recording or delegating a decision, distinguish source-established facts, jyn's choices, and illustrative examples.
+Record the general rule and its evidentiary basis.
+Do not turn illustrative examples into scope restrictions or require human approval for routine applications of an established rule.
+
 ### Before starting a task or accepting an assignment
 
 Before choosing an approach for a new task or accepting another agent's assignment, distinguish:
