@@ -358,6 +358,10 @@ VIMDIR="$HOME/.vim/autoload"
 		vim -c PlugInstall -c q -c q || return
 	fi
 unset VIMDIR
+	setup_nvim
+}
+
+setup_nvim () {
 	if exists nvim; then
 		NVIM_DATA=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1) || return
 		LAZYDIR=$NVIM_DATA/lazy/lazy.nvim
@@ -475,6 +479,7 @@ setup_install_local () {
 		bat cache --build || return
 	fi
 
+	setup_nvim
 }
 
 setup_sandbox () {

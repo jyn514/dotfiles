@@ -12,6 +12,7 @@ Run `./setup dotfiles` from the repository root to install or refresh configurat
 links. Conflicting regular files move to `~/.local/config/`. Other `./setup`
 options can install packages or change system configuration; read the relevant
 function before running them on a new machine.
+`./setup local` also bootstraps lazy.nvim when Neovim is installed.
 Global setup can migrate an unencrypted home with fscrypt.
 It retains the unencrypted backup unless the final confirmation reads `y` successfully.
 On Arch, global package setup installs `kernel-modules-hook` to preserve the running kernel's modules across upgrades.
