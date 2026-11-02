@@ -26,6 +26,7 @@ import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscover
 import { SubagentPeekOverlay } from "./peek.js";
 import { SuspensionCoordinator } from "./suspension.js";
 import type { StartupSession } from "./index.js";
+import { waitWithSteering } from "./wait.js";
 
 function textResult(text: string, details?: any) {
   return { content: [{ type: "text" as const, text }], details };
@@ -466,13 +467,14 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   pi.registerTool({
     name: "wait_agent",
     label: "Wait Agent",
-    description: "Wait for one session-owned agent completion, or for the next completion if targets is omitted. Use only when your next action depends on that response; otherwise continue working and let completion arrive automatically. Returns one final response. Use wait_all_agents when every target must finish.",
+    description: "Wait for one session-owned agent completion, or for the next completion if targets is omitted. Use only when your next action depends on that response; otherwise continue working and let completion arrive automatically. Returns one final response, or an interrupted result when steering arrives. Child agents keep running. Use wait_all_agents when every target must finish.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait on. Omit to wait for the next completion in this parent session." })),
     }),
     async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
-        const result = await manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), signal);
+        const result = await waitWithSteering(ctx,
+          waitSignal => manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), waitSignal), signal);
         return boundedTextResult(JSON.stringify(result, null, 2), { message: result.message });
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -492,13 +494,14 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   pi.registerTool({
     name: "wait_all_agents",
     label: "Wait All Agents",
-    description: "Wait until all targeted session-owned agents reach a final status. Use only when your next action depends on every response; otherwise continue working and let completions arrive automatically. Returns their final text responses.",
+    description: "Wait until all targeted session-owned agents reach a final status. Use only when your next action depends on every response; otherwise continue working and let completions arrive automatically. Returns their final text responses, or an interrupted result when steering arrives. Child agents keep running.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait for. Omit to wait for agents spawned by this extension instance." })),
     }),
     async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
-        const result = await manager.waitAllAgents(parentSessionId(ctx), parseTargets(params.targets), signal);
+        const result = await waitWithSteering(ctx,
+          waitSignal => manager.waitAllAgents(parentSessionId(ctx), parseTargets(params.targets), waitSignal), signal);
         return boundedTextResult(JSON.stringify(result, null, 2), { message: result.message });
       } catch (error) {
         if (signal?.aborted) throw error;

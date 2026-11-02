@@ -31,8 +31,8 @@ Children still use the resource-discovery rules described under [Agent templates
 | Tool | Purpose |
 |---|---|
 | `spawn_agent` | Spawn a child Pi process, optionally from bounded native session history |
-| `wait_agent` | Block for one completion and return its final text |
-| `wait_all_agents` | Block until every selected agent finishes |
+| `wait_agent` | Wait for one completion, or return early for queued steering |
+| `wait_all_agents` | Wait until every selected agent finishes, or steering arrives |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
 | `read_agent_response` | Read an agent's latest final raw text response |
 | `steer_subagent` | Steer a running agent or start another turn when settled |
@@ -252,6 +252,16 @@ A thinking level written into an `enabledModels` pattern, such as `anthropic/cla
 ## Completion delivery
 
 A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` or `wait_all_agents` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
+
+Both wait tools return a normal `{ interrupted: true, message: "..." }` result when steering is already queued or arrives during the wait.
+User and custom messages both wake the wait; follow-up messages do not.
+Interruption leaves the queued messages intact and does not stop the parent run or its child agents.
+If the manager has already returned a completion, the tool returns that completion rather than replacing it with an interruption.
+The parent processes steering after the enclosing tool batch finishes, so parallel sibling tools and surrounding codemode code can still delay delivery.
+
+Interruptible waits require Pi's `ExtensionContext.hasPendingSteeringMessages()` API.
+An older core produces an upgrade/restart error instead of silently missing custom messages or waking for follow-ups.
+Restart with the updated Pi core when deploying this extension change.
 
 ## pi-link worker conversations
 

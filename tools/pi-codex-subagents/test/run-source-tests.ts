@@ -19,12 +19,12 @@ const boundarySource = resolve(process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE ?? dot
 // Short roots keep owned Unix sockets below the platform path-length limit.
 const root = mkdtempSync(join(tmpdir(), "pi-src-"));
 const defaults = [
-  "source-core.test.ts", "installed-package.test.ts", "fork.test.ts", "discovery.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts",
+  "source-core.test.ts", "installed-package.test.ts", "fork.test.ts", "discovery.test.ts", "held-tool-roundtrip.test.ts", "held-tool.test.ts", "queued-wait.test.ts",
   "manager-single-suspension.test.ts", "manager-suspension.test.ts", "capture-retry.test.ts", "discard-live-child.test.ts",
   "restore-startup-failure.test.ts", "manager-link.test.ts", "link-integration.test.ts",
   "boundary-integration.test.ts",
   "parent-child-roundtrip.test.ts", "pause-exit-rpc.test.ts",
-  "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../index.test.ts", "../peek.test.ts",
+  "../handoff.test.ts", "../suspension.test.ts", "../core.test.ts", "../index.test.ts", "../peek.test.ts", "../wait.test.ts",
 ].map(file => join(here, file));
 try {
   // Rebase the core repository's authoritative workspace aliases, including
