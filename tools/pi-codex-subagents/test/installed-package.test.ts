@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DefaultResourceLoader, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { resolveChildExtensionPaths } from "../core.ts";
+import { getAgentDefinition, resolveChildExtensionPaths } from "../core.ts";
 import { providerCallsFile } from "./held-tool-extension.ts";
 import { jsonl, sourceRpc, until } from "./source-runtime.ts";
 
@@ -43,14 +43,37 @@ sourceTest("setup alias loads the tracked package into a native provider without
   expect(entry).toBeDefined();
   const selected = await resolveChildExtensionPaths({ cwd, projectTrusted: false, disabledExtensions: ["pi-codex-subagents"] });
   expect(selected.some(path => path === realpathSync(join(alias, "index.ts")))).toBe(false);
+  const templates = join(agentDir, "pi-codex-subagents/agents");
+  mkdirSync(templates, { recursive: true });
+  for (const role of ["coordinator", "builder"]) {
+    const source = join(dotfiles, `config/pi-agent/pi-codex-subagents/agents/${role}.md`);
+    const destination = join(templates, `${role}.md`);
+    execFileSync("cp", [source, destination]);
+    execFileSync("cmp", [source, destination]);
+  }
+  const coordinator = getAgentDefinition("coordinator")!;
+  expect(coordinator).toBeDefined();
+  expect(coordinator.tools).toBeUndefined();
+  const coordinatorExtensions = await resolveChildExtensionPaths({
+    cwd, projectTrusted: false, disabledExtensions: coordinator.disabledExtensions,
+  });
+  expect(coordinatorExtensions).toContain(realpathSync(join(alias, "index.ts")));
+  const builder = getAgentDefinition("builder")!;
+  expect(builder).toBeDefined();
+  const builderExtensions = await resolveChildExtensionPaths({
+    cwd, projectTrusted: false, disabledExtensions: builder.disabledExtensions,
+  });
+  expect(builderExtensions).not.toContain(realpathSync(join(alias, "index.ts")));
   const sessionFile = join(cwd, "installed.jsonl");
-  const peer = sourceRpc(cwd, sessionFile, false, []);
+  const peer = sourceRpc(cwd, sessionFile, false, coordinatorExtensions);
   try {
     await peer.request({ type: "prompt", message: "installed-alias-provider-proof" });
     await until(() => peer.records.some(record => record.type === "agent_settled"), "installed alias reaches provider");
     const calls = jsonl(providerCallsFile(sessionFile));
     expect(calls).toHaveLength(1);
-    expect(calls[0].tools).toContain("spawn_agent");
+    for (const tool of ["spawn_agent", "steer_subagent", "list_agents", "wait_agent", "interrupt_agent"]) {
+      expect(calls[0].tools).toContain(tool);
+    }
     expect(peer.records.some(record => record.type === "message_end" && JSON.stringify(record.message).includes("faux:installed-alias-provider-proof"))).toBe(true);
     expect(readFileSync(rolePath, "utf8")).toBe("USER_OWNED_ROLE\n");
   } finally {

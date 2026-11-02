@@ -53,6 +53,8 @@ The specialized templates are [`coordinator`](pi-codex-subagents/agents/coordina
 Pass the original task, motivation, current evidence, permitted effects, and bounded outcome; the templates supply the stable procedures.
 Select the named `agent_type` explicitly to preserve its role rather than rely on generic or skill-based routing.
 The root normally coordinates; a coordinator template supports an authorized delegated workstream, not a mandatory extra agent.
+Coordinators can spawn and manage their own subagents within the assignment's authority and resource limits.
+Other role templates keep subagent management disabled.
 The detective combines causal investigation and next-action reasoning; the coordinator retains the final selection and integration responsibility.
 Create temporary specialists for concrete useful inputs, not a permanent state-producer role.
 
