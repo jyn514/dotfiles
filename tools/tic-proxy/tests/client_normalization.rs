@@ -167,3 +167,26 @@ fn generated_spelling_data_order_product_preserves_every_nonfile_operand() {
     }
     assert_eq!(count, 168); // Every declared class and interaction ran, no filtering.
 }
+
+#[test]
+fn open_valid_and_conflicting_arguments_use_shared_policy_diagnostics() {
+    for input in [vec!["list", "--open"], vec!["ls", "--open", "--json"]] {
+        assert_eq!(normalize(&a(&input)).unwrap(), (a(&input), None));
+    }
+    for (input, other) in [
+        (
+            vec!["list", "--open", "--subissues", "--limit", "40"],
+            "--limit",
+        ),
+        (vec!["ls", "--open", "--all"], "--all"),
+        (vec!["list", "--status=open", "--open"], "--status"),
+        (vec!["list", "-snew", "--open"], "--state"),
+    ] {
+        let error = normalize(&a(&input)).unwrap_err();
+        assert!(
+            error.contains("--open") && error.contains(other),
+            "{input:?}: {error}"
+        );
+        assert!(error.contains("cannot be used with"), "{error}");
+    }
+}

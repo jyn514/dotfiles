@@ -980,3 +980,70 @@ fn real_client_broker_and_native_preserve_store_and_exact_status_without_halfclo
     assert_eq!(output.stdout, b"native stdout\n");
     assert_eq!(output.stderr, b"native stderr\n");
 }
+
+#[test]
+fn open_diagnostics_and_help_reach_guest_and_direct_broker_consumers() {
+    let repos = Repos::new();
+    let native = native(&repos);
+    let broker = Broker::start(&repos, &repos.main, &native);
+    let guest = |argv: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
+            .current_dir(&repos.linked)
+            .env_clear()
+            .env("SANDBOX_TIC_ENDPOINT", &broker.address)
+            .env("SANDBOX_TIC_TOKEN", TOKEN)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    success(broker.request(
+        &["new", "--title", "open consumer fixture", "--id-only"],
+        "",
+    ));
+    for argv in [&["list", "--open"][..], &["ls", "--open", "--json"][..]] {
+        let direct = success(broker.request(argv, ""));
+        let output = guest(argv);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(direct.contains("open consumer fixture"), "{direct}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("open consumer fixture"));
+    }
+    for (argv, other) in [
+        (
+            vec!["list", "--open", "--subissues", "--limit", "40"],
+            "--limit",
+        ),
+        (vec!["ls", "--open", "--all"], "--all"),
+        (vec!["list", "--open", "--status", "open"], "--status"),
+        (vec!["list", "--open", "--state", "new"], "--state"),
+    ] {
+        let direct = broker.request(&argv, "");
+        let output = guest(&argv);
+        assert_eq!(direct.exit, 2, "{direct:?}");
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(direct.stdout.is_empty() && output.stdout.is_empty());
+        for error in [direct.stderr, String::from_utf8(output.stderr).unwrap()] {
+            assert!(error.contains("--open") && error.contains(other), "{error}");
+            assert!(error.contains("cannot be used with"), "{error}");
+            assert!(!error.contains("Usage:"), "{error}");
+        }
+    }
+    let direct = success(broker.request(&["list", "--help"], ""));
+    let output = guest(&["list", "--help"]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), direct);
+    assert!(direct.contains("all open tickets"), "{direct}");
+    assert!(direct.contains("conflicts with"), "{direct}");
+    for excluded in [
+        "setup:",
+        "review:",
+        "mine:",
+        "checkout:",
+        "users:",
+        "views:",
+        "--comment-edit",
+        "--edit",
+        "$EDITOR",
+    ] {
+        assert!(!direct.contains(excluded), "{excluded}: {direct}");
+    }
+}

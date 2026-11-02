@@ -1,5 +1,8 @@
 //! Admission uses the installed native parser, never native dispatch.
-use clap::{error::ErrorKind, ArgMatches, CommandFactory, FromArgMatches};
+use clap::{
+    error::{ContextKind, ContextValue, ErrorKind},
+    Arg, ArgMatches, CommandFactory, FromArgMatches,
+};
 use std::path::{Path, PathBuf};
 use ticgit::cli::{Cli, Command, WriteupAction};
 
@@ -70,9 +73,7 @@ pub fn classify(argv: &[String], stdin: &str) -> Result<Decision, String> {
                         stderr: String::new(),
                     })
                 }
-                _ => Err(
-                    "invalid native TicGit arguments; use --help for the admitted interface".into(),
-                ),
+                _ => Err(argument_error(&e)),
             }
         }
     };
@@ -152,10 +153,71 @@ fn admitted_name(name: &str) -> bool {
     )
 }
 
-/// Derive option names and accepted aliases from the exported parser. Do not use
-/// native help templates or descriptions: those advertise interactive fallbacks.
+fn advertised_arg(arg: &Arg) -> bool {
+    !arg.is_hide_set() && !matches!(arg.get_id().as_str(), "comment_edit" | "edit")
+}
+
+/// Preserve conflict participants, not native usage or suggestions, which can
+/// advertise excluded commands and editor fallbacks. Other parser failures keep
+/// the restricted-interface diagnostic.
+fn argument_error(error: &clap::Error) -> String {
+    const FALLBACK: &str = "invalid native TicGit arguments; use --help for the admitted interface";
+    if error.kind() != ErrorKind::ArgumentConflict {
+        return FALLBACK.into();
+    }
+    let Some(ContextValue::String(invalid)) = error.get(ContextKind::InvalidArg) else {
+        return FALLBACK.into();
+    };
+    let prior = match error.get(ContextKind::PriorArg) {
+        Some(ContextValue::String(value)) => vec![value.as_str()],
+        Some(ContextValue::Strings(values)) => values.iter().map(String::as_str).collect(),
+        _ => return FALLBACK.into(),
+    };
+    // Only publish parser-owned argument labels from the advertised interface,
+    // never caller values or labels for excluded editor controls.
+    let mut native = Cli::command();
+    native.build();
+    let mut labels = Vec::new();
+    for command in native
+        .get_subcommands()
+        .filter(|c| admitted_name(c.get_name()))
+    {
+        labels.extend(
+            command
+                .get_arguments()
+                .filter(|a| advertised_arg(a))
+                .map(ToString::to_string),
+        );
+        for action in command.get_subcommands() {
+            labels.extend(
+                action
+                    .get_arguments()
+                    .filter(|a| advertised_arg(a))
+                    .map(ToString::to_string),
+            );
+        }
+    }
+    if !labels.contains(invalid)
+        || prior.is_empty()
+        || prior
+            .iter()
+            .any(|value| !labels.iter().any(|label| label == value))
+    {
+        return FALLBACK.into();
+    }
+    if prior == [invalid.as_str()] {
+        format!("argument '{invalid}' cannot be used multiple times; use --help for the admitted interface")
+    } else {
+        format!("argument '{invalid}' cannot be used with {}; remove conflicting arguments or use --help for the admitted interface",
+            prior.iter().map(|value| format!("'{value}'")).collect::<Vec<_>>().join(", "))
+    }
+}
+
+/// Derive option names, aliases, and conflicts from the exported parser.
+/// Native templates and unreviewed descriptions advertise interactive fallbacks.
 pub fn agent_help() -> String {
-    let native = Cli::command();
+    let mut native = Cli::command();
+    native.build();
     let mut out = String::from("TicGit agent interface\nUsage: ti <command> [options]\nNo arguments means list. Files are collected in the guest; - reads stdin.\nExplicit input is required for new, edit, comment, state/status, spec and writeup new/edit.\nWriteup --body is literal text; writeup edit --file reads title then body.\n\n");
     for cmd in native
         .get_subcommands()
@@ -180,7 +242,7 @@ fn help_line(cmd: &clap::Command, name: &str, out: &mut String) {
     }
     out.push(':');
     for arg in cmd.get_arguments() {
-        if matches!(arg.get_id().as_str(), "comment_edit" | "edit") {
+        if !advertised_arg(arg) {
             continue;
         }
         if let Some(long) = arg.get_long() {
@@ -194,4 +256,30 @@ fn help_line(cmd: &clap::Command, name: &str, out: &mut String) {
         }
     }
     out.push('\n');
+    for arg in cmd.get_arguments().filter(|a| advertised_arg(a)) {
+        let conflicts: Vec<_> = cmd
+            .get_arg_conflicts_with(arg)
+            .into_iter()
+            .filter(|a| advertised_arg(a))
+            .map(ToString::to_string)
+            .collect();
+        // This native description explains the reported --open/--limit mistake
+        // without importing prose that promises unavailable editor fallbacks.
+        let description = if name == "list" && arg.get_id() == "open" {
+            arg.get_help()
+        } else {
+            None
+        };
+        if description.is_none() && conflicts.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("  {arg}:"));
+        if let Some(description) = description {
+            out.push_str(&format!(" {description}"));
+        }
+        if !conflicts.is_empty() {
+            out.push_str(&format!(" conflicts with {}.", conflicts.join(", ")));
+        }
+        out.push('\n');
+    }
 }

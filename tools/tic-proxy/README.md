@@ -34,7 +34,9 @@ ti --help
 ti list
 ```
 
-Guest help shows only the admitted commands and options.
+Guest help shows only the admitted commands and options, including native argument conflict rules.
+For example, `ti list --open` shows all open tickets without terminal-height truncation; it conflicts with `--all`, `--status`, `--state`, and `--limit`.
+Conflicts between advertised options name the arguments to remove, without publishing native administrative or editor guidance.
 The proxy supports ticket inspection and explicit, noninteractive ticket and writeup changes.
 Setup, synchronization, reviews, interactive UI, and editor launches remain outside the guest interface; ordinary host commands remain independent.
 The [proxy specification](../codex-sandbox/spec/tic-proxy.typ) defines the full admitted set under “Command and option admission.”

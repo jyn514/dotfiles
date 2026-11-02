@@ -172,3 +172,86 @@ fn help_and_version_never_publish_native_administration_or_editor_options() {
     ));
     assert!(direct(&["nonesuch", "--help"], "").is_err());
 }
+
+#[test]
+fn open_conflicts_explain_native_restrictions_without_native_guidance() {
+    for a in [
+        vec!["list", "--open"],
+        vec!["ls", "--open", "--json"],
+        vec!["list", "--open", "--subissues"],
+    ] {
+        assert_eq!(direct(&a, ""), Ok(Decision::Execute), "{a:?}");
+    }
+    for (a, flags) in [
+        (
+            vec!["list", "--open", "--subissues", "--limit", "40"],
+            ["--open", "--limit"],
+        ),
+        (vec!["ls", "--limit=1", "--open"], ["--open", "--limit"]),
+        (vec!["list", "--open", "--all"], ["--open", "--all"]),
+        (
+            vec!["list", "--open", "--status", "open"],
+            ["--open", "--status"],
+        ),
+        (vec!["list", "--open", "-s", "new"], ["--open", "--state"]),
+        (
+            vec!["list", "--json", "--markdown"],
+            ["--json", "--markdown"],
+        ),
+    ] {
+        let error = direct(&a, "").unwrap_err();
+        assert!(error.contains("cannot be used with"), "{a:?}: {error}");
+        for flag in flags {
+            assert!(error.contains(flag), "{a:?}: missing {flag}: {error}");
+        }
+        assert!(!error.contains("Usage:"), "{error}");
+        assert!(!error.contains("tip:"), "{error}");
+    }
+}
+
+#[test]
+fn open_help_explains_untruncated_open_tickets_and_conflicts() {
+    for a in [vec!["--help"], vec!["list", "--help"], vec!["ls", "-h"]] {
+        let Decision::Respond { stdout, .. } = direct(&a, "").unwrap() else {
+            panic!("not help");
+        };
+        let open = stdout
+            .lines()
+            .find(|line| line.contains("--open") && line.contains("conflicts with"))
+            .expect(&stdout);
+        assert!(open.contains("open tickets"), "{open}");
+        assert!(
+            open.contains("truncat") || open.contains("without limit"),
+            "{open}"
+        );
+        for conflict in ["--all", "--status", "--state", "--limit"] {
+            assert!(open.contains(conflict), "{open}");
+        }
+    }
+}
+
+#[test]
+fn parser_errors_do_not_publish_excluded_guidance_or_terminal_controls() {
+    for a in [
+        vec!["new", "--comment-edit", "--comment-edit"],
+        vec!["new", "-t", "title", "--comment-edit", "--comment", "body"],
+        vec!["list", "--open", "--status", "\u{1b}[31m"],
+        vec!["comment", "--edit", "--edit", "body"],
+        vec!["review", "--json", "--markdown"],
+        vec!["setup", "--nonesuch"],
+        vec!["nonesuch", "--help"],
+        vec!["list", "--nonesuch=\u{1b}[31m"],
+    ] {
+        let error = direct(&a, "").unwrap_err();
+        for excluded in [
+            "--comment-edit",
+            "--edit",
+            "$EDITOR",
+            "Usage:",
+            "tip:",
+            "\u{1b}",
+        ] {
+            assert!(!error.contains(excluded), "{a:?}: {error}");
+        }
+    }
+}

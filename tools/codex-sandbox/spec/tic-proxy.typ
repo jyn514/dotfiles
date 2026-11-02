@@ -217,6 +217,8 @@ A missing metadata value produces a native validation error, not an editor fallb
 Audit changed admitted paths for the same noninteractive ticket-operation boundary and against guest-selected host execution.
 Do not confuse ticket mutation, which is intended, with repository or host mutation, which is not.
 Preserve ordinary host help and commands; agent help must advertise only admitted commands and options.
+Explain native argument conflicts using the exported parser's metadata and structured errors, without publishing excluded administrative or editor guidance.
+Help must explain that `list --open` shows all open tickets without truncation and identify its native conflicting arguments.
 Export the fork's existing parser as library code rather than maintaining a second argv grammar.
 The guest client owns file-to-stdin normalization; the broker owns admission rules and agent help.
 Do not add policy annotations or an execution mode to TicGit.
