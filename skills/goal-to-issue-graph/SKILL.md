@@ -85,6 +85,23 @@ Leave low-risk mechanics to implementation; do not manufacture interfaces or exa
 For implementation goals, define bounded cross-component outcomes that establish and extend a working end-to-end path.
 Do not merely reorder whole-subsystem tickets that still defer integration until every component is complete.
 
+Require every executable task to have a specific deliverable, explicit scope and an observable stopping condition.
+A title and acceptance criteria do not bound a task if completing it still requires deciding which substantial work to include or what counts as enough.
+Recursively split unbounded tasks into smaller outcome tasks, checking each child by the same rule until every executable leaf is bounded.
+Preserve the parent's required outcome across the children, including integration; narrowing each child must not silently discard required work.
+Stop splitting when the leaf can be completed and checked without another substantial scope or decomposition decision.
+Do not substitute arbitrary time limits, one-file tasks or isolated implementation phases for useful bounded outcomes.
+
+Tracking parents may aggregate broad outcomes, but are not executable assignments.
+When missing knowledge prevents a sound split, create a bounded discovery or decision task that supplies the information needed for the next decomposition.
+Keep the remaining parent explicitly pending that decomposition; calling it provisional does not make it bounded or ready.
+Already-authorized bounded tasks need not wait for decomposition of independent branches.
+Do not invent speculative implementation children merely to make the graph look complete.
+
+For example, “improve import support” is not a bounded assignment.
+“Support the documented CSV dialect through the import consumer, including its malformed-row cases” can be one bounded child.
+If the parent requires other formats too, retain those obligations and continue decomposing them; completing CSV support does not complete the parent.
+
 When an early decision can materially change decomposition, distinguish ready assignments from provisional downstream work.
 Fully specify the decision and architecture-independent outcomes first; revise affected downstream tickets after the choice.
 A complete requirements inventory does not make the implementation breakdown execution-ready.
@@ -237,6 +254,9 @@ Review that route from both ends: every root criterion must reach proving work, 
 Trace every root criterion backward to tickets and consumer-visible evidence.
 Trace every required ticket forward to a root criterion; remove unrelated work or mark it outside the required graph.
 Check dependency existence, direction, reasons and cycles, and ensure every required node reaches the root.
+Check every executable leaf for a specific deliverable, explicit scope and an observable stopping condition; recursively split any that still fail this check.
+An unbounded parent awaiting information needs an owned bounded discovery or decision task, and its implementation decomposition remains pending.
+Do not call the whole graph execution-ready while it still contains such unresolved decomposition.
 Structural validity does not prove scope completeness, feasibility or implementation correctness.
 
 Challenge closure with a previously excluded item, a missing fixture, an allowed alternative route, an interaction failure and a routine update where applicable.
