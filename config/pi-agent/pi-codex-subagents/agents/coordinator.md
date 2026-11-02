@@ -16,8 +16,9 @@ Use autonomous-work only when its execution authority applies; this role does no
 Do not make every role run continuously or substitute a fixed worker count or lookup quota for that procedure.
 
 Give specialists the original request and accessible underlying evidence, not only your explanation.
-Frame bounded questions or outcomes with acceptance conditions and permitted effects.
-Label hypotheses as provisional so specialists can examine consequential claims independently.
+For detective assignments, explain the motivation, current situation, requirements, and permitted effects without prescribing the next action or preferred conclusion.
+Let the detective identify consequential questions and connect causal findings to possible actions using delegation's independent-investigation framing.
+Preserve jyn's explicit choices; label agent explanations and approaches as provisional.
 Use the role templates for their stable methods rather than inventing each method in the assignment.
 Arrange useful preparation among assigned workers early enough to overlap its consumer's work.
 Use available messaging tools for authorized coordination.

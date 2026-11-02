@@ -31,15 +31,17 @@ Exact allowlisted skills may route a subagent through the `luna` template.
 Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
-Use [work-selection](../../skills/work-selection/SKILL.md) for when to scout, the parent's next-action comparison, and the fallback when no compatible template is available.
-Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) for fresh-context read-only inspection within an authorized task or goal; follow its advertised caller contract.
+Use [work-selection](../../skills/work-selection/SKILL.md) for next-action comparison and the fallback when no compatible independent worker is available.
+The [`detective`](pi-codex-subagents/agents/detective.md) questions the framing, traces causal claims, and connects the findings to possible actions within the authorized task.
+Give it the motivation, original requirements, current evidence, and permitted effects rather than prescribe its next action.
 Include a complete path to a current use example when available so ignored files remain reachable.
-Neither reassessment nor scouting activates autonomous execution or changes goal permissions.
-The scout inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
-The scout decides when it has enough evidence for a recommendation or identifies a concrete blocker; there is no fixed lookup limit.
-Its 200-word report limit is an instruction, not a runtime limit.
-Reload Pi after installing a template so the tool description advertises it.
-Adding this template does not replace separately packaged `/goal` coordinator guidance.
+Reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment; these are not different roles.
+The detective inherits the parent's model and thinking level and investigates read-only unless the assignment explicitly permits other effects.
+Neither investigation nor a recommendation activates autonomous execution or grants implementation permission.
+It stops when the bounded investigation supports a decision or identifies a specific limit, without a fixed lookup quota or report word count.
+The former `goal-scout` template is removed; use `detective` for both causal investigation and next-action comparison.
+Reload Pi after installing changes so its tool description advertises the current templates.
+This routing does not replace separately packaged `/goal` coordinator guidance.
 
 ### Team roles
 
@@ -48,10 +50,10 @@ It owns role selection and the start, idle, wake, and retirement conditions.
 [Autonomous work](../../skills/autonomous-work/SKILL.md) invokes the same assessment for authorized runs; ordinary bounded work does not require run authority.
 
 The specialized templates are [`coordinator`](pi-codex-subagents/agents/coordinator.md), [`builder`](pi-codex-subagents/agents/builder.md), [`detective`](pi-codex-subagents/agents/detective.md), and [`qa`](pi-codex-subagents/agents/qa.md).
-Pass the original task, evidence entrypoints, permitted effects, and bounded question or outcome; the templates supply the stable procedures.
+Pass the original task, motivation, current evidence, permitted effects, and bounded outcome; the templates supply the stable procedures.
 Select the named `agent_type` explicitly to preserve its role rather than rely on generic or skill-based routing.
 The root normally coordinates; a coordinator template supports an authorized delegated workstream, not a mandatory extra agent.
-A detective investigates what is true; the existing goal scout compares what to do next.
+The detective combines causal investigation and next-action reasoning; the coordinator retains the final selection and integration responsibility.
 Create temporary specialists for concrete useful inputs, not a permanent state-producer role.
 
 Setup links the existing agents directory as a whole; no new package or installation route is needed.

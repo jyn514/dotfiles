@@ -158,20 +158,24 @@ Healthy execution alone does not settle work selection.
 
 ## Get an independent recommendation
 
-When a substantive choice remains after this comparison, use an available compatible fresh-context scout template and follow its advertised caller contract.
-Use [delegation](../delegation/SKILL.md#frame-independent-scouting-and-review) for caller framing, assignment, and integration.
-Supply the literal task, current acceptance condition, governing references, and evidence entrypoints for the main user activity as well as current work.
+If you are already the independent investigator assigned to this choice, complete the comparison yourself rather than request another worker.
+Otherwise, when a substantive choice remains after this comparison, use an available compatible detective template and follow its advertised caller contract.
+Use [delegation](../delegation/SKILL.md#frame-independent-investigation-and-review) for motivation-led assignment and integration.
+Supply the literal task, current acceptance condition, governing references, current situation, and evidence entrypoints for the main user activity as well as current work.
 Include the latest relevant user correction with its provenance; quote it only when the exact text is available.
-Keep any parent hypothesis, proposed next action, or rationale provisional under that framing procedure, not a requirement or substitute for independent evidence inspection.
+Explain why the investigation matters without prescribing the next action or preferred conclusion.
+Provide known observations, failures, and prior attempts; distinguish provisional explanations from governing requirements.
+The detective questions the framing, traces causal claims, and compares possible actions as one investigation rather than a separate fact-finding handoff.
+Reuse an investigator when accumulated evidence matters; use a fresh context when independent judgment matters more than continuity.
 Without a compatible template, inspect an existing activity example and outcome evidence yourself, read-only.
 Report unavailable evidence and do not claim independence for that fallback.
-Do not scout after every tool call, repeat an unchanged search without new evidence, or turn scouting into an exhaustive project audit.
+Do not request independent investigation after every tool call, repeat an unchanged search without new evidence, or turn it into an exhaustive project audit.
 
 ## Choose the next action
 
 Compare the recommendation with continuing current work and the strongest credible competing action.
 Consider user benefit and its evidenced or estimated scale, plus delivery, verification, and coordination costs.
-A correct finding, novelty, or completed batch does not alone justify priority; a scout report is not the requested outcome.
+A correct finding, novelty, or completed batch does not alone justify priority; a detective report is not the requested outcome.
 Keep missing evidence distinct from demonstrated failure, and do not assume an investigation will justify follow-up work.
 For a substantive recommendation, state why the chosen action beats the strongest available alternative.
 Name the deciding difference in expected contribution or total remaining cost, and the evidence or assumption supporting it.

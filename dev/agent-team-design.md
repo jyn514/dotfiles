@@ -32,6 +32,8 @@ Keep jyn's requirements distinct from agent interpretations.
 The coordinator's strength is comparing contributions across the whole task.
 Its weaknesses are premature interpretations, lossy summaries, and becoming the bottleneck through which all information passes.
 Specialists receive the original task and accessible evidence, not only the coordinator's account.
+For the detective, the coordinator explains the motivation, current situation, requirements, and permitted effects without prescribing a next action.
+The detective chooses which questions and possible interventions to examine.
 Technical disagreements require evidence rather than the coordinator's vote.
 
 ### Builder
@@ -46,15 +48,19 @@ The detective supplies causal evidence; QA returns reproducible consumer failure
 
 ### Detective
 
-Question what seems obvious and arrive at conclusions that are true, not comforting.
+Question what seems obvious, including the framing of the task, and arrive at conclusions that are true, not comforting.
 Investigate consequential claims from the coordinator, builder, QA, and itself.
 Follow the requested activity through actual inputs, producers, transformations, and consumers.
+Trace how possible actions would change the situation and advance the original objective, not just whether a local defect exists.
+Possible actions determine which causal questions matter; findings can change which actions deserve consideration.
 Consult prior work where it helps establish what is happening.
 
 The detective's strength is exposing unsupported explanations and connecting local work to the original outcome.
 Its weaknesses are endless investigation, contrarian speculation, and treating an interesting mechanism as an important one.
 Confirming the existing explanation with good evidence is a successful result.
-Investigations are bounded by the question or decision they can change, not a requirement to find something wrong.
+Investigations are bounded by the outcome or decision they can inform, not a requirement to find something wrong.
+A factual conclusion, a recommendation to continue, or a better next action can discharge the same responsibility.
+A fresh context and a continuing investigator are staffing choices, not separate scout and detective roles.
 
 ### QA
 
@@ -81,24 +87,25 @@ Keep tightly state-dependent action sequences under one owner; parallelize usefu
 
 The coordinator supplies the assignment rather than inventing each role's method every time.
 Stable role prompts define the procedure, characteristic failure modes, expected products, boundaries, and stopping conditions.
-Assignments supply the original task, current question, evidence entrypoints, permitted effects, and relevant local constraints.
+Assignments supply the original task, motivation, current evidence, permitted effects, and relevant local constraints.
 Role names do not expand authority.
 
-The existing [`goal-scout` template](../config/pi-agent/pi-codex-subagents/agents/goal-scout.md) demonstrates this separation.
-The scout has a stable procedure while the caller supplies the task and evidence.
-It remains distinct from the detective: a scout asks what to do next; a detective asks what is actually true.
+The [`detective` template](../config/pi-agent/pi-codex-subagents/agents/detective.md) combines the former goal scout's comparative reasoning with independent causal investigation.
+Its stable procedure supplies questioning, causal tracing, and comparison of possible actions; the coordinator supplies motivation, context, and boundaries.
+This avoids handing facts from one role to another before asking what they imply for action.
+The role may question which claims matter without waiting for the coordinator to identify the right uncertainty.
 
 The detective prompt should prescribe:
 
-- Read the original request and inspect evidence independently of the proposed explanation.
-- Distinguish observed, inferred, and merely repeated consequential claims.
-- Construct a credible competing explanation where the evidence leaves one open.
-- Find an observation that distinguishes the explanations.
-- Establish whether the conclusion changes anything about the requested outcome.
-- Return evidence and its limits, including when the current explanation survives.
+- Read the original request and inspect the actual activity independently of the proposed explanation.
+- Question the framing and distinguish observed, inferred, and merely repeated consequential claims.
+- Trace credible causal accounts and inspect evidence that distinguishes them.
+- Connect possible interventions to the requested outcome and use their consequences to choose useful questions.
+- When recommending action, compare continuing with the strongest credible alternative, including benefit and remaining costs.
+- Return evidence, implications, and limits, including when the current explanation or approach survives.
 
 “Question assumptions” alone is insufficient.
-The product is an established fact, a counterexample, a discriminating check, or an explicitly unresolved question.
+The product is an established fact, a counterexample, a discriminating check, a supported recommendation, or an explicitly unresolved question, with its implications for the original outcome.
 
 The QA prompt should prescribe:
 
@@ -117,7 +124,7 @@ A specialist can retain its session and responsibility after finishing its curre
 
 | Role | Start or wake | Finish the current episode |
 | --- | --- | --- |
-| Detective | Start of a substantive multi-step workstream; later changes to a causal explanation, a fix that leaves the original symptom, or a prerequisite that extends the approach. | Establish, reject, or narrow the consequential claim; deliver evidence to its consumer. |
+| Detective | Start of a substantive multi-step workstream; later changes to a causal explanation, priorities, the original symptom, or a prerequisite. | Support a decision through causal findings and their implications, including continuing unchanged; deliver evidence to its consumer. |
 | QA | Beginning of work that will produce a checkable result, allowing independent preparation; a candidate or changes that invalidate previous evidence. | Check applicable expectations; identify failures, passing scope, and untested obligations. |
 | Builder | Authorized construction can advance, including independent preparation while some inputs remain unavailable. | Integrate the assigned outcome, or identify the specific dependency preventing further authorized work. |
 | Temporary specialist | A concrete consumable output is worth separating from its consumer's work. | Deliver that output with enough information for its consumer to use it. |
@@ -147,8 +154,8 @@ It should invoke the assessment at run startup and when workstreams change, with
 It cannot be the sole entrypoint because its scope explicitly excludes ordinary bounded requests.
 
 Role templates own specialized procedures.
-[`work-selection`](../skills/work-selection/SKILL.md) retains priority reassessment and scouting.
-Neither the detective nor QA replaces those responsibilities.
+[`work-selection`](../skills/work-selection/SKILL.md) owns the comparison procedure used for priority reassessment, including by the detective.
+The detective combines investigation and recommendation; the coordinator retains the final choice, and QA checks acceptance.
 
 ## What would establish effectiveness
 
@@ -170,3 +177,8 @@ QA independently checked candidate skill discovery through Pi's `DefaultResource
 The builder used that coverage limit to check all four roles through the existing `listAgentDefinitions`, `getAgentDefinition`, and `getAgentDefinitionsDescription` consumers with a setup-shaped agents-directory symlink in disposable HOME.
 Both discovery checks passed; the detective's separate discovery-path investigation supported retaining the deployment warning rather than adding runtime machinery.
 This episode demonstrates independent evidence being consumed and changing verification, not automatic role selection or general effectiveness.
+It predates the scout/detective unification and does not establish behavioral effectiveness of the merged prompt.
+
+The unified configuration also passes the existing template consumer in disposable HOME: all four roles load with their exact candidate bodies, inherited model and thinking settings, and subagent-manager exclusion; the retired `goal-scout` is neither discoverable nor advertised.
+Pi's skill loader accepts the revised delegation and work-selection skills without diagnostics.
+These checks establish configuration validity, not behavioral effectiveness.
