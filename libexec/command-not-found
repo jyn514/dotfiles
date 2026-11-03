@@ -12,10 +12,12 @@ suggest_install() {
 	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
 	if [ -e /usr/lib/command-not-found ]
 	then
-		msg=$(/usr/lib/command-not-found -- "$1")
+		msg=$(/usr/lib/command-not-found -- "$1" 2>&1 | grep -v '^Try:\s')
 		echo "$msg" >&2
-		printf "sudo "
-		echo "$msg" | tail -n +2
+    pkg=$(echo "$msg" | grep -o ' from deb [^\s]* (' | head -n1 | cut -d ' ' -f 4)
+    if [ "$pkg" = "$1" ]; then
+      echo "sudo apt install -yqq $pkg"
+    fi
 		return 123
 	elif PKGFILE=$(command -v pkgfile 2>/dev/null) \
 		&& pkgs=$($PKGFILE --binaries -- "$1")
