@@ -105,8 +105,9 @@ sourceTest("child ask_user reaches the parent's UI and a late answer resumes onl
     await until(() => jsonl(desktop.sessionFile!).some(e => e.message?.role === "user"
       && typeof e.message.content !== "undefined"
       && JSON.stringify(e.message.content).includes(`Answer to ask_user ${queued[0].id}`)), "answer admitted as child user input", 20000);
-    await until(() => getAgent("desktop", parentId)?.status === "completed" && prompts.size === 1,
-      "resumed child finishes and removes only its presentation", 20000);
+    await until(() => getAgent("desktop", parentId)?.status === "completed" && prompts.size === 1
+      && widget?.[0] === "1 pending question(s) · Alt+A to answer",
+      "resumed child finishes, acknowledges delivery and removes only its presentation", 20000);
     const answered = jsonl(desktop.sessionFile!).filter(e => e.message?.role === "user"
       && JSON.stringify(e.message.content).includes(`Answer to ask_user ${queued[0].id}`));
     expect(answered).toHaveLength(1);

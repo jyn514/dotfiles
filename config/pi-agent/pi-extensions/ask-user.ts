@@ -94,6 +94,8 @@ class QuestionsPanel implements Component, Focusable {
     private readonly refresh: () => void,
     private readonly finish: () => void,
     private readonly submitAnswer: (question: PendingQuestion, answer: string) => void | Promise<void>,
+    private readonly submitting: ReadonlySet<string>,
+    private readonly reportAsyncError: (error: unknown) => void,
   ) {
     this.editor = this.createEditor();
     this.load();
@@ -136,8 +138,13 @@ class QuestionsPanel implements Component, Focusable {
     this.refresh();
   }
 
+  private available(): PendingQuestion[] {
+    return this.state.pending.filter(q => !q.origin || !this.submitting.has(q.id));
+  }
+
   private current(): PendingQuestion {
-    return this.state.pending.find((q) => q.id === this.state.viewed) ?? this.state.pending[0];
+    const available = this.available();
+    return available.find((q) => q.id === this.state.viewed) ?? available[0];
   }
 
   private draft(): Draft {
@@ -167,8 +174,9 @@ class QuestionsPanel implements Component, Focusable {
   }
 
   private cycle(direction: -1 | 1): void {
-    const index = this.state.pending.findIndex((q) => q.id === this.current().id);
-    this.state.viewed = this.state.pending[(index + direction + this.state.pending.length) % this.state.pending.length].id;
+    const available = this.available();
+    const index = available.findIndex((q) => q.id === this.current().id);
+    this.state.viewed = available[(index + direction + available.length) % available.length].id;
     this.load();
   }
 
@@ -179,14 +187,10 @@ class QuestionsPanel implements Component, Focusable {
       const result = this.submitAnswer(question, answer);
       if (result) void result.then(() => {
         if (!this.closed) { this.load(); this.refresh(); }
-      }).catch((error) => {
-        if (this.closed) return;
-        if (this.current()?.id === question.id) {
-          this.error = `Not submitted: ${error instanceof Error ? error.message : String(error)}. Retry with Enter.`;
-        }
-        this.refresh();
-      });
-      else this.load();
+      }).catch((error) => { this.reportAsyncError(error); });
+      // In-flight answers stay authoritative in the queue, but no longer block
+      // the panel. Advance now, or close if every remaining answer is sending.
+      this.load();
     } catch (error) {
       // sendUserMessage is void: only synchronous rejection is observable here.
       this.error = `Not submitted: ${error instanceof Error ? error.message : String(error)}. Retry with Enter.`;
@@ -237,10 +241,11 @@ class QuestionsPanel implements Component, Focusable {
     const question = this.current();
     if (!question) return [];
     const draft = this.draft();
-    const index = this.state.pending.findIndex((q) => q.id === question.id);
+    const available = this.available();
+    const index = available.findIndex((q) => q.id === question.id);
     const lines: string[] = [];
     const add = (text: string) => lines.push(...wrapTextWithAnsi(text, Math.max(1, width)));
-    add(this.theme.fg("accent", this.theme.bold(`Question ${index + 1} of ${this.state.pending.length} — ${question.origin ? `${question.origin.taskName} — ` : ""}${question.title}`)));
+    add(this.theme.fg("accent", this.theme.bold(`Question ${index + 1} of ${available.length} — ${question.origin ? `${question.origin.taskName} — ` : ""}${question.title}`)));
     add(question.question);
     for (const [i, option] of [...(question.options ?? []), "Type a free answer…"].entries()) {
       if (!question.options?.length) break;
@@ -304,7 +309,7 @@ export default function askUser(pi: ExtensionAPI): void {
     const currentGeneration = generation;
     const ctx = activeContext;
     for (const question of state.pending) {
-      if (browserIds.has(question.id)) continue;
+      if (browserIds.has(question.id) || submitting.has(question.id)) continue;
       try {
         // onRequest synchronously captures the bus-minted ID. No component claim:
         // Dashboard's native SelectRenderer owns browser rendering.
@@ -319,7 +324,11 @@ export default function askUser(pi: ExtensionAPI): void {
           browserIds.delete(question.id);
           // Dismissal is not cancellation of the authoritative queue.
           if (response.cancelled) return;
-          try { await submitAnswer(question, response.answer ?? "", ctx, currentGeneration); }
+          const answer = response.answer ?? "";
+          if (question.origin && answer.trim()) {
+            state.drafts.set(question.id, { text: answer, option: 0, editing: true });
+          }
+          try { await submitAnswer(question, answer, ctx, currentGeneration); }
           catch (error) {
             ctx.ui.notify(`ask_user: not submitted: ${String(error)}. Retry in the question panel or browser.`, "error");
           }
@@ -365,7 +374,12 @@ export default function askUser(pi: ExtensionAPI): void {
   });
 
   const status = (ctx: ExtensionContext) => {
-    if (ctx.mode === "tui") ctx.ui.setWidget("ask-user", state.pending.length ? [`${state.pending.length} pending question(s) · Alt+A to answer`] : undefined, { placement: "aboveEditor" });
+    if (ctx.mode !== "tui") return;
+    const pending = state.pending.filter(q => !submitting.has(q.id)).length;
+    const parts: string[] = [];
+    if (submitting.size) parts.push(`${submitting.size} answer(s) sending…`);
+    if (pending) parts.push(`${pending} pending question(s) · Alt+A to answer`);
+    ctx.ui.setWidget("ask-user", parts.length ? [parts.join(" · ")] : undefined, { placement: "aboveEditor" });
   };
   // Older readers treat every v1 question as local user input. Mark snapshots
   // containing remote projections v2 so they refuse rather than misroute answers.
@@ -586,6 +600,13 @@ export default function askUser(pi: ExtensionAPI): void {
       const connection = endpoint;
       if (connection?.role !== "parent" || !question.remoteId) throw new Error("Subagent question channel is unavailable");
       submitting.add(question.id);
+      if (state.viewed === question.id) {
+        const index = state.pending.findIndex(q => q.id === question.id);
+        state.viewed = [...state.pending.slice(index + 1), ...state.pending.slice(0, index)]
+          .find(q => !submitting.has(q.id))?.id;
+      }
+      dismissBrowser(question.id);
+      refreshQueue();
       return connection.request(question.origin.workerId, CHANNEL, {
         kind: "answer", id: question.remoteId, answer,
       }).then(result => {
@@ -598,7 +619,11 @@ export default function askUser(pi: ExtensionAPI): void {
           ctx.ui.notify(`ask_user: ${question.origin!.taskName}'s question is no longer pending; this answer was not sent.`, "info");
         }
         removeQuestion(question, ctx);
-      }).finally(() => { if (expectedGeneration === generation) submitting.delete(question.id); });
+      }).finally(() => {
+        if (expectedGeneration !== generation) return;
+        submitting.delete(question.id);
+        if (sessionId === ctx.sessionManager.getSessionId()) refreshQueue();
+      });
     }
     // The void API accepts dispatch synchronously, not delivery. Pi reports
     // asynchronous failures; never await or invent an acknowledgement.
@@ -631,7 +656,10 @@ export default function askUser(pi: ExtensionAPI): void {
     handler: async (ctx) => {
       if (ctx.mode !== "tui" || sessionId !== ctx.sessionManager.getSessionId()) return;
       if (opening) return;
-      if (!state.pending.length) { ctx.ui.notify("No pending questions.", "info"); return; }
+      if (!state.pending.some(q => !submitting.has(q.id))) {
+        ctx.ui.notify(submitting.size ? "Answers are still sending." : "No pending questions.", "info");
+        return;
+      }
       const openedGeneration = generation;
       const openedId = ++openingId;
       opening = true;
@@ -640,7 +668,10 @@ export default function askUser(pi: ExtensionAPI): void {
           const currentPanel = new QuestionsPanel(state, theme, keys, tui, () => tui.requestRender(), () => {
             if (openedGeneration === generation && openedId === openingId) { panel = undefined; opening = false; }
             done();
-          }, (question, answer) => submitAnswer(question, answer, ctx, openedGeneration));
+          }, (question, answer) => submitAnswer(question, answer, ctx, openedGeneration), submitting, error => {
+            if (openedGeneration !== generation || sessionId !== ctx.sessionManager.getSessionId()) return;
+            ctx.ui.notify(`ask_user: not submitted: ${String(error)}. Answer preserved; reopen Alt+A to retry.`, "error");
+          });
           panel = currentPanel;
           return currentPanel;
         });

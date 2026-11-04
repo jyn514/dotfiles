@@ -537,7 +537,10 @@ The parent persists a presentation copy so its panel survives reload; the child 
 Snapshots containing child questions use a new format version so older readers reject them rather than mistake a child's answer for parent input.
 Forked children retain separate presentation identities even when their copied question IDs match.
 A child can cancel its own questions with `cancel_ask_user`; the parent's tool cannot cancel a child's authoritative queue.
-Routing failures retain the answer draft for retry and do not send it to the parent instead.
+Submitting advances to the next question immediately, or closes the panel when no other questions need answers.
+The widget shows answers as sending until the child acknowledges them; in-flight questions cannot be submitted again.
+Routing failures notify you and retain the answer draft in Alt+A, including answers submitted through the browser.
+The browser also offers the question again; failures never send the answer to the parent instead.
 If publication fails after saving, the tool reports that questions remain saved but their presentation is not confirmed.
 An RPC session without a child channel cannot queue questions through this tool.
 

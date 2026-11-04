@@ -757,9 +757,15 @@ describe("subagent question presentation", () => {
     const n = questionNetwork(); const child = n.child();
     await child.ask([question("scope")]);
     const open = n.parent.open(); n.parent.key("draft to child");
-    n.answerError = true; n.parent.key(ENTER); await flushChannel();
-    expect(n.parent.text()).toContain("worker paused"); expect(n.parent.text()).toContain("draft to child");
+    n.answerError = true; n.parent.key(ENTER);
+    expect(n.parent.closed).toBe(1); // Close before a transport acknowledgement, not after startup.
+    expect(n.parent.widget?.join(" ")).toContain("sending");
+    await open; await flushChannel();
+    expect(n.parent.widget).toEqual(["1 pending question(s) · Alt+A to answer"]);
+    expect(n.parent.notifications.join(" ")).toContain("worker paused");
     expect(child.messages).toEqual([]);
+    const retry = n.parent.open();
+    expect(n.parent.text()).toContain("draft to child");
     n.answerError = false;
     let release!: () => void;
     const barrier = new Promise<void>(resolve => { release = resolve; });
@@ -767,8 +773,47 @@ describe("subagent question presentation", () => {
     const before = n.requests;
     n.parent.key(ENTER); n.parent.key(ENTER);
     expect(n.requests - before).toBe(1);
-    release(); await flushChannel(); await open;
+    expect(n.parent.closed).toBe(2);
+    await n.parent.open(); // Cannot reopen and submit the same in-flight answer.
+    expect(n.parent.customCalls).toBe(2);
+    release(); await flushChannel(); await retry;
     expect(child.messages).toHaveLength(1); expect(n.parent.messages).toEqual([]);
+    expect(n.parent.widget).toBeUndefined();
+  });
+
+  test("sending advances immediately to other questions and failure preserves the exact browser answer", async () => {
+    const n = questionNetwork(); const browser = dashboard(n.parent.events);
+    const child = n.child();
+    await child.ask([question("slow"), question("independent")]);
+    let release!: () => void;
+    n.holdAnswer = () => new Promise<void>(resolve => { release = resolve; });
+    const open = n.parent.open();
+    n.parent.key("slow answer"); n.parent.key(ENTER);
+    expect(n.parent.text()).toContain("independent");
+    expect(n.parent.text()).not.toContain("Decide slow?");
+    expect(n.parent.widget?.join(" ")).toContain("sending");
+    // An unrelated queue refresh must not re-offer the in-flight question.
+    await n.parent.ask([question("unrelated")]);
+    expect([...browser.pending.values()].some(({ prompt }) => prompt.question === "/worker-a — slow")).toBe(false);
+    n.answerError = true; release(); await flushChannel();
+    expect(n.parent.text()).toContain("independent");
+    expect(n.parent.notifications.join(" ")).toContain("worker paused");
+    n.parent.key(ESC); await open;
+    const prompt = [...browser.pending.values()].find(({ prompt }) => prompt.question === "/worker-a — slow")!.prompt;
+    const exact = "browser answer\nwith multiple lines";
+    browser.respond({ id: prompt.id, answer: exact, source: "dashboard" });
+    await flushChannel();
+    expect(n.parent.widget?.join(" ")).toContain("sending");
+    release(); await flushChannel();
+    const retry = n.parent.open(); n.parent.key(LEFT);
+    expect(n.parent.text()).toContain("browser answer");
+    expect(n.parent.text()).toContain("with multiple lines");
+    expect(child.messages).toEqual([]); expect(n.parent.messages).toEqual([]);
+    n.answerError = false; n.holdAnswer = undefined;
+    n.parent.key(ENTER); await flushChannel();
+    expect(child.messages).toHaveLength(1);
+    expect(child.messages[0].content).toEndWith(`\n\n${exact}`);
+    n.parent.key(ESC); await retry;
   });
 
   test("browser submits multiline child answer without consuming a sibling or parent question", async () => {
