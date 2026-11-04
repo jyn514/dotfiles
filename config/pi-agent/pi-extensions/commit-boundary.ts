@@ -1,6 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { EditToolOptions, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createEditTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 import { captureCheckpoint, createBoundaryTool } from "./commit-boundary/operations.mjs";
+import { createEditSuggestionsTool } from "./edit-suggestions.ts";
 
 export type BoundaryMetadata = { error: string };
 type Capture = (ctx: ExtensionContext, signal: AbortSignal) => Promise<unknown>;
@@ -79,7 +80,12 @@ export default function commitBoundary(pi: ExtensionAPI) {
   if (process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
   const boundary = createBoundaryController(pi, (ctx, signal) =>
     captureCheckpoint(ctx.cwd, { signal, env: nativeBoundaryEnvironment(ctx) }));
-  const factories = { createEditTool, createWriteTool };
+  const factories = {
+    createEditTool: (cwd: string, options?: EditToolOptions) => createEditSuggestionsTool(cwd, {
+      ...options, contextLines: pi.getSettings().editContextLines,
+    }),
+    createWriteTool,
+  };
   for (const name of ["edit", "write"] as const) {
     const template = name === "edit" ? createEditTool(process.cwd()) : createWriteTool(process.cwd());
     pi.registerTool({

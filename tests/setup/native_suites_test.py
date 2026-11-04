@@ -85,6 +85,7 @@ class NativeSuitesTests(unittest.TestCase):
              "tests/pi/native_subscription_usage.mjs", "tests/pi/native_validate_skill.mjs",
              "tests/pi/native_transport_diagnostics.mjs"),
             ("node", "--test", "tests/pi/native_footer.mjs"),
+            ("node", "--test", "tests/pi/native_edit_suggestions.mjs"),
             ("node", "--test", "--test-isolation=none", "tests/pi/native_prompt_history.mjs"),
             ("node", "--test", "tests/pi/native_session_title.mjs", "tests/pi/native_session_reader_title.mjs"),
             ("node", "--test", "tools/pi-to-codex/tests/pi_to_codex_test.mjs"),
@@ -125,7 +126,7 @@ class NativeSuitesTests(unittest.TestCase):
         self.assert_native_commands()
         self.assertTrue(any(event["kind"] == "postcheck" and event["argv"] == ["dev/check-shell.py"]
                             for event in self.events()))
-        self.assertIn("18 passed", result.stdout)
+        self.assertIn("19 passed", result.stdout)
         self.assertIn("All checks passed", result.stdout)
 
     def test_native_failure_reports_output_and_blocks_repository_and_container_checks(self):
@@ -136,7 +137,7 @@ class NativeSuitesTests(unittest.TestCase):
         output = result.stdout + result.stderr
         self.assertIn("NATIVE_PI_STDOUT_SENTINEL", output)
         self.assertIn("NATIVE_PI_STDERR_SENTINEL", output)
-        self.assertIn("1 failed, 17 passed", output)
+        self.assertIn("1 failed, 18 passed", output)
         downstream = [event for event in self.events() if event["kind"] in ("postcheck", "container")]
         self.assertEqual([{"kind": "postcheck", "argv": [str(self.root / "tools/codex-sandbox/owned_images.py")]}],
                          downstream)

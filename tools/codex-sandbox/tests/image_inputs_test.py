@@ -139,6 +139,28 @@ class ImageInputsTest(unittest.TestCase):
                     output.write('\n# changed authoritative input\n')
                 self.assertNotEqual(before, key(), name)
 
+    def test_edit_suggestions_are_captured_and_invalidate_the_worker_image(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        source = Path('config/pi-agent/pi-extensions/edit-suggestions-core.ts')
+        self.assertIn(source, owned['agent_sources']())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'repository'
+            for name in (Path('tools/codex-sandbox/image/Dockerfile'), source):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            base = SimpleNamespace(content='base', config='config', rootfs='rootfs')
+            key = lambda: owned['agent_cache_key'](
+                1000, 1000, 'linux/amd64', base, 'a' * 40,
+                jj_image='jj@sha256:' + '1' * 64, root=root)
+            before = key()
+            captured = Path(directory) / 'captured'
+            _capture(root, root, captured, hashlib.sha256(), owned['agent_sources'](root))
+            self.assertEqual((ROOT / source).read_bytes(), (captured / source).read_bytes())
+            with (root / source).open('a') as output:
+                output.write('\n// changed diagnostic policy\n')
+            self.assertNotEqual(before, key())
+
     def test_host_lock_selects_proxy_artifacts_and_cache_identity(self):
         owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
         with tempfile.TemporaryDirectory() as directory:

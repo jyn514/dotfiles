@@ -141,6 +141,7 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
       // Only the common on-workspace record can carry the boundary forward.
       tools.clear(); hooks.clear();
       const pi = {
+        getSettings: () => ({}),
         registerTool: (tool: any) => tools.set(tool.name, tool),
         on: (name: string, handler: any) => hooks.set(name, [...(hooks.get(name) || []), handler]),
       };

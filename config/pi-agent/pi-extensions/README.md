@@ -12,6 +12,16 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+`edit-suggestions.ts` adds closest-match diffs, expected-text previews, and duplicate-match line numbers to failed edits.
+Approximate suggestions never select a replacement; Pi still owns matching, successful writes, and successful diff rendering.
+Native registration inherits Pi's renderers and effective `editContextLines` setting.
+Pre-execution matching failures use Pi's plain errors; suggestions appear when execution fails.
+The guest worker composes the same diagnostics with its existing edit guard and authoritative file read.
+Do not load this extension independently alongside the bundle.
+Run `/reload` for native sessions after updating the bundle.
+Guest workers package the diagnostic module in their image: close existing sandbox panes and start a new sandbox after updating it.
+`/reload` alone does not replace the worker.
+
 `detailed-reasoning.ts` changes OpenAI Responses and Codex reasoning summaries from `auto` to `detailed`.
 Thinking effort, disabled summaries, and explicit summary choices remain unchanged.
 Run `/reload` to apply it to subsequent requests; existing saved summaries do not change.

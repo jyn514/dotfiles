@@ -107,6 +107,7 @@ COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
 COPY ./tools/codex-sandbox/image/tool-worker.mjs /opt/agent-tools/bin/tool-worker.mjs
 COPY ./config/pi-agent/pi-extensions/commit-boundary/operations.mjs /opt/agent-tools/bin/commit-boundary-operations.mjs
+COPY ./config/pi-agent/pi-extensions/edit-suggestions-core.ts /opt/agent-tools/bin/edit-suggestions-core.ts
 COPY ./tools/codex-sandbox/image/tool-connect.mjs /opt/agent-tools/bin/tool-connect.mjs
 COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
 COPY ./tools/codex-sandbox/image/check-bun.test.ts /opt/agent-pi/check-bun.test.ts

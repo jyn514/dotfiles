@@ -5,6 +5,7 @@ import commitBoundary from "./commit-boundary.ts";
 import compactSession from "./compact-session.ts";
 import currentDate from "./current-date.ts";
 import detailedReasoning from "./detailed-reasoning.ts";
+import editSuggestions from "./edit-suggestions.ts";
 import footer from "./footer.ts";
 import hostBash from "./host-bash.ts";
 import hostOS from "./host-os.ts";
@@ -30,6 +31,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   transportDiagnostics(pi);
   askUser(pi);
   contextBreakdown(pi);
+  editSuggestions(pi);
   commitBoundary(pi);
   currentDate(pi);
   detailedReasoning(pi);

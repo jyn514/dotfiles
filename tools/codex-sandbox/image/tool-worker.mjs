@@ -1,6 +1,7 @@
 import { createServer } from "node:net";
 import { writeFileSync } from "node:fs";
 import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operations.mjs";
+import { createEditSuggestionsTool } from "./edit-suggestions-core.ts";
 
 const startupStarted = performance.now();
 const toolModule = process.env.CODEX_SANDBOX_PI_TOOL_MODULE ??
@@ -143,6 +144,7 @@ const server = createServer((socket) => {
           const {
             createReadTool, createBashTool, createPowerShellTool, createEditTool,
             createWriteTool, createGrepTool, createFindTool, createLsTool,
+            createEditToolDefinition, generateDiffString,
           } = await loadToolModule();
           const toolFactories = {
             read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
@@ -156,7 +158,14 @@ const server = createServer((socket) => {
           const shellOptions = request.tool === "bash" || request.tool === "powershell"
             ? { spawnHook } : undefined;
           if (request.tool === "edit" || request.tool === "write") {
-            guarded = createBoundaryTool({ createEditTool, createWriteTool }, request.tool, process.cwd(), {
+            // Keep the guard's operations inside Pi's queue and capture that same
+            // authoritative read for suggestions; neither wrapper retries a match.
+            const factories = {
+              createEditTool: (cwd, options) => createEditSuggestionsTool(
+                { createEditToolDefinition, generateDiffString }, cwd, options),
+              createWriteTool,
+            };
+            guarded = createBoundaryTool(factories, request.tool, process.cwd(), {
               signal: controller.signal, env: callEnv(process.env),
             });
           }
