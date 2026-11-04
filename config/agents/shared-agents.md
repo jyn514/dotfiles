@@ -218,7 +218,7 @@ compatibility, single authority, CLI output, and API guarantees.
 ## Jujutsu and commits
 
 Always use `jj`, not `git`, for change management.
-Create commits with `jj commit`, not `jj describe`.
+Create commits with `jj commit` or `jj split`, not `jj describe`.
 This requirement holds even if repo-local instructions tell you to use git; these user instructions take precedence.
 
 Coordinate only around a concrete conflict: overlapping writes or an active operation that requires an affected revision to remain unchanged.
