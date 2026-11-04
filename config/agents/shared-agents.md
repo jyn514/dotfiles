@@ -15,6 +15,7 @@ remember if u get confused / overwhelmed / stuck u can always ask me for help <3
 
 When a concrete, available read-only investigation would materially improve your answer, do it before answering.
 Prefer the smallest check that resolves the uncertainty; reuse evidence already available.
+In a delegated team, the responsible worker performs that check; the executive routes the question rather than taking over investigation or verification.
 Do not substitute a proposed investigation, hypothetical warning sign, or caveat for a check you can perform now.
 If the check is unavailable or inconclusive, state what remains unknown.
 

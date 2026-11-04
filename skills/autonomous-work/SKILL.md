@@ -15,6 +15,9 @@ An inactive goal is saved state, not permission to continue.
 This skill owns run authority, persistence, required acceptance order, resumable state, and stopping.
 [Work-selection](../work-selection/SKILL.md) owns next-action selection, dependency justification, reassessment, and scouting within the authorized task.
 Activity-specific skills own their procedures; goal tools own status changes and budgets.
+In a delegated team, apply these acceptance duties through their owners: the builder integrates, QA verifies and investigates failures, and the strategist decides overall next-work priority.
+The executive preserves scope, dispatches work, coordinates dependencies, and ratifies alignment; it does not perform a parent technical pass.
+Use delegation's owner-return procedure when evidence or a proposal is inadequate.
 Autonomy authorizes persistence within the task, not a different activity or additional effects.
 
 u got this buddy <3 i believe in u
@@ -37,7 +40,8 @@ Do not ask again for investigation, edits, or repairs the task already authorize
 Derive remaining outcomes from the full governing request, not from worker assignments, progress summaries, or optional cleanup.
 A narrower investigation does not narrow the goal or milestone.
 Follow the required acceptance order.
-For the next unmet condition, identify its observable result, current evidence, missing work, and cheapest realistic check.
+For each unmet condition, keep its observable result, current evidence, missing work, and responsible owner visible.
+The technical owner chooses the cheapest realistic check; an executive returns missing evidence to that owner instead of investigating it.
 Use the task's actual criteria: sources and reasoning for research, the brief for writing, feasibility for planning, inspection evidence for review, and consumer behavior for implementation.
 Keep each condition open until its required evidence passes; an explicitly scoped feasibility or component result does not complete downstream obligations.
 
@@ -72,12 +76,14 @@ Keep downstream work provisional where discovery or an unresolved choice can cha
 As evidence or the approach changes, update or supersede obsolete tasks and dependencies while preserving the governing outcomes.
 Working from the graph means advancing an unmet root outcome and closing work on evidence, not obeying abandoned mechanisms or treating revisable agent assumptions as user requirements.
 Graph work does not expand scope, change the authorized activity or effects, or resume an inactive goal.
-The graph skill owns decomposition; work-selection still owns the next action.
+The graph skill owns decomposition; work-selection supplies the comparison used by the strategist for overall priority.
 
 ## Select work within the authorized run
 
-Use [work-selection](../work-selection/SKILL.md) to choose the next action, justify dependencies, and compare continuing with other authorized approaches.
-Also use it before extending repeated similar batches during an active run, even when they succeed.
+Use [work-selection](../work-selection/SKILL.md) through the strategist for overall next-work priority, dependency justification, and comparison of authorized approaches.
+Workers choose local actions within their responsibilities; executives question scheduling and dispatch the ratified work.
+Reassess before extending repeated similar batches during an active run, even when they succeed.
+Return changes to overall priority to the strategist; do not make it direct every worker's next command.
 Keep unmet acceptance conditions and scoped blockers visible while advancing independent authorized work.
 Advance acceptance and integration only when governing prerequisites and required evidence permit.
 
@@ -85,7 +91,8 @@ Use [delegation](../delegation/SKILL.md) for assignments, shared contracts, wait
 
 ## For implementation work only
 
-For implementation work, use these companion procedures when their conditions apply:
+Builders and QA use these companion procedures for implementation when their conditions apply.
+Executive acceptance bookkeeping does not transfer their checks or completion audits to the executive:
 
 - Use [change guidelines](../references/change-with-evidence.md#design-choices) for unresolved modeling, interface, ownership, or invariant decisions, and [testing guidance](../references/testing.md) for test-strategy choices.
   For an established pattern, follow the surrounding code and tests without another design procedure.
@@ -95,7 +102,7 @@ For implementation work, use these companion procedures when their conditions ap
 - For a new independently invoked tool, use [new-tool-development](../new-tool-development/SKILL.md) to check readiness.
   This skill neither approves its artifacts nor selects its design.
 
-For an implementation acceptance case, identify the actual entrypoint, authoritative inputs, intervening interfaces, final consumer, and cheapest realistic check.
+The builder and QA identify, for an implementation acceptance case, the actual entrypoint, authoritative inputs, intervening interfaces, final consumer, and cheapest realistic check.
 Require end-to-end evidence unless the governing scope explicitly declares a feasibility or component milestone.
 Do not replace that condition with a helper's local success.
 Before extending prerequisite or capability work without a new consumer-visible result, attempt the nearest intended-consumer check.
@@ -129,7 +136,7 @@ Treat your account as claims to check, not the archivist's authority.
 Ask it to reconcile duplicate or conflicting status claims against original records and identify superseded instructions with their replacement sources.
 Require current dispositions, source references, and explicit unresolved contradictions, not another chronological summary or a whole-project audit.
 The archivist reconciles records; it does not grant authority, certify technical acceptance, delete original evidence, or rerun acceptance checks.
-Inspect its result and incorporate supported corrections into the existing permitted task-state surface before preparing the checkpoint.
+Have the responsible owners resolve substantive contradictions in its result and incorporate supported corrections into the existing permitted task-state surface before preparing the checkpoint.
 Do not create a parallel status ledger or treat the archivist's inference as a user decision.
 If delegation is unavailable or compaction cannot wait, preserve the uncertain claims and recovery references explicitly rather than resolving them by assumption.
 A coherent current record needs no archivist pass.
@@ -167,10 +174,11 @@ Distinguish a missing external dependency from an in-scope repair or an unavaila
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if another approach could reach the same outcome with fewer assumptions.
 Declare the whole run blocked only when no meaningful authorized progress remains, then explain the dependency.
 
-At completion, compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
+At completion, the responsible workers compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
+The executive ratifies the reported coverage and returns gaps to their owners rather than performing verification itself.
 Require concrete evidence for every explicit requirement and no required work remaining.
 For completed implementation, apply the review threshold above and [completion review](../completion-audit/SKILL.md) when required.
-For research, writing, planning, and review, verify the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.
+For research, writing, planning, and review, the assigned technical owner verifies the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.
 
 If only externally blocked obligations remain, report partial completion, exact blockers, and the next possible action.
 If interrupted by time, budget, or tool failure, report paused work and preserve the next action.

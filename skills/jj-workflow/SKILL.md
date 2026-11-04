@@ -24,7 +24,9 @@ Treat unexpected deltas as authored work until ownership is established. Before 
 - stop dependent mutations and ask if ownership or authorization remains unclear;
 - use provenance and a three-way comparison—not similarity—to distinguish independent, stale, and duplicate changes.
 
-Concurrent workers commit only their work and return its change ID. The coordinator owns integration and restacking.
+Concurrent workers commit only their authorized work and return its change ID.
+Keep result integration with the builder under [delegation](../delegation/SKILL.md).
+The executive coordinates revision dependencies and assigns necessary restacking to an authorized history-work owner; this does not transfer technical acceptance to the executive.
 
 ## Compare and inspect history
 

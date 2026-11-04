@@ -1,184 +1,178 @@
 # Agent team roles and lifecycle
 
-This design organizes the swarm around complementary work, with specialized prompts and bounded assignments.
-It defines prompt-based role templates and lifecycle guidance, not a scheduler or automatic evidence feed.
-Loading these instructions does not establish that they improve results.
+This design distributes judgment as well as execution.
+The executive organizes the work; knowledgeable workers retain the decisions in their domains, including after their first reports.
+These are prompt responsibilities and lifecycle guidance, not a scheduler, automatic evidence feed, or demonstrated improvement in judgment.
 
-## Why these roles
+## Why change the delegation model
 
-A second opinion does not help if it accepts the same unsupported explanation as the first.
-In the historical fstab investigation, treating missing entries as a startup race led to a wait and a synthetic delayed writer.
-The missing investigation was whether the actual producer was configured to create those entries at all.
-Testing the assumed delay cannot establish that waiting fixes the original problem.
+In the Cocoa investigation, both the parent and detective kept favoring a tractable IY repair despite limited evidence of its benefit to ordinary writing.
+The parent continued examining builds and writing examples after delegating the investigation, then used that work to steer the detective toward the repair.
+Those facts could be useful without making the parent's investigation distinct from the detective's.
+Calling the same activity “remaining uncertainty,” “integration,” or “parent verification” did not change its ownership.
 
-The detective should investigate that explanation independently while the builder examines the implementation and QA prepares the real consumer check.
-This work must begin without waiting for the builder to notice uncertainty.
-The coordinator does not need to discover every problem or independently repeat every specialist's investigation.
+jyn rejected the model in which workers collect evidence and the parent makes the technical decision or finishes the inquiry.
+The replacement keeps the question with its knowledgeable owner.
+An incomplete priority argument returns to the strategist, an unverified claim to QA, and unfinished creation or integration to the builder.
+The executive names the deficiency without filling it in.
 
-The useful collaboration pattern is one specialist supplying something another can consume directly.
-RunSybil's [emulator-state and test-script example](https://www.runsybil.com/blog/kimi-k3-vs-claude-opus-5-5-how-two-flagship-llms-built-pokemon-emerald-worms) illustrates this: scripts were prepared while another agent prepared their starting states.
-It is an example of coordination, not a controlled demonstration that a particular team organization caused better results.
+[What do executives do, anyway?](https://apenwarr.ca/log/20190926-what-do-executives-do-anyway) motivates ratification rather than technical tie-breaking.
+Here, ratification means checking alignment with jyn's outcome, authority, and explicit trade-offs, then endorsing a proposal or returning it to its owners.
+It does not import corporate mechanisms or give the executive final technical selection authority.
 
 ## Responsibilities
 
-These are responsibilities, not four agents that must run continuously on every task.
+These are responsibilities, not a fixed team that must run continuously on every task.
+Designer is optional; its activation does not make the other roles a mandatory approval sequence.
+Canonical assignment and lifecycle procedures live in [delegation](../skills/delegation/SKILL.md).
 
-### Coordinator
+### Executive: organize decisions without taking them over
 
-Preserve the original objective, authorization, priorities, resource trade-offs, and integration responsibilities.
-Give specialists enough context and outcome ownership to work without asking for every ordinary decision.
-Keep jyn's requirements distinct from agent interpretations.
+Own dispatch, scheduling, dependencies, and getting conflicts resolved by the knowledgeable owners.
+Question the scheduling frame: what really needs to wait, what can overlap, and who needs to work together?
+Preserve the original outcome, authorization, explicit trade-offs, and visible unmet acceptance conditions.
+The root normally fills this responsibility; the [executive template](../config/pi-agent/pi-codex-subagents/agents/executive.md) supports delegated authorized workstreams.
 
-The coordinator's strength is comparing contributions across the whole task.
-Its weaknesses are premature interpretations, lossy summaries, and becoming the bottleneck through which all information passes.
-Specialists receive the original task and accessible evidence, not only the coordinator's account.
-For the detective, the coordinator explains the motivation, current situation, requirements, and permitted effects without prescribing a next action.
-The detective chooses which questions and possible interventions to examine.
-Technical disagreements require evidence rather than the coordinator's vote.
+For example, “IY is implementable” does not explain why IY is the next work worth doing for ordinary writing.
+The executive returns that gap to the strategist, rather than research IY, construct an alternative, or decide which patch wins.
+For conflicting technical reports, it brings the claims and their sources to the responsible workers and requires a reconciled proposal.
+Missing verification goes to QA, not a parent check.
+When the workers own all remaining work and no coordination needs attention, the executive waits.
 
-### Builder
+### Strategist: decide what work matters next
 
-Produce the authorized result through integration, not merely an isolated patch.
-Own ordinary implementation choices and checks within the assignment's scope.
-A peer's evidence can justify changing an agent-selected mechanism without changing jyn's requirements.
+Own overall next-work priority, not every worker's next command.
+Question whether the current framing identifies an important obstacle to the original outcome.
+Read the original request and evidence rather than inherit an executive's shortlist as the definition of the problem.
+Trace how possible actions improve the requested activity and compare their benefit and remaining costs using [work-selection](../skills/work-selection/SKILL.md).
+A real defect does not by itself deserve priority; a supported comparison can also favor continuing unchanged.
+Question where the picture of the activity comes from, who benefits versus who must do the work, and whose effects were omitted.
+Include recurring obligations after first success in priority comparisons rather than assume all costs end at delivery.
 
-The builder's strength is sustained construction and rapid iteration.
-Its weaknesses are fixing the nearest tractable defect, defending an investment, and adapting checks to the implementation.
-The detective supplies causal evidence; QA returns reproducible consumer failures.
+The strategist replaces the former detective role name; historical reports retain their original names.
+The [strategist template](../config/pi-agent/pi-codex-subagents/agents/strategist.md) preserves examples of jyn questioning unnecessary aligners, generator prerequisites, convenient proxies, and rules that already existed.
+These examples teach how to examine an assumption, not which conclusion to reach in every task.
+QA supplies failure evidence and the builder supplies implementation knowledge.
+The strategist retains the priority question when a proposal needs revision or later evidence changes its premise.
+It sends a supported decision to the executive for ratification and dispatch, without acquiring mutation or autonomous-run authority.
 
-### Detective
+### QA: verify and investigate failures
 
-Question what seems obvious, including the framing of the task, and arrive at conclusions that are true, not comforting.
-Investigate consequential claims from the coordinator, builder, QA, and itself.
-Follow the requested activity through actual inputs, producers, transformations, and consumers.
-Trace how possible actions would change the situation and advance the original objective, not just whether a local defect exists.
-Possible actions determine which causal questions matter; findings can change which actions deserve consideration.
-Consult prior work where it helps establish what is happening.
+Own verification and information-gathering about failure modes, including which bugs matter or are likely.
+The [QA template](../config/pi-agent/pi-codex-subagents/agents/qa.md) starts from the original request and supported interface rather than the builder's implementation or bug list.
+Prepare independently, exercise the intended consumer, investigate plausible failure accounts, and return reproducible results with passing scope and limitations.
+Separate likelihood from impact and hypotheses from observed failures.
+Do not invent requirements or test an oracle that merely repeats the implementation.
 
-The detective's strength is exposing unsupported explanations and connecting local work to the original outcome.
-Its weaknesses are endless investigation, contrarian speculation, and treating an interesting mechanism as an important one.
-Confirming the existing explanation with good evidence is a successful result.
-Investigations are bounded by the outcome or decision they can inform, not a requirement to find something wrong.
-A factual conclusion, a recommendation to continue, or a better next action can discharge the same responsibility.
-A fresh context and a continuing investigator are staffing choices, not separate scout and detective roles.
+A synthetic delayed writer, for example, can show how waiting behaves without establishing that the real producer is configured to create the missing input.
+QA investigates that fixture's relevance and the actual failure path.
+The strategist uses these findings to decide which work matters next; QA retains control of its checks and failure investigations.
+A correct explanation does not establish that the builder's repair works.
+Ask whether people can accomplish the activity without the builder's private knowledge and which recovery, change, lifecycle, or side-effect cases matter.
+Scenarios must be grounded in the original need and available practice evidence, not simply in the designer's chosen persona or proposal.
 
-### QA
+### Builder: create and integrate
 
-Exercise what the intended consumer actually does, using expectations grounded in the original request and supported interface.
-Prepare checks independently of the builder's proposed implementation.
-Return executable checks, observed behavior, and counterexamples the builder can reproduce.
+Own creation, ordinary implementation choices, and integration through the intended consumer.
+The [builder template](../config/pi-agent/pi-codex-subagents/agents/builder.md) questions whether assumed implementation requirements and restrictions are necessary.
+An input format that needs an aligner does not establish that jyn's writing activity needs that format.
+The builder may remove an agent-selected constraint or change its mechanism when evidence supports doing so.
+It must not silently weaken explicit user requirements.
+Creation includes design and explanation, not only code.
+Ask what someone must notice, understand, remember, or work around, and compare removing that burden with documenting it.
+Create explanations for knowledge otherwise left implicit.
+Address applicable change, diagnosis, upgrade, and removal obligations without implying delivery supplies future monitoring or authority.
 
-QA's strength is catching a locally correct result that still fails the requested activity.
-Its weaknesses are sharing the builder's mistaken interpretation, inventing requirements, and testing an oracle that repeats the implementation.
-The detective can challenge whether a fixture represents the real situation.
-QA can demonstrate that the detective's correct explanation does not establish that a repair works.
+Use the strategist's priority reasoning and QA's reproducible failures to challenge the chosen mechanism rather than defend prior investment.
+Own ordinary checks as well as the patch, send concrete candidates to peers, and resolve in-scope problems without returning for permission at every step.
+QA's independent verification does not relieve the builder of its consumer checks.
+The executive's coordination does not take integration away from the builder.
+
+### Designer: sustain the interaction and learning model
+
+Use the [designer template](../config/pi-agent/pi-codex-subagents/agents/designer.md) when substantial unsettled human-facing work needs sustained ownership through changing commands, screens, terminology, examples, and documentation.
+The designer constructs and maintains a coherent account of how a person should understand and perform the activity.
+It supplies concrete workflows, interaction alternatives, explanations, and their evidence—not another general usability verdict.
+Small or settled design remains builder work.
+A distinct artifact alone does not justify separation: the benefit is sustained attention to a coherent model while implementation changes.
+
+For example, a backup workflow may require someone to select the right backup, recognize what will change, and understand successful recovery.
+The designer makes those steps and their information needs concrete across the interface and explanation.
+The builder integrates authorized changes and resolves feasibility conflicts with the designer.
+QA checks that consequences match actual effects and that the original requested activity is supported.
+The strategist judges whether this is the important obstacle compared with more backend capability.
+
+An imagined full-backup-restorer persona could omit someone seeking a single file, leaving design and tests consistent but wrong for the activity.
+Keep observed practice, interpretation, and proposal distinct; missing evidence is not user research.
+QA must recover the original need independently rather than inherit that persona as its oracle.
+Naming a designer supplies no expertise or access to people.
+
+The designer owns its assigned interaction and learning questions, not approval of every local change.
+The builder retains integrated creation and ordinary design choices outside that assignment.
+They resolve feasibility and experience conflicts directly from requirements and evidence; neither silently overrules the other.
+The executive organizes resolution, not design selection.
+Lifecycle and affected-party questions stay with their existing owners rather than move wholesale to the designer.
 
 ### Temporary specialists
 
-Separate concrete work when there is a useful output and a reason for another worker to produce it.
-Examples include recovering a historical checkout, preparing an emulator state, provisioning a disposable environment, or cataloging existing research.
-These share a producer–consumer pattern, but do not establish a general “state producer” specialty with one permanent prompt.
+Separate work when there is a concrete useful output worth producing independently, such as a recovered checkout or disposable environment.
+Agree on its format and invocation so preparation can overlap its consumer's work.
+Supply the actual input, provenance, and limits; a recovered committed base is not automatically the complete historical workspace.
+There is no standing state-producer role.
+Keep tightly state-dependent sequences under one owner.
 
-The specialist supplies the actual input, its provenance, and remaining limitations—not just advice that someone else could obtain it.
-A recovered committed base, for example, is not automatically the complete historical workspace.
-Keep tightly state-dependent action sequences under one owner; parallelize useful preparation around them.
+## Sources, disagreements, and authority
 
-## Specialized prompts and assignments
+Assignments supply original sources, motivation, current evidence, permitted effects, ownership, and local constraints.
+Stable role prompts supply procedures; assignments do not need to reinvent them.
+Workers read governing requirements themselves and distinguish them from agent-authored assumptions.
+Explicitly chosen user outcomes and contracts remain binding when a worker questions the framing.
+Recommendations and ratification do not authorize implementation, continued autonomous execution, or resuming an inactive goal.
 
-The coordinator supplies the assignment rather than inventing each role's method every time.
-Stable role prompts define the procedure, characteristic failure modes, expected products, boundaries, and stopping conditions.
-Assignments supply the original task, motivation, current evidence, permitted effects, and relevant local constraints.
-Role names do not expand authority.
+Workers resolve technical disagreements using evidence and governing requirements.
+The executive manages the resolution process and sends an inadequate proposal back; it does not select the technical winner.
+A genuinely missing consequential user decision goes to jyn.
+Only dependent actions pause while independent authorized work continues.
+A reconciled proposal preserves evidence and residual disagreement; it does not require unanimous agreement.
 
-The [`detective` template](../config/pi-agent/pi-codex-subagents/agents/detective.md) combines the former goal scout's comparative reasoning with independent causal investigation.
-Its stable procedure supplies questioning, causal tracing, and comparison of possible actions; the coordinator supplies motivation, context, and boundaries.
-This avoids handing facts from one role to another before asking what they imply for action.
-The role may question which claims matter without waiting for the coordinator to identify the right uncertainty.
+Send usable artifacts and decision-changing evidence directly to the workers that consume them.
+A first report finishes an episode, not necessarily the responsibility.
+Design ownership continues when later implementation or practice evidence changes the assigned interaction model.
+A later candidate, failure, correction, or invalidated premise returns to the same responsible owner when continuity is useful.
+Use a fresh context when independence matters more than accumulated evidence.
+Retire a responsibility when its obligation is discharged or superseded, not merely because a turn ended.
+Do not keep asking for more findings without a new question or changed evidence.
 
-The detective prompt should prescribe:
+## Shared questions without duplicate ownership
 
-- Read the original request and inspect the actual activity independently of the proposed explanation.
-- Question the framing and distinguish observed, inferred, and merely repeated consequential claims.
-- Trace credible causal accounts and inspect evidence that distinguishes them.
-- Connect possible interventions to the requested outcome and use their consequences to choose useful questions.
-- When recommending action, compare continuing with the strongest credible alternative, including benefit and remaining costs.
-- Return evidence, implications, and limits, including when the current explanation or approach survives.
+The same source or activity can matter to several decisions without requiring several independent searches.
+Name the bounded question, output, and evidence need in each assignment.
+Share evidence through its current owner, and communicate changed ownership to the affected workers.
+Reroute pending requests during that transition; an in-flight request under an earlier assignment does not show deliberate bypass or duplicate role ownership.
+Distinguish a communication or routing error, a deliberately independent check, and two assignments owning the same question.
+The executive asks whether findings reached their consumers and whether handoffs create conflicting ownership or unacknowledged work.
+It does not answer the workers' technical questions itself.
 
-“Question assumptions” alone is insufficient.
-The product is an established fact, a counterexample, a discriminating check, a supported recommendation, or an explicitly unresolved question, with its implications for the original outcome.
+Builder checks and independent QA can exercise the same consumer for different purposes: one guides construction, the other challenges governing expectations independently of the implementation.
+Keep both, and name the independent-check purpose when verification deliberately revisits an operation.
+Useful duplication is not automatically a distinct responsibility.
+Broader experience, maintenance, and affected-party questions should improve each owner's decisions, not become parallel unbounded reviews.
 
-The QA prompt should prescribe:
+## Delivery and ordinary validation
 
-- Derive expectations from the original request and supported interface, not the patch.
-- Exercise the intended consumer operation.
-- Check that fixtures represent the relevant situation and expected results are not copied from the implementation.
-- Return reproducible failures and the scope of passing evidence.
-- Flag unsupported expectations rather than silently turn them into requirements.
+The [Pi configuration entrypoint](../config/pi-agent/README.md#team-roles) describes template selection and deployment boundaries.
+The loader advertises each template's description and caller hint; it adds the selected body to the worker's input.
+Roots normally reach the executive model through delegation guidance, not by automatically receiving the executive template.
+Accordingly, [autonomous-work](../skills/autonomous-work/SKILL.md) and work-selection must route technical questions to their owners rather than retain parent verification or final priority selection.
+Generic parent and Luna templates do not impose a competing role model.
+Goal continuations require scope, persistence, and completion evidence and route through autonomous-work; they do not assign technical verification to the parent.
 
-Role prompts refer to existing activity-specific procedures rather than create competing testing, research, or authorization rules.
+Native template checks establish discovery, instructions delivered to a child, inherited model/thinking, and specialist delegation exclusions.
+Skill-loader checks establish catalog eligibility and description delivery.
+Neither proves improved judgment, useful collaboration, or resolution of the Cocoa writing problem.
+The earlier one-prompt Cocoa run still recommended IY; parsing or delivery checks do not change that evidence.
+This rewrite does not require an efficacy study or new trial infrastructure.
 
-## Start, idle, wake, and retire
-
-Spin roles up for obligations and let them idle between bounded episodes.
-A specialist can retain its session and responsibility after finishing its current turn.
-
-| Role | Start or wake | Finish the current episode |
-| --- | --- | --- |
-| Detective | Start of a substantive multi-step workstream; later changes to a causal explanation, priorities, the original symptom, or a prerequisite. | Support a decision through causal findings and their implications, including continuing unchanged; deliver evidence to its consumer. |
-| QA | Beginning of work that will produce a checkable result, allowing independent preparation; a candidate or changes that invalidate previous evidence. | Check applicable expectations; identify failures, passing scope, and untested obligations. |
-| Builder | Authorized construction can advance, including independent preparation while some inputs remain unavailable. | Integrate the assigned outcome, or identify the specific dependency preventing further authorized work. |
-| Temporary specialist | A concrete consumable output is worth separating from its consumer's work. | Deliver that output with enough information for its consumer to use it. |
-
-The detective's initial activation must not depend on the builder feeling uncertain.
-A bounded first investigation is ordinary work for a new substantive workstream, not an escalation after getting stuck.
-An explicitly requested literal text replacement does not need the same arrangement.
-
-Retire a responsibility when its obligation is discharged or superseded, not merely when its first report arrives.
-Do not keep asking a specialist to find something else after it has answered the question.
-Reuse an existing specialist when new evidence affects its investigation.
-Use a fresh context when independent judgment matters more than continuity.
-
-Agree on artifact format and invocation early enough for preparation to overlap.
-Send usable artifacts and failures directly to their consumers.
-Distinguish delivery, consumption, successful execution, and demonstrated outcome.
-Later evidence must reach the responsible specialist; an initial assignment followed by stale context will not solve the problem.
-
-## Guidance ownership
-
-[`delegation`](../skills/delegation/SKILL.md) should own role selection and lifecycle.
-Its visible description needs to cover assessing team composition at workstream entry, not only decisions made after the coordinator already intends to delegate.
-Guidance hidden inside an unloaded skill cannot initiate that assessment.
-
-[`autonomous-work`](../skills/autonomous-work/SKILL.md) is a useful entrypoint for an explicit autonomous run.
-It should invoke the assessment at run startup and when workstreams change, without duplicating the lifecycle procedure.
-It cannot be the sole entrypoint because its scope explicitly excludes ordinary bounded requests.
-
-Role templates own specialized procedures.
-[`work-selection`](../skills/work-selection/SKILL.md) owns the comparison procedure used for priority reassessment, including by the detective.
-The detective combines investigation and recommendation; the coordinator retains the final choice, and QA checks acceptance.
-
-## What would establish effectiveness
-
-Assess two questions separately:
-
-1. **Routing:** did the appropriate role start early enough, without waiting for someone to notice uncertainty?
-2. **Contribution:** did it produce independent evidence that changed or substantiated actual work, rather than another agreeable report?
-
-Prompt guidance can establish responsibilities but cannot guarantee delivery or consumption of later evidence.
-An automatic continuing evidence feed has not been established by this design.
-
-If routing works but relevant evidence repeatedly fails to reach the specialist, that supports a harness-level delivery change.
-If the specialist receives the evidence and still endorses false explanations, more lifecycle machinery is not the answer; its prompt or capability needs work.
-
-### First explicit use: November 2, 2026
-
-The root applied the checked-in role prompts to existing workers because the running session's staged configuration lacked the new names.
-QA independently checked candidate skill discovery through Pi's `DefaultResourceLoader` in disposable HOME, then disclosed that this did not check named templates.
-The builder used that coverage limit to check all four roles through the existing `listAgentDefinitions`, `getAgentDefinition`, and `getAgentDefinitionsDescription` consumers with a setup-shaped agents-directory symlink in disposable HOME.
-Both discovery checks passed; the detective's separate discovery-path investigation supported retaining the deployment warning rather than adding runtime machinery.
-This episode demonstrates independent evidence being consumed and changing verification, not automatic role selection or general effectiveness.
-It predates the scout/detective unification and does not establish behavioral effectiveness of the merged prompt.
-
-The unified configuration also passes the existing template consumer in disposable HOME: all four roles load with their exact candidate bodies, inherited model and thinking settings, and subagent-manager exclusion; the retired `goal-scout` is neither discoverable nor advertised.
-Pi's skill loader accepts the revised delegation and work-selection skills without diagnostics.
-These checks establish configuration validity, not behavioral effectiveness.
+The [template test guide](../config/pi-agent/README.md#subagent-templates) owns the ordinary configuration checks.
+Shared skills and staged sandbox templates can come from different source trees; no installed-configuration switch is part of this proposal.
+Use the documented reload or fresh-sandbox boundary before claiming an active session uses the changed instructions.

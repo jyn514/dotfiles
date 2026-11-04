@@ -45,27 +45,33 @@ sourceTest("setup alias loads the tracked package into a native provider without
   expect(selected.some(path => path === realpathSync(join(alias, "index.ts")))).toBe(false);
   const templates = join(agentDir, "pi-codex-subagents/agents");
   mkdirSync(templates, { recursive: true });
-  for (const role of ["coordinator", "builder"]) {
+  for (const role of ["executive", "strategist", "builder", "qa", "designer"]) {
     const source = join(dotfiles, `config/pi-agent/pi-codex-subagents/agents/${role}.md`);
     const destination = join(templates, `${role}.md`);
     execFileSync("cp", [source, destination]);
     execFileSync("cmp", [source, destination]);
   }
-  const coordinator = getAgentDefinition("coordinator")!;
-  expect(coordinator).toBeDefined();
-  expect(coordinator.tools).toBeUndefined();
-  const coordinatorExtensions = await resolveChildExtensionPaths({
-    cwd, projectTrusted: false, disabledExtensions: coordinator.disabledExtensions,
+  const executive = getAgentDefinition("executive")!;
+  expect(executive).toBeDefined();
+  expect(executive.tools).toBeUndefined();
+  const executiveExtensions = await resolveChildExtensionPaths({
+    cwd, projectTrusted: false, disabledExtensions: executive.disabledExtensions,
   });
-  expect(coordinatorExtensions).toContain(realpathSync(join(alias, "index.ts")));
-  const builder = getAgentDefinition("builder")!;
-  expect(builder).toBeDefined();
-  const builderExtensions = await resolveChildExtensionPaths({
-    cwd, projectTrusted: false, disabledExtensions: builder.disabledExtensions,
-  });
-  expect(builderExtensions).not.toContain(realpathSync(join(alias, "index.ts")));
+  expect(executiveExtensions).toContain(realpathSync(join(alias, "index.ts")));
+  expect(getAgentDefinition("detective")).toBeUndefined();
+  for (const role of ["strategist", "builder", "qa", "designer"]) {
+    const definition = getAgentDefinition(role)!;
+    expect(definition).toBeDefined();
+    expect(definition.provider).toBeUndefined();
+    expect(definition.model).toBeUndefined();
+    expect(definition.thinking).toBeUndefined();
+    const extensions = await resolveChildExtensionPaths({
+      cwd, projectTrusted: false, disabledExtensions: definition.disabledExtensions,
+    });
+    expect(extensions).not.toContain(realpathSync(join(alias, "index.ts")));
+  }
   const sessionFile = join(cwd, "installed.jsonl");
-  const peer = sourceRpc(cwd, sessionFile, false, coordinatorExtensions);
+  const peer = sourceRpc(cwd, sessionFile, false, executiveExtensions);
   try {
     await peer.request({ type: "prompt", message: "installed-alias-provider-proof" });
     await until(() => peer.records.some(record => record.type === "agent_settled"), "installed alias reaches provider");

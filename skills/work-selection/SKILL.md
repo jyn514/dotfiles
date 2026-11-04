@@ -6,6 +6,9 @@ description: Reassess the next action before adding another substantive prerequi
 # Work selection
 
 Reassess the next action within the user's authorized task.
+In a delegated team, the strategist owns overall next-work priority; builders and QA retain their local methods.
+An executive routes substantive priority questions and new evidence to the strategist instead of performing this comparison itself.
+Use [delegation](../delegation/SKILL.md) for dispatch and ratification; neither a recommendation nor ratification grants new effects.
 Use [autonomous-work](../autonomous-work/SKILL.md) for unattended-run authority, acceptance order, persistence, and stopping.
 Use [opportunity-scan](../opportunity-scan/SKILL.md) only for project-wide discovery when no task is selected.
 
@@ -158,24 +161,28 @@ Healthy execution alone does not settle work selection.
 
 ## Get an independent recommendation
 
-If you are already the independent investigator assigned to this choice, complete the comparison yourself rather than request another worker.
-Otherwise, when a substantive choice remains after this comparison, use an available compatible detective template and follow its advertised caller contract.
+If you are the strategist assigned to this choice, complete the comparison yourself rather than request another worker.
+Other technical workers can reassess local methods within their responsibilities; return a change to overall priority to the strategist.
+For a substantive overall-priority choice, use the responsible strategist or an available compatible strategist template and follow its advertised caller contract.
+An executive supplies the question and evidence without first conducting its own competing comparison.
 Use [delegation](../delegation/SKILL.md#frame-independent-investigation-and-review) for motivation-led assignment and integration.
 Supply the literal task, current acceptance condition, governing references, current situation, and evidence entrypoints for the main user activity as well as current work.
 Include the latest relevant user correction with its provenance; quote it only when the exact text is available.
 Explain why the investigation matters without prescribing the next action or preferred conclusion.
 Provide known observations, failures, and prior attempts; distinguish provisional explanations from governing requirements.
-The detective questions the framing, traces causal claims, and compares possible actions as one investigation rather than a separate fact-finding handoff.
+The strategist questions the framing, traces causal claims, and compares possible actions as one investigation rather than a separate fact-finding handoff.
 Reuse an investigator when accumulated evidence matters; use a fresh context when independent judgment matters more than continuity.
-Without a compatible template, inspect an existing activity example and outcome evidence yourself, read-only.
+Without a compatible template, a technical worker may inspect an existing activity example and outcome evidence within its own responsibility, read-only.
 Report unavailable evidence and do not claim independence for that fallback.
+An executive instead arranges a compatible owner or reports the specific staffing dependency; absence is not permission to take over inquiry.
 Do not request independent investigation after every tool call, repeat an unchanged search without new evidence, or turn it into an exhaustive project audit.
 
 ## Choose the next action
 
-Compare the recommendation with continuing current work and the strongest credible competing action.
+The strategist compares possible next work with continuing current work and the strongest credible competing action.
+For a local method choice, the responsible worker performs the same comparison within its assignment.
 Consider user benefit and its evidenced or estimated scale, plus delivery, verification, and coordination costs.
-A correct finding, novelty, or completed batch does not alone justify priority; a detective report is not the requested outcome.
+A correct finding, novelty, or completed batch does not alone justify priority; a strategist report is not the requested outcome.
 Keep missing evidence distinct from demonstrated failure, and do not assume an investigation will justify follow-up work.
 For a substantive recommendation, state why the chosen action beats the strongest available alternative.
 Name the deciding difference in expected contribution or total remaining cost, and the evidence or assumption supporting it.
@@ -184,7 +191,9 @@ Keep this explanation within the recommendation, not a separate reflection repor
 If the deciding difference remains uncertain, use the smallest useful check or make a provisional choice with the uncertainty stated.
 Use existing evidence and reasonable estimates; do not commission another investigation merely to make every ranking conclusive.
 Stop deliberating when evidence supports an authorized action or identifies a concrete blocker; impose no fixed lookup limit.
-The parent retains selection authority.
+Send the supported overall-priority decision to the executive for ratification against jyn's outcome, authorization, and explicit trade-offs.
+If returned as inadequate, the strategist retains the comparison and resolves its deficiencies with the relevant workers.
+The executive does not select a technical winner or supply missing investigation.
 Finding no better alternative is a successful result: continue when the existing approach wins.
 
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if framing remains uncertain, or consult [design alternatives](../architecture-design/references/alternatives.md) for a genuine software-design fork.

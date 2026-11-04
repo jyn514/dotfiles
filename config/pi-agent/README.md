@@ -34,40 +34,57 @@ Exact allowlisted skills may route a subagent through the `luna` template.
 Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
-Use [work-selection](../../skills/work-selection/SKILL.md) for next-action comparison and the fallback when no compatible independent worker is available.
-The [`detective`](pi-codex-subagents/agents/detective.md) questions the framing, traces causal claims, and connects the findings to possible actions within the authorized task.
-Give it the motivation, original requirements, current evidence, and permitted effects rather than prescribe its next action.
+Use [work-selection](../../skills/work-selection/SKILL.md) for priority comparison and local method reassessment.
+In a team, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
+Give it the original task, motivation, corrections, current evidence, and permitted effects rather than prescribe its next action.
 Include a complete path to a current use example when available so ignored files remain reachable.
-Reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment; these are not different roles.
-The detective inherits the parent's model and thinking level and investigates read-only unless the assignment explicitly permits other effects.
-Neither investigation nor a recommendation activates autonomous execution or grants implementation permission.
-It stops when the bounded investigation supports a decision or identifies a specific limit, without a fixed lookup quota or report word count.
-The former `goal-scout` template is removed; use `detective` for both causal investigation and next-action comparison.
-Reload Pi after installing changes so its tool description advertises the current templates.
-This routing does not replace separately packaged `/goal` coordinator guidance.
+Reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment.
+These are staffing choices, not different roles.
+Investigation and recommendations do not activate autonomous execution or grant implementation permission.
+The former `goal-scout` template is removed; its comparative reasoning belongs to the strategist.
+Separately packaged goal continuations route through autonomous-work and do not select the team's technical strategy.
 
 ### Team roles
 
 Use [delegation](../../skills/delegation/SKILL.md) at the start of substantive multi-step work or a new workstream, even before deciding whether to delegate.
-It owns role selection and the start, idle, wake, and retirement conditions.
+It owns responsibility selection, assignments, ratification, and start, idle, wake, and retirement conditions.
 [Autonomous work](../../skills/autonomous-work/SKILL.md) invokes the same assessment for authorized runs; ordinary bounded work does not require run authority.
 
-The specialized templates are [`coordinator`](pi-codex-subagents/agents/coordinator.md), [`builder`](pi-codex-subagents/agents/builder.md), [`detective`](pi-codex-subagents/agents/detective.md), and [`qa`](pi-codex-subagents/agents/qa.md).
-Pass the original task, motivation, current evidence, permitted effects, and bounded outcome; the templates supply the stable procedures.
-Select the named `agent_type` explicitly to preserve its role rather than rely on generic or skill-based routing.
-The root normally coordinates; a coordinator template supports an authorized delegated workstream, not a mandatory extra agent.
-Coordinators can spawn and manage their own subagents within the assignment's authority and resource limits.
-Other role templates keep subagent management disabled.
-The detective combines causal investigation and next-action reasoning; the coordinator retains the final selection and integration responsibility.
-Create temporary specialists for concrete useful inputs, not a permanent state-producer role.
+The specialized templates are:
 
-Setup links the existing agents directory as a whole; no new package or installation route is needed.
-On the host, reload Pi after installing changes so newly available role names and skill descriptions reach startup discovery.
+- [`executive`](pi-codex-subagents/agents/executive.md): dispatch, scheduling, dependencies, and getting conflicts resolved by their knowledgeable owners.
+- [`strategist`](pi-codex-subagents/agents/strategist.md): overall next-work priority, questioning which work matters.
+- [`designer`](pi-codex-subagents/agents/designer.md), when useful: sustained ownership of an unsettled human interaction and learning model across commands, screens, terminology, examples, and docs.
+- [`qa`](pi-codex-subagents/agents/qa.md): verification and failure investigation, questioning which bugs matter or are likely.
+- [`builder`](pi-codex-subagents/agents/builder.md): creation and integration, questioning unnecessary implementation assumptions and restrictions.
+
+Pass the original task, motivation, current evidence, permitted effects, and bounded outcome; the templates supply stable procedures.
+Select the named `agent_type` explicitly rather than rely on generic or skill-based routing.
+All five templates inherit the parent's model and thinking settings.
+Executive replaces the former coordinator template; callers must select `executive`.
+Strategist replaces the former detective template; callers must select `strategist`.
+Historical detective reports and the detective-only commit retain their original names.
+Executive can manage subagents within its assignment's authority and resource limits.
+Other role templates keep subagent management disabled.
+The root normally fills the executive responsibility through delegation guidance; it does not automatically receive the executive template body.
+
+Workers retain technical judgment after their first reports.
+The executive ratifies alignment with jyn's outcome and values or returns an inadequate proposal to its owners.
+It does not choose the technical winner, select the next substantive task, or investigate remaining uncertainty itself.
+The builder owns integration and ordinary consumer checks; QA owns independent verification.
+Builder creation includes design and explanation; small or settled design stays with it.
+Assign a designer only for sustained ownership of a coherent interaction and learning model through changing human-facing artifacts.
+Designer is not a mandatory approver or another general usability reviewer, and its title supplies no user evidence or human expertise.
+QA checks the original activity and available observations rather than derive its entire oracle from a designer's proposal.
+An executive can wait while workers own the remaining work.
+See the [team design](../../dev/agent-team-design.md) for rationale and concrete responsibility boundaries.
+
+Setup links the agents directory as a whole; no new package or installation route is needed.
+On the host, reload Pi after installing changes so new role names and skill descriptions reach startup discovery.
 Sandboxes stage template copies at startup; a reload does not restage them or select another checkout's configuration.
 Use a fresh sandbox with the intended configuration source, following the [resource-loading boundaries](../../tools/codex-sandbox/README.md#host-instructions-and-guest-readable-guidance).
 Shared skills follow the host's installed skills source, which can differ from the active worktree.
-Templates and guidance do not automatically spawn agents, notify consumers of new artifacts, or prove that a delivered finding was used.
-See the [team design](../../dev/agent-team-design.md) for the responsibilities and evidence limits.
+Templates and guidance do not automatically spawn agents, notify consumers of new artifacts, or prove a delivered finding was used.
 
 ## Installation and update routes
 
@@ -296,7 +313,7 @@ Check that:
 - The loader discovers the template and advertises its caller hint.
 - Model and thinking settings inherit from the parent unless the template intentionally overrides them.
 - The launched tool allowlist matches the template, excluding mutation and delegation tools for read-only agents.
-- The child receives the template instructions and minimal caller input without coordinator restatement.
+- The child receives the template instructions and minimal caller input without executive restatement.
 - Changing the template reaches the child without a matching caller edit.
 
 These checks establish configuration delivery, not model compliance or better task ranking.
