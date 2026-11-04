@@ -203,11 +203,11 @@ sourceTest("configured pi-link workers expose selected tools and reply through b
       const actualTools = jsonl(providerCallsFile(info.sessionFile))[0].tools;
       expect(actualTools).toContain("link_reply");
       if (readOnly) {
-        expect(actualTools.sort()).toEqual(["find", "grep", "link_reply", "ls", "read"]);
+        expect(actualTools.sort()).toEqual(["find", "grep", "link_reply", "ls", "peer_escalate", "peer_list", "peer_send", "read"]);
         continue;
       }
       for (const name of ["link_list", "link_set_identity"]) expect(actualTools).toContain(name);
-      if (tools !== undefined) expect(actualTools.sort()).toEqual(["faux_hold", "link_list", "link_reply", "link_set_identity"]);
+      if (tools !== undefined) expect(actualTools.sort()).toEqual(["faux_hold", "link_list", "link_reply", "link_set_identity", "peer_escalate", "peer_list", "peer_send"]);
       else for (const name of ["link_send", "link_compact"]) expect(actualTools).toContain(name);
       const identity = jsonl(info.sessionFile).find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_set_identity");
       expect(identity.message.isError).not.toBe(true);

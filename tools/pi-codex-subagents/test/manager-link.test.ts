@@ -44,7 +44,7 @@ sourceTest("Manager link selects owned live workers, validates native replies an
     expect((await manager.replyLink(parentId, { workerId: privateWorker.info.id, taskName: "one" }, delivery())).status).toBe("skipped");
     for (const worker of [one, two, foreign, privateWorker]) {
       expect(worker.info.tools).toBe("faux_hold");
-      expect(jsonl(providerCallsFile(worker.info.sessionFile))[0].tools.sort()).toEqual(["faux_hold", "link_reply"]);
+      expect(jsonl(providerCallsFile(worker.info.sessionFile))[0].tools.sort()).toEqual(["faux_hold", "link_reply", "peer_escalate", "peer_list", "peer_send"]);
     }
     const message = delivery();
     const result = await manager.broadcastLink(parentId, message);
@@ -353,7 +353,7 @@ for (const configuration of [
         expect(jsonl(info.sessionFile).find(entry => entry.message?.toolName === "link_reply")?.message.details).toEqual({
           status: "unsupported", reason: "link_integration_unavailable" });
       } else {
-        expect(tools).toEqual(["link_reply"]);
+        expect(tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send"]);
         await until(() => manager.getAgentInfo("tools", parentId).status === "completed", "empty task allowlist completes normally");
       }
     } finally {
@@ -410,3 +410,147 @@ sourceTest("starting worker that finishes between selection and delivery is skip
     rmSync(root, { recursive: true, force: true });
   }
 }, 20000);
+
+for (const answer of ["auto", "explicit", "escalate"]) {
+  sourceTest(`completed peer reopens the same conversation and ${answer} answer bypasses parent completion`, async () => {
+    const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
+    const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "manager-peer-"));
+    const parentId = randomUUID();
+    const template = `source-peer-${randomUUID()}`;
+    const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);
+    mkdirSync(join(SUBAGENT_DIR, "agents"), { recursive: true });
+    // The manager helpers work even with no task tools or independent pi-link.
+    writeFileSync(templateFile, `---\nname: ${template}\ntools: \n---\n`);
+    const completions: any[] = [];
+    const manager = new AgentManager({ onUnclaimedCompletion: event => completions.push(event) });
+    const spawn = (name: string, message: string) => manager.spawnAgent({ task_name: name, message,
+      agent_type: template, cwd, parentSessionId: parentId, inheritedProvider: "faux", inheritedModelId: "faux-1", inheritedThinking: "off" });
+    try {
+      await manager.ready();
+      await spawn("detective", `peer-detective:${answer}`);
+      await until(() => manager.getAgentInfo("detective", parentId).status === "completed", "original detective result");
+      const original = structuredClone(manager.getAgentInfo("detective", parentId));
+      const transcript = readFileSync(original.sessionFile, "utf8");
+      await spawn("builder", `invoke-tool:${JSON.stringify({ name: "peer_list", args: {} })}`);
+      await until(() => manager.getAgentInfo("builder", parentId).status === "completed", "peer list tool");
+      const builder = structuredClone(manager.getAgentInfo("builder", parentId));
+      const listed = jsonl(builder.sessionFile).find(entry => entry.message?.toolName === "peer_list").message.details.peers;
+      expect(listed).toEqual([{ workerId: original.id, taskName: "/detective", status: "completed" }]);
+      await manager.sendMessage(parentId, "builder", `invoke-tool:${JSON.stringify({ name: "peer_send",
+        args: { target: answer === "auto" ? listed[0].workerId : listed[0].taskName, message: "changed evidence" } })}`);
+      await until(() => jsonl(builder.sessionFile).some(entry => admittedLink(entry, parentId, builder.id)?.replyTo),
+        "peer answer arrives in builder's native conversation");
+      await until(() => manager.getAgentInfo("detective", parentId).status === "completed"
+        && manager.getAgentInfo("builder", parentId).status === "completed", "peer round settles");
+      const current = manager.getAgentInfo("detective", parentId);
+      expect(current.id).toBe(original.id);
+      expect(current.sessionFile).toBe(original.sessionFile);
+      expect(current.sessionId).toBe(original.sessionId);
+      expect(readFileSync(current.sessionFile, "utf8").startsWith(transcript)).toBe(true);
+      const received = jsonl(current.sessionFile).map(entry => admittedLink(entry, parentId, current.id)).filter(Boolean);
+      expect(received).toHaveLength(1);
+      expect(received[0].fromWorker).toEqual({ ownerSessionId: parentId, workerId: builder.id, taskName: "/builder" });
+      const prepared = jsonl(current.sessionFile).find(entry => admittedLink(entry, parentId, current.id));
+      expect(JSON.stringify(prepared)).toContain("not a new parent instruction");
+      const response = jsonl(builder.sessionFile).map(entry => admittedLink(entry, parentId, builder.id)).filter(Boolean);
+      expect(response).toHaveLength(1); // Explicit reply must suppress the automatic final answer.
+      expect(response[0].content, JSON.stringify({ completions, tools: jsonl(current.sessionFile).filter(entry => entry.message?.role === "toolResult") }))
+        .toBe(answer === "explicit" ? "faux:explicit-detective-answer" : "faux:detective-peer-answer");
+      expect(completions.filter(event => event.agentName === "/detective" && !event.attention), JSON.stringify(completions)).toHaveLength(1);
+      if (answer === "escalate") {
+        expect(completions.filter(event => event.attention)).toHaveLength(1);
+        expect(completions.find(event => event.attention).finalResponse).toContain("Parent decision needed");
+      }
+      // Parent results remain consumable even though the latest response is a peer answer.
+      const wait = await manager.waitAgent(parentId, ["detective"]);
+      expect(wait.event?.finalResponse).toBe("faux:detective-parent-result");
+      const all = await manager.waitAllAgents(parentId, ["detective"]);
+      expect(all.responses[0].finalResponse).toBe("faux:detective-parent-result");
+      if (answer === "escalate") expect(manager.getCompletionState(parentId).mailbox.some(event => event.attention)).toBe(true);
+      if (answer === "explicit") {
+        expect(jsonl(current.sessionFile).find(entry => entry.message?.toolName === "link_reply").message.details.status).toBe("submitted");
+      }
+      // A real parent send resets completion ownership.
+      await manager.sendMessage(parentId, "detective", "new parent assignment");
+      await until(() => completions.filter(event => event.agentName === "/detective" && !event.attention).length === 2, "parent owns new episode");
+      expect(manager.getAgentInfo("detective", parentId).peerEpisode).toBeUndefined();
+      if (answer === "escalate") expect(manager.getCompletionState(parentId).mailbox.some(event => event.attention)).toBe(true);
+    } finally {
+      await manager.shutdown();
+      rmSync(templateFile, { force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+}
+
+for (const state of ["peer-failure", "failed", "interrupted", "paused", "suspended"]) {
+  sourceTest(`peer delivery preserves parent results and the ${state} lifecycle boundary`, async () => {
+    const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
+    const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "manager-peer-fence-"));
+    const parentId = randomUUID(), template = `source-peer-${randomUUID()}`;
+    const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);
+    mkdirSync(join(SUBAGENT_DIR, "agents"), { recursive: true });
+    writeFileSync(templateFile, `---\nname: ${template}\ntools: faux_hold\nextensions: ${heldExtension}\n---\n`);
+    const marker = join(cwd, "held"), completions: any[] = [];
+    const manager = new AgentManager({ onUnclaimedCompletion: event => completions.push(event) });
+    const spawn = (name: string, message: string) => manager.spawnAgent({ task_name: name, message, agent_type: template,
+      cwd, parentSessionId: parentId, inheritedProvider: "faux", inheritedModelId: "faux-1", inheritedThinking: "off" });
+    try {
+      await manager.ready();
+      await spawn("detective", state === "peer-failure" ? "peer-detective:failure" : state === "failed" ? "peer-provider-failure" : `hold-tool:${marker}`);
+      if (state === "peer-failure") {
+        await until(() => manager.getAgentInfo("detective", parentId).status === "completed", "original assignment completes");
+        expect((await manager.waitAgent(parentId, ["detective"])).event?.finalResponse).toBe("faux:detective-parent-result");
+      } else if (state === "failed") await until(() => manager.getAgentInfo("detective", parentId).status === "failed", "native initial failure");
+      else {
+        await until(() => existsSync(heldToolFiles(marker).started), "native target held tool");
+        if (state === "interrupted") await manager.interruptAgent(parentId, "detective");
+        else if (state === "paused") {
+          await manager.pauseChildren(parentId);
+          await until(() => existsSync(heldToolFiles(marker).pauseRequested), "native target pause");
+        } else {
+          manager.beginPause(parentId);
+          const capture = manager.captureChildren(parentId, randomUUID(), () => {});
+          await until(() => existsSync(heldToolFiles(marker).pauseRequested), "native target suspension");
+          writeFileSync(heldToolFiles(marker).release, "release");
+          await capture;
+          manager.endPause(parentId);
+          expect(manager.getAgentInfo("detective", parentId).status).toBe("suspended");
+        }
+      }
+      const before = structuredClone(manager.getAgentInfo("detective", parentId));
+      const transcript = readFileSync(before.sessionFile, "utf8");
+      const calls = jsonl(providerCallsFile(before.sessionFile)).length;
+      // Spawn the sender after the pause, so this checks the target's own fence.
+      await spawn("builder", `invoke-tool:${JSON.stringify({ name: "peer_send", args: { target: before.id, message: "new evidence" } })}`);
+      const builder = manager.getAgentInfo("builder", parentId);
+      await until(() => jsonl(builder.sessionFile).some(entry => entry.message?.toolName === "peer_send"), "native sender receives routing result");
+      if (state === "peer-failure") {
+        await until(() => manager.getAgentInfo("detective", parentId).status === "failed", "native peer provider failure");
+        expect(completions.some(event => event.attention && event.status === "failed" && event.error === "peer provider failure")).toBe(true);
+        const result = (await manager.waitAgent(parentId, ["detective"])).event;
+        expect(result?.status).toBe("completed");
+        expect(result?.finalResponse).toBe("faux:detective-parent-result");
+        expect(result?.error).toBeUndefined();
+        const all = await manager.waitAllAgents(parentId, ["detective"]);
+        expect(all.responses[0].finalResponse).toBe("faux:detective-parent-result");
+        expect(all.responses[0].error).toBeUndefined();
+        expect(manager.getCompletionState(parentId).mailbox.some(event => event.attention && event.status === "failed")).toBe(true);
+      } else {
+        const result = jsonl(builder.sessionFile).find(entry => entry.message?.toolName === "peer_send").message;
+        expect(result.isError).toBe(true);
+        expect(result.details.status).toBe("skipped");
+        expect(readFileSync(before.sessionFile, "utf8")).toBe(transcript);
+        expect(jsonl(providerCallsFile(before.sessionFile))).toHaveLength(calls);
+        const after = manager.getAgentInfo("detective", parentId);
+        expect(after.status).toBe(before.status);
+        expect(after.sessionId).toBe(before.sessionId);
+        expect(after.childProcess?.pid === undefined || after.childProcess.pid === before.childProcess?.pid).toBe(true);
+      }
+    } finally {
+      writeFileSync(heldToolFiles(marker).release, "cleanup");
+      await manager.shutdown();
+      rmSync(templateFile, { force: true }); rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+}

@@ -13,9 +13,9 @@ import {
   assertSessionAuthority, type ControlRequest, type SavedSession,
 } from "./handoff.js";
 import {
-  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION,
+  LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION, PEER_NOTIFY, CHILD_LINK_TOOLS,
   admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
-  type LinkResult, type LinkStatus, type LinkWorkerAddress,
+  type LinkResult, type LinkStatus, type LinkWorkerAddress, type PeerRequest,
 } from "./link.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
@@ -131,6 +131,8 @@ export interface AgentInfo {
   /** Keeps saved work out of retention cleanup; the group manifest owns its payload. */
   suspensionGeneration?: string;
   admission?: "started" | "queued" | "handled" | "rejected" | "unknown";
+  /** Peer-only continuation ownership survives native pause/recreation. Parent waits retain their own result. */
+  peerEpisode?: { parentResult: AgentResponseEntry; requests: Array<{ id: string; worker: LinkWorkerAddress }>; escalation?: string };
 }
 
 export interface AgentListEntry {
@@ -200,9 +202,13 @@ interface LiveAgent {
   controlGeneration?: string;
   restoreFailure?: string;
   startup?: Promise<void>;
+  /** Keep the RPC process until admitted-message receipts have been read. */
+  linkDeliveries: number;
 }
 
 export interface AgentCompletionEvent {
+  /** Peer escalation/failure delivery is independent of parent assignment waits. */
+  attention?: true;
   id: string;
   parentSessionId: string;
   agentName: string;
@@ -1111,7 +1117,7 @@ function targetMatches(event: AgentCompletionEvent, targets?: Set<string>): bool
 }
 
 export function consumeFirstMatchingMailboxEvent(events: AgentCompletionEvent[], parentSessionId: string, targets?: Set<string>): AgentCompletionEvent | undefined {
-  const index = events.findIndex((event) => event.parentSessionId === parentSessionId && targetMatches(event, targets));
+  const index = events.findIndex((event) => !event.attention && event.parentSessionId === parentSessionId && targetMatches(event, targets));
   if (index === -1) return undefined;
   return events.splice(index, 1)[0];
 }
@@ -1134,6 +1140,7 @@ export class AgentManager {
   private readonly captures = new Map<string, Record<string, SavedSession>>();
   private readonly deliveredCompletions = new Set<string>();
   private readonly ordinaryPausedChildren = new Set<string>();
+  private readonly peerDeliveries = new Map<string, Promise<unknown>>();
 
   constructor(private readonly options: AgentManagerOptions = {}) {
     ensureBaseDirs();
@@ -1509,7 +1516,7 @@ export class AgentManager {
       const configuredTools = info.tools.split(",").map(name => name.trim()).filter(Boolean);
       const modifiers = configuredTools.some(name => name.startsWith("+") || name.startsWith("-"));
       if (!configuredTools.length) args.push("--no-builtin-tools");
-      const bridgeTools = modifiers ? ["+link_reply"] : ["link_reply"];
+      const bridgeTools = CHILD_LINK_TOOLS.map(name => modifiers ? `+${name}` : name);
       // Keep modifiers as modifiers; native CLI validation still rejects mixed
       // or otherwise malformed tool lists rather than silently repairing them.
       args.push("--tools", [...configuredTools, ...bridgeTools].join(","));
@@ -1553,6 +1560,7 @@ export class AgentManager {
       candidateResponse: "",
       lastActivityPersistedAt: info.updatedAt,
       restoredHeld: held,
+      linkDeliveries: 0,
     };
     let finishStartup!: () => void;
     live.startup = new Promise<void>(resolve => { finishStartup = resolve; });
@@ -1751,7 +1759,7 @@ export class AgentManager {
     return this.deliverLink(live, parentId, message);
   }
 
-  private async deliverLink(live: LiveAgent, parentId: string, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }> {
+  private async deliverLink(live: LiveAgent, parentId: string, message: LinkDelivery, peer = false): Promise<{ status: LinkStatus; reason?: string }> {
     if (!isLinkDelivery(message)) return { status: "failed", reason: "invalid_link_delivery" };
     const deadline = Date.now() + LINK_TIMEOUT_MS;
     const remaining = () => {
@@ -1760,6 +1768,7 @@ export class AgentManager {
       return ms;
     };
     const command = (value: Record<string, unknown>) => this.sendCommand(live, value, remaining());
+    live.linkDeliveries++;
     try {
       let reason = this.linkUnavailable(live, parentId);
       if (reason) return { status: "skipped", reason };
@@ -1778,7 +1787,7 @@ export class AgentManager {
       if (reason) return { status: "skipped", reason };
       const requestId = randomUUID();
       const request: LinkCommand = { version: LINK_VERSION, requestId, action: "deliver", ownerSessionId: parentId,
-        workerId: live.info.id, message };
+        workerId: live.info.id, message, ...(peer ? { peer: true } : {}) };
       const response = await command({ type: "prompt", message: `/${LINK_COMMAND} ${JSON.stringify(request)}` });
       if (response?.disposition !== "handled") return { status: "unknown", reason: "link_command_not_handled" };
       const entries = await command({ type: "get_entries" });
@@ -1791,7 +1800,150 @@ export class AgentManager {
     } catch (error) {
       return { status: error instanceof RpcRequestError && error.outcome === "rejected" ? "failed" : "unknown",
         reason: formatAgentError(error) };
+    } finally {
+      live.linkDeliveries--;
+      if (!live.linkDeliveries && live.finalizedRun && !this.pauses.has(parentId)) void this.terminateProcess(live);
     }
+  }
+
+  /** Manager-local addressing never depends on a child's temporary pi-link connection. */
+  private async sendPeer(sender: LiveAgent, target: string, content: string, replyTo?: string): Promise<LinkResult> {
+    const parentId = sender.info.parentSessionId;
+    const message: LinkDelivery = { id: randomUUID(), from: sender.info.canonicalName, fromSessionId: parentId,
+      fromWorker: { ownerSessionId: parentId, workerId: sender.info.id, taskName: sender.info.canonicalName },
+      content, ...(replyTo ? { replyTo } : {}) };
+    try {
+      return await this.submit(parentId, undefined, async () => {
+        if (this.linkUnavailable(sender, parentId)) return linkFailure("skipped", "sender_inactive_or_paused");
+        return this.routePeer(parentId, target, message, !replyTo);
+      });
+    } catch (error) { return linkFailure("skipped", formatAgentError(error)); }
+  }
+
+  private async routePeer(parentId: string, target: string, message: LinkDelivery, answer: boolean): Promise<LinkResult> {
+    const info = readScopeInfos(parentId).find(info => info.id === target || info.canonicalName === canonicalAgentName(target));
+    if (!info) return linkFailure("failed", "peer_not_found");
+    if (info.id === message.fromWorker?.workerId) return linkFailure("failed", "self_target");
+    // Serialize only deliveries to this worker: concurrent sends share one reopened process.
+    const previous = this.peerDeliveries.get(info.id) ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(async (): Promise<LinkResult> => {
+      const deliver = async (settlementRetry = false): Promise<LinkResult> => {
+        let current = readInfoFile(info.infoFile)!;
+        if (this.pauses.has(parentId) || current.suspensionGeneration || this.ordinaryPausedChildren.has(info.id)) {
+          return linkFailure("skipped", "worker_paused");
+        }
+        let live = this.live.get(info.id);
+        if (live?.finalizedRun || live?.expectedExit) {
+          await this.terminateProcess(live);
+          live = undefined;
+          current = readInfoFile(info.infoFile)!;
+        }
+        if (["failed", "interrupted", "suspended"].includes(current.status)) return linkFailure("skipped", `worker_${current.status}`);
+        if (!live && current.status !== "completed") return linkFailure("skipped", "worker_not_owned_or_inactive");
+        if (!live) {
+          const parentResult = current.peerEpisode?.parentResult ?? this.agentResponse(current);
+          current.peerEpisode = { parentResult, requests: answer ? [{ id: message.id, worker: message.fromWorker! }] : [] };
+          current.status = "starting";
+          delete current.completedAt;
+          saveInfo(current);
+          this.notifyStatusChange(current);
+          live = await this.startLiveAgent(current);
+        } else if (live.info.peerEpisode && answer) {
+          live.info.peerEpisode.requests.push({ id: message.id, worker: message.fromWorker! });
+          saveInfo(live.info);
+        }
+        const result = await this.deliverLink(live, parentId, message, true);
+        if (result.status !== "submitted" && live.info.peerEpisode) {
+          live.info.peerEpisode.requests = live.info.peerEpisode.requests.filter(request => request.id !== message.id);
+          saveInfo(live.info);
+          // No input is owned by a known rejection; do not leave an idle process running.
+          if (current.status === "starting" && live.info.status === "starting") {
+            if (result.status === "unknown") this.markFailed(live, `Peer input admission unknown: ${result.reason}`);
+            else {
+              live.info.status = "completed";
+              live.finalizedRun = true;
+              saveInfo(live.info);
+              this.notifyStatusChange(live.info);
+            }
+            await this.terminateProcess(live);
+          }
+        }
+        // A running target may settle during preflight. This known no-submission
+        // refusal can reopen its completed session; never retry unknown admission.
+        if (!settlementRetry && result.status === "skipped" && result.reason === "worker_inactive") return deliver(true);
+        return { content: [{ type: "text", text: `Peer ${current.canonicalName}: ${result.status}${result.reason ? ` (${result.reason})` : ""}.` }],
+          details: { ...result, messageId: message.id, workerId: current.id }, ...(result.status !== "submitted" ? { isError: true } : {}) };
+      };
+      return deliver();
+    });
+    this.peerDeliveries.set(info.id, operation);
+    try { return await operation; }
+    catch (error) { return linkFailure("unknown", formatAgentError(error)); }
+    finally { if (this.peerDeliveries.get(info.id) === operation) this.peerDeliveries.delete(info.id); }
+  }
+
+  private async handlePeerRequest(live: LiveAgent, wire: string): Promise<void> {
+    let request: PeerRequest;
+    try { request = JSON.parse(wire); } catch { return; }
+    if (request?.version !== LINK_VERSION || typeof request.requestId !== "string" || !request.requestId
+      || !["list", "send", "escalate"].includes(request.action)) return;
+    let result: LinkResult;
+    try {
+      const parentId = live.info.parentSessionId;
+      const state = await this.sendCommand(live, { type: "get_state" }, LINK_TIMEOUT_MS);
+      if (this.linkUnavailable(live, parentId) || state?.pauseState !== "unpaused") result = linkFailure("skipped", "sender_inactive_or_paused");
+      else if (request.action === "list") {
+        const peers = readScopeInfos(parentId).filter(info => info.id !== live.info.id).map(info => ({
+          workerId: info.id, taskName: info.canonicalName, status: info.status,
+        }));
+        result = { content: [{ type: "text", text: JSON.stringify(peers) }], details: { peers } };
+      } else if (request.action === "escalate") {
+        if (typeof request.message !== "string" || !request.message.trim()) result = linkFailure("failed", "invalid_escalation");
+        else if (!live.info.peerEpisode) result = linkFailure("failed", "parent_episode_already_reports_completion");
+        else {
+          live.info.peerEpisode.escalation = request.message;
+          saveInfo(live.info);
+          result = { content: [{ type: "text", text: "Parent attention requested on completion; peer reply routing is unchanged." }],
+            details: { status: "submitted" } };
+        }
+      } else if (typeof request.target !== "string" || !request.target.trim() || typeof request.message !== "string" || !request.message.trim()) {
+        result = linkFailure("failed", "invalid_peer_message");
+      } else result = await this.sendPeer(live, request.target, request.message);
+    } catch (error) { result = linkFailure("unknown", formatAgentError(error)); }
+    await this.returnLinkResult(live, request.requestId, result);
+  }
+
+  private async completePeerEpisode(info: AgentInfo): Promise<void> {
+    if (info.peerEpisode?.escalation) {
+      this.pushMailbox({ attention: true, id: randomUUID(), parentSessionId: info.parentSessionId,
+        agentName: info.canonicalName, status: "completed", createdAt: Date.now(),
+        finalResponse: `Peer escalation: ${info.peerEpisode.escalation}\n\n${info.finalResponse ?? ""}` });
+      delete info.peerEpisode.escalation;
+    }
+    const requests = [...(info.peerEpisode?.requests ?? [])];
+    if (info.peerEpisode) info.peerEpisode.requests = [];
+    saveInfo(info);
+    for (const request of requests) {
+      const message: LinkDelivery = { id: randomUUID(), from: info.canonicalName, fromSessionId: info.parentSessionId,
+        fromWorker: { workerId: info.id, taskName: info.canonicalName, ownerSessionId: info.parentSessionId },
+        replyTo: request.id, content: info.finalResponse ?? "" };
+      let result: LinkResult;
+      try { result = await this.submit(info.parentSessionId, undefined,
+        () => this.routePeer(info.parentSessionId, request.worker.workerId, message, false)); }
+      catch (error) { result = linkFailure("skipped", formatAgentError(error)); }
+      if (result.details.status !== "submitted") {
+        // A failed peer answer needs attention, unlike an ordinary peer completion.
+        this.pushMailbox({ attention: true, id: randomUUID(), parentSessionId: info.parentSessionId, agentName: info.canonicalName,
+          status: "failed", error: `Peer answer to ${request.worker.taskName} was not submitted: ${JSON.stringify(result.details)}`,
+          finalResponse: info.finalResponse, createdAt: Date.now() });
+      }
+    }
+  }
+
+  private async returnLinkResult(live: LiveAgent, requestId: string, result: LinkResult): Promise<void> {
+    const command: LinkCommand = { version: LINK_VERSION, requestId, action: "result", result };
+    try { await this.sendCommand(live, { type: "prompt", message: `/${LINK_COMMAND} ${JSON.stringify(command)}` }, LINK_TIMEOUT_MS); }
+    catch (error) { live.logger.info("link", "could not return worker routing result", { error: formatAgentError(error) }); }
   }
 
   private async handleLinkReply(live: LiveAgent, wire: string): Promise<void> {
@@ -1814,14 +1966,18 @@ export class AgentManager {
         else if (typeof state?.pauseState !== "string") result = linkFailure("unsupported", "native_pause_state_unavailable");
         else if (state.pauseState !== "unpaused") result = linkFailure("skipped", "worker_paused");
         else if (typeof state?.sessionId !== "string" || !reference) result = linkFailure("failed", "link_reference_not_admitted");
-        else result = await this.options.onLinkReply?.({ ownerSessionId: parentId,
+        else if (reference.fromSessionId === parentId && reference.fromWorker?.ownerSessionId === parentId) {
+          result = await this.sendPeer(live, reference.fromWorker.workerId, request.message, reference.id);
+          if (result.details.status === "submitted" && live.info.peerEpisode) {
+            live.info.peerEpisode.requests = live.info.peerEpisode.requests.filter(message => message.id !== reference.id);
+            saveInfo(live.info);
+          }
+        } else result = await this.options.onLinkReply?.({ ownerSessionId: parentId,
           worker: { workerId: live.info.id, taskName: live.info.canonicalName }, reference, message: request.message })
           ?? linkFailure("unsupported", "link_integration_unavailable");
       }
     } catch (error) { result = linkFailure("unknown", formatAgentError(error)); }
-    const command: LinkCommand = { version: LINK_VERSION, requestId: request.requestId, action: "result", result };
-    try { await this.sendCommand(live, { type: "prompt", message: `/${LINK_COMMAND} ${JSON.stringify(command)}` }, LINK_TIMEOUT_MS); }
-    catch (error) { live.logger.info("link", "could not return worker reply result", { error: formatAgentError(error) }); }
+    await this.returnLinkResult(live, request.requestId, result);
   }
 
   private async control(live: LiveAgent, request: ControlRequest) {
@@ -2091,6 +2247,11 @@ export class AgentManager {
       void this.handleLinkReply(live, event.message.slice(LINK_REPLY_NOTIFY.length));
       return;
     }
+    if (event.type === "extension_ui_request" && event.method === "notify"
+      && typeof event.message === "string" && event.message.startsWith(PEER_NOTIFY)) {
+      void this.handlePeerRequest(live, event.message.slice(PEER_NOTIFY.length));
+      return;
+    }
     live.broadcaster.broadcast(event);
     if (event.type === "pause_state_changed" && event.state === "paused") this.clearModelResponseTimer(live);
     if (event.type === "response") {
@@ -2178,7 +2339,7 @@ export class AgentManager {
       }
       if (live.candidateError) this.markFailed(live, live.candidateError);
       else this.markCompleted(live);
-      if (this.pauses.has(live.info.parentSessionId)) return;
+      if (this.pauses.has(live.info.parentSessionId) || live.linkDeliveries) return;
       void this.terminateProcess(live).catch((error) => {
         live.logger.info("hibernate", "failed to terminate settled child", { error: error instanceof Error ? error.message : String(error) });
       });
@@ -2190,11 +2351,13 @@ export class AgentManager {
     live.info = persisted;
     live.finalizedRun = true;
     this.notifyStatusChange(persisted);
+    if (persisted.status === "completed" && persisted.peerEpisode) return;
     this.pushMailbox({
       id: randomUUID(),
       parentSessionId: persisted.parentSessionId,
       agentName: persisted.canonicalName,
       status: persisted.status,
+      ...(persisted.peerEpisode ? { attention: true as const } : {}),
       finalResponse: persisted.finalResponse,
       error: persisted.error,
       createdAt: Date.now(),
@@ -2215,6 +2378,12 @@ export class AgentManager {
     live.info.lastActivity = Date.now();
     saveInfo(live.info);
     this.notifyStatusChange(live.info);
+    if (live.info.peerEpisode) {
+      void this.completePeerEpisode(live.info).catch(error => this.pushMailbox({ attention: true,
+        id: randomUUID(), parentSessionId: live.info.parentSessionId, agentName: live.info.canonicalName,
+        status: "failed", error: `Peer completion routing failed: ${formatAgentError(error)}`, createdAt: Date.now() }));
+      return;
+    }
     this.pushMailbox({
       id: randomUUID(),
       parentSessionId: live.info.parentSessionId,
@@ -2253,6 +2422,7 @@ export class AgentManager {
       parentSessionId: live.info.parentSessionId,
       agentName: live.info.canonicalName,
       status: "failed",
+      ...(live.info.peerEpisode ? { attention: true as const } : {}),
       error,
       createdAt: Date.now(),
     });
@@ -2261,11 +2431,16 @@ export class AgentManager {
   private removeMailboxEvents(parentSessionId: string, agentName: string): void {
     for (let index = this.mailbox.length - 1; index >= 0; index--) {
       const event = this.mailbox[index];
-      if (event.parentSessionId === parentSessionId && event.agentName === agentName) this.mailbox.splice(index, 1);
+      if (!event.attention && event.parentSessionId === parentSessionId && event.agentName === agentName) this.mailbox.splice(index, 1);
     }
   }
 
   private pushMailbox(event: AgentCompletionEvent, notify = true): void {
+    if (event.attention) {
+      this.mailbox.push(event);
+      if (notify) this.notifyUnclaimedCompletion(event);
+      return;
+    }
     this.removeMailboxEvents(event.parentSessionId, event.agentName);
     const waiterIndex = this.waiters.findIndex((waiter) => waiter.parentSessionId === event.parentSessionId && targetMatches(event, waiter.targets));
     if (waiterIndex !== -1) {
@@ -2333,7 +2508,7 @@ export class AgentManager {
     if (normalizedTargets) {
       const targetInfos = readScopeInfos(parentSessionId).filter((info) => normalizedTargets.has(info.canonicalName));
       if (!targetInfos.length) throw new Error(`Agent not found in this parent session: ${Array.from(normalizedTargets).join(", ")}`);
-      const finalInfo = targetInfos.find((info) => FINAL_STATUSES.has(info.status));
+      const finalInfo = targetInfos.find((info) => info.peerEpisode || FINAL_STATUSES.has(info.status));
       if (finalInfo) {
         this.finishWaitTarget(parentSessionId, finalInfo.canonicalName);
         return {
@@ -2342,9 +2517,9 @@ export class AgentManager {
             id: randomUUID(),
             parentSessionId,
             agentName: finalInfo.canonicalName,
-            status: finalInfo.status,
-            finalResponse: finalInfo.finalResponse,
-            error: finalInfo.error,
+            status: finalInfo.peerEpisode?.parentResult.status ?? finalInfo.status,
+            finalResponse: finalInfo.peerEpisode ? finalInfo.peerEpisode.parentResult.finalResponse : finalInfo.finalResponse,
+            error: finalInfo.peerEpisode ? finalInfo.peerEpisode.parentResult.error : finalInfo.error,
             createdAt: Date.now(),
           },
         };
@@ -2391,13 +2566,14 @@ export class AgentManager {
       if (missing.length) throw new Error(`Agent not found in this parent session: ${missing.join(", ")}`);
     }
     const matchingInfos = () => readScopeInfos(parentSessionId).filter((info) => targetSet.has(info.canonicalName));
-    const pendingNames = () => matchingInfos().filter((info) => !FINAL_STATUSES.has(info.status)).map((info) => info.canonicalName);
+    const pendingNames = () => matchingInfos().filter((info) => !info.peerEpisode && !FINAL_STATUSES.has(info.status)).map((info) => info.canonicalName);
     const finalize = () => {
-      const responses = matchingInfos().filter((info) => FINAL_STATUSES.has(info.status)).map((info) => this.agentResponse(info));
+      const responses = matchingInfos().filter((info) => info.peerEpisode || FINAL_STATUSES.has(info.status))
+        .map((info) => info.peerEpisode?.parentResult ?? this.agentResponse(info));
       for (const response of responses) this.finishWaitTarget(parentSessionId, response.agent_name);
       for (let index = this.mailbox.length - 1; index >= 0; index--) {
         const event = this.mailbox[index];
-        if (event.parentSessionId === parentSessionId && targetSet.has(event.agentName)) this.mailbox.splice(index, 1);
+        if (!event.attention && event.parentSessionId === parentSessionId && targetSet.has(event.agentName)) this.mailbox.splice(index, 1);
       }
       return {
         message: "All target agents reached final status.",
@@ -2440,6 +2616,10 @@ export class AgentManager {
       info = this.getAgentInfo(target, parentSessionId);
     }
     if (info.status === "suspended") throw new Error("Agent is suspended; use /unpause before sending new work.");
+    // Only an actual parent send changes the episode owner back to the parent.
+    delete info.peerEpisode;
+    if (live) delete live.info.peerEpisode;
+    saveInfo(info);
     const wasLive = Boolean(live);
     if (!live) {
       if (info.childProcess) await this.terminateOwnedChild(info);
@@ -2485,8 +2665,10 @@ export class AgentManager {
     } else {
       await this.terminateOwnedChild(info);
     }
-    this.finishWaitTarget(parentSessionId, info.canonicalName);
-    this.pushMailbox({ id: randomUUID(), parentSessionId, agentName: info.canonicalName, status: "interrupted", createdAt: Date.now() }, false);
+    if (!info.peerEpisode) {
+      this.finishWaitTarget(parentSessionId, info.canonicalName);
+      this.pushMailbox({ id: randomUUID(), parentSessionId, agentName: info.canonicalName, status: "interrupted", createdAt: Date.now() }, false);
+    }
     return { previous_status: previous };
   }
 

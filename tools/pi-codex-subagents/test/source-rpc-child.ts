@@ -49,6 +49,24 @@ const respond: FauxResponseFactory = (context) => {
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
   if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name), ...(process.env.PI_TEST_CAPTURE_CONTEXT === "1" ? { messages: context.messages } : {}) })}\n`);
+  if (text === "peer-provider-failure") return fauxAssistantMessage("", { stopReason: "error", errorMessage: "peer provider failure" });
+  const peerTask = context.messages.filter(message => message.role === "user").map(messageText)
+    .map(text => text.match(/^peer-detective:(auto|explicit|escalate|failure)$/m)).find(Boolean);
+  if (peerTask) {
+    if (!text.startsWith("[Link")) return fauxAssistantMessage("faux:detective-parent-result");
+    if (peerTask[1] === "failure") return fauxAssistantMessage("", { stopReason: "error", errorMessage: "peer provider failure" });
+    const reference = text.match(/^Message ID: (.+)$/m)?.[1];
+    const lastIndex = context.messages.findLastIndex(message => message === last);
+    if (peerTask[1] === "explicit" && reference && !context.messages.slice(lastIndex + 1)
+      .some(message => message.role === "toolResult" && message.toolName === "link_reply")) {
+      return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference, message: "faux:explicit-detective-answer" }), { stopReason: "toolUse" });
+    }
+    if (peerTask[1] === "escalate" && !context.messages.slice(lastIndex + 1)
+      .some(message => message.role === "toolResult" && message.toolName === "peer_escalate")) {
+      return fauxAssistantMessage(fauxToolCall("peer_escalate", { message: "Parent decision needed; no new authority assumed." }), { stopReason: "toolUse" });
+    }
+    return fauxAssistantMessage("faux:detective-peer-answer");
+  }
   const savedLinkTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^saved-link-reference:(.+)$/m)).find(Boolean);
   if (savedLinkTask) {

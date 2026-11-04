@@ -12,6 +12,14 @@ export const LINK_CONTROL_ENTRY = "subagent-link-control";
 export const LINK_MESSAGE_TYPE = "subagent-link-message";
 /** RPC's public, fire-and-forget notify event avoids waiting on a tool's own result. */
 export const LINK_REPLY_NOTIFY = "subagent-link-reply:";
+/** Package-local helper/manager requests, independent of pi-link's root protocol. */
+export const PEER_NOTIFY = "subagent-peer:";
+export const CHILD_LINK_TOOLS = ["link_reply", "peer_list", "peer_send", "peer_escalate"] as const;
+export type PeerRequest = { version: 1; requestId: string } & (
+  | { action: "list" }
+  | { action: "send"; target: string; message: string }
+  | { action: "escalate"; message: string }
+);
 export const LINK_TIMEOUT_MS = 2_000;
 export type LinkStatus = "submitted" | "failed" | "skipped" | "unsupported" | "unknown";
 export interface LinkWorkerAddress { workerId: string; taskName: string }
@@ -62,7 +70,7 @@ export interface LinkMessageDetails {
   delivery: LinkDelivery;
 }
 export type LinkCommand =
-  | { version: 1; requestId: string; action: "deliver"; ownerSessionId: string; workerId: string; message: LinkDelivery }
+  | { version: 1; requestId: string; action: "deliver"; ownerSessionId: string; workerId: string; message: LinkDelivery; peer?: boolean }
   | { version: 1; requestId: string; action: "result"; result: LinkResult };
 export interface LinkControlRecord {
   version: 1;

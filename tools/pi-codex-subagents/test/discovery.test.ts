@@ -112,7 +112,7 @@ for (const trusted of [true, false]) {
         cwd, projectTrusted: trusted, parentSessionId, inheritedProvider: "faux", inheritedModelId: "faux-1", inheritedThinking: "off" });
       await until(() => manager.getAgentInfo("limited", parentSessionId).status === "completed", "explicit tool task completes");
       const limited = manager.getAgentInfo("limited", parentSessionId);
-      expect(jsonl(providerCallsFile(limited.sessionFile))[0].tools.sort()).toEqual(["link_reply", "read"]);
+      expect(jsonl(providerCallsFile(limited.sessionFile))[0].tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send", "read"]);
     } finally {
       await manager.shutdown();
       if (previousRole === undefined) rmSync(roleFile, { force: true }); else writeFileSync(roleFile, previousRole);
@@ -164,7 +164,7 @@ for (const scenario of builtinCases) {
       for (const phase of ["factory", "hook"]) expect(records.filter(record => record.phase === phase).map(record => record.name).sort()).toEqual([...expected].sort());
       const tools = jsonl(providerCallsFile(info.sessionFile))[0].tools;
       expect(tools).toContain("link_reply");
-      if (scenario.tools !== undefined) expect(tools.sort()).toEqual(["link_reply", "read"]);
+      if (scenario.tools !== undefined) expect(tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send", "read"]);
       else for (const name of CHILD_BUILTIN_EXTENSION_NAMES) {
         expect(tools.includes(`faux_builtin_${name.replaceAll(/[.-]/g, "_")}`)).toBe(expected.includes(name));
       }
@@ -268,7 +268,7 @@ for (const withIncludes of [false, true]) for (const configured of [false, true]
       if (withIncludes) expect(count(calls[0].systemPrompt, "CHILD_ROLE_INCLUDE_MARKER")).toBe(1);
       expect(count(calls[0].text, "COMPOSITION_TEMPLATE_MARKER")).toBe(1);
       expect(count(calls[0].text, "COMPOSITION_ASSIGNED_TASK_MARKER")).toBe(1);
-      expect(calls[0].tools.sort()).toEqual(["link_reply", "read"]);
+      expect(calls[0].tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send", "read"]);
       expect(readFileSync(roleFile, "utf8")).toBe(editedRole);
     } finally {
       await root.close();

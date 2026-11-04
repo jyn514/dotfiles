@@ -16,6 +16,10 @@ The maintained fork's path history through `jyn514/pi-extensions` commit `af2e51
 The original authors, author dates, and commit messages remain in the imported patch series.
 The upstream package is `@ogulcancelik/pi-codex-subagents`; install only one copy to avoid duplicate tools.
 
+Updating package source files does not replace an already-loaded parent manager.
+Each new worker process loads the child helper from the package path, so restarting only a worker can pair a new helper with an old manager.
+That helper can advertise tools its parent does not support.
+
 To smoke-test uncommitted changes without installing or updating a package, start a fresh Pi process from the repository root:
 
 ```sh
@@ -138,7 +142,7 @@ For example, `pi-codex-subagents` excludes this package's manager entrypoint wit
 Use it on templates that should not expose subagent management tools.
 Exclusions apply to both discovered extensions and explicit `extensions` additions, before modules, factories, or hooks execute.
 Package-name exclusions match the package's declared entrypoints, not every file in its directory.
-The packaged child helper always loads independently, preserving pause support and `link_reply` even with an empty task-tool allowlist.
+The packaged child helper always loads independently, preserving pause support, `link_reply`, and the [peer tools](#peer-conversations) even with an empty task-tool allowlist.
 Exclusions persist with each worker; older worker records without exclusions have none.
 
 The manager uses Pi's public package resolver to select enabled entrypoints before starting the child.
@@ -263,6 +267,52 @@ Interruptible waits require Pi's `ExtensionContext.hasPendingSteeringMessages()`
 An older core produces an upgrade/restart error instead of silently missing custom messages or waking for follow-ups.
 Restart with the updated Pi core when deploying this extension change.
 
+## Peer conversations
+
+Workers in the same owning manager can exchange information without an executive relay or an independent pi-link connection.
+Peer tools require peer-capable code loaded in both the parent manager and child helper; see [package activation](#install).
+The always-loaded child helper provides these tools even when the template disables pi-link or selects no task tools:
+
+| Child tool | Purpose |
+|---|---|
+| `peer_list` | List sibling task names, immutable worker IDs and current statuses |
+| `peer_send` | Send `{ target, message }` to a sibling by its worker ID or task name |
+| `link_reply` | Reply privately to the author of an admitted message using `{ replyTo, message }` |
+| `peer_escalate` | Request parent attention on completion of a peer-follow-up episode using `{ message }` |
+
+For example, a builder calls `peer_list`, then `peer_send` with the detective's returned `workerId` and changed evidence.
+The manager reopens a completed detective's saved native conversation, retaining its worker ID, session file and history.
+Task names such as `/detective` also remain stable within that parent session.
+These addresses select workers owned by this manager, not temporary connected child names or workers under another root.
+
+A peer message identifies its sender as a worker and explicitly preserves both workers' original user/parent scopes.
+It supplies information, not a new parent instruction or permission to expand an assignment.
+A completed worker reopens only for a manager-attributed peer message.
+Failed, interrupted, suspended and paused workers never restart automatically for peer delivery.
+Parent/group pause and native child pause both prevent delivery; rejection does not queue work for later replay.
+An `unknown` result with reason `worker_routing_deadline` means the helper received no matching routing result within five seconds.
+It does not diagnose a version mismatch or prove that a send was not delivered.
+Unknown admission is not retried automatically.
+The manager must remain available; this is not an offline mailbox or cross-root worker network.
+
+A reopened worker runs a **peer-follow-up episode**.
+Its final answer returns to the requesting peer; a submitted explicit `link_reply` suppresses that request's automatic final answer.
+Replies can reopen a completed requester too, but receiving a reply does not itself request another automatic answer.
+This prevents an automatic reply loop.
+An already-running parent-assigned episode keeps its parent completion route; it can answer the peer explicitly with `link_reply`.
+
+Peer episodes update saved status, response and UI without routine completion-triggered parent-model turns.
+Parent-assigned results still reach the parent, and parent waits retain that assignment's result even during or after peer follow-up.
+`read_agent_response` reads the latest response, including a peer-follow-up response.
+A new `steer_subagent` from the parent makes the episode parent-owned again.
+Only current episode routing references and the latest parent result are retained in the existing worker record; no message backlog or report history is added.
+
+Peer failures and failed automatic answer delivery remain visible to the parent through the ordinary completion delivery path.
+For a non-failure decision needing parent attention, call `peer_escalate` before finishing the peer episode.
+Its completion notifies the parent with the escalation and final response while still answering the requester.
+Parent waits neither consume nor suppress these attention notifications.
+Escalation requests attention, not authority; ordinary parent-assigned episodes already report their completion and reject this unnecessary escalation.
+
 ## pi-link worker conversations
 
 When the parent also loads a pi-link version with the worker bridge, `link_send` with `to: { broadcast: true }` and `includeSubagents: true` reaches active workers directly through their owning manager.
@@ -279,6 +329,7 @@ A queued message does not grant reply permission until it enters that child's na
 The manager validates the worker's stable ID and parent session before routing its reply.
 A root's answer returns only to that requesting worker, not its siblings or the owner's model context.
 Ordinary task completions still go to the parent.
+Manager-local peer references use the [peer episode rules](#peer-conversations), including completed-worker reopening, rather than the external bridge's active-only rule.
 When pi-link is enabled, it loads its ordinary tools and an independent connection in the child.
 Use `disabledExtensions` to opt out of that connection; a read-only explicit tool list still restricts the model's tools.
 
@@ -300,7 +351,9 @@ While agents are starting or running, a compact one-line indicator appears above
 
 The overlay uses the child working directory for tool rendering and synchronizes in-progress output when opened midway through a run. Use Left/Right to switch between agents in the current browser scope.
 
-Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory. `steer_subagent` starts a fresh child process with the persisted session and continues from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
+Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory.
+An in-flight link admission keeps its process only until the manager reads the routing receipt.
+`steer_subagent` and admitted manager-local peer follow-ups start a fresh child process with the persisted session and continue from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
 
 ### Working-copy commit-boundary protection
 

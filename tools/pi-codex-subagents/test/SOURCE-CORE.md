@@ -58,7 +58,10 @@ Each interpreter gets disposable HOME/XDG state, TMPDIR (including loader caches
 The driver reports each phase and removes its owned storage after exit.
 
 Native suites are skipped by ordinary unconfigured `bun test`; use this source-backed driver for changed-core coverage.
-Installed SDK execution is not a substitute.
+Installed SDK execution is not a substitute for changed-core coverage.
+If the source checkout or its root tsconfig is unavailable, report that missing coverage explicitly.
+The native RPC fixtures can also exercise checkout package changes against an installed core through that installation's public exports.
+Label such results as installed-core package integration, not source-core or changed-core verification.
 
 The legacy core fixture uses `PI_TEST_OWNED_ROOT/a` (or a unique temporary fallback) and removes it in `afterAll`.
 Tests do not rewrite copies or preload SDK mocks.
@@ -120,7 +123,7 @@ A disposable monorepo contains a denied manager entrypoint and an allowed siblin
 Import, factory, and hook markers show that only the trusted project fixture executes;
 the denied manager never executes, even when explicitly added.
 The discovered tool is called despite being absent from the supplied parent tool names.
-Explicit task-tool lists still restrict it, while the helper's `link_reply` remains available.
+Explicit task-tool lists still restrict task tools, while the helper's reply and manager-local peer tools remain available.
 Fresh worker processes retain trust and exclusions after template edits, expand skills/templates normally,
 and compose the dedicated child role with native base/append selection and shared context files.
 Composition cases compare root and child provider prompts with default and configured bases, ancestor/cwd overrides,
@@ -146,11 +149,15 @@ The removed manager/helper checkpoint handoff is not a supported integration.
 
 `manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
 It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.
-It also checks refusal to wake paused or completed children and reply-tool availability with empty and modifier-based task-tool selections.
+It also checks the external bridge's refusal to wake paused or completed children and helper-tool availability with empty and modifier-based task-tool selections.
+Its manager-local peer cases invoke real `peer_list`, `peer_send`, `link_reply` and `peer_escalate` tools.
+They check stable-ID/name addressing, the same saved conversation on reopening, automatic and explicit private answers, no duplicate final reply, and preservation of parent completion ownership and wait results.
+Fast-settling recipients protect receipt collection before process hibernation and reopening across a known no-submission settlement race.
+Native failure, interruption, pause and suspension cases protect the peer-specific no-restart rules; peer failures and non-failure escalations remain parent-visible without replacing the original parent wait result.
 `link-integration.test.ts` additionally loads the production subagent extension and pi-link in real RPC sessions connected over WebSocket.
 Its helper-only case explicitly excludes pi-link from workers and checks sender-worker inclusion, two remote siblings independently asking the same question, worker author attribution, private replies, and the absence of independent worker connections.
 Its configured full-worker case checks independent worker endpoints and replies through both direct endpoint delivery and manager delivery.
-It also checks ordinary link-tool availability, explicit selected-tool lists, and a read-only scout list that retains only helper reply support alongside its task tools.
+It also checks ordinary link-tool availability, explicit selected-tool lists, and a read-only scout list that retains helper reply and manager-local peer tools alongside its task tools.
 Only provider responses are scripted; production routing and lifecycle behavior are unchanged.
 
 The suite covers source resolution (including rejection of stale installed `dist/index.js`),
