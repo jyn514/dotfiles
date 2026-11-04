@@ -78,6 +78,8 @@ Fish still loads its normal startup configuration.
 This prevents its startup completion jobs from racing private-HOME cleanup.
 
 Unselected commands such as Docker retain their incoming PATH selection.
+When `DOCKER_HOST` is absent, the wrapper resolves Docker's active context before replacing `HOME`, exports its endpoint as `DOCKER_HOST`, and removes `DOCKER_CONTEXT`.
+An explicit `DOCKER_HOST` remains unchanged; missing Docker or context configuration leaves routing unset.
 Inside an agent sandbox, this keeps the Docker wrapper that configures the gateway's SSH identity and pinned host key:
 
 ```sh

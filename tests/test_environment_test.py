@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -189,6 +190,36 @@ class TestEnvironmentTest(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         return dict(entry.split("=", 1) for entry in result.stdout.rstrip("\0").split("\0"))
+
+    def test_docker_context_is_resolved_before_home_isolation(self) -> None:
+        environment = {"HOME": str(self.old_home), "PATH": "/fixture/bin",
+                       "DOCKER_CONTEXT": "fixture"}
+        completed = subprocess.CompletedProcess([], 0, "unix:///fixture/docker.sock\n", "")
+        with mock.patch.object(TEST_ENVIRONMENT["shutil"], "which", return_value="/fixture/bin/docker"), \
+                mock.patch.object(TEST_ENVIRONMENT["subprocess"], "run", return_value=completed) as run:
+            TEST_ENVIRONMENT["preserve_docker_host"](environment)
+        self.assertEqual("unix:///fixture/docker.sock", environment["DOCKER_HOST"])
+        self.assertNotIn("DOCKER_CONTEXT", environment)
+        run.assert_called_once_with(
+            ["/fixture/bin/docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+            env={"HOME": str(self.old_home), "PATH": "/fixture/bin", "DOCKER_CONTEXT": "fixture"},
+            text=True, capture_output=True, check=False,
+        )
+
+    def test_explicit_docker_host_does_not_require_context_resolution(self) -> None:
+        environment = {"DOCKER_HOST": "ssh://explicit"}
+        with mock.patch.object(TEST_ENVIRONMENT["subprocess"], "run") as run:
+            TEST_ENVIRONMENT["preserve_docker_host"](environment)
+        self.assertEqual({"DOCKER_HOST": "ssh://explicit"}, environment)
+        run.assert_not_called()
+
+    def test_missing_docker_context_keeps_environment_unchanged(self) -> None:
+        environment = {"HOME": str(self.old_home), "PATH": "/fixture/bin"}
+        completed = subprocess.CompletedProcess([], 1, "", "context missing")
+        with mock.patch.object(TEST_ENVIRONMENT["shutil"], "which", return_value="/fixture/bin/docker"), \
+                mock.patch.object(TEST_ENVIRONMENT["subprocess"], "run", return_value=completed):
+            TEST_ENVIRONMENT["preserve_docker_host"](environment)
+        self.assertEqual({"HOME": str(self.old_home), "PATH": "/fixture/bin"}, environment)
 
     def test_preserves_real_tools_without_exposing_sandbox_authority(self) -> None:
         environment = self.run_environment(

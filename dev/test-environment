@@ -140,8 +140,27 @@ def host_tool_path(tool: str, environment: dict[str, str]) -> str:
     return ""
 
 
+def preserve_docker_host(environment: dict[str, str]) -> None:
+    """Resolve HOME-backed Docker context selection before HOME isolation."""
+    if environment.get("DOCKER_HOST"):
+        return
+    docker = shutil.which("docker", path=environment.get("PATH"))
+    if docker is None:
+        return
+    result = subprocess.run(
+        [docker, "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+        env=environment.copy(), text=True, capture_output=True, check=False,
+    )
+    endpoint = result.stdout.strip()
+    if result.returncode or not endpoint or any(character.isspace() for character in endpoint):
+        return
+    environment["DOCKER_HOST"] = endpoint
+    environment.pop("DOCKER_CONTEXT", None)
+
+
 def main(arguments: list[str]) -> int:
     environment = dict(os.environ)
+    preserve_docker_host(environment)
     real_tools = {
         tool.lower(): (
             environment.get(f"DOTFILES_TEST_{tool}_REAL") or environment.get(f"{tool}_REAL")
