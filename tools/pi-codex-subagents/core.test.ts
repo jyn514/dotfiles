@@ -1147,7 +1147,8 @@ describe("extension completion delivery and TUI", () => {
           canonicalName: `/history/${index}`,
           parentSessionId,
           status: index === 0 ? "running" : "completed",
-          lastTaskMessage: `private task context ${index}`,
+          lastTaskMessage: index === 2 ? undefined : `private task context ${index}`,
+          agentType: index === 0 ? "review-specialist" : index === 2 ? "a-template-name-that-is-longer-than-the-terminal-width" : undefined,
           provider: "test",
           modelId: index === 0 ? "MiniMax-M3" : "a-model-name-that-is-longer-than-the-column",
           thinking: index === 0 ? "high" : "medium",
@@ -1168,7 +1169,11 @@ describe("extension completion delivery and TUI", () => {
       const firstRowIndex = browserLines.findIndex((line: string) => line.includes("/history/0"));
       const firstRow = browserLines[firstRowIndex];
       expect(firstRow).toMatch(/\/history\/0\s+running\s+\S+\s+MiniMax-M3\s+high/);
-      expect(browserLines[firstRowIndex + 1]).toContain("private task context 0");
+      expect(browserLines[firstRowIndex + 1]).toContain("Template: review-specialist · private task context 0");
+      const genericRowIndex = browserLines.findIndex((line: string) => line.includes("/history/1 "));
+      expect(browserLines[genericRowIndex + 1]).toContain("Template: none · private task context 1");
+      const noTaskRowIndex = browserLines.findIndex((line: string) => line.includes("/history/2 "));
+      expect(browserLines[noTaskRowIndex + 1].trim()).toBe("Template: a-template-name-that-is-longer-than-the-terminal-width");
       const secondRow = browserLines.find((line: string) => line.includes("/history/1 "));
       expect(secondRow.indexOf("a-model-name")).toBe(firstRow.indexOf("MiniMax-M3"));
       expect(visibleWidth(secondRow.slice(0, secondRow.indexOf("medium"))))
@@ -1185,6 +1190,7 @@ describe("extension completion delivery and TUI", () => {
       expect(allSessionRow).toContain("MiniMax-M3");
       expect(allSessionRow).toContain("high");
       expect(allSessionRow.trimEnd()).toEndWith(parentSessionId.slice(-8));
+      expect(browser.render(80).join("\n")).toContain("Template: review-specialist");
 
       const firstAgentPage = await tools.get("list_agents").execute("list-1", {}, undefined, undefined, ctx);
       const firstAgentPayload = JSON.parse(firstAgentPage.content[0].text);

@@ -693,7 +693,9 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
               formatColumn(info.thinking || "off", thinkingWidth),
             ].join(" ");
             lines.push(pointer + fg(index === selected ? "accent" : "text", name) + " " + fg(entry.agent_status === "failed" ? "error" : entry.agent_status === "completed" ? "success" : "warning", entry.agent_status.padEnd(statusWidth)) + " " + fg("dim", details + parent));
-            if (entry.last_task_message) lines.push("  " + fg("dim", truncateToWidth(entry.last_task_message.replace(/\s+/g, " "), Math.max(0, width - 4))));
+            const template = `Template: ${info.agentType || "none"}`;
+            const preview = entry.last_task_message ? ` · ${entry.last_task_message.replace(/\s+/g, " ")}` : "";
+            lines.push("  " + fg("dim", truncateToWidth(template + preview, Math.max(0, width - 4))));
           }
           if (viewEnd < entries.length) lines.push(fg("dim", `  ↓ ${entries.length - viewEnd} more`));
           lines.push("", fg("dim", "enter: open  tab: this/all sessions  r: refresh  q/esc: close"));

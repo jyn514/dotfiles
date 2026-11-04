@@ -347,7 +347,11 @@ Older Pi versions keep the normal completion renderer.
 
 While agents are starting or running, a compact one-line indicator appears above the editor. It shows the task name for one active agent or a count for multiple agents and points to `/subagents`. The indicator disappears when no agents are active.
 
-`/subagents` opens the agent browser for the current session. Each row shows the task name, status, elapsed time, model, and thinking level, with the task preview underneath. Long names are shortened to fit the terminal. Press Tab to switch to the read-only all-sessions view, then Enter to open an agent.
+`/subagents` opens the agent browser for the current session.
+Each row shows the task name, status, elapsed time, model, and thinking level, with the template name and task preview underneath.
+Agents spawned without a template show `Template: none`.
+Long names are shortened to fit the terminal.
+Press Tab to switch to the read-only all-sessions view, then Enter to open an agent.
 
 The overlay uses the child working directory for tool rendering and synchronizes in-progress output when opened midway through a run. Use Left/Right to switch between agents in the current browser scope.
 
