@@ -15,7 +15,7 @@ def main() -> int:
         # or a request file capable of handing off the parent's session.
         for key in ("CODEX_SANDBOX_PI_OWNER", "CODEX_SANDBOX_PI_ATTACHMENT",
                     "CODEX_SANDBOX_PI_OWNER_FD", "CODEX_SANDBOX_CD_REQUEST",
-                    "CODEX_SANDBOX_PREVIOUS_CWD"):
+                    "CODEX_SANDBOX_PI_CONTROL", "CODEX_SANDBOX_PREVIOUS_CWD"):
             os.environ.pop(key, None)
     home = Path.home()
     pi_cli = home / ".local/share/pi/node/node_modules/.bin/pi"

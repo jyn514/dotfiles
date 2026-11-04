@@ -2205,15 +2205,20 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["resumable_arguments"](["--resume"]),
         )
 
-    def restart_registration(self, pane="%3", session_id="session-id", *, dead=False, cwd=None):
+    def restart_registration(self, pane="%3", session_id="session-id", *, dead=False, cwd=None,
+                             control=None):
         cwd = cwd or self.repo
         directory = self.home / "custom sessions"
         directory.mkdir(exist_ok=True)
         session = directory / f"{session_id}.jsonl"
         session.write_text(json.dumps({"type": "session", "version": 3, "id": session_id,
                                        "timestamp": "2026-10-09T11:00:00.000Z", "cwd": str(cwd)}) + "\n")
-        return {"version": 2, "pane": pane, "dead": dead, "pid": None if dead else 12345,
-                "repository": str(self.repo), "session": str(session), "token": "token", "cwd": str(cwd)}
+        registration = {"version": 2, "pane": pane, "dead": dead,
+                        "pid": None if dead else 12345, "repository": str(self.repo),
+                        "session": str(session), "token": "token", "cwd": str(cwd)}
+        if control is not None:
+            registration.update(version=3, control=str(control))
+        return registration
 
     def test_restart_checks_all_selected_artifacts_before_stopping_any_pane(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -2278,6 +2283,67 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertFalse(any(call[-1:] in (["C-c"], ["Enter"]) for call in calls))
         self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
+
+    def test_restart_all_pauses_and_unpauses_controlled_pi_without_signalling_wrapper(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        old = self.restart_registration(control=self.root / "old-control.sock")
+        new = {**old, "control": str(self.root / "new-control.sock"), "pid": 54321}
+        calls = []
+        controls = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            return SimpleNamespace(stdout="off\n")
+
+        def control(registration, operation, timeout=60):
+            controls.append((registration["control"], operation, timeout))
+
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(side_effect=[[old], [], [new]]),
+                "request_restart_control": control,
+                "run": fake_run,
+                "helper": mock.Mock(),
+            },
+        ), mock.patch.object(launcher["Path"], "is_socket", return_value=True), \
+                mock.patch.object(os, "kill") as kill:
+            self.assertEqual(0, launcher["restart_tmux_sessions"]())
+
+        kill.assert_not_called()
+        self.assertEqual([
+            (old["control"], "pause", 60),
+            (old["control"], "shutdown", 60),
+            (new["control"], "unpause", 60),
+        ], controls)
+        self.assertTrue(any(call[:2] == ["tmux", "respawn-pane"] for call in calls))
+
+    def test_restart_pause_failure_unpauses_successes_before_changing_panes(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        first = self.restart_registration("%3", control=self.root / "first.sock")
+        second = self.restart_registration("%4", "second", control=self.root / "second.sock")
+        controls = []
+
+        def control(registration, operation, _timeout=60):
+            controls.append((registration["pane"], operation))
+            if registration["pane"] == "%4" and operation == "pause":
+                raise launcher["LauncherError"]("capture failed")
+
+        run = mock.Mock()
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(return_value=[first, second]),
+                "request_restart_control": control,
+                "run": run,
+                "helper": mock.Mock(),
+            },
+        ), mock.patch.object(os, "kill") as kill:
+            with self.assertRaisesRegex(launcher["LauncherError"], "no panes were stopped"):
+                launcher["restart_tmux_sessions"]()
+
+        self.assertCountEqual(controls[:2], [("%3", "pause"), ("%4", "pause")])
+        self.assertCountEqual(controls[2:], [("%3", "unpause"), ("%4", "unpause")])
+        run.assert_not_called()
+        kill.assert_not_called()
 
     def test_restart_all_respawns_an_already_dead_registered_pane(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

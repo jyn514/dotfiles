@@ -37,8 +37,12 @@ def child():
         return 2
     connection.close()
     if os.environ.get("FIXTURE_RESTART_LOCK"):
+        publication_environment = dict(os.environ)
+        # This fixture exercises legacy signal restart; its replacement RPC probe
+        # intentionally loads no extensions and therefore has no control listener.
+        publication_environment.pop("CODEX_SANDBOX_PI_CONTROL", None)
         subprocess.run(["bun", str(Path(__file__).with_name("publish_restart_fixture.ts")), str(session)],
-                       check=True, stdout=subprocess.DEVNULL)
+                       check=True, stdout=subprocess.DEVNULL, env=publication_environment)
     session.with_suffix(".ready").write_text(json.dumps({"owner": os.environ["CODEX_SANDBOX_PI_OWNER"],
                                                         "attachment": os.environ["CODEX_SANDBOX_PI_ATTACHMENT"],
                                                         "pid": os.getpid(), "argv": sys.argv[2:],

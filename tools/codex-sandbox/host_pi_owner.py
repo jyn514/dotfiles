@@ -57,6 +57,7 @@ def receive(stream):
 class Attachment:
     token: str
     cd_request: str
+    control_socket: str
     deadline: float
     connection: socket.socket | None = None
     session: Path | None = None
@@ -97,7 +98,9 @@ class HostPiOwner:
             token = secrets.token_urlsafe(32)
             request = Path(self.directory.name) / (token + ".cd")
             request.touch(mode=0o600)
-            item = Attachment(token, str(request), time.monotonic() + self.timeout)
+            control_socket = Path(self.directory.name) / (token + ".control.sock")
+            item = Attachment(token, str(request), str(control_socket),
+                              time.monotonic() + self.timeout)
             self.attachments[token] = item
             return item
 
@@ -105,7 +108,8 @@ class HostPiOwner:
         environment = dict(self.environment)
         environment.update(CODEX_SANDBOX_PI_OWNER=self.path,
                            CODEX_SANDBOX_PI_ATTACHMENT=item.token,
-                           CODEX_SANDBOX_CD_REQUEST=item.cd_request)
+                           CODEX_SANDBOX_CD_REQUEST=item.cd_request,
+                           CODEX_SANDBOX_PI_CONTROL=item.control_socket)
         environment.pop("CODEX_SANDBOX_PI_SPLIT_PROMPT", None)
         if item.prompt:
             environment["CODEX_SANDBOX_PI_SPLIT_PROMPT"] = item.prompt

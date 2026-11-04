@@ -172,8 +172,13 @@ handling; add no cancellation protocol or automatic worker replacement.
 
 Explicit restart commands include every registered Pi attachment in the selected repositories within the current tmux server, including split panes.
 Validate every saved conversation before stopping any attachment.
-Stop all selected attachments and wait for final-owner cleanup before resetting shared services.
-Resume each pane's selected conversation in a new sandbox owner without replaying an initial prompt or live tool work.
+For attachments with restart control, ask host Pi to durably pause the parent and its children before stopping any selected attachment.
+The Pi extension owns pause and unpause semantics; the launcher sends only versioned lifecycle requests over a private per-attachment Unix socket.
+If any pause fails, unpause every attachment paused by that attempt and leave panes running; report incomplete rollback explicitly.
+After every pause succeeds, request acknowledged Pi shutdown, wait for final-owner cleanup, then reset shared services.
+Resume each pane's selected conversation in a new sandbox owner without replaying an initial prompt or live tool work, wait for its newly published control generation, and request unpause.
+Failure after acknowledged shutdown retains the pane's resume registration and durable paused state for retry; never substitute terminal keystrokes or replay pending work.
+Legacy registrations without restart control retain signal-based restart until replaced.
 Retain resume registrations through old-owner cleanup so a failed restart can be retried from dead panes.
 
 The host derives the conversation, worker, directory, executable, and pane target

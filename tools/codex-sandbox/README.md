@@ -391,6 +391,9 @@ The switch does not authorize unrelated work or taking ownership of existing cha
 This includes main and `/split` panes; `restart-all` selects every repository in that server.
 Pass the repository root; symlink aliases resolve to the same path.
 No matching sessions is an error, not a fallback to restarting all.
+Current attachments durably pause parent and subagent work before shutdown and automatically unpause after their replacement Pi is ready.
+If any pause fails, the command unpauses attachments already paused by that attempt and stops no panes.
+Failures after shutdown retain the paused session and pane registration so rerunning the command can finish recovery.
 Pi reports its selected session file and working directory at startup, `/reload`,
 and session switches; restart resumes that file, including custom session storage.
 It checks every selected saved file before stopping any pane. Missing, unsaved,

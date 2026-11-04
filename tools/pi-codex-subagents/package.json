@@ -50,6 +50,7 @@
     "child-link.ts",
     "link.ts",
     "suspension.ts",
+    "restart-control.ts",
     "peek.ts",
     "README.md",
     "LICENSE"

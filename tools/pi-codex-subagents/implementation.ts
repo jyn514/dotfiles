@@ -24,6 +24,7 @@ import {
 } from "./core.js";
 import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscovery, type LinkResult, type LinkWorkerReply } from "./link.js";
 import { SubagentPeekOverlay } from "./peek.js";
+import { startRestartController } from "./restart-control.js";
 import { SuspensionCoordinator } from "./suspension.js";
 import type { StartupSession } from "./index.js";
 import { waitWithSteering } from "./wait.js";
@@ -209,6 +210,7 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
   });
 
   suspension = new SuspensionCoordinator(pi, manager, completionMessage);
+  const restartController = startRestartController(pi, suspension);
 
   pi.events.on(LINK_DISCOVER, (value: unknown) => {
     const request = value as LinkDiscovery;
@@ -456,6 +458,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   });
 
   pi.on("session_shutdown", async (_event: any, ctx: any) => {
+    await restartController?.close();
     if (activeContext?.mode === "tui") activeContext.ui.setWidget(widgetKey, undefined);
     activeContext = undefined;
     activeAgents.clear();

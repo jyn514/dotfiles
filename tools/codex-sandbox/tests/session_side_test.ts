@@ -543,15 +543,18 @@ test("resurrect publication follows SDK switching, custom storage and ephemeral 
 
 test("restart publication follows native SDK switching and custom storage without writing sessions", async () => {
   const f = fixture();
-  const env = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE };
+  const env = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE,
+    CODEX_SANDBOX_PI_CONTROL: process.env.CODEX_SANDBOX_PI_CONTROL };
   try {
     process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%7";
+    process.env.CODEX_SANDBOX_PI_CONTROL = "/private/restart-control.sock";
     const pi = restartExec({ version: 1, pane: "%7", repository: "/launcher/repo", session: "launch-id", token: "generation" });
     const source = SessionManager.create(f.dir, join(f.dir, "custom-storage"));
     const files = readdirSync(source.getSessionDir());
     await publishRestartSession(pi as any, source);
-    expect(pi.writes[0]).toEqual({ version: 2, pane: "%7", repository: "/launcher/repo",
-      session: source.getSessionFile(), cwd: f.dir, token: "generation" });
+    expect(pi.writes[0]).toEqual({ version: 3, pane: "%7", repository: "/launcher/repo",
+      session: source.getSessionFile(), cwd: f.dir, token: "generation",
+      control: "/private/restart-control.sock" });
     expect(readdirSync(source.getSessionDir())).toEqual(files);
     const switched = SessionManager.create(f.dir, join(f.dir, "other-storage"));
     switched.appendMessage(assistant());

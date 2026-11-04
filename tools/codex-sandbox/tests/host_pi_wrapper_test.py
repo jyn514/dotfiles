@@ -32,6 +32,7 @@ class HostPiWrapperTest(unittest.TestCase):
             "CODEX_SANDBOX_PI_ATTACHMENT": "parent-attachment",
             "CODEX_SANDBOX_PI_OWNER_FD": "123",
             "CODEX_SANDBOX_CD_REQUEST": "/private/parent-cd.json",
+            "CODEX_SANDBOX_PI_CONTROL": "/private/control.sock",
             "CODEX_SANDBOX_PREVIOUS_CWD": "/old-parent-directory",
         }
 
@@ -82,6 +83,7 @@ class HostPiWrapperTest(unittest.TestCase):
         self.assertEqual(["--export", "session.jsonl", "out.html"], native["arguments"])
         self.assertNotIn("CODEX_SANDBOX_PI_OWNER", native["sandbox_environment"])
         self.assertNotIn("CODEX_SANDBOX_CD_REQUEST", native["sandbox_environment"])
+        self.assertNotIn("CODEX_SANDBOX_PI_CONTROL", native["sandbox_environment"])
 
     def test_version_remains_native_and_offline(self) -> None:
         result = self.run_wrapper("--version")

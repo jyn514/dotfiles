@@ -194,6 +194,8 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
     return result.stdout.trim();
   };
   const current = await read();
+  const control = process.env.CODEX_SANDBOX_PI_CONTROL;
+  if (control !== undefined && !isAbsolute(control)) throw new Error("Invalid sandbox restart control path");
   let encoded = current;
   if (!encoded) {
     const validator = process.env.CODEX_SANDBOX_CD_VALIDATE;
@@ -206,8 +208,8 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
     let repository: unknown;
     try { repository = JSON.parse(result.stdout).repository; }
     catch { throw new Error("Invalid sandbox repository lookup"); }
-    encoded = Buffer.from(JSON.stringify({ version: 2, pane, repository,
-      session: null, cwd: source.getCwd(), token: randomUUID() })).toString("base64url");
+    encoded = Buffer.from(JSON.stringify({ version: control ? 3 : 2, pane, repository,
+      session: null, cwd: source.getCwd(), token: randomUUID(), ...(control ? { control } : {}) })).toString("base64url");
   }
   let registration: any;
   try {
@@ -216,15 +218,19 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
     registration = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     const keys = registration?.version === 1
       ? ["pane", "repository", "session", "token", "version"]
-      : ["cwd", "pane", "repository", "session", "token", "version"];
-    if (!registration || ![1, 2].includes(registration.version)
+      : registration?.version === 3
+        ? ["control", "cwd", "pane", "repository", "session", "token", "version"]
+        : ["cwd", "pane", "repository", "session", "token", "version"];
+    if (!registration || ![1, 2, 3].includes(registration.version)
       || Object.keys(registration).sort().join() !== keys.join()
       || ["pane", "repository", "token"].some(key => typeof registration[key] !== "string" || !registration[key])
       || registration.pane !== pane || !isAbsolute(registration.repository)
       || (registration.version === 1
         ? typeof registration.session !== "string" || !registration.session
         : (registration.session !== null && (typeof registration.session !== "string" || !isAbsolute(registration.session)))
-          || typeof registration.cwd !== "string" || !isAbsolute(registration.cwd))) throw Error();
+          || typeof registration.cwd !== "string" || !isAbsolute(registration.cwd)
+          || (registration.version === 3
+            && (typeof registration.control !== "string" || !isAbsolute(registration.control))))) throw Error();
   } catch {
     throw new Error("Invalid sandbox restart registration");
   }
@@ -233,8 +239,8 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
   if ((session !== null && !isAbsolute(session)) || !isAbsolute(cwd)) {
     throw new Error("SDK sandbox restart session/cwd must be absolute");
   }
-  const payload = { version: 2, pane, repository: registration.repository,
-    session, cwd, token: registration.token };
+  const payload = { version: control ? 3 : 2, pane, repository: registration.repository,
+    session, cwd, token: registration.token, ...(control ? { control } : {}) };
   // Expand and assign in one tmux server command so a replacement generation
   // wins even if it appeared after our read. Base64url excludes format delimiters.
   const updated = Buffer.from(JSON.stringify(payload)).toString("base64url");
