@@ -2220,6 +2220,48 @@ class CodexSandboxTest(unittest.TestCase):
             registration.update(version=3, control=str(control))
         return registration
 
+    def test_restart_control_reads_and_validates_pi_responses(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        registration = self.restart_registration(control=self.root / "control.sock")
+        cases = [
+            ("pause", "success", None),
+            ("shutdown", "success", None),
+            ("unpause", "success", None),
+            ("pause", "failure", "Pi pause failed: cannot pause"),
+            ("pause", "wrong-id", "invalid Pi pause control response"),
+            ("pause", "malformed", "Pi pause control failed"),
+            ("pause", "closed", "Pi pause control failed"),
+            ("pause", "non-object", "Pi pause control failed"),
+        ]
+        for operation, reply, error in cases:
+            with self.subTest(operation=operation, reply=reply):
+                connection = mock.Mock()
+
+                def response_stream(*args):
+                    request = json.loads(connection.sendall.call_args.args[0])
+                    self.assertEqual({"version", "id", "operation"}, set(request))
+                    self.assertEqual(1, request["version"])
+                    self.assertEqual(operation, request["operation"])
+                    response = {"version": 1, "id": request["id"], "ok": True}
+                    if reply == "failure":
+                        response.update(ok=False, error="cannot pause")
+                    elif reply == "wrong-id":
+                        response["id"] = "another-request"
+                    payload = {
+                        "malformed": b"not json\n", "closed": b"", "non-object": b"[]\n",
+                    }.get(reply, (json.dumps(response) + "\n").encode())
+                    return io.BytesIO(payload)
+
+                connection.makefile.side_effect = response_stream
+                with mock.patch("socket.socket", return_value=connection):
+                    if error is None:
+                        launcher["request_restart_control"](registration, operation)
+                    else:
+                        with self.assertRaisesRegex(launcher["LauncherError"], error):
+                            launcher["request_restart_control"](registration, operation)
+                connection.connect.assert_called_once_with(registration["control"])
+                connection.close.assert_called_once()
+
     def test_restart_checks_all_selected_artifacts_before_stopping_any_pane(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         first = self.restart_registration()
@@ -2356,6 +2398,50 @@ class CodexSandboxTest(unittest.TestCase):
         ], controls)
         self.assertTrue(any(call[:2] == ["tmux", "respawn-pane"] for call in calls))
 
+    def test_restart_controlled_pi_can_exit_without_its_parent_shell_exiting(self) -> None:
+        for retry in (False, True):
+            with self.subTest(retry_after_controller_closed=retry):
+                launcher = runpy.run_path(str(LAUNCHER))
+                old = self.restart_registration(control=self.root / "old-control.sock")
+                new = {**old, "control": str(self.root / "new-control.sock")}
+                live_controls = {new["control"]} | (set() if retry else {old["control"]})
+                controls = []
+                replacement = False
+                ticks = iter(range(1000))
+
+                def control(registration, operation, timeout=60):
+                    self.assertIn(registration["control"], live_controls)
+                    controls.append((registration["control"], operation))
+                    if operation == "shutdown":
+                        live_controls.remove(registration["control"])
+
+                def run(arguments, **kwargs):
+                    nonlocal replacement
+                    if arguments[:2] == ["tmux", "respawn-pane"]:
+                        replacement = True
+                    return SimpleNamespace(stdout="off\n")
+
+                def reset(*arguments):
+                    self.assertNotIn(old["control"], live_controls)
+                    self.assertEqual(("reset", "--repo", str(self.repo), "--wait"), arguments)
+
+                with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+                    launcher["restart_tmux_sessions"].__globals__, {
+                        # The interactive shell stays alive after Pi and its wrapper exit.
+                        "tmux_registrations": lambda: [new if replacement else old],
+                        "request_restart_control": control, "run": run, "helper": reset,
+                    },
+                ), mock.patch.object(launcher["Path"], "is_socket",
+                                     lambda path: str(path) in live_controls), \
+                        mock.patch("time.monotonic", side_effect=lambda: next(ticks)), \
+                        mock.patch("time.sleep"), mock.patch.object(os, "kill") as kill:
+                    self.assertEqual(0, launcher["restart_tmux_sessions"]())
+                kill.assert_not_called()
+                self.assertEqual(
+                    ([] if retry else [(old["control"], "pause"), (old["control"], "shutdown")])
+                    + [(new["control"], "unpause")], controls,
+                )
+
     def test_restart_pause_failure_unpauses_successes_before_changing_panes(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         first = self.restart_registration("%3", control=self.root / "first.sock")
@@ -2375,7 +2461,8 @@ class CodexSandboxTest(unittest.TestCase):
                 "run": run,
                 "helper": mock.Mock(),
             },
-        ), mock.patch.object(os, "kill") as kill:
+        ), mock.patch.object(launcher["Path"], "is_socket", return_value=True), \
+                mock.patch.object(os, "kill") as kill:
             with self.assertRaisesRegex(launcher["LauncherError"], "no panes were stopped"):
                 launcher["restart_tmux_sessions"]()
 

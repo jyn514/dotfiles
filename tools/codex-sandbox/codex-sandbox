@@ -2695,6 +2695,8 @@ def tmux_registrations() -> list[dict[str, object]]:
 
 def request_restart_control(registration: dict[str, object], operation: str,
                             timeout: float = 60) -> None:
+    from host_pi_owner import receive
+
     request_id = str(uuid.uuid4())
     request = {"version": 1, "id": request_id, "operation": operation}
     connection = socket.socket(socket.AF_UNIX)
@@ -2720,6 +2722,18 @@ def request_restart_control(registration: dict[str, object], operation: str,
         raise LauncherError(f"pane {registration['pane']}: invalid Pi {operation} control response")
     if not response["ok"]:
         raise LauncherError(f"pane {registration['pane']}: Pi {operation} failed: {response['error']}")
+
+
+def restart_attachment_active(registration: dict[str, object]) -> bool:
+    """Check control availability, not completion of attachment cleanup.
+
+    Current Pi attachments can exit while their parent shell stays alive.
+    A missing controller skips RPC; reset --wait must still acquire the owner
+    locks before any pane is replaced, including when Pi teardown is stuck.
+    """
+    return not registration["dead"] and (
+        registration["version"] != 3 or Path(str(registration["control"])).is_socket()
+    )
 
 
 def restart_tmux_sessions(repository: Path | None = None) -> int:
@@ -2772,7 +2786,8 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
     except subprocess.CalledProcessError as error:
         raise LauncherError("Sandbox image preparation failed; no sessions were stopped") from error
     resumed_controls = [registration for registration in registrations if registration["version"] == 3]
-    controlled = [registration for registration in resumed_controls if not registration["dead"]]
+    controlled = [registration for registration in resumed_controls
+                  if restart_attachment_active(registration)]
     if controlled:
         with ThreadPoolExecutor(max_workers=len(controlled)) as executor:
             futures = {executor.submit(request_restart_control, registration, "pause"): registration
@@ -2838,7 +2853,7 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
         active = {
             registration["pane"]
             for registration in tmux_registrations()
-            if not registration["dead"]
+            if registration["pane"] in panes and restart_attachment_active(registration)
         }
         if not panes.intersection(active):
             break

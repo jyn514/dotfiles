@@ -40,7 +40,9 @@ export function startRestartController(pi: ExtensionAPI,
   const path = process.env.CODEX_SANDBOX_PI_CONTROL;
   if (!path || !isAbsolute(path)) return undefined;
   const pending = new Map<string, PendingRequest>();
+  const sockets = new Set<Socket>();
   let server: Server | undefined;
+  let closing: Promise<void> | undefined;
 
   pi.registerCommand(COMMAND, {
     allowedWhilePaused: true,
@@ -62,6 +64,8 @@ export function startRestartController(pi: ExtensionAPI,
   });
 
   server = createServer(socket => {
+    if (closing) { socket.destroy(); return; }
+    sockets.add(socket);
     socket.setEncoding("utf8");
     let buffer = "";
     let accepted = false;
@@ -84,7 +88,9 @@ export function startRestartController(pi: ExtensionAPI,
         fail(error);
       }
     });
-    socket.on("error", () => {
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      sockets.delete(socket);
       for (const [id, request] of pending) if (request.socket === socket) pending.delete(id);
     });
   });
@@ -98,17 +104,23 @@ export function startRestartController(pi: ExtensionAPI,
 
   return {
     close() {
+      if (closing) return closing;
       for (const [id, request] of pending) {
         pending.delete(id);
         reply(request.socket, id, new Error("Pi is shutting down"));
       }
-      return new Promise<void>(resolve => {
-        if (!server?.listening) return resolve();
-        server.close(() => {
+      closing = new Promise<void>(resolve => {
+        if (!server?.listening) resolve();
+        else server.close(() => {
           try { unlinkSync(path); } catch { /* owner cleanup also removes the private directory */ }
           resolve();
         });
+        // server.close() waits for accepted connections, including clients that
+        // send nothing or leave their writable half open after our reply.
+        // Flush queued replies, then close both halves without waiting for EOF.
+        for (const socket of sockets) socket.destroySoon();
       });
+      return closing;
     },
   };
 }

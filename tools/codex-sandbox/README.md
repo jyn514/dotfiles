@@ -409,8 +409,10 @@ If a previous failed restart left a dead pane, start `π --resume` from the orig
 working directory and select the saved conversation. Do not use `--session-id`
 with the missing ID: that can create an empty conversation.
 
-Both restart commands wait up to 60 seconds for sandbox ownership locks after
-panes stop: detached owners can still be cleaning up after their UI exits.
+For current attachments, restart waits for Pi's control socket to close rather than for its invoking shell to exit.
+A retry skips pause and shutdown requests when that socket is already absent.
+Both restart commands still wait up to 60 seconds for sandbox ownership locks before replacing panes:
+detached owners can still be cleaning up after their UI exits, and a missing control socket does not prove cleanup finished.
 A timeout retains recovery metadata and does not forcibly stop remaining owners.
 Resume registrations survive old-owner cleanup, so rerunning restart includes panes left dead by a failed attempt.
 Failed restarted UIs stay visible in their panes; successful exits still close
