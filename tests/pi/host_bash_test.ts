@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import hostBash from "../../config/pi-agent/pi-extensions/host-bash.ts";
 import { guardianHistory, reviewedHostCommand } from "../../config/pi-agent/pi-extensions/host-bash-core.ts";
 import { CodexClient } from "../../libexec/codex-client.mjs";
+import { EventEmitter } from "node:events";
+import { restartStates } from "../../libexec/pi-restart-state.ts";
 
 function reviewer(assessment: any, overrides: any = {}) {
   const requests: { method: string; params: any }[] = [];
@@ -186,13 +188,15 @@ test("history preserves authority: tool text and summaries cannot become user in
   expect(JSON.stringify(items)).not.toContain("private extension metadata");
 });
 
-export function hostHarness() {
+export function hostHarness(entries: any[] = []) {
   const hooks = new Map<string, Function>();
   const commands = new Map<string, any>();
   const tools = new Map<string, any>();
   let active = ["bash", "read", "write", "codemode"];
   const statuses: any[] = [];
   const pi = {
+    events: new EventEmitter(),
+    appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
     on: (name: string, fn: Function) => hooks.set(name, fn),
     registerCommand: (name: string, definition: any) => commands.set(name, definition),
     registerTool: (tool: any) => tools.set(tool.name, tool),
@@ -203,7 +207,7 @@ export function hostHarness() {
   const ctx = {
     cwd: "/host/project",
     ui: { setStatus: (...args: any[]) => statuses.push(args), notify() {} },
-    sessionManager: { getSessionId: () => "session-a", getBranch: () => [],
+    sessionManager: { getSessionId: () => "session-a", getBranch: () => [], getEntries: () => entries,
       getSessionFile: (): string | undefined => undefined, getLeafId: (): string | null => null },
   };
   hostBash(pi as never);
@@ -230,6 +234,62 @@ test("human toggle only adds host tool; reload/resume and other sessions revoke 
   expect(h.pi.getActiveTools()).toContain("host_bash");
   await h.commands.get("host").handler("off", h.ctx);
   expect(h.pi.getActiveTools()).toEqual(initial);
+});
+
+test("only explicit restart restores the saved host selection in the same session and workspace", async () => {
+  const entries: any[] = [];
+  const first = hostHarness(entries);
+  await first.hooks.get("session_start")!({ reason: "startup" }, first.ctx);
+  await first.commands.get("host").handler("on", first.ctx);
+  await restartStates(first.pi as never)[0].capture(first.ctx as never);
+  await first.hooks.get("session_shutdown")!({}, first.ctx);
+
+  const resumed = hostHarness(entries);
+  await resumed.hooks.get("session_start")!({ reason: "startup" }, resumed.ctx);
+  expect(resumed.pi.getActiveTools()).not.toContain("host_bash");
+  for (const reason of ["resume", "reload", "fork"]) {
+    await resumed.hooks.get("session_start")!({ reason }, resumed.ctx);
+    expect(resumed.pi.getActiveTools()).not.toContain("host_bash");
+  }
+  await restartStates(resumed.pi as never)[0].restore(resumed.ctx as never);
+  expect(resumed.pi.getActiveTools()).toContain("host_bash");
+  expect(process.env.PI_HOST_BASH_WORKSPACE).toBe(first.ctx.cwd);
+  await resumed.hooks.get("session_shutdown")!({}, resumed.ctx);
+
+  const forked = hostHarness(entries);
+  forked.ctx.sessionManager.getSessionId = () => "forked-session";
+  await forked.hooks.get("session_start")!({ reason: "startup" }, forked.ctx);
+  await restartStates(forked.pi as never)[0].restore(forked.ctx as never);
+  expect(forked.pi.getActiveTools()).not.toContain("host_bash");
+
+  const moved = hostHarness(entries);
+  moved.ctx.cwd = "/another/context";
+  await moved.hooks.get("session_start")!({ reason: "startup" }, moved.ctx);
+  await restartStates(moved.pi as never)[0].restore(moved.ctx as never);
+  expect(moved.pi.getActiveTools()).not.toContain("host_bash");
+
+  const restricted = hostHarness(entries);
+  restricted.pi.getAllTools = () => [];
+  await restricted.hooks.get("session_start")!({ reason: "startup" }, restricted.ctx);
+  await restartStates(restricted.pi as never)[0].restore(restricted.ctx as never);
+  expect(restricted.pi.getActiveTools()).not.toContain("host_bash");
+});
+
+test("host off and a new disabled capture prevent restoring an older restart selection", async () => {
+  for (const explicitOff of [false, true]) {
+    const entries: any[] = [];
+    const first = hostHarness(entries);
+    await first.hooks.get("session_start")!({ reason: "startup" }, first.ctx);
+    await first.commands.get("host").handler("on", first.ctx);
+    await restartStates(first.pi as never)[0].capture(first.ctx as never);
+    if (explicitOff) await first.commands.get("host").handler("off", first.ctx);
+    await first.hooks.get("session_shutdown")!({}, first.ctx);
+    const second = hostHarness(entries);
+    await second.hooks.get("session_start")!({ reason: "startup" }, second.ctx);
+    if (!explicitOff) await restartStates(second.pi as never)[0].capture(second.ctx as never);
+    await restartStates(second.pi as never)[0].restore(second.ctx as never);
+    expect(second.pi.getActiveTools()).not.toContain("host_bash");
+  }
 });
 
 test("managed children inherit their parent's enabled workspace and can pass it to descendants", async () => {

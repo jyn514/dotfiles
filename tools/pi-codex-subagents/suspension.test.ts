@@ -57,6 +57,79 @@ function fixture(writer?: typeof writeGroup) {
   };
 }
 
+test("restart state is captured by the live owner and retained across a reopened pause retry", async () => {
+  const f = fixture();
+  let reopened: SuspensionCoordinator | undefined;
+  let enabled = true;
+  let captured = false;
+  const restart = [{
+    async capture() { await Bun.sleep(1); captured = enabled; f.events.push("caller-capture"); },
+    async restore() { enabled = captured; f.events.push("caller-restore"); },
+  }];
+  try {
+    await f.coordinator.pause(f.ctx, false, restart);
+    expect(captured).toBe(true);
+    expect(f.events.indexOf("caller-capture")).toBeLessThan(f.events.indexOf("parent-capture"));
+    f.coordinator.shutdown();
+    enabled = false; // Replacement startup is disabled until explicit unpause.
+    reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, () => ({}), () => f.root);
+    reopened.discover(f.ctx);
+    await reopened.pause(f.ctx, false, restart);
+    expect(captured).toBe(true);
+    expect(f.events.filter(event => event === "caller-capture")).toHaveLength(1);
+    await reopened.unpause(f.ctx, restart);
+    expect(enabled).toBe(true);
+    expect(f.events.indexOf("caller-restore")).toBeLessThan(f.events.lastIndexOf("prepare:"));
+    expect(f.read().phase).toBe("consumed");
+    // A later, genuinely disabled live generation supersedes the old capture.
+    enabled = false;
+    await reopened.pause(f.ctx, false, restart);
+    expect(captured).toBe(false);
+  } finally { reopened?.shutdown(); f.close(); }
+});
+
+test("reopened incomplete restart restores state before preparation can leave a held child alive", async () => {
+  const f = fixture();
+  let reopened: SuspensionCoordinator | undefined;
+  let enabled = true;
+  let captured = false;
+  let heldChildEnabled: boolean | undefined;
+  const restart = [{
+    async capture() { captured = enabled; },
+    async restore() { await Bun.sleep(1); enabled = captured; },
+  }];
+  f.manager.captureChildren = async () => ({ A: snapshot(f.sessionFile, "A", true), B: snapshot(f.sessionFile, "B", true) });
+  try {
+    await f.coordinator.pause(f.ctx, false, restart);
+    f.coordinator.shutdown();
+    const saved = f.read(); saved.phase = "incomplete"; writeGroup(f.groupFile, saved);
+    enabled = false;
+    reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, () => ({}), () => f.root);
+    reopened.discover(f.ctx);
+    f.manager.prepareChildren = async () => {
+      heldChildEnabled = enabled; // Child A snapshots the environment, then B fails.
+      throw new Error("B preparation failed");
+    };
+    await expect(reopened.pause(f.ctx, false, restart)).rejects.toThrow("B preparation failed");
+    expect(heldChildEnabled).toBe(true);
+    expect(captured).toBe(true);
+  } finally { reopened?.shutdown(); f.close(); }
+});
+
+test("restart restore is not invoked before saved-generation validation succeeds", async () => {
+  const f = fixture();
+  let restored = false;
+  const restart = [{ async capture() {}, async restore() { restored = true; } }];
+  try {
+    await expect(f.coordinator.unpause(f.ctx, restart)).rejects.toThrow("No saved suspension group");
+    expect(restored).toBe(false);
+    await f.coordinator.pause(f.ctx);
+    f.ctx.sessionManager.getSessionId = () => "another-session";
+    await expect(f.coordinator.unpause(f.ctx, restart)).rejects.toThrow("identity/canonical path mismatch");
+    expect(restored).toBe(false);
+  } finally { f.close(); }
+});
+
 test("exclusive claims fail closed even for implausible PIDs; ordinary release permits a new owner", () => {
   const root = mkdtempSync(join(tmpdir(), "scope-claim-"));
   const file = join(root, "claim");

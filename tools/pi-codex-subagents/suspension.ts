@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getRunsDir, parentScopeKey, type AgentCompletionEvent, type AgentManager, type CompletionState } from "./core.js";
 import { assertSessionAuthority, isSavedSession, pendingCount, SessionReplay, type SavedSession } from "./handoff.js";
+import type { RestartState } from "../../libexec/pi-restart-state.ts";
 
 type Phase = "preparing" | "saved" | "restoring" | "incomplete" | "consumed" | "discarded";
 export interface SuspensionGroup {
@@ -246,7 +247,11 @@ export class SuspensionCoordinator {
     return `Suspension: ${group.phase}; pending ${count}${progress}${group.error ? `; ${group.error}` : cleanup}.`;
   }
 
-  async pause(ctx: ExtensionCommandContext, exit = false): Promise<void> {
+  /** Capture restart state only while this process owns the live continuation.
+   * Reopened generations restore their selection before recovering held children
+   * and never overwrite it with disabled startup state. Ordinary /pause omits it.
+   */
+  async pause(ctx: ExtensionCommandContext, exit = false, restart: readonly RestartState[] = []): Promise<void> {
     this.assertNativeCapabilities(ctx);
     if (this.busy) throw new Error("Suspension operation is already in progress; use /pause --status.");
     if (this.discoveryError) throw new Error(this.discoveryError);
@@ -269,6 +274,10 @@ export class SuspensionCoordinator {
       this.validate(ctx);
       if (!this.liveGeneration && !this.group.parent) throw new Error("Parent capture is missing after restart; retain this incomplete generation for recovery or explicitly discard it.");
       if (!this.liveGeneration && !this.group.inventoryComplete) throw new Error("Incomplete child inventory after restart; retain captured payloads for manual recovery or explicitly discard them.");
+      for (const state of restart) {
+        if (this.liveGeneration) await state.capture(ctx);
+        else await state.restore(ctx);
+      }
       if (this.group.phase === "saved") { if (exit) ctx.shutdown(); return; }
       const acceptedSinceCapture = this.group.needsFreshCapture ?? !!(this.group.resumed.length || this.group.parentResumed);
       const captureGeneration = acceptedSinceCapture ? `${this.group.generation}:capture:${randomUUID()}`
@@ -339,7 +348,11 @@ export class SuspensionCoordinator {
     } finally { this.pauseProgress = undefined; this.busy = false; }
   }
 
-  async unpause(ctx: ExtensionCommandContext): Promise<void> {
+  /** Restore caller-owned restart state after validating the saved generation,
+   * but before preparing children or releasing parent work. Ordinary /unpause
+   * callers omit this hook and do not restore restart-only capabilities.
+   */
+  async unpause(ctx: ExtensionCommandContext, restart: readonly RestartState[] = []): Promise<void> {
     this.assertNativeCapabilities(ctx);
     if (this.busy) throw new Error("Suspension operation is already in progress.");
     if (this.discoveryError) throw new Error(this.discoveryError);
@@ -357,6 +370,7 @@ export class SuspensionCoordinator {
         if (!group.resumed.includes(id) && unresolved(saved)) throw new Error(`Child ${id} has unresolved prior admission; reconcile it before retry, never resend speculatively.`);
       }
       if (group.parent && !group.parentResumed && unresolved(group.parent)) throw new Error("Parent has unresolved prior admission; reconcile it before retry, never resend speculatively.");
+      for (const state of restart) await state.restore(ctx);
       group.phase = "restoring"; delete group.error; this.persist();
       // Never release A until every needed child has been launched held and validated.
       const needed = Object.fromEntries(Object.entries(group.children).filter(([id]) => !group.resumed.includes(id)));

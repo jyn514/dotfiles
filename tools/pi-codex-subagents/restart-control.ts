@@ -3,6 +3,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { isAbsolute } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { SuspensionCoordinator } from "./suspension.js";
+import { restartStates } from "../../libexec/pi-restart-state.ts";
 
 const COMMAND = "sandbox-restart-control";
 const MAX_REQUEST_BYTES = 16 * 1024;
@@ -53,8 +54,8 @@ export function startRestartController(pi: ExtensionAPI,
       if (!request) return ctx.ui?.notify?.("Sandbox restart control request is unavailable.", "error");
       pending.delete(id);
       try {
-        if (request.operation === "pause") await suspension.pause(ctx, false);
-        else if (request.operation === "unpause") await suspension.unpause(ctx);
+        if (request.operation === "pause") await suspension.pause(ctx, false, restartStates(pi));
+        else if (request.operation === "unpause") await suspension.unpause(ctx, restartStates(pi));
         reply(request.socket, id);
         if (request.operation === "shutdown") setImmediate(() => ctx.shutdown());
       } catch (error) {

@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { guardianHistory, guardianParentHistory, reviewedHostCommand, type HostAuthorityContext } from "./host-bash-core.ts";
+import { RESTART_STATE_CHANNEL, type RestartStateDiscovery } from "../../../libexec/pi-restart-state.ts";
 
 const parameters = Type.Object({
   command: Type.String({ minLength: 1, description: "Bash command to run on the host" }),
@@ -15,6 +16,7 @@ const parameters = Type.Object({
 
 const WORKSPACE_ENV = "PI_HOST_BASH_WORKSPACE";
 const AUTHORITY_ENV = "PI_HOST_BASH_AUTHORITY_CONTEXT";
+const RESTART_ENTRY = "host-bash-restart";
 
 /** Human-selected, session-local host capability. Ordinary tools retain their guest attachment.
  * PI_HOST_CODEX_BIN selects a native Codex executable without installing or upgrading it.
@@ -74,6 +76,31 @@ export default function hostBash(pi: ExtensionAPI): void {
     ctx.ui.setStatus("host-bash", "host: auto-review");
     return true;
   };
+  const captureRestartState = (ctx: ExtensionContext) => {
+    pi.appendEntry(RESTART_ENTRY, {
+      version: 1, sessionId: ctx.sessionManager.getSessionId(),
+      workspace: enabled && session === ctx.sessionManager.getSessionId() ? workspace : null,
+    });
+  };
+  pi.events.on(RESTART_STATE_CHANNEL, (request: RestartStateDiscovery) => {
+    request.provide({
+      capture: captureRestartState,
+      restore(ctx) {
+        const entry = ctx.sessionManager.getEntries().findLast(
+          item => item.type === "custom" && item.customType === RESTART_ENTRY,
+        );
+        const saved = entry?.type === "custom" ? entry.data as {
+          version?: unknown; sessionId?: unknown; workspace?: unknown;
+        } | undefined : undefined;
+        // Loading history never restores access. Only the restart controller
+        // calls this, and neither a fork nor a different workspace can reuse it.
+        if (saved?.version === 1 && saved.sessionId === ctx.sessionManager.getSessionId()
+          && typeof saved.workspace === "string" && saved.workspace === ctx.cwd) {
+          enable(ctx, saved.workspace);
+        }
+      },
+    });
+  });
   pi.on("session_start", (event, ctx) => {
     disable(ctx);
     session = ctx.sessionManager.getSessionId();
@@ -94,6 +121,7 @@ export default function hostBash(pi: ExtensionAPI): void {
       }
       if (choice === "off" || (!choice && enabled)) {
         disable(ctx);
+        captureRestartState(ctx);
         ctx.ui.notify("host_bash disabled", "info");
         return;
       }

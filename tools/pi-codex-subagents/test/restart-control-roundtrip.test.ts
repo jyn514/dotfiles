@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getRunsDir, parentScopeKey } from "../core.ts";
 import { productionIndex, sourceRpc, until } from "./source-runtime.ts";
 
 const sourceTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG);
+const hostExtension = resolve("config/pi-agent/pi-extensions/host-bash.ts");
 
 function control(path: string, operation: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -31,13 +32,18 @@ sourceTest("external restart control durably pauses, shuts down, reopens, and un
   writeFileSync(sessionFile, `${JSON.stringify(manager.getHeader())}\n`);
   const groupFile = join(getRunsDir(), parentScopeKey(manager.getSessionId()), "group.json");
   const firstControl = join(cwd, "first.sock");
-  const first = sourceRpc(cwd, sessionFile, false, [productionIndex], {
+  const first = sourceRpc(cwd, sessionFile, false, [productionIndex, hostExtension], {
     CODEX_SANDBOX_PI_CONTROL: firstControl,
   });
   try {
     await first.request({ type: "get_state" });
     await until(() => existsSync(firstControl), "first restart controller listens");
+    await first.request({ type: "prompt", message: "/host on" });
     expect((await control(firstControl, "pause")).ok).toBe(true);
+    const hostState = () => SessionManager.open(sessionFile).getEntries().findLast(
+      entry => entry.type === "custom" && entry.customType === "host-bash-restart",
+    ) as any;
+    expect(hostState().data.workspace).toBe(cwd);
     expect(JSON.parse(readFileSync(groupFile, "utf8")).phase).toBe("saved");
     expect((await first.request({ type: "get_state" })).pauseState).toBe("paused");
     expect((await control(firstControl, "shutdown")).ok).toBe(true);
@@ -47,15 +53,24 @@ sourceTest("external restart control durably pauses, shuts down, reopens, and un
     expect(await first.exited).toBe(0);
 
     const secondControl = join(cwd, "second.sock");
-    const second = sourceRpc(cwd, sessionFile, false, [productionIndex], {
+    const second = sourceRpc(cwd, sessionFile, false, [productionIndex, hostExtension], {
       CODEX_SANDBOX_PI_CONTROL: secondControl,
     });
     try {
       await second.request({ type: "get_state" });
       await until(() => existsSync(secondControl), "replacement restart controller listens");
+      // Retry before this replacement receives its first unpause. Startup is
+      // disabled, but must not erase the preceding owner's captured selection.
+      expect((await control(secondControl, "pause")).ok).toBe(true);
+      expect(hostState().data.workspace).toBe(cwd);
       expect((await control(secondControl, "unpause")).ok).toBe(true);
       expect((await second.request({ type: "get_state" })).pauseState).toBe("unpaused");
       expect(JSON.parse(readFileSync(groupFile, "utf8")).phase).toBe("consumed");
+      // Capture the replacement's in-memory selection, rather than accepting
+      // the original marker still present in the conversation file as proof.
+      expect((await control(secondControl, "pause")).ok).toBe(true);
+      expect(hostState().data.workspace).toBe(cwd);
+      expect((await control(secondControl, "unpause")).ok).toBe(true);
     } finally {
       await second.close();
     }

@@ -9,7 +9,11 @@ Each child command receives its own native policy check and, when required, Guar
 Child review includes the selected root parent branch as human context and labels child task prompts as parent-agent assignments.
 It reads a verified private snapshot through Pi's session parser without changing the live parent file.
 An inherited call fails if that saved human context is unavailable; child task text cannot substitute for it.
-Reloading, resuming, or switching a conversation inside an existing Pi process disables its host tool again.
+Reloading, ordinary resumes, and conversation switches disable the host tool again.
+`codex-sandbox restart` and `restart-all` preserve the selected host workspace only for the same conversation and working directory.
+Ordinary `--resume` and `--fork` launches do not restore that selection.
+Restart restores activation before unpausing work; every command still receives its own policy check and any required Guardian review.
+Existing Pi processes need `/reload` to load this behavior; run `/host on` again afterward.
 The footer shows `host: auto-review` while it is enabled.
 
 `host_bash` takes `command`, optional `cwd`, optional `timeout` in seconds, and optional `sandbox_permissions`.
@@ -62,8 +66,9 @@ Output is buffered with a 64 KiB cap per stream and the default execution timeou
 ## Verification
 
 `dev/test-environment bun test tests/pi/host_bash_test.ts` checks approval decisions, command identity, transcript authority, and session-local activation.
-`dev/test-environment node --test tests/pi/native_host_bash.mjs` loads host and guest extensions together through the installed Pi loader.
-Both suites are discovered by `dev/test`.
+`dev/test-environment node --test tests/pi/native_host_bash.mjs` loads host and guest extensions through the installed Pi loader and checks saved restart state against real session reopening, forks, and tool allowlists.
+The source-backed `tools/pi-codex-subagents/test/restart-control-roundtrip.test.ts` checks activation across controller pause, shutdown, reopen, and unpause; run it with the [changed-core test driver](../../../tools/pi-codex-subagents/test/SOURCE-CORE.md).
+These checks are discovered by `dev/test`.
 
 For a live smoke test, unpack the desired Codex release under temporary storage, then run:
 

@@ -4,9 +4,12 @@ import { createConnection } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { RESTART_STATE_CHANNEL, type RestartState, type RestartStateDiscovery } from "../../libexec/pi-restart-state.ts";
 import { startRestartController, type RestartController } from "./restart-control.js";
 
 const roots: string[] = [];
+const events = new EventEmitter();
 let controller: RestartController | undefined;
 
 afterEach(async () => {
@@ -14,6 +17,7 @@ afterEach(async () => {
   controller = undefined;
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   delete process.env.CODEX_SANDBOX_PI_CONTROL;
+  events.removeAllListeners();
 });
 
 async function until(predicate: () => boolean): Promise<void> {
@@ -46,8 +50,13 @@ test("sandbox restart control dispatches pause, unpause, and acknowledged shutdo
   let handler: any;
   let shutdown = 0;
   const calls: string[] = [];
+  events.on(RESTART_STATE_CHANNEL, (request: RestartStateDiscovery) => request.provide({
+    async capture() { await Bun.sleep(1); calls.push("capture"); },
+    async restore() { await Bun.sleep(1); calls.push("restore"); },
+  }));
   const ctx = { shutdown() { shutdown++; }, ui: { notify() {} } };
   const pi = {
+    events,
     registerCommand(_name: string, options: any) { handler = options.handler; },
     sendUserMessage(message: string) {
       const id = message.split(" ", 2)[1];
@@ -55,8 +64,15 @@ test("sandbox restart control dispatches pause, unpause, and acknowledged shutdo
     },
   };
   const suspension = {
-    async pause(_ctx: any, exit: boolean) { expect(exit).toBe(false); calls.push("pause"); },
-    async unpause() { calls.push("unpause"); },
+    async pause(ctx: any, exit: boolean, states: RestartState[]) {
+      expect(exit).toBe(false);
+      for (const state of states) await state.capture(ctx);
+      calls.push("pause");
+    },
+    async unpause(ctx: any, states: RestartState[]) {
+      for (const state of states) await state.restore(ctx);
+      calls.push("unpause");
+    },
   };
   controller = startRestartController(pi as any, suspension as any);
   expect(controller).toBeDefined();
@@ -66,7 +82,7 @@ test("sandbox restart control dispatches pause, unpause, and acknowledged shutdo
   expect((await request(path, "unpause")).ok).toBe(true);
   expect((await request(path, "shutdown")).ok).toBe(true);
   await until(() => shutdown === 1);
-  expect(calls).toEqual(["pause", "unpause"]);
+  expect(calls).toEqual(["capture", "pause", "restore", "unpause"]);
 });
 
 for (const clientState of ["idle", "half-open reply"] as const) {
@@ -78,6 +94,7 @@ for (const clientState of ["idle", "half-open reply"] as const) {
     let handler: any;
     const ctx = { shutdown() {}, ui: { notify() {} } };
     controller = startRestartController({
+      events,
       registerCommand(_name: string, options: any) { handler = options.handler; },
       sendUserMessage(message: string) {
         queueMicrotask(() => void handler(message.split(" ", 2)[1], ctx));
@@ -124,6 +141,7 @@ test("sandbox restart control returns suspension failures without shutting down"
   let handler: any;
   const ctx = { shutdown() { throw new Error("unexpected shutdown"); }, ui: { notify() {} } };
   const pi = {
+    events,
     registerCommand(_name: string, options: any) { handler = options.handler; },
     sendUserMessage(message: string) {
       queueMicrotask(() => void handler(message.split(" ", 2)[1], ctx));
