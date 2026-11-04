@@ -17,6 +17,11 @@ import {
   admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
   type LinkResult, type LinkStatus, type LinkWorkerAddress, type PeerRequest,
 } from "./link.js";
+import {
+  EXTENSION_COMMAND, EXTENSION_NOTIFY, EXTENSION_TIMEOUT_MS, ExtensionChannelError,
+  channelFailure, channelName, channelResult, jsonValue, parseChannelWire,
+  type ChannelReply, type JsonValue, type WorkerOrigin,
+} from "./extension-channel.js";
 import { parseStreamingJson, type AssistantMessage } from "@earendil-works/pi-ai";
 
 import { PACKAGE_BASENAME, SUBAGENT_DIR, ensureChildPromptFile, readChildPrompt } from "./child-prompt.js";
@@ -204,6 +209,8 @@ interface LiveAgent {
   startup?: Promise<void>;
   /** Keep the RPC process until admitted-message receipts have been read. */
   linkDeliveries: number;
+  extensionPending: Map<string, (reply: ChannelReply) => void>;
+  extensionDeliveries: number;
 }
 
 export interface AgentCompletionEvent {
@@ -225,6 +232,7 @@ export interface AgentActivityEvent {
 }
 
 export interface AgentManagerOptions {
+  onExtensionRequest?: (event: { ownerSessionId: string; origin: WorkerOrigin; channel: string; payload: JsonValue }) => Promise<ChannelReply>;
   onLinkReply?: (event: { ownerSessionId: string; worker: LinkWorkerAddress; reference: LinkDelivery; message: string }) => Promise<LinkResult>;
   onActivityChange?: (event: AgentActivityEvent) => void;
   onUnclaimedCompletion?: (event: AgentCompletionEvent) => void;
@@ -1526,7 +1534,8 @@ export class AgentManager {
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
     const childEnv: NodeJS.ProcessEnv = { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken, PI_SUBAGENT_HOLD: held ? "1" : "0",
-      PI_SUBAGENT_ID: info.id, PI_SUBAGENT_PARENT_SESSION_ID: info.parentSessionId, PI_SUBAGENT_TASK_NAME: info.taskName };
+      PI_SUBAGENT_ID: info.id, PI_SUBAGENT_PARENT_SESSION_ID: info.parentSessionId, PI_SUBAGENT_TASK_NAME: info.taskName,
+      PI_SUBAGENT_EXTENSION_CHANNEL_VERSION: "1" };
     delete childEnv.PI_LINK_NAME;
     let proc: ChildProcessWithoutNullStreams;
     try {
@@ -1561,6 +1570,8 @@ export class AgentManager {
       lastActivityPersistedAt: info.updatedAt,
       restoredHeld: held,
       linkDeliveries: 0,
+      extensionPending: new Map(),
+      extensionDeliveries: 0,
     };
     let finishStartup!: () => void;
     live.startup = new Promise<void>(resolve => { finishStartup = resolve; });
@@ -1574,6 +1585,7 @@ export class AgentManager {
       if (persisted && FINAL_STATUSES.has(persisted.status)) {
         this.adoptTerminalState(live, persisted);
       }
+      for (const finish of [...live.extensionPending.values()]) finish({ ok: false, code: "closed", message: "Worker process exited; outcome is unknown." });
       for (const [requestId, pending] of live.pending) {
         clearTimeout(pending.timer);
         pending.reject(error ?? new Error("Child Pi process exited before responding."));
@@ -1804,6 +1816,115 @@ export class AgentManager {
       live.linkDeliveries--;
       if (!live.linkDeliveries && live.finalizedRun && !this.pauses.has(parentId)) void this.terminateProcess(live);
     }
+  }
+
+  /** Exact managed worker IDs only. Handlers own meaning and any actual user-input admission. */
+  async requestExtension(parentId: string, workerId: string, channel: string, payload: JsonValue): Promise<JsonValue> {
+    channelName(channel);
+    payload = jsonValue(payload);
+    return this.submit(parentId, undefined, async () => {
+      const previous = this.peerDeliveries.get(workerId) ?? Promise.resolve();
+      const operation = previous.catch(() => {}).then(async () => {
+        let info = readScopeInfos(parentId).find(info => info.id === workerId);
+        if (!info) throw new ExtensionChannelError("unavailable", "Worker is not owned by this parent session.");
+        const inactive = () => this.pauses.has(parentId) || info!.suspensionGeneration || this.ordinaryPausedChildren.has(workerId)
+          || ["failed", "interrupted", "suspended"].includes(info!.status);
+        if (inactive()) throw new ExtensionChannelError("inactive", "Worker is paused, interrupted, suspended, or failed.");
+        let live = this.live.get(workerId);
+        if (live && live.info.parentSessionId !== parentId) throw new ExtensionChannelError("unavailable", "Worker belongs to another parent.");
+        if (live?.finalizedRun || live?.expectedExit) {
+          await this.terminateProcess(live);
+          live = undefined;
+          info = readInfoFile(info.infoFile)!;
+        }
+        if (inactive()) throw new ExtensionChannelError("inactive", "Worker became inactive.");
+        const saved = !live ? structuredClone(info) : undefined;
+        if (!live) {
+          if (info.status !== "completed") throw new ExtensionChannelError("inactive", "Worker has no live owned process or completed session.");
+          info.status = "starting";
+          delete info.completedAt;
+          saveInfo(info);
+          this.notifyStatusChange(info);
+          live = await this.startLiveAgent(info);
+        }
+        const child = live;
+        child.linkDeliveries++;
+        child.extensionDeliveries++;
+        const requestId = randomUUID();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          if (child.startup) await child.startup;
+          // Starting workers are eligible; native/handoff pause ownership still refuses admission.
+          if (this.linkUnavailable(child, parentId)) throw new ExtensionChannelError("inactive", "Worker is inactive or paused.");
+          const state = await this.sendCommand(child, { type: "get_state" }, EXTENSION_TIMEOUT_MS);
+          if (state?.pauseState !== "unpaused") throw new ExtensionChannelError("inactive", "Worker is paused or native pause state is unavailable.");
+          if (this.linkUnavailable(child, parentId)) throw new ExtensionChannelError("inactive", "Worker became inactive or paused.");
+          const reply = new Promise<ChannelReply>(resolve => {
+            const finish = (result: ChannelReply) => {
+              if (!child.extensionPending.delete(requestId)) return;
+              clearTimeout(timer); resolve(result);
+            };
+            child.extensionPending.set(requestId, finish);
+            timer = setTimeout(() => finish({ ok: false, code: "timeout", message: "Extension request timed out; outcome is unknown. Do not retry automatically." }), EXTENSION_TIMEOUT_MS);
+          });
+          const response = await this.sendCommand(child, { type: "prompt", message: `/${EXTENSION_COMMAND} ${JSON.stringify({ version: 1, action: "request", requestId, channel, payload })}` }, EXTENSION_TIMEOUT_MS);
+          if (response?.disposition !== "handled") throw new ExtensionChannelError("unknown", "Extension command was not handled; outcome is unknown.");
+          return channelResult(await reply);
+        } catch (error) {
+          if (error instanceof ExtensionChannelError) throw error;
+          throw new ExtensionChannelError(child.processFinished ? "closed"
+            : error instanceof RpcRequestError && error.message.startsWith("Timed out") ? "timeout" : "unknown",
+          `${formatAgentError(error)} Request outcome may be unknown; do not retry automatically.`);
+        } finally {
+          clearTimeout(timer);
+          child.extensionPending.delete(requestId);
+          // A command need not start a run. Restore the saved completed state without
+          // fabricating another completion or leaving an idle process indefinitely.
+          if (!child.processFinished) {
+            try {
+              const state = await this.sendCommand(child, { type: "get_state" }, EXTENSION_TIMEOUT_MS);
+              if (saved && !state?.isStreaming && child.info.status === "starting" && !child.finalizedRun) {
+                child.info = { ...saved, childProcess: child.info.childProcess };
+                child.finalizedRun = true;
+                saveInfo(child.info);
+                this.notifyStatusChange(child.info);
+              }
+            } catch { /* Process exit owns failure state; unknown admissions are never retried. */ }
+          }
+          child.extensionDeliveries--;
+          child.linkDeliveries--;
+          if (!child.linkDeliveries && child.finalizedRun && !this.pauses.has(parentId)) await this.terminateProcess(child);
+        }
+      });
+      this.peerDeliveries.set(workerId, operation);
+      try { return await operation; }
+      finally { if (this.peerDeliveries.get(workerId) === operation) this.peerDeliveries.delete(workerId); }
+    }).catch(error => {
+      if (error instanceof ExtensionChannelError) throw error;
+      throw new ExtensionChannelError(this.pauses.has(parentId) ? "inactive" : "unknown", formatAgentError(error));
+    });
+  }
+
+  private async handleExtensionRequest(live: LiveAgent, wire: string): Promise<void> {
+    let request;
+    try { request = parseChannelWire(wire); } catch { return; }
+    if (request.action === "result") { live.extensionPending.get(request.requestId)?.(request.result); return; }
+    const parentId = live.info.parentSessionId;
+    let result: ChannelReply;
+    try {
+      if (this.linkUnavailable(live, parentId)) throw new ExtensionChannelError("inactive", "Worker is inactive or paused.");
+      // A session_start consumer may publish before the first prompt, which is a
+      // valid starting worker. Identity always comes from the manager's record.
+      result = await this.options.onExtensionRequest?.({ ownerSessionId: parentId,
+        origin: { workerId: live.info.id, taskName: live.info.taskName, ...(live.info.sessionId ? { sessionId: live.info.sessionId } : {}) },
+        channel: request.channel, payload: request.payload })
+        ?? { ok: false, code: "unavailable", message: "Parent extension channel is unavailable." };
+    } catch (error) { result = channelFailure(error); }
+    // A late reply never recreates a child or holds one alive.
+    if (live.processFinished || live.expectedExit) return;
+    try {
+      await this.sendCommand(live, { type: "prompt", message: `/${EXTENSION_COMMAND} ${JSON.stringify({ version: 1, action: "result", requestId: request.requestId, result })}` }, EXTENSION_TIMEOUT_MS);
+    } catch { /* The original child deadline/session close reports the unknown result. */ }
   }
 
   /** Manager-local addressing never depends on a child's temporary pi-link connection. */
@@ -2242,6 +2363,12 @@ export class AgentManager {
       return;
     }
     if (event.type === "extension_ui_request" && event.method === "notify"
+      && typeof event.message === "string" && event.message.startsWith(EXTENSION_NOTIFY)) {
+      // Dispatch without blocking the response loop: handlers can make nested RPC requests.
+      void this.handleExtensionRequest(live, event.message.slice(EXTENSION_NOTIFY.length));
+      return;
+    }
+    if (event.type === "extension_ui_request" && event.method === "notify"
       && typeof event.message === "string" && event.message.startsWith(LINK_REPLY_NOTIFY)) {
       // Notification handling must not block the RPC response loop (the tool is still running).
       void this.handleLinkReply(live, event.message.slice(LINK_REPLY_NOTIFY.length));
@@ -2270,6 +2397,12 @@ export class AgentManager {
         this.adoptTerminalState(live, persisted);
         return;
       }
+    }
+    // An extension handler may admit actual user input after the prior run settles.
+    // Its in-flight command keeps the process owned; a native start is the evidence
+    // of a new run, not the handler's opaque JSON result.
+    if (event.type === "agent_start" && live.extensionDeliveries && live.info.status === "completed") {
+      live.finalizedRun = false;
     }
     if (event.type === "agent_start" && live.releasing) {
       live.finalizedRun = false;

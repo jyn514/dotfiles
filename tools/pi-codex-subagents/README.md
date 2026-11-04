@@ -339,6 +339,69 @@ Routing receipts acknowledge submission, not model read, and unknown outcomes ar
 No worker acknowledges a broadcast automatically, and several workers may independently ask the same question.
 See the installed pi-link skill for communication conventions.
 
+## Named extension channels
+
+Extensions can exchange JSON with an owned child without invoking the parent model.
+The helper uses the existing child RPC notifications and commands; it creates no additional process, socket, or message store.
+The transport interprets channel names and correlation IDs, not the payload's application semantics.
+For example, `ask-user` owns pending questions, presentation, cancellation, and answer validation; this package only reaches the originating worker.
+
+Discover the endpoint through `pi.events`, without importing this package:
+
+```ts
+let endpoint;
+const accept = candidate => {
+  if (candidate?.version !== 1 || endpoint === candidate) return;
+  endpoint = candidate;
+  // Register synchronously here, including when the offer arrives during startup.
+  endpoint.register("my-extension:sync", (payload, origin) => {
+    // origin exists on the parent only; the manager supplies its worker identity.
+    return { received: payload };
+  });
+};
+pi.events.on("subagents:extension-channel:v1", value => {
+  if (value?.version === 1 && value.endpoint) accept(value.endpoint);
+});
+pi.events.emit("subagents:extension-channel:v1", { version: 1, provide: accept });
+```
+
+The provider answers discovery `{ version: 1, provide(endpoint) }` and emits an offer `{ version: 1, endpoint }` on the same event when installed.
+Listen for offers before emitting discovery, so either extension load order works.
+The child helper installs before configured child extensions; the parent provider installs during deferred manager startup.
+Registration is available as soon as the endpoint appears; requests require a started session.
+Each extension runtime must rediscover and register after reload.
+
+Both endpoints have `version: 1`, `role: "parent" | "child"`, and `register(channel, handler)`, which returns an unsubscribe function.
+Channel names are nonempty, case-sensitive strings; duplicate registrations fail with `duplicate_channel`.
+Use an extension-owned name to avoid collisions.
+Payloads and handler results must be finite, acyclic JSON values, including `null`; `undefined` is not a result.
+Handlers may return a JSON value or a promise of one.
+
+- **Child:** `endpoint.request(channel, payload)` calls the parent's registered handler.
+  Its local handlers receive only `payload`.
+- **Parent:** `endpoint.request(workerId, channel, payload)` calls that exact managed worker's handler.
+  Its local handlers receive `(payload, origin)`, where `origin` is `{ workerId, taskName, sessionId? }` from manager-owned state, never child-supplied identity.
+  Use `workerId`, not a display/task name, for return routing.
+
+A request resolves to the handler's JSON result, not a model response or proof of input admission.
+A child handler may use Pi's normal user-input API when its application requires actual user input; the transport does not encode it as peer information.
+Handlers can make nested channel requests while another command is in flight.
+They must finish promptly: each cross-process handler acknowledgement has a five-second deadline, with bounded additional worker startup and cleanup time.
+
+Failures reject an `Error` with a stable `code`:
+`unsupported` for a fresh helper paired with an old parent, `unavailable` for a missing worker/channel, `inactive` for a paused or refused lifecycle state, `closed` for session/process closure, `timeout` for a deadline, `handler_error` for a thrown handler error, and `unknown` for other uncertain transport outcomes.
+Invalid local calls use `invalid_payload` or `invalid_channel`.
+A timeout, process closure, or unknown outcome can follow an application effect; never retry automatically.
+An old parent lacks the child-launch capability flag, so a new helper refuses immediately instead of silently publishing an invisible request.
+Restart the parent to load new transport support; replacing source or restarting only the child does not update its manager.
+
+Parent requests can reopen a completed worker's saved session but never failed, interrupted, suspended, or paused work.
+A command that starts no model run restores the completed state without fabricating a new completion.
+An in-flight handler keeps its process available through acknowledgement, including when the prior run settles concurrently.
+An unanswered application question does not keep a child process alive.
+The application extension owns persistence, stale-request validation, presentation cleanup, and any authoritative input-admission receipt.
+Late transport replies resolve only their original in-process request; they never reopen a worker or trigger a retry.
+
 ## Commands and TUI
 
 On Pi versions with historical message renderer support, collapsed completion headings show the colored status and agent name without reading the response body.

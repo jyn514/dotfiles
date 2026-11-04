@@ -520,8 +520,30 @@ There is no destructive browser Cancel control, expiry, or false blocked-agent s
 Navigating away leaves them pending.
 
 Dashboard absence leaves the terminal workflow unchanged and does not install or import Dashboard.
-The tool still requires Pi's TUI mode; browser-created sessions use the configured tmux launcher rather than RPC.
+The root question panel requires Pi's TUI mode; browser-created root sessions use the configured tmux launcher rather than RPC.
+Managed RPC children can use the parent panel through the subagent extension channel described below.
 See [Dashboard setup and operation](../README.md#browser-and-phone-access).
+
+### Questions from subagents
+
+With the current [subagent manager](../../../tools/pi-codex-subagents/README.md) and this extension loaded in both sessions, children can call `ask_user` directly.
+Their questions appear in the parent's Alt+A panel and browser queue with the originating task name.
+Answers enter that child's conversation as user steering, not the parent model or a sibling conversation.
+The child can finish independent work and exit before you answer; the manager reopens its saved conversation when the answer arrives.
+Paused, interrupted, or failed children are not automatically resumed.
+
+The child's transcript owns pending questions and cancellations.
+The parent persists a presentation copy so its panel survives reload; the child checks that a question remains pending before accepting an answer.
+Snapshots containing child questions use a new format version so older readers reject them rather than mistake a child's answer for parent input.
+Forked children retain separate presentation identities even when their copied question IDs match.
+A child can cancel its own questions with `cancel_ask_user`; the parent's tool cannot cancel a child's authoritative queue.
+Routing failures retain the answer draft for retry and do not send it to the parent instead.
+If publication fails after saving, the tool reports that questions remain saved but their presentation is not confirmed.
+An RPC session without a child channel cannot queue questions through this tool.
+
+Start a fresh Pi process after updating the manager and this extension.
+An already-loaded older manager does not gain the transport when it launches a newly updated child helper.
+The helper rejects that unsupported pairing rather than waiting for a missing response.
 
 ### Cancelling obsolete questions
 

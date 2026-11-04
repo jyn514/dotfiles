@@ -5,6 +5,7 @@ import {
 } from "./handoff.js";
 
 import { registerChildLink } from "./child-link.js";
+import { registerChildExtensionChannel } from "./extension-channel.js";
 import { readChildPrompt } from "./child-prompt.js";
 /** Explicitly loaded before template extensions; this helper owns no AgentInfo. */
 export default function childHelper(pi: ExtensionAPI): void {
@@ -17,6 +18,7 @@ export default function childHelper(pi: ExtensionAPI): void {
       role,
     ];
   });
+  registerChildExtensionChannel(pi);
   registerChildLink(pi);
   const replay = new SessionReplay(pi);
   let generation: string | undefined;

@@ -3,6 +3,8 @@ import type { ExtensionAPI, ExtensionContext, MarkdownTransformer, Theme } from 
 import { type Component, getKeybindings, Markdown, type MarkdownTheme, visibleWidth } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import askUser from "../../config/pi-agent/pi-extensions/ask-user";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 
 const ESC = "\x1b";
 const LEFT = "\x1b[1;3D";
@@ -71,7 +73,7 @@ function dashboard(events: ReturnType<typeof eventBus>) {
   };
 }
 
-function host(before?: (events: ReturnType<typeof eventBus>) => void) {
+function host(before?: (events: ReturnType<typeof eventBus>) => void, mode = "tui") {
   const events = eventBus();
   before?.(events);
   const tools = new Map<string, any>();
@@ -108,7 +110,7 @@ function host(before?: (events: ReturnType<typeof eventBus>) => void) {
     },
   } as unknown as ExtensionAPI;
   const ctx = {
-    mode: "tui", hasUI: true,
+    mode, hasUI: true,
     sessionManager: { getSessionId: () => sessionId, getBranch: () => entries },
     ui: {
       notify(text: string) { notifications.push(text); },
@@ -137,11 +139,11 @@ function host(before?: (events: ReturnType<typeof eventBus>) => void) {
     display(markdown: string, messageType: "user" | "assistant" | "assistant-thinking" = "user", availableWidth = 140, isStreaming = false) {
       return transformer(markdown, { messageType, availableWidth, isStreaming });
     },
-    async ask(questions: any[], mode = "tui", signal?: AbortSignal) {
-      return tools.get("ask_user").execute("call", { questions }, signal, undefined, { ...ctx, mode });
+    async ask(questions: any[], selectedMode = mode, signal?: AbortSignal) {
+      return tools.get("ask_user").execute("call", { questions }, signal, undefined, { ...ctx, mode: selectedMode });
     },
-    async cancel(question_ids: any, mode = "tui", signal?: AbortSignal) {
-      return tools.get("cancel_ask_user").execute("cancel", { question_ids }, signal, undefined, { ...ctx, mode });
+    async cancel(question_ids: any, selectedMode = mode, signal?: AbortSignal) {
+      return tools.get("cancel_ask_user").execute("cancel", { question_ids }, signal, undefined, { ...ctx, mode: selectedMode });
     },
     open() { return shortcuts.get("alt+a")!(ctx) as Promise<void>; },
     key(data: string) { component!.handleInput!(data); },
@@ -611,6 +613,225 @@ describe("asynchronous ask_user", () => {
 
 
 const flushBrowser = async () => { await Promise.resolve(); await Promise.resolve(); };
+const flushChannel = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+// In-memory implementation of the documented structural channel interface.
+// Production subprocess transport is exercised separately by native RPC tests.
+function questionNetwork() {
+  const event = "subagents:extension-channel:v1";
+  const parentHandlers = new Map<string, Function>();
+  const workers = new Map<string, { origin: any; handlers: Map<string, Function> }>();
+  const register = (handlers: Map<string, Function>, channel: string, handler: Function) => {
+    handlers.set(channel, handler);
+    return () => { if (handlers.get(channel) === handler) handlers.delete(channel); };
+  };
+  let publishError = false;
+  let answerError = false;
+  let holdAnswer: (() => Promise<void>) | undefined;
+  let requests = 0;
+  const parentEndpoint = {
+    version: 1, role: "parent",
+    register: (channel: string, handler: Function) => register(parentHandlers, channel, handler),
+    async request(workerId: string, channel: string, payload: unknown) {
+      requests++;
+      await holdAnswer?.();
+      if (answerError) throw new Error("worker paused");
+      const handler = workers.get(workerId)?.handlers.get(channel);
+      if (!handler) throw new Error("worker unavailable");
+      return handler(payload);
+    },
+  };
+  const install = (events: ReturnType<typeof eventBus>, endpoint: any) => {
+    events.on(event, value => { if (value?.version === 1 && typeof value.provide === "function") value.provide(endpoint); });
+    events.emit(event, { version: 1, endpoint });
+  };
+  const parent = host(events => install(events, parentEndpoint));
+  return {
+    parent,
+    child(workerId = "worker-a", early = true) {
+      const record = { origin: { workerId, taskName: `/${workerId}`, sessionId: `session-${workerId}` }, handlers: new Map<string, Function>() };
+      workers.set(workerId, record);
+      const endpoint = { version: 1, role: "child",
+        register: (channel: string, handler: Function) => register(record.handlers, channel, handler),
+        async request(channel: string, payload: unknown) {
+          if (publishError) throw new Error("presentation unavailable");
+          const handler = parentHandlers.get(channel);
+          if (!handler) throw new Error("parent unavailable");
+          return handler(payload, record.origin);
+        },
+      };
+      const child = host(early ? events => install(events, endpoint) : undefined, "rpc");
+      if (!early) install(child.events, endpoint);
+      return child;
+    },
+    get requests() { return requests; },
+    set publishError(value: boolean) { publishError = value; },
+    set answerError(value: boolean) { answerError = value; },
+    set holdAnswer(value: (() => Promise<void>) | undefined) { holdAnswer = value; },
+    parentHandlers,
+  };
+}
+
+describe("subagent question presentation", () => {
+  test("both load orders present questions and deliver one actual user answer only to the originating child", async () => {
+    for (const early of [true, false]) {
+      const n = questionNetwork();
+      const child = n.child("desktop", early);
+      const queued = await child.ask([question("Plover launch command", ["AppImage", "distro"])]);
+      expect(n.parent.widget).toEqual(["1 pending question(s) · Alt+A to answer"]);
+      expect(child.customCalls).toBe(0);
+      const open = n.parent.open();
+      expect(n.parent.text()).toContain("/desktop — Plover launch command");
+      n.parent.key(DOWN); n.parent.key(ENTER);
+      await flushChannel(); await open;
+      expect(child.messages).toEqual([{
+        content: `Answer to ask_user ${queued.details.questions[0].id}\nTitle: "Plover launch command"\n\n> Decide Plover launch command?\n\ndistro`,
+        options: { deliverAs: "steer" },
+      }]);
+      expect(n.parent.messages).toEqual([]);
+      expect(child.entries.at(-1).data.questions).toEqual([]);
+      expect(n.parent.widget).toBeUndefined();
+    }
+  });
+
+  test("parent and sibling drafts stay separate even for forked same-ID questions", async () => {
+    const n = questionNetwork();
+    await n.parent.ask([question("parent")]);
+    const a = n.child("a"); const b = n.child("b");
+    const saved = { type: "custom", customType: "dotfiles-ask-user", data: {
+      version: 1, questions: [{ id: "retained-id", ...question("forked") }],
+    } };
+    for (const child of [a, b]) { child.entries = [structuredClone(saved)]; child.emit("session_tree"); }
+    await flushChannel();
+    expect(n.parent.entries.at(-1).data.questions.map((q: any) => q.id)).toEqual([
+      n.parent.entries[0].data.questions[0].id, "a/retained-id", "b/retained-id",
+    ]);
+    const open = n.parent.open(); n.parent.key("parent draft"); n.parent.key(RIGHT);
+    n.parent.key("a answer"); n.parent.key(ENTER);
+    await flushChannel();
+    expect(a.messages).toHaveLength(1); expect(b.messages).toHaveLength(0);
+    expect(n.parent.messages).toHaveLength(0);
+    n.parent.key(LEFT); expect(n.parent.text()).toContain("parent draft");
+    n.parent.key(ESC); await open;
+  });
+
+  test("older queue readers reject remote projections instead of treating child answers as parent input", async () => {
+    const n = questionNetwork(); const child = n.child();
+    await child.ask([question("child")]);
+    // The pre-channel reader's actual persisted schema, including its permissive
+    // question objects: adding origin fields under v1 would NOT protect routing.
+    const legacyReader = Type.Object({ version: Type.Literal(1), questions: Type.Array(Type.Object({
+      id: Type.String({ minLength: 1 }), title: Type.String({ minLength: 1 }),
+      question: Type.String({ minLength: 1 }), options: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    })) });
+    const projection = n.parent.entries.at(-1).data;
+    expect(Check(legacyReader, projection)).toBe(false);
+    expect(Check(legacyReader, child.entries.at(-1).data)).toBe(true);
+    n.parent.emit("session_tree");
+    const open = n.parent.open(); expect(n.parent.text()).toContain("/worker-a — child");
+    n.parent.key(ESC); await open;
+    expect(n.parent.messages).toEqual([]);
+  });
+
+  test("child cancellation removes both surfaces, preserves other drafts and survives parent reload", async () => {
+    const n = questionNetwork(); const browser = dashboard(n.parent.events);
+    const child = n.child();
+    const queued = await child.ask([question("obsolete"), question("keep")]);
+    const open = n.parent.open(); n.parent.key(RIGHT); n.parent.key("keep draft");
+    await child.cancel([queued.details.questions[0].id]);
+    await flushChannel();
+    expect(n.parent.text()).toContain("keep draft");
+    expect(browser.pending.size).toBe(1);
+    // Parent tools cannot cancel another session's authoritative question.
+    const projectedId = n.parent.entries.at(-1).data.questions[0].id;
+    expect((await n.parent.cancel([projectedId])).details.notPending).toEqual([projectedId]);
+    n.parent.emit("session_tree"); await open;
+    const reopened = n.parent.open();
+    expect(n.parent.text()).toContain("keep"); expect(n.parent.text()).not.toContain("obsolete");
+    await child.cancel([queued.details.questions[1].id]);
+    await flushChannel(); await reopened;
+    expect(browser.pending.size).toBe(0); expect(child.messages).toEqual([]);
+  });
+
+  test("rejected routing preserves the answer draft; concurrent submit does not send twice", async () => {
+    const n = questionNetwork(); const child = n.child();
+    await child.ask([question("scope")]);
+    const open = n.parent.open(); n.parent.key("draft to child");
+    n.answerError = true; n.parent.key(ENTER); await flushChannel();
+    expect(n.parent.text()).toContain("worker paused"); expect(n.parent.text()).toContain("draft to child");
+    expect(child.messages).toEqual([]);
+    n.answerError = false;
+    let release!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    n.holdAnswer = () => barrier;
+    const before = n.requests;
+    n.parent.key(ENTER); n.parent.key(ENTER);
+    expect(n.requests - before).toBe(1);
+    release(); await flushChannel(); await open;
+    expect(child.messages).toHaveLength(1); expect(n.parent.messages).toEqual([]);
+  });
+
+  test("browser submits multiline child answer without consuming a sibling or parent question", async () => {
+    const n = questionNetwork(); const browser = dashboard(n.parent.events);
+    const child = n.child(); const sibling = n.child("other");
+    await n.parent.ask([question("parent")]);
+    await child.ask([question("child")]); await sibling.ask([question("other")]);
+    const prompt = [...browser.pending.values()].find(({ prompt }) => prompt.question === "/worker-a — child")!.prompt;
+    browser.respond({ id: prompt.id, answer: "line one\nline two", source: "dashboard" });
+    await flushChannel();
+    expect(child.messages).toHaveLength(1);
+    expect(child.messages[0].content).toEndWith("line one\nline two");
+    expect(sibling.messages).toEqual([]); expect(n.parent.messages).toEqual([]);
+    expect(browser.pending.size).toBe(2);
+  });
+
+  test("presentation failures retain authoritative questions, while failed persistence publishes nothing", async () => {
+    const n = questionNetwork(); const child = n.child();
+    await flushChannel();
+    child.failPersist = true;
+    await expect(child.ask([question("not saved")])).rejects.toThrow("disk unavailable");
+    expect(n.parent.widget).toBeUndefined();
+    child.failPersist = false; n.publishError = true;
+    await expect(child.ask([question("saved but unseen")])).rejects.toThrow("saved pending questions");
+    expect(child.entries.at(-1).data.questions[0].title).toBe("saved but unseen");
+    expect(n.parent.widget).toBeUndefined();
+    n.publishError = false; child.emit("session_tree"); await flushChannel();
+    expect(n.parent.widget).toEqual(["1 pending question(s) · Alt+A to answer"]);
+    n.parent.failPersist = true;
+    await expect(child.ask([question("not confirmed")])).rejects.toThrow("presentation was not confirmed");
+    expect(n.parent.entries.at(-1).data.questions).toHaveLength(1);
+  });
+
+  test("stale or cancelled child questions never become parent user input", async () => {
+    const n = questionNetwork(); const child = n.child();
+    const queued = await child.ask([question("scope")]);
+    const cache = structuredClone(n.parent.entries);
+    await child.cancel([queued.details.questions[0].id]);
+    n.parent.entries = cache; n.parent.emit("session_tree");
+    const open = n.parent.open(); n.parent.key("stale answer"); n.parent.key(ENTER);
+    await flushChannel(); await open;
+    expect(child.messages).toEqual([]); expect(n.parent.messages).toEqual([]);
+    expect(n.parent.widget).toBeUndefined();
+  });
+
+  test("malformed snapshots and manager-less RPC never queue invisible questions", async () => {
+    const n = questionNetwork(); n.child(); await flushChannel();
+    const handler = n.parentHandlers.get("dotfiles-ask-user:v1")!;
+    expect(() => handler({ kind: "sync", questions: [{ id: "x", title: "bad" }] }, {
+      workerId: "x", taskName: "/x",
+    })).toThrow("Invalid remote");
+    // Only the manager can bind origin; tool input and child payloads cannot
+    // smuggle another worker's destination through extra question properties.
+    const origin = { workerId: "victim", taskName: "/victim" };
+    expect(() => handler({ kind: "sync", questions: [{ id: "x", ...question("forged"), origin }] }, {
+      workerId: "x", taskName: "/x",
+    })).toThrow("Invalid remote");
+    await expect(n.parent.ask([{ ...question("forged"), origin }])).rejects.toThrow("requires non-empty");
+    const child = host(undefined, "rpc");
+    await expect(child.ask([question("invisible")])).rejects.toThrow("requires interactive TUI");
+    expect(child.entries).toEqual([]);
+  });
+});
 
 describe("Dashboard question queue adapter", () => {
   test("event bus permits multiple listeners and unsubscribe", () => {

@@ -48,6 +48,7 @@
     "child-helper.ts",
     "child-prompt.ts",
     "child-link.ts",
+    "extension-channel.ts",
     "link.ts",
     "suspension.ts",
     "restart-control.ts",

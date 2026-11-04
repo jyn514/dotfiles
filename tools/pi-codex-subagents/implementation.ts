@@ -23,6 +23,7 @@ import {
   writeFullToolOutput,
 } from "./core.js";
 import { LINK_DISCOVER, LINK_REPLY, LINK_VERSION, linkFailure, type LinkDiscovery, type LinkResult, type LinkWorkerReply } from "./link.js";
+import { channelRegistry, ExtensionChannelError, provideExtensionEndpoint } from "./extension-channel.js";
 import { SubagentPeekOverlay } from "./peek.js";
 import { startRestartController } from "./restart-control.js";
 import { SuspensionCoordinator } from "./suspension.js";
@@ -186,7 +187,14 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
     pi.sendMessage(completionMessage(event), { deliverAs: "steer", triggerTurn: true });
   };
 
+  const extensionChannels = channelRegistry();
   const manager = new AgentManager({
+    onExtensionRequest: async event => {
+      if (!isCurrentSession(event.ownerSessionId) || suspension?.isPaused(event.ownerSessionId)) {
+        return { ok: false, code: "inactive", message: "Parent session is not active or is paused." };
+      }
+      return extensionChannels.receive(event.channel, event.payload, event.origin);
+    },
     onActivityChange: (event) => {
       if (!isCurrentSession(event.parentSessionId)) return;
       if (event.active) activeAgents.add(event.agentName);
@@ -206,6 +214,19 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
       if (!response) return linkFailure("unsupported", "link_integration_unavailable");
       if (activeContext !== ctx || !isCurrentSession(event.ownerSessionId)) return linkFailure("skipped", "parent_session_changed");
       return response;
+    },
+  });
+
+  provideExtensionEndpoint(pi, {
+    version: 1, role: "parent", register: extensionChannels.register,
+    async request(workerId, channel, payload) {
+      const ctx = activeContext;
+      if (!ctx) throw new ExtensionChannelError("closed", "Parent session is not started.");
+      const owner = parentSessionId(ctx);
+      if (suspension?.isPaused(owner)) throw new ExtensionChannelError("inactive", "Parent session is paused.");
+      const result = await manager.requestExtension(owner, workerId, channel, payload);
+      if (activeContext !== ctx || !isCurrentSession(owner)) throw new ExtensionChannelError("closed", "Parent session changed; request outcome is unknown.");
+      return result;
     },
   });
 
