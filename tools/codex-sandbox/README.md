@@ -290,6 +290,8 @@ It saves each ordinary resolution immediately so failed builds do not repeat reg
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
 a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
 An explicit image resolver overrides this convention.
+Every project base image must provide a compatible `node` executable on `PATH` for Pi runtime staging and runtime checks.
+The base does not need to provide npm; the agent build mounts its pinned npm toolchain separately.
 Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported for external repositories.
 Version 1 source manifests reject version 2 image declarations; enabling `flower-r2` requires version 2.
 See [compatibility and migration](spec/launcher-interface.typ) for supported legacy builders and backends.
