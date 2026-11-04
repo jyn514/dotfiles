@@ -460,6 +460,11 @@ no-exec in the proxy. Where needed, allow only named, hard-coded Jujutsu
 built-ins such as `:git`; configuration cannot redefine an allowed built-in.
 Reject alternate workspace, operation-store, or configuration paths in every syntactic position.
 Only the checked repository selector described above is permitted.
+Operation selectors `--at-operation` and `--at-op` (separate or attached values) are permitted only with commands matching inspection rules.
+They may precede the command or occur between or after its tokens; matching removes selectors but execution preserves the original arguments.
+Selectors after `--` remain operands.
+Accepted operation selectors force the existing read-only executor, without mutation locks or author hooks, even for an authorized repository.
+Caller-supplied `--ignore-working-copy` remains forbidden.
 
 Git fetch accepts any pre-existing configured remote.
 Jujutsu resolves remote selections and uses its normal defaults when none are supplied.

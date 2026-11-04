@@ -164,10 +164,40 @@ pub fn extract_repository(argv: &[String]) -> Result<(Option<String>, Vec<String
     Ok((repository, command))
 }
 
+/// Remove operation selectors only for command matching. Preserve the original
+/// argv for JJ, and stop at `--` so literal operands cannot select execution mode.
+fn operation_command(argv: &[String]) -> Result<(Vec<String>, bool)> {
+    let mut command = Vec::with_capacity(argv.len());
+    let mut selected = false;
+    let mut args = argv.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            command.push(arg.clone());
+            command.extend(args.cloned());
+            break;
+        }
+        if matches!(option_name(arg), "--at-operation" | "--at-op") {
+            let value = match arg.split_once('=') {
+                Some((_, value)) => value,
+                None => args.next().ok_or_else(|| eyre!("{arg} requires an operation"))?,
+            };
+            if value.is_empty() || value.starts_with('-') {
+                bail!("operation selector requires a nonempty operation: {arg}");
+            }
+            selected = true;
+        } else {
+            command.push(arg.clone());
+        }
+    }
+    Ok((command, selected))
+}
+
 fn evaluate(policy: &Policy, argv: &[String], inspect: bool) -> Result<Decision> {
     validate_shape(argv)?;
-    let rule = policy.rule_for(argv, inspect)?;
-    reject_security_options(&policy.global, &argv[rule.path.len()..])?;
+    reject_security_options(&policy.global, argv)?;
+    let (command, operation_selected) = operation_command(argv)?;
+    let inspect = inspect || operation_selected;
+    let rule = policy.rule_for(&command, inspect)?;
     Ok(Decision {
         read_only: inspect,
         updates_author: rule.updates_author,
@@ -402,7 +432,7 @@ mod tests {
         assert!(check(&["log", "--future-jj-option", "value"]));
         assert!(check(&["op", "log"]));
         assert!(check(&["op", "show", "@"]));
-        assert!(!check(&["op", "log", "--at-operation", "@-"]));
+        assert!(check(&["op", "log", "--at-operation", "@-"]));
         assert!(check(&["help"]));
         assert!(check(&["git", "root"]));
         assert!(check(&["commit", "-m", "literal; $(touch nope)", "src/main.rs"]));
@@ -441,7 +471,7 @@ mod tests {
                 assert_eq!(decision.read_only, inspect);
                 assert!(!decision.updates_author);
             }
-            for option in ["--config=ui.editor=evil", "--ignore-working-copy", "--at-op=@"] {
+            for option in ["--config=ui.editor=evil", "--ignore-working-copy"] {
                 for args in [["--version", option], [option, "--version"]] {
                     let argv = args.map(str::to_owned);
                     assert!(evaluate(&policy, &argv, inspect).is_err(),
@@ -455,12 +485,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_caller_working_copy_controls_in_both_modes() {
+    fn rejects_caller_working_copy_suppression_in_both_modes() {
         let policy = checked_in_policy().unwrap();
         let forbidden = [
             vec!["--ignore-working-copy"], vec!["--ignore-working-copy=true"],
-            vec!["--at-operation", "@"], vec!["--at-operation=@"],
-            vec!["--at-op", "@"], vec!["--at-op=@"],
         ];
         for (inspect, command) in [
             (true, vec!["status", "--no-pager"]),
@@ -490,6 +518,73 @@ mod tests {
     }
 
     #[test]
+    fn operation_selectors_require_inspection_permissions_and_preserve_argv() {
+        let policy = checked_in_policy().unwrap();
+        for inspect in [false, true] {
+            for command in [
+                vec!["log", "-r", "@"], vec!["op", "show", "@"],
+                vec!["file", "show", "src/main.rs"], vec!["git", "remote", "list"],
+                vec!["--version"],
+            ] {
+                for selector in [
+                    vec!["--at-op", "@-"], vec!["--at-op=@-"],
+                    vec!["--at-operation", "@-"], vec!["--at-operation=@-"],
+                ] {
+                    for position in 0..=command.len() {
+                        let mut argv = command.clone();
+                        argv.splice(position..position, selector.iter().copied());
+                        // Repository extraction must not erase the operation selector.
+                        for repository in [vec![], vec!["-R", "/home/codex/src/selected"]] {
+                            let input = [repository, argv.clone()].concat()
+                                .into_iter().map(str::to_owned).collect::<Vec<_>>();
+                            let (_, argv) = extract_repository(&input).unwrap();
+                            let decision = evaluate(&policy, &argv, inspect).unwrap();
+                            assert!(decision.read_only, "{input:?}");
+                            assert!(!decision.updates_author);
+                            assert_eq!(decision.argv, argv);
+                        }
+                    }
+                }
+            }
+            for command in [
+                vec!["squash"], vec!["restore"], vec!["rebase"], vec!["commit", "-m", "msg"],
+                vec!["file", "track", "file"], vec!["workspace", "add", "other"],
+                vec!["git", "fetch"], vec!["git", "remote", "add", "test", "url"],
+                vec!["op", "restore", "@-"], vec!["unknown"], vec!["op"],
+            ] {
+                for position in 0..=command.len() {
+                    let mut argv = command.clone();
+                    argv.insert(position, "--at-op=@-");
+                    let argv = argv.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                    assert!(evaluate(&policy, &argv, inspect).is_err(), "accepted {argv:?}");
+                }
+            }
+            for args in [
+                vec!["--at-op"], vec!["log", "--at-op"], vec!["--at-operation=", "log"],
+                vec!["log", "--at-op", ""], vec!["--at-op", "--", "log"],
+                vec!["log", "--at-op=@", "--config=aliases.x=evil"],
+                vec!["--at-op=@", "log", "--tool", "/tmp/tool"],
+                vec!["log", "--at-op=@", "--ignore-working-copy"],
+                vec!["--at-op=@"], vec!["--at-op=@", "--", "log"],
+            ] {
+                let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                assert!(evaluate(&policy, &argv, inspect).is_err(), "accepted {argv:?}");
+            }
+        }
+        // An operand after `--` does not change mutation execution or hooks.
+        let argv = ["commit", "-m", "msg", "--", "--at-op=@"].map(str::to_owned);
+        let decision = policy.validate(&argv).unwrap();
+        assert!(!decision.read_only);
+        assert!(decision.updates_author);
+        assert_eq!(decision.argv, argv);
+        // Inspection permissions remain data-driven, not a new command allowlist.
+        let compact = Policy::parse(COMPACT_POLICY).unwrap();
+        let argv = ["--at-op=@", "history", "show"].map(str::to_owned);
+        assert!(compact.validate(&argv).unwrap().read_only);
+        assert!(compact.validate(&["--at-op=@".into(), "log".into()]).is_err());
+    }
+
+    #[test]
     fn inspection_accepts_only_observational_commands() {
         let check = |args: &[&str]| validate_inspect(&args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()).is_ok();
         assert!(check(&["file", "show", "src/main.rs"]));
@@ -497,7 +592,7 @@ mod tests {
         assert!(check(&["op", "log"]));
         assert!(check(&["op", "log", "--no-graph"]));
         assert!(check(&["op", "show", "@"]));
-        assert!(!check(&["op", "log", "--at-operation", "@-"]));
+        assert!(check(&["op", "log", "--at-operation", "@-"]));
         for args in [
             &["op", "restore", "@-"][..], &["file", "track", "src/main.rs"][..], &["file", "untrack", "src/main.rs"][..],
             &["file", "chmod", "+x", "src/main.rs"][..], &["workspace", "add", "other"][..], &["status", "--repository", "/home/codex/src/other"][..],

@@ -394,6 +394,20 @@ impl Runtime<'_> {
         command
     }
 
+    fn inspection_command(&self, user: &str, email: &str) -> Command {
+        // As with mutation_command, native orchestration tests use real JJ
+        // directly; container tests cover self-exec and Landlock enforcement.
+        #[cfg(test)]
+        if self.source != Path::new(SOURCE_ROOT) {
+            let mut command = self.command(Some((user, email)));
+            command.arg("--ignore-working-copy");
+            return command;
+        }
+        let mut command = Command::new(TRUSTED_PROXY);
+        command.args(["inspect-jj", user, email]);
+        command
+    }
+
     fn command(&self, identity: Option<(&str, &str)>) -> Command {
         let mut command = Command::new(self.jj);
         command.args(["--no-pager", "--color=never", "--config-file"]).arg(self.config);
@@ -467,6 +481,17 @@ fn execute_with_runtime(
         Err(error) => return failure(error.to_string()),
     };
     let inspect = authority.is_none();
+    let decision = if request.agent_split.is_none() {
+        let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv) };
+        match validation {
+            Ok(decision) => Some(decision),
+            Err(error) => return failure(error.to_string()),
+        }
+    } else { None };
+    // A selector can only reduce authority. Use the same read-only child and
+    // skip mutation locks and hooks even when the repository permits writes.
+    let inspect = inspect || decision.as_ref().is_some_and(|decision| decision.read_only);
+    let authority = authority.filter(|_| !inspect);
     let linked_root = if let Some(authority) = authority.filter(|entry| Path::new(&entry.root) != workspace) {
         let fd = match open_cwd(root, workspace.to_str().unwrap(), runtime.source) {
             Ok(fd) => fd, Err(error) => return failure(error.to_string()),
@@ -475,13 +500,6 @@ fn execute_with_runtime(
             return failure(error.to_string());
         }
         Some(fd)
-    } else { None };
-    let decision = if request.agent_split.is_none() {
-        let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv) };
-        match validation {
-            Ok(decision) => Some(decision),
-            Err(error) => return failure(error.to_string()),
-        }
     } else { None };
     let argv = decision.as_ref().map_or(argv, |decision| decision.argv.clone());
     let updates_author = request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
@@ -530,9 +548,7 @@ fn execute_with_runtime(
     }
 
     let mut command = if inspect {
-        let mut command = Command::new(TRUSTED_PROXY);
-        command.args(["inspect-jj", user, email]);
-        command
+        runtime.inspection_command(user, email)
     } else {
         runtime.mutation_command(Some((user, email)), authority.unwrap(), linked_root.as_ref())
     };
@@ -1006,6 +1022,61 @@ mod tests {
         Workspace { root: repo.to_str().unwrap().into(), git_dir: repo.join(".jj/repo/store/git").to_str().unwrap().into(),
             common_dir: repo.join(".jj/repo/store/git").to_str().unwrap().into(),
             jj_repo: repo.join(".jj/repo").to_str().unwrap().into(), lock: root.join(format!("{name}.lock")).to_str().unwrap().into() }
+    }
+
+    #[test]
+    fn real_jj_operation_selection_is_read_only_even_with_mutation_authority() {
+        let Some(jj) = real_jj() else { eprintln!("SKIP operation selection: no real JJ"); return; };
+        let root = env::temp_dir().join(format!("jj-proxy-operation-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let project = root.join("project");
+        native(&jj, &root, &["git", "init", "--no-colocate", project.to_str().unwrap()]);
+        let workspaces = vec![test_authority(&root, "project")];
+        fs::write(&workspaces[0].lock, "").unwrap();
+        let source = File::open(&root).unwrap();
+        let config = root.join("trusted.toml");
+        fs::write(&config, include_str!("../jj.toml")).unwrap();
+        let config_home = root.join("config");
+        fs::create_dir_all(&config_home).unwrap();
+        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config,
+            config_home: &config_home, after_author_update: None };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let before = native(&jj, &root, &["-R", project.to_str().unwrap(), "--ignore-working-copy",
+            "op", "log", "--no-graph", "-T", "id"]);
+        fs::write(project.join("unsnapshotted"), "disk edit\n").unwrap();
+        let lock = acquire_lock(Path::new(&workspaces[0].lock), Instant::now() + Duration::from_secs(1)).unwrap();
+        let run = |args: &[&str], mode| {
+            let request = Request { version: PROTOCOL_VERSION, mode, cwd: project.to_str().unwrap().into(),
+                argv: args.iter().map(|arg| (*arg).into()).collect(), agent_split: None,
+                user: Some("Inspection agent".into()), email: Some("inspect@example.test".into()) };
+            execute_with_runtime(&request, &policy, source.as_raw_fd(), &workspaces,
+                root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(5), None)
+        };
+        for mode in [RequestMode::Mutate, RequestMode::Inspect] {
+            for args in [
+                vec!["--at-op", "@-", "log", "--no-graph", "-T", "commit_id"],
+                vec!["op", "--at-operation=@-", "show"],
+                vec!["-R", ".", "file", "list", "--at-op=@"],
+            ] {
+                let response = run(&args, mode);
+                assert_eq!(0, response.exit, "{args:?}: {}", response.stderr);
+                assert!(!response.stdout.contains("unsnapshotted"));
+            }
+            let response = run(&["--at-op=@", "squash"], mode);
+            assert_eq!(2, response.exit);
+            assert!(response.stderr.contains("command is not allowed"), "{}", response.stderr);
+        }
+        assert_eq!(before, native(&jj, &root, &["-R", project.to_str().unwrap(), "--ignore-working-copy",
+            "op", "log", "--no-graph", "-T", "id"]), "inspection changed repository operations");
+        drop(lock);
+        // The same request without an operation selector retains snapshot behavior.
+        let response = run(&["status"], RequestMode::Mutate);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert!(response.stdout.contains("unsnapshotted"));
+        assert_ne!(before, native(&jj, &root, &["-R", project.to_str().unwrap(), "--ignore-working-copy",
+            "op", "log", "--no-graph", "-T", "id"]));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

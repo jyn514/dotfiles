@@ -1,7 +1,7 @@
 [global]
 forbidden_options = [
   "--repository", "-R", "--workspace", "--config", "--config-file",
-  "--config-toml", "--operation", "--at-operation", "--at-op",
+  "--config-toml", "--operation",
   "--ignore-working-copy", "--tool", "--editor",
   "--pager", "--sign", "--signing-key", "--ssh-command",
 ]

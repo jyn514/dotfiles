@@ -61,6 +61,8 @@ For linked mutation, a restricted child grants writes only to the pinned workspa
 It rejects scopes containing nested mounts or another protected repository's metadata rather than allowing a mutable workspace pointer to cross repository locks.
 Explicit inspection remains read-only even for an authorized root.
 Inspection uses `--ignore-working-copy` and a separate read-only Landlock policy; state-changing commands are rejected.
+Operation selectors (`--at-operation` or `--at-op`, with separate or `=` values) also require inspection permissions and select this executor, even for an authorized root.
+For example, `jj --at-op=@- log` inspects earlier history without snapshotting; `jj --at-op=@- squash` is rejected.
 Inspection of linked workspaces requires their metadata to be visible in the proxy container.
 For a repository with a Jujutsu secure-config ID, the trusted proxy prepares a
 private config-cache entry before inspection. It never initializes or rewrites
@@ -212,9 +214,14 @@ Both allow `git remote list --help`, but neither allows `git remote add` or `git
 Mutation entries take precedence over inherited inspection entries; within each section, the longest matching prefix selects the rule's metadata.
 Unknown fields are rejected; there are no `prefix`, `kind`, or `approved_remote` fields.
 
-`[global]` defines `forbidden_options` and `forbidden_prefixes` lists. The evaluator checks options after the matched command path: exact option names are compared before `=`, while forbidden prefixes match the option name. Ordinary option and operand validation remains with the pinned Jujutsu binary.
-Both inspection and mutation requests reject caller-supplied `--ignore-working-copy` and operation selectors in every argument position.
-Forbidden selectors include `--at-operation` and `--at-op`, including attached values.
+`[global]` defines `forbidden_options` and `forbidden_prefixes` lists.
+The evaluator checks all arguments: exact option names are compared before `=`, while forbidden prefixes match the option name.
+Ordinary option and operand validation remains with the pinned Jujutsu binary.
+Both inspection and mutation requests reject caller-supplied `--ignore-working-copy` in every argument position.
+Operation selectors may precede the command or appear between or after its tokens, but require a nonempty operation value.
+The evaluator removes them only for matching the complete command against inspection rules and passes the original arguments to Jujutsu.
+Selectors after `--` are operands and do not change execution mode.
+An accepted operation selector forces read-only execution without mutation locks or author hooks.
 The trusted inspection executor adds its own `--ignore-working-copy` only after request validation.
 Rebuild the proxy image and recreate the server to apply policy changes; an already-running server retains its startup policy.
 
