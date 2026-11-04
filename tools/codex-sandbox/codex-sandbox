@@ -2760,6 +2760,17 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
                 f"pane {pane}: session and sandbox working directories differ; "
                 "resume the session from its original directory. No sessions were stopped"
             )
+    # Build through the same side-effect-free preparation path as /cd before
+    # suspending Pi. The replacement launch revalidates and reuses these images.
+    repositories = sorted({str(Path(str(item["repository"])).resolve())
+                           for item in registrations})
+    try:
+        for selected_repository in repositories:
+            run([
+                str(Path(__file__).resolve()), "prepare-cd", selected_repository,
+            ], capture=True)
+    except subprocess.CalledProcessError as error:
+        raise LauncherError("Sandbox image preparation failed; no sessions were stopped") from error
     resumed_controls = [registration for registration in registrations if registration["version"] == 3]
     controlled = [registration for registration in resumed_controls if not registration["dead"]]
     if controlled:

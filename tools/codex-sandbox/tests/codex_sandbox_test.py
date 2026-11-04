@@ -2248,6 +2248,45 @@ class CodexSandboxTest(unittest.TestCase):
                 helper.assert_not_called()
                 kill.assert_not_called()
 
+    def test_restart_prepares_each_repository_before_suspending_sessions(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        first = self.restart_registration(control=self.root / "first.sock")
+        duplicate = self.restart_registration("%4", "duplicate", control=self.root / "duplicate.sock")
+        other_repo = self.root / "second-repo"
+        other_repo.mkdir()
+        other = self.restart_registration(
+            "%5", "other", cwd=other_repo, control=self.root / "other.sock",
+        )
+        other["repository"] = str(other_repo)
+        preparations = []
+
+        def fail_second_preparation(arguments, **kwargs):
+            self.assertEqual({"capture": True}, kwargs)
+            preparations.append(arguments)
+            if arguments[-1] == str(other_repo):
+                raise subprocess.CalledProcessError(1, arguments)
+            return SimpleNamespace(stdout="")
+
+        control = mock.Mock()
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(return_value=[first, duplicate, other]),
+                "request_restart_control": control,
+                "run": fail_second_preparation,
+                "helper": mock.Mock(),
+            },
+        ), mock.patch.object(os, "kill") as kill:
+            with self.assertRaisesRegex(launcher["LauncherError"],
+                                        "image preparation failed; no sessions were stopped"):
+                launcher["restart_tmux_sessions"]()
+
+        self.assertEqual([
+            [str(LAUNCHER), "prepare-cd", str(self.repo)],
+            [str(LAUNCHER), "prepare-cd", str(other_repo)],
+        ], preparations)
+        control.assert_not_called()
+        kill.assert_not_called()
+
     def test_restart_all_stops_resets_and_relaunches_registered_panes(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         registrations = [self.restart_registration()]
@@ -2342,7 +2381,9 @@ class CodexSandboxTest(unittest.TestCase):
 
         self.assertCountEqual(controls[:2], [("%3", "pause"), ("%4", "pause")])
         self.assertCountEqual(controls[2:], [("%3", "unpause"), ("%4", "unpause")])
-        run.assert_not_called()
+        run.assert_called_once_with(
+            [str(LAUNCHER), "prepare-cd", str(self.repo)], capture=True,
+        )
         kill.assert_not_called()
 
     def test_restart_all_respawns_an_already_dead_registered_pane(self) -> None:
@@ -2402,6 +2443,8 @@ class CodexSandboxTest(unittest.TestCase):
                             real_kill(pid, signum)
 
                         def run(arguments, **kwargs):
+                            if arguments[1:2] == ["prepare-cd"]:
+                                return subprocess.CompletedProcess(arguments, 0, stdout="")
                             if failure == "respawn" and arguments[:2] == ["tmux", "respawn-pane"]:
                                 raise subprocess.CalledProcessError(1, arguments)
                             return real_run(arguments, **kwargs)
@@ -2423,6 +2466,8 @@ class CodexSandboxTest(unittest.TestCase):
                         # The actual tmux respawn accepts the saved retry record.
                         # Substitute a harmless child rather than launching a sandbox.
                         def resume(arguments, **kwargs):
+                            if arguments[1:2] == ["prepare-cd"]:
+                                return subprocess.CompletedProcess(arguments, 0, stdout="")
                             if arguments[:2] == ["tmux", "respawn-pane"]:
                                 expected = shlex.join(["cd", saved["cwd"]]) + " && " + \
                                            shlex.join(["pi", "--session", saved["session"]])
@@ -2477,6 +2522,7 @@ class CodexSandboxTest(unittest.TestCase):
                          "tmux, Node and Bun are required")
     def test_restart_uses_sdk_selected_file_with_real_tmux_and_pi_cli(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
+        real_run = launcher["run"]
         socket_path = self.root / "restart-tmux.sock"
         prefix = [NATIVE_TMUX, "-S", str(socket_path)]
         # First check error retention with a failing native child, then forward the
@@ -2498,6 +2544,11 @@ class CodexSandboxTest(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0", "TMUX_PANE": pane}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
                             "helper": mock.Mock(),
+                            "run": lambda arguments, **kwargs: (
+                                subprocess.CompletedProcess(arguments, 0, stdout="")
+                                if arguments[1:2] == ["prepare-cd"]
+                                else real_run(arguments, **kwargs)
+                            ),
                         }):
                     launcher["register_tmux_pane"](state)
                     selected = self.restart_registration(session_id="persisted-session")
@@ -2544,6 +2595,11 @@ class CodexSandboxTest(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0"}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
                             "helper": mock.Mock(),
+                            "run": lambda arguments, **kwargs: (
+                                subprocess.CompletedProcess(arguments, 0, stdout="")
+                                if arguments[1:2] == ["prepare-cd"]
+                                else real_run(arguments, **kwargs)
+                            ),
                         }):
                     launcher["restart_tmux_sessions"](self.repo)
                 deadline = time.monotonic() + 5
