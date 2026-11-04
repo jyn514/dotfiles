@@ -161,7 +161,11 @@ The bundle requires a Pi build with the mutable `systemPromptOptions.sections` A
 Keep shared working rules in the agent directory's `AGENTS.md` and its existing shared include.
 The instruction-includes extension adds the optional `ROOT.md` beside it only outside managed subagents.
 Managed children identify themselves with `PI_SUBAGENT_ID`; the launcher sets this before loading extensions.
-Put root identity, delegation permission, and whole-task coordination in `ROOT.md`, not shared context.
+Put root identity, delegation permission, and its conditional delegation read route in `ROOT.md`, not shared context.
+Root status does not select executive responsibility; neither the common delegation body nor executive guidance is unconditionally included.
+Global `AGENTS.md` tells subagents to read shared coordination when taking an assignment, including generic and skill-routed children.
+Delegation routes organizers to the procedure reference and roots taking executive responsibility to the installed executive role body.
+A bounded-helper caller keeps its own task and does not adopt that dedicated role; specialist participation loads neither executive document.
 The extension reads ROOT and expands context-file `@` includes before each run, without replacing Pi's base prompt.
 Root context refreshes when the file changes and disappears when it is removed.
 Missing ROOT files are allowed; other read errors and invalid includes use Pi's normal extension-error reporting.

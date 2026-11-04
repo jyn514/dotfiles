@@ -206,7 +206,7 @@ Explain that output or semantic prerequisite for every edge.
 Priority, shared files, a common author and convenient sequencing are not dependencies.
 Among ready implementation tasks, prioritize establishing or extending a consumer-visible result within governing milestone order.
 Record scheduling priority separately; do not invent dependency edges to express this preference.
-An unblocked ticket is not necessarily unowned or safe to edit concurrently; use `delegation` for actual assignments.
+An unblocked ticket is not necessarily unowned or safe to edit concurrently; organizers use delegation's [executive procedure](../delegation/references/executive.md) for actual assignments.
 
 Assign each ticket bounded acceptance evidence; identify fixtures where needed and reuse suitable shared fixtures.
 Do not assume the existence of a field proves the real-world fact it represents.

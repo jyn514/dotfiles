@@ -6,9 +6,10 @@ description: Reassess the next action before adding another substantive prerequi
 # Work selection
 
 Reassess the next action within the user's authorized task.
-In a delegated team, the strategist owns overall next-work priority; builders and QA retain their local methods.
-An executive routes substantive priority questions and new evidence to the strategist instead of performing this comparison itself.
-Use [delegation](../delegation/SKILL.md) for dispatch and ratification; neither a recommendation nor ratification grants new effects.
+Where a strategist owns overall next-work priority, keep that question with it; builders and QA retain their local methods.
+An executive routes substantive priority questions and new evidence to that owner instead of performing its comparison.
+A direct owner without that delegated responsibility performs the comparison itself; a bounded helper does not change this.
+[Delegation](../delegation/SKILL.md) owns shared coordination and routes organizers to dispatch and ratification guidance; neither a recommendation nor ratification grants new effects.
 Use [autonomous-work](../autonomous-work/SKILL.md) for unattended-run authority, acceptance order, persistence, and stopping.
 Use [opportunity-scan](../opportunity-scan/SKILL.md) only for project-wide discovery when no task is selected.
 
@@ -162,10 +163,12 @@ Healthy execution alone does not settle work selection.
 ## Get an independent recommendation
 
 If you are the strategist assigned to this choice, complete the comparison yourself rather than request another worker.
-Other technical workers can reassess local methods within their responsibilities; return a change to overall priority to the strategist.
-For a substantive overall-priority choice, use the responsible strategist or an available compatible strategist template and follow its advertised caller contract.
+Other technical workers can reassess local methods within their responsibilities; return a change to overall priority to its existing owner.
+Do ordinary bounded comparisons directly when no independent priority responsibility is assigned.
+Seek an independent recommendation when jyn requires it or its expected evidence or useful parallelism earns the handoff cost, not merely because the choice is substantive.
+Use the responsible strategist or an available compatible template when that independent responsibility is needed.
 An executive supplies the question and evidence without first conducting its own competing comparison.
-Use [delegation](../delegation/SKILL.md#frame-independent-investigation-and-review) for motivation-led assignment and integration.
+When assigning that investigation, use delegation's [executive procedure](../delegation/references/executive.md#frame-independent-investigation-and-review) for motivation-led framing.
 Supply the literal task, current acceptance condition, governing references, current situation, and evidence entrypoints for the main user activity as well as current work.
 Include the latest relevant user correction with its provenance; quote it only when the exact text is available.
 Explain why the investigation matters without prescribing the next action or preferred conclusion.
@@ -179,8 +182,9 @@ Do not request independent investigation after every tool call, repeat an unchan
 
 ## Choose the next action
 
-The strategist compares possible next work with continuing current work and the strongest credible competing action.
-For a local method choice, the responsible worker performs the same comparison within its assignment.
+Compare possible next work with continuing current work and the strongest credible competing action.
+The assigned strategist owns an independent overall-priority comparison; otherwise the direct owner compares actions within its task.
+For a local method choice, the responsible worker performs the comparison within its assignment.
 Consider user benefit and its evidenced or estimated scale, plus delivery, verification, and coordination costs.
 A correct finding, novelty, or completed batch does not alone justify priority; a strategist report is not the requested outcome.
 Keep missing evidence distinct from demonstrated failure, and do not assume an investigation will justify follow-up work.
@@ -191,8 +195,8 @@ Keep this explanation within the recommendation, not a separate reflection repor
 If the deciding difference remains uncertain, use the smallest useful check or make a provisional choice with the uncertainty stated.
 Use existing evidence and reasonable estimates; do not commission another investigation merely to make every ranking conclusive.
 Stop deliberating when evidence supports an authorized action or identifies a concrete blocker; impose no fixed lookup limit.
-Send the supported overall-priority decision to the executive for ratification against jyn's outcome, authorization, and explicit trade-offs.
-If returned as inadequate, the strategist retains the comparison and resolves its deficiencies with the relevant workers.
+Where an executive owns coordination, send the supported overall-priority decision for ratification against jyn's outcome, authorization, and explicit trade-offs.
+If returned as inadequate, the priority owner retains the comparison and resolves its deficiencies with the relevant workers.
 The executive does not select a technical winner or supply missing investigation.
 Finding no better alternative is a successful result: continue when the existing approach wins.
 

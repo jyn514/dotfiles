@@ -46,9 +46,12 @@ Separately packaged goal continuations route through autonomous-work and do not 
 
 ### Team roles
 
-Use [delegation](../../skills/delegation/SKILL.md) at the start of substantive multi-step work or a new workstream, even before deciding whether to delegate.
-It owns responsibility selection, assignments, ratification, and start, idle, wake, and retirement conditions.
-[Autonomous work](../../skills/autonomous-work/SKILL.md) invokes the same assessment for authorized runs; ordinary bounded work does not require run authority.
+Handle ordinary bounded tasks directly, regardless of their number of steps or files.
+Read [delegation](../../skills/delegation/SKILL.md) when actually splitting or coordinating joint work; the global `AGENTS.md` also tells every subagent to read its shared coordination guidance when taking an assignment.
+Organizers follow its on-demand executive route; specialists do not load executive guidance simply to participate.
+Additional workers need concrete expected value or requested independence, not a requirement to fill the role catalog.
+A bounded helper leaves its caller free to finish its own task.
+[Autonomous work](../../skills/autonomous-work/SKILL.md) preserves the same distinction for authorized runs; run startup does not mandate a team.
 
 The specialized templates are:
 
@@ -66,7 +69,10 @@ Strategist replaces the former detective template; callers must select `strategi
 Historical detective reports and the detective-only commit retain their original names.
 Executive can manage subagents within its assignment's authority and resource limits.
 Other role templates keep subagent management disabled.
-The root normally fills the executive responsibility through delegation guidance; it does not automatically receive the executive template body.
+Root status does not imply executive responsibility.
+`ROOT.md` supplies the conditional delegation route, not executive or common-skill body includes.
+Selected executive workers receive their role template; a root taking executive responsibility reads that same installed role body through delegation's conditional route.
+A bounded-helper caller reads only the organizer procedure and retains its own task, without adopting the dedicated executive role.
 
 Workers retain technical judgment after their first reports.
 The executive ratifies alignment with jyn's outcome and values or returns an inadequate proposal to its owners.

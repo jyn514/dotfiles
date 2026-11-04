@@ -22,16 +22,18 @@ It does not import corporate mechanisms or give the executive final technical se
 
 ## Responsibilities
 
-These are responsibilities, not a fixed team that must run continuously on every task.
-Designer is optional; its activation does not make the other roles a mandatory approval sequence.
-Canonical assignment and lifecycle procedures live in [delegation](../skills/delegation/SKILL.md).
+These are available responsibilities, not a fixed team or approval sequence.
+Handle ordinary bounded tasks directly; neither multiple steps nor multiple files require staffing.
+Extra workers need a concrete useful independent output, required independent evidence, or useful parallelism after handoff costs.
+A bounded helper does not prevent its caller from finishing its own task, while already assigned responsibilities retain their owners.
+[Delegation](../skills/delegation/SKILL.md) owns shared participation and routes organizers to the [executive procedure](../skills/delegation/references/executive.md).
 
 ### Executive: organize decisions without taking them over
 
 Own dispatch, scheduling, dependencies, and getting conflicts resolved by the knowledgeable owners.
 Question the scheduling frame: what really needs to wait, what can overlap, and who needs to work together?
 Preserve the original outcome, authorization, explicit trade-offs, and visible unmet acceptance conditions.
-The root normally fills this responsibility; the [executive template](../config/pi-agent/pi-codex-subagents/agents/executive.md) supports delegated authorized workstreams.
+Root status alone does not assign this responsibility; the [executive template](../config/pi-agent/pi-codex-subagents/agents/executive.md) supports explicitly delegated organization of an authorized workstream.
 
 For example, “IY is implementable” does not explain why IY is the next work worth doing for ordinary writing.
 The executive returns that gap to the strategist, rather than research IY, construct an alternative, or decide which patch wins.
@@ -162,8 +164,10 @@ Broader experience, maintenance, and affected-party questions should improve eac
 
 The [Pi configuration entrypoint](../config/pi-agent/README.md#team-roles) describes template selection and deployment boundaries.
 The loader advertises each template's description and caller hint; it adds the selected body to the worker's input.
-Roots normally reach the executive model through delegation guidance, not by automatically receiving the executive template.
-Accordingly, [autonomous-work](../skills/autonomous-work/SKILL.md) and work-selection must route technical questions to their owners rather than retain parent verification or final priority selection.
+Roots read delegation when actually splitting or coordinating joint work; organizers then load executive procedure on demand, not because they are roots.
+A root taking executive responsibility also follows delegation's installed executive-role-body route; a direct caller using a bounded helper does not adopt that role.
+Every subagent has a shared-coordination read route through global Pi `AGENTS.md`, including generic, omitted-role, parent, and Luna consumers; the common skill body is not unconditionally included.
+[Autonomous-work](../skills/autonomous-work/SKILL.md) and work-selection preserve direct ownership when no independent responsibility is assigned, and return delegated questions to their owners rather than retain parent verification or final priority selection.
 Generic parent and Luna templates do not impose a competing role model.
 Goal continuations require scope, persistence, and completion evidence and route through autonomous-work; they do not assign technical verification to the parent.
 

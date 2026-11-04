@@ -15,9 +15,10 @@ An inactive goal is saved state, not permission to continue.
 This skill owns run authority, persistence, required acceptance order, resumable state, and stopping.
 [Work-selection](../work-selection/SKILL.md) owns next-action selection, dependency justification, reassessment, and scouting within the authorized task.
 Activity-specific skills own their procedures; goal tools own status changes and budgets.
-In a delegated team, apply these acceptance duties through their owners: the builder integrates, QA verifies and investigates failures, and the strategist decides overall next-work priority.
+Where these responsibilities are assigned, apply acceptance duties through their owners: the builder integrates, QA independently verifies and investigates failures, and the strategist decides overall next-work priority.
+A direct owner performs ordinary implementation and checks without staffing those roles; a bounded helper does not transfer the whole task.
 The executive preserves scope, dispatches work, coordinates dependencies, and ratifies alignment; it does not perform a parent technical pass.
-Use delegation's owner-return procedure when evidence or a proposal is inadequate.
+Use delegation's shared responsibility guidance when evidence or a proposal is inadequate.
 Autonomy authorizes persistence within the task, not a different activity or additional effects.
 
 u got this buddy <3 i believe in u
@@ -50,10 +51,10 @@ Record acceptance cases before substantive work, and refine them only within the
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
-At run startup, use [delegation](../delegation/SKILL.md#assess-responsibilities-at-workstream-entry) to assess team responsibilities from the original request before adopting a diagnosis or implementation approach.
-Repeat that assessment when a distinct workstream begins, reconciling existing workers instead of automatically spawning a new team.
-Delegation owns role selection, bounded episodes, evidence handoffs, and when to wake or retire a responsibility.
-This assessment does not change the permitted activity, require all roles to stay active, or authorize additional effects.
+An authorized run does not itself require a team.
+Use [delegation](../delegation/SKILL.md) when actually splitting or coordinating joint work; it gives all participants shared responsibility guidance and routes organizers to executive procedure.
+Additional workers need concrete expected value or requested independence, not merely a substantive or multi-step task.
+Preserve responsibilities already assigned without automatically staffing new roles at startup or a new workstream.
 
 ## Use an outcome graph when needed
 
@@ -76,18 +77,19 @@ Keep downstream work provisional where discovery or an unresolved choice can cha
 As evidence or the approach changes, update or supersede obsolete tasks and dependencies while preserving the governing outcomes.
 Working from the graph means advancing an unmet root outcome and closing work on evidence, not obeying abandoned mechanisms or treating revisable agent assumptions as user requirements.
 Graph work does not expand scope, change the authorized activity or effects, or resume an inactive goal.
-The graph skill owns decomposition; work-selection supplies the comparison used by the strategist for overall priority.
+The graph skill owns decomposition; work-selection supplies the overall-priority comparison through its assigned owner.
 
 ## Select work within the authorized run
 
-Use [work-selection](../work-selection/SKILL.md) through the strategist for overall next-work priority, dependency justification, and comparison of authorized approaches.
+Use [work-selection](../work-selection/SKILL.md) for next-work priority, dependency justification, and comparison of authorized approaches.
+When a strategist owns overall priority, return that comparison to it; otherwise the direct owner performs it.
 Workers choose local actions within their responsibilities; executives question scheduling and dispatch the ratified work.
 Reassess before extending repeated similar batches during an active run, even when they succeed.
-Return changes to overall priority to the strategist; do not make it direct every worker's next command.
+Return changes to overall priority to its assigned owner; do not make a strategist direct every worker's next command.
 Keep unmet acceptance conditions and scoped blockers visible while advancing independent authorized work.
 Advance acceptance and integration only when governing prerequisites and required evidence permit.
 
-Use [delegation](../delegation/SKILL.md) for assignments, shared contracts, waiting, review, and integration.
+Use [delegation](../delegation/SKILL.md) for shared responsibility, evidence handoffs, and ownership conflicts; organizers follow its executive route for assignments and worker lifecycles.
 
 ## For implementation work only
 
@@ -174,8 +176,8 @@ Distinguish a missing external dependency from an in-scope repair or an unavaila
 Use [creative-inquiry](../creative-inquiry/SKILL.md) if another approach could reach the same outcome with fewer assumptions.
 Declare the whole run blocked only when no meaningful authorized progress remains, then explain the dependency.
 
-At completion, the responsible workers compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
-The executive ratifies the reported coverage and returns gaps to their owners rather than performing verification itself.
+At completion, the responsible technical owner or workers compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
+Where an executive owns coordination, it ratifies reported coverage and returns gaps to their owners rather than performing verification itself.
 Require concrete evidence for every explicit requirement and no required work remaining.
 For completed implementation, apply the review threshold above and [completion review](../completion-audit/SKILL.md) when required.
 For research, writing, planning, and review, the assigned technical owner verifies the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.

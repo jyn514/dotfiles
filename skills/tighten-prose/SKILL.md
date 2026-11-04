@@ -42,7 +42,7 @@ Use the contrast to guide judgment, not to impose this style on every passage.
 
 Prefer a small-model subagent for a useful batch of passages or independent wording judgment; this reduces subscription usage.
 Apply an exact replacement or an edit smaller than its handoff directly.
-When delegating, use [delegation](../delegation/SKILL.md) for the assignment and integration.
+When delegating, use [delegation](../delegation/SKILL.md) for shared responsibility and its [executive procedure](../delegation/references/executive.md) to frame the bounded assignment.
 Supply the exact passage, necessary context, and requirements to preserve.
 The worker follows the workflow directly without further delegation; the parent reads its revision before its report.
 If a useful delegation is unavailable, perform the local pass directly and report that limitation.

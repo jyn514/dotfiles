@@ -22,7 +22,7 @@ For one supplied design, do not manufacture alternatives unless an unresolved fo
 Read each phase reference only when entering its phase.
 For a delegated phase, supply its full text or resolved absolute path, shared inputs, and only that phase's candidate material.
 These references are not registered skills or names for subagent preloading.
-Use [delegation](../../delegation/SKILL.md) for assignments and permitted effects.
+Use [delegation](../../delegation/SKILL.md) for shared responsibility and permitted effects; organizers follow its [executive procedure](../../delegation/references/executive.md) for assignments.
 
 1. **Map missing options:** use [alternatives](alternatives.md) only when material choices remain uncovered.
 2. **Elaborate independently:** assign one [independent-plan](independent-plan.md) per viable brief, in parallel when practical.

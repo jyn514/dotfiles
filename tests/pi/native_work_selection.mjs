@@ -37,7 +37,7 @@ test("shared discovery exposes task-specific skills, not optional references, an
   let { skills, diagnostics } = loader.getSkills();
   assert.deepEqual(diagnostics, []);
   const reviewSkills = ["spec-review", "audit-spec-against-impl", "completion-audit"];
-  for (const name of ["work-selection", "autonomous-work", "creative-inquiry", "architecture-design", "implementation-plan",
+  for (const name of ["delegation", "work-selection", "autonomous-work", "creative-inquiry", "architecture-design", "implementation-plan",
     "holistic-writing", "readme-writing", ...reviewSkills]) {
     const matches = skills.filter(skill => skill.name === name);
     assert.equal(matches.length, 1, `expected one normally discovered ${name}`);
@@ -58,7 +58,7 @@ test("shared discovery exposes task-specific skills, not optional references, an
   }
 
   // Descriptions come from each installed authority, not a caller's copied policy.
-  for (const name of ["work-selection", ...reviewSkills]) {
+  for (const name of ["delegation", "work-selection", ...reviewSkills]) {
     const path = join(installed, name, "SKILL.md");
     const original = await readFile(path, "utf8");
     const fixture = `Discovery change fixture for ${name}.`;
