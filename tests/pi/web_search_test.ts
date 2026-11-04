@@ -46,6 +46,10 @@ describe("provider web search extension", () => {
           "Search results and snippets may lag behind origin sites.",
         ),
       });
+      const guidance = event.systemPromptOptions.sections.web_search;
+      expect(guidance).toContain("Use provider-native web search directly, outside codemode.");
+      expect(guidance).toContain("not listed in ALL_TOOLS or searchTools()");
+      expect(guidance).toContain("an empty discovery result does not mean search is unavailable");
       // Changing providers must remove earlier search guidance, not leave it stale.
       for (const model of [{ api: "unsupported" }, { api: "pi-virtual" }, undefined]) {
         event.systemPromptOptions.sections.web_search = "stale";

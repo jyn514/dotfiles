@@ -9,6 +9,8 @@ import {
 } from "./pi-web-search-core";
 
 const SEARCH_INSTRUCTIONS = `Web search is available through the active model provider.
+Use provider-native web search directly, outside codemode.
+Native search is not listed in ALL_TOOLS or searchTools(); an empty discovery result does not mean search is unavailable.
 Use it for current facts, recent events, or information requiring external sources.
 Search results and snippets may lag behind origin sites. For claims about what is latest or current, verify against a live first-party page, feed, or source repository instead of relying only on result ordering or snippets.
 Honor any domain, date-range, result-count, or primary-source constraints in the user's request.

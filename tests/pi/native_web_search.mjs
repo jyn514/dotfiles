@@ -11,7 +11,7 @@ const packageDir = process.env.PI_PACKAGE_DIR || "/opt/agent-pi/src/packages/cod
 const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
 assert.equal(manifest.name, "@earendil-works/pi-coding-agent");
 const sdkEntry = resolve(packageDir, manifest.exports["."].import);
-const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
+const { createAgentSession, createCodemodeExtension, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
   await import(pathToFileURL(sdkEntry).href);
 const installedRequire = createRequire(sdkEntry);
 let aiPackageDir;
@@ -253,4 +253,112 @@ test("native search citations and activity survive storage, reload, and request 
   assert.deepEqual(endedMessages, assistants, "message_end replacement survives in the real session transcript");
   assert.equal(text(assistants[1]).includes("— completed"), false, "collector resets between turns");
   assert.equal(text(assistants[2]).includes(source.url), false, "unsupported turn inherits no stale citations");
+});
+
+
+test("native search guidance explains empty codemode discovery and follows model switches without an info tool", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-native-web-guidance-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const cwd = join(root, "project");
+  const agentDir = join(root, "agent");
+  await Promise.all([mkdir(cwd), mkdir(agentDir)]);
+  const requests = [];
+  const script = `text({
+    catalog: ALL_TOOLS.filter(tool => tool.name === "native_web_search_info"),
+    search: await searchTools("web"),
+    declaration: await describeTool("native_web_search_info")
+  });`;
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    assert.ok(url === baseUrl + "/responses" || url === baseUrl + "/chat/completions",
+      "no discovery or extra search endpoint is contacted");
+    const body = JSON.parse(init?.body ?? await input.clone().text());
+    requests.push(body);
+    const calling = requests.length % 2 === 1;
+    if (url.endsWith("/chat/completions")) return sse([
+      { id: "chat_info", object: "chat.completion.chunk", choices: [{ index: 0, delta: calling
+        ? { role: "assistant", tool_calls: [{ index: 0, id: "call_info", type: "function",
+          function: { name: "codemode", arguments: JSON.stringify({ code: script }) } }] }
+        : { role: "assistant", content: "Information inspected." }, finish_reason: null }] },
+      { id: "chat_info", object: "chat.completion.chunk", choices: [{ index: 0, delta: {},
+        finish_reason: calling ? "tool_calls" : "stop" }] },
+    ]);
+    if (!calling) return sse(responseEvents("Information inspected.", false));
+    const item = { type: "function_call", id: "fc_info", call_id: "call_info", name: "codemode",
+      arguments: JSON.stringify({ code: script }), status: "completed" };
+    return sse([
+      { type: "response.created", response: { id: "resp_info", status: "in_progress" } },
+      { type: "response.output_item.added", output_index: 0, item },
+      { type: "response.output_item.done", output_index: 0, item },
+      { type: "response.completed", response: { id: "resp_info", status: "completed", output: [item],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+    ]);
+  });
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(), modelsPath: null,
+    modelsStorePath: join(agentDir, "models-store.json"), allowModelNetwork: false, refreshOnCreate: false,
+  });
+  const supported = { id: "fixture", name: "Offline info fixture", provider: "offline-info", api: "openai-responses",
+    baseUrl, reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 8192, maxTokens: 256 };
+  const unsupported = { ...supported, provider: "offline-info-unsupported", api: "openai-completions" };
+  for (const model of [supported, unsupported]) {
+    await modelRuntime.setRuntimeApiKey(model.provider, "offline-not-a-credential");
+  }
+  const loader = new DefaultResourceLoader({
+    cwd, agentDir, settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true,
+    noThemes: true, noContextFiles: true, additionalExtensionPaths: [extensionPath],
+    systemPrompt: "Offline native search guidance regression.",
+    extensionFactories: [
+      (pi) => createCodemodeExtension()(pi),
+      (pi) => {
+        for (const model of [supported, unsupported]) pi.registerProvider(model.provider, { api: model.api, baseUrl,
+          apiKey: "offline-not-a-credential", models: [model] });
+      },
+    ],
+  });
+  await loader.reload();
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const { session, extensionsResult } = await createAgentSession({
+    cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime, model: supported,
+    sessionManager: SessionManager.inMemory(cwd),
+  });
+  t.after(() => session.dispose());
+  assert.deepEqual(extensionsResult.errors, []);
+  session.setActiveToolsByName(["codemode"]);
+  assert.ok(!session.getAllTools().some(tool => tool.name === "native_web_search_info"));
+  assert.ok(!session.getCallableToolNames().includes("native_web_search_info"),
+    "native search guidance does not need a capability-info tool");
+
+  for (const [model, configured] of [[supported, true], [unsupported, false], [supported, true]]) {
+    await session.setModel(model);
+    const before = requests.length;
+    await session.prompt("Inspect the local tool catalog through codemode.");
+    assert.equal(requests.length - before, 2,
+      "only the ordinary catalog-inspection tool call and follow-up requests occur");
+    const result = session.messages.filter(message => message.role === "toolResult" && message.toolName === "codemode").at(-1);
+    assert.ok(result && !result.isError, "the actual codemode tool executes successfully");
+    const record = JSON.parse(result.content.filter(block => block.type === "text").at(-1).text);
+    assert.deepEqual(record.catalog, []);
+    assert.deepEqual(record.search, []);
+    assert.equal(record.declaration, undefined);
+    const serialized = requests[before];
+    const systemItems = (serialized.input ?? serialized.messages).filter(item =>
+      item.role === "system" || item.role === "developer");
+    const systemText = systemItems.map(item => typeof item.content === "string"
+      ? item.content : JSON.stringify(item.content)).join("\n");
+    for (const instruction of [
+      "Use provider-native web search directly, outside codemode.",
+      "Native search is not listed in ALL_TOOLS or searchTools()",
+      "an empty discovery result does not mean search is unavailable",
+    ]) {
+      assert.equal(systemText.includes(instruction), configured,
+        "the actual provider request carries guidance only for a supported API");
+    }
+    assert.equal(serialized.tools.some(tool => tool.type === "web_search"), configured,
+      "native search injection still follows the active API");
+    assert.ok(!serialized.tools.some(tool => tool.name === "native_web_search_info"),
+      "no capability-info function is declared alongside native search");
+  }
 });

@@ -170,6 +170,11 @@ later turns unless another extension forces a full-prompt replacement.
 prompt, including Pi's generated docs section, then replaces the full prompt.
 Section-only updates do not apply while that guest-routing hook is active.
 
+The `web_search` prompt section tells the model to use provider-native search directly, outside codemode.
+Native search is not listed in `ALL_TOOLS` or `searchTools()`; an empty discovery result does not establish that search is unavailable.
+No capability-info tool or callable search wrapper is registered.
+Run `/reload` after updating the bundle to load the guidance.
+
 Web search uses stock request-payload and provider-event hooks, not the fork's
 `registerProviderTool()` API. It adds native search to Anthropic Messages,
 OpenAI/Azure/Codex Responses, and Google/Vertex requests without replacing local
