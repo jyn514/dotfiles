@@ -16,6 +16,11 @@ An optional designer sustains its assigned interaction and learning model, while
 These are responsibilities within a joint activity, not a requirement to run five agents or seek five approvals.
 Workers choose local methods and resolve technical disagreements with the knowledgeable owners; the executive organizes resolution rather than choosing the technical winner.
 
+A peer reference names an assigned responsibility, not an agent that must exist.
+Use its existing owner when assigned; otherwise keep ordinary work and checks within your assignment and return questions outside it to your caller.
+Name the missing decision, expertise, or independent evidence instead of requesting a role merely because the prompt mentions it.
+A dedicated executive arranges a technical owner or reports the staffing dependency; it does not take over the unassigned technical question.
+
 ## Work through your dependencies
 
 Notice when a decision, failure, changed requirement, or usable artifact changes another owner's next action.

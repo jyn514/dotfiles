@@ -13,6 +13,11 @@ Keep coupled creation and integration coherent; establish the format of a separa
 Use advertised role templates when they fit the assigned responsibility, supplying task-specific outcomes, evidence, effects, and limits.
 Once a responsibility has an owner, retain that boundary rather than take over its question; a dedicated executive organizes that workstream instead of becoming its technical owner.
 
+For example, a bounded CLI repair accepted through ordinary consumer checks can stay with its direct owner or one builder; no separate QA or strategist is needed.
+If jyn requires independent verification of the same repair, assign that verification separately from construction and keep its expectations independent of the candidate.
+The independence requirement changes the staffing decision, not the number of files or implementation steps.
+An unsettled overall-priority question can justify a strategist; neither repair creates that question merely by needing checks.
+
 ## Assign bounded outcomes
 
 When a strategist owns the priority question, dispatch from its supported decision, not a convenient defect you ask it to endorse.
@@ -30,8 +35,10 @@ For coupled implementation, use the [shared-contract check](shared-contracts.md)
 
 ### Give a self-contained assignment
 
-Provide the governing outcome and why it matters, acceptance condition, original sources and relevant corrections, current evidence, permitted effects, ownership, and protected work.
+Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
+State permitted effects, resource limits, ownership, and protected work.
 Name accessible canonical procedures instead of reproducing stable methods the selected role already receives.
+The advertised role hint names only role-specific additions to this packet.
 Do not assume a worker inherits the parent's prompt or prior reads; generic workers still need the task's responsibility framing.
 Supply actual inputs and evidence entrypoints for the requested activity, not only files for your preferred mechanism.
 Request the smallest evidence set the receiver needs to judge the result and take its next action; reuse applicable evidence instead of demanding new reports by default.

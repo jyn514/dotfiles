@@ -26,6 +26,9 @@ These are available responsibilities, not a fixed team or approval sequence.
 Handle ordinary bounded tasks directly; neither multiple steps nor multiple files require staffing.
 Extra workers need a concrete useful independent output, required independent evidence, or useful parallelism after handoff costs.
 A bounded helper does not prevent its caller from finishing its own task, while already assigned responsibilities retain their owners.
+Peer references name existing assignments, not assumed teammates.
+Workers keep ordinary work and checks within their assignment when no separate owner exists and return questions outside it to their caller.
+A dedicated executive instead arranges a missing technical owner or reports the staffing dependency; it does not become that owner.
 [Delegation](../skills/delegation/SKILL.md) owns shared participation and routes organizers to the [executive procedure](../skills/delegation/references/executive.md).
 
 ### Executive: organize decisions without taking them over

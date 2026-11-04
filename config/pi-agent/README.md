@@ -35,7 +35,7 @@ Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
 Use [work-selection](../../skills/work-selection/SKILL.md) for priority comparison and local method reassessment.
-In a team, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
+When assigned, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
 Give it the original task, motivation, corrections, current evidence, and permitted effects rather than prescribe its next action.
 Include a complete path to a current use example when available so ignored files remain reachable.
 Reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment.
@@ -61,7 +61,8 @@ The specialized templates are:
 - [`qa`](pi-codex-subagents/agents/qa.md): verification and failure investigation, questioning which bugs matter or are likely.
 - [`builder`](pi-codex-subagents/agents/builder.md): creation and integration, questioning unnecessary implementation assumptions and restrictions.
 
-Pass the original task, motivation, current evidence, permitted effects, and bounded outcome; the templates supply stable procedures.
+Use the [self-contained assignment procedure](../../skills/delegation/references/executive.md#give-a-self-contained-assignment) for common packet requirements; each advertised role hint names its specific inputs.
+The templates supply stable procedures.
 Select the named `agent_type` explicitly rather than rely on generic or skill-based routing.
 All five templates inherit the parent's model and thinking settings.
 Executive replaces the former coordinator template; callers must select `executive`.
@@ -74,6 +75,9 @@ Root status does not imply executive responsibility.
 Selected executive workers receive their role template; a root taking executive responsibility reads that same installed role body through delegation's conditional route.
 A bounded-helper caller reads only the organizer procedure and retains its own task, without adopting the dedicated executive role.
 
+Peer references in the templates refer to assigned responsibilities, not a requirement to create those agents.
+Without a separate owner, workers keep ordinary work and checks within their assignment and return questions outside it to their caller.
+A dedicated executive arranges missing technical ownership rather than performing that work itself.
 Workers retain technical judgment after their first reports.
 The executive ratifies alignment with jyn's outcome and values or returns an inadequate proposal to its owners.
 It does not choose the technical winner, select the next substantive task, or investigate remaining uncertainty itself.
