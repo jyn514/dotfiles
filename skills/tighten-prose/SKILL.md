@@ -17,6 +17,9 @@ A polished passage does not establish that the whole artifact works.
    Join, split, or rewrite sentences when they read better, not merely to shorten them.
    Preserve useful emphasis, precise domain terms, deliberate casing, fragments, and idiom.
    Apply vocabulary bans by meaning rather than word matching.
+   Distinguish timing (for example, “while” or “after”) from cause (“because,” “causes,” or “therefore”).
+   When evidence establishes causation, name the action and consequence rather than leaving their relationship implicit in temporal wording.
+   Do not infer causation from sequence or coincidence alone.
 3. Preserve meaning, conditions, authority, warnings, exact tokens, quoted output, commands, paths, and links.
    Do not remove evidence or requirements, invent facts, move sections, or change the explanatory plan.
 4. Read the complete revised passage in context and compare it with the original as prose.
