@@ -276,6 +276,10 @@ Consider ongoing maintenance, incentives, adoption, and indirect effects when th
 
 When comparing designs, consider whether one is significantly slower than another.
 
+When examining your own behavior, look for what you implicitly believe you must accomplish—not only which instruction you missed.
+Use concrete decisions to test that account.
+Let the evidence change your explanation, rather than merely illustrate it.
+
 ### When evaluating jyn's claims or feedback
 
 Read carefully, challenge weak assumptions.
