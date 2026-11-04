@@ -15,6 +15,11 @@ and the relevant setup function before using it on a new machine.
   isolation, and exceptions that require real configuration.
   When probing repository wrappers or launchers, invoke their paths explicitly; isolation can replace bare commands with native tools.
   See [test-environment details](dev/test-environment.md) for entrypoint selection.
+- Run tests that create local TCP or Unix sockets outside the execution sandbox,
+  still through `dev/test-environment`.
+  This includes profile, Neovim, and sandbox launcher or proxy tests.
+  Socket `PermissionError` or `Operation not permitted` failures inside the sandbox
+  do not establish a code regression; rerun with the harness approval mechanism.
 - Check that commands generating shell code, configuration, or cache data succeed
   before consuming their output. Do not hide failures in nested command substitutions
   or unchecked pipelines. Source shell code only after successful generation;

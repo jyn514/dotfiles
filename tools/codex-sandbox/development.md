@@ -274,10 +274,6 @@ Run the Python unit tests together in one process from the repository root:
 dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p '*_test.py'
 ```
 
-Socket tests require permission to create local TCP and Unix sockets.
-They fail inside Codex's restricted sandbox with `PermissionError` / `Operation not permitted` when creating, binding, or connecting sockets.
-Run those tests outside the Codex sandbox, still through `dev/test-environment`; the wrapper does not grant socket permissions.
-These permission failures do not establish a regression in the code.
 Fixtures register cleanup before fallible setup so a setup failure cannot leave mocks or environment changes active for later tests.
 To check those failure paths without opening sockets, add `-k SetupCleanupTest` to the command above.
 

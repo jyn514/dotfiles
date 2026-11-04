@@ -162,12 +162,6 @@ For wrapper behavior, persistent Cargo state, and real-tool selection, see [test
 For Neovim test prerequisites and invocation, see the [Neovim config test guide](../tests/nvim/README.md).
 For installed-Pi-specific test recipes, see the [Pi configuration guide](../config/pi-agent/README.md#testing).
 
-The profile tests in `tests/setup/profile_test.py` and Neovim tests in `tests/nvim/` need permission to create local TCP and Unix sockets.
-Sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` need that permission too.
-If an execution sandbox denies socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun the affected command outside it.
-Use the harness's approval mechanism for the rerun.
-Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket permissions.
-
 ### Real-configuration exceptions
 
 Do not wrap the [configured startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup).
