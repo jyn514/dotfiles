@@ -224,6 +224,10 @@ Check that the procedure works without that domain's unstated vocabulary, data m
 Explain domain-specific examples rather than treating them as prerequisites.
 The existing positive task can meet this check; add another only when needed.
 
+When revising a collaboration process, use the proposed responsibility split in the revision itself where practical and within existing authorization.
+Use the experience to notice where work falls back into the old responsibilities, not as proof that the new process is reliable.
+This practice does not require a team, an efficacy study, or trial infrastructure.
+
 Trace cases where two requirements interact.
 Verify that the instructions produce compatible actions or explicitly resolve the conflict.
 For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it.
