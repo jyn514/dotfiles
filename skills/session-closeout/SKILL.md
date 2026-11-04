@@ -37,7 +37,8 @@ You can identify the current session with `PI_SESSION_ID` (for the Pi harness) o
 
 ### Use edit-candidate lookup when available
 
-When `read_session` supports `view: "edit_candidates"`, use that view with the session ID or file to find earlier paths for inspection.
+When earlier edit targets need recovery and `read_session` supports `view: "edit_candidates"`, use that view with the session ID or file to find paths for inspection.
+Skip the lookup when the available session record and repository evidence already establish the owned changes and their outcomes.
 Continue with `after: nextCursor` in the same view when more candidates are needed.
 If codemode is available, filter or group the candidate objects there rather than parsing transcript prose.
 Inspect a relevant candidate by passing its `source` into an ordinary `read_session` call.

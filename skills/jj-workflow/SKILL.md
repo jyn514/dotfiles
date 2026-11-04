@@ -77,7 +77,8 @@ jj commit src/flower/petal.clj -m "Fix markdown code fence handling"
 jj show -r CHANGE_ID --summary --no-pager
 ```
 
-Messages should be short and imperative. For non-mechanical changes, add a body explaining the problem, reason, and high-level approach; do not list test commands.
+Use [commit-quality](../commit-quality/SKILL.md) for message content and atomic boundaries.
+Add a body when the diff and subject leave a reason, constraint, or durable verification fact unexplained, not merely because the change is non-mechanical.
 
 In concurrent worktrees, do not use `jj describe` followed by `jj new`: it mutates the shared working-copy change. Use `jj new` only after committing and when a fresh working change cannot disturb concurrent work.
 

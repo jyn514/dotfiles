@@ -234,7 +234,9 @@ Challenge the result:
 - Are tests merely renamed around private vars?
 - Can the work stop after the first useful extraction?
 
-When uncertainty remains, delegate one review asking which seam is weakest and whether its gain exceeds the churn.
+Use existing caller or test evidence directly when it settles remaining decision-changing uncertainty.
+Delegate one review when independent review is required, or its expected independent evidence or useful parallelism earns the handoff cost.
+Ask which seam is weakest and whether its gain exceeds the churn.
 Revise the recommendation rather than defending the original diagram.
 
 ## Issue Handoff

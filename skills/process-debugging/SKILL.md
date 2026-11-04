@@ -19,9 +19,11 @@ Inspect the owning project's recovery guidance before recommending restart or te
 Preserve the failing process long enough to collect evidence when recovery would erase the diagnosis.
 If permission prevents inspection, report the unavailable evidence rather than inferring process state from that error.
 
-## Make symbols work before collecting stacks
+## Resolve missing symbols when needed
 
-Confirm GDB resolves a source line or local type; a successful download alone does not prove it loaded the symbols.
+Use the symbol setup below when missing symbols prevent the source or local-value inspection needed to distinguish diagnoses.
+An already-symbolized stack or a bounded syscall sample may settle the question without new downloads.
+When relying on symbols, confirm GDB resolves a source line or local type; a successful download alone does not prove it loaded them.
 
 ### Check symbol provenance and effective configuration
 

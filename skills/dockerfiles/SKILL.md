@@ -115,9 +115,11 @@ See [UID/GID mapping](https://docs.docker.com/engine/security/rootless/uid-gid-m
 
 ## Verify the changed contract
 
+Select checks for the changed contract or unresolved review claim.
+For a review, run builds or container probes only when they can settle a consequential claim that source inspection cannot.
 Use the repository's isolated test environment and owned disposable contexts, images, and mounts.
 Inspect resolved Bake configuration and use native build checks supported by the installed Buildx version.
-Build the affected targets and exercise the packaged application under its final user, paths, platform, and libc.
+When packaged contents or runtime behavior change, build the affected targets and exercise the packaged application under its final user, paths, platform, and libc.
 Use the production executable, argv, and entrypoint wrappers for those operations.
 A probe run under Bun does not establish that a Node-launched worker can import the same SDK.
 Check retained assets and imports, executable and workspace links, excluded build tools, and required mounted reads or writes according to what changed.

@@ -96,16 +96,17 @@ the test to have something to hold.
 
 ## 5. Inject the dependency
 
-A function reading a global, a module constant, or `os.environ` can only be tested at
-whatever those happen to be, so the edges of its input domain are unreachable.
+First check whether an isolated fixture can vary the global, module constant, or environment through the existing interface.
+Use that path when it reaches the required input classes without changing production code.
+Suggest injection when the existing interface cannot safely vary the dependency and a parameter would expose the required property.
 
 ```python
 def validate(data: str) -> bool:          return len(data) <= CONFIG.max_length
 def validate(data: str, max_len: int):    return len(data) <= max_len
 ```
 
-Parameterising the bound is what lets a generator drive `max_len` to 0, to 1, and to the
-maximum representable value — the boundaries where validators actually break.
+When injection is needed, parameterising the bound lets a generator drive `max_len` to 0, to 1, and to the maximum representable value.
+Choose these boundaries from the validator's contract.
 
 ## When not to suggest this
 

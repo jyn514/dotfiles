@@ -99,7 +99,8 @@ Reject changes whose improvement is smaller than ordinary run-to-run variation u
 
 ## Implement and verify
 
-Follow the repository change guidelines and `change-with-evidence`.
+For diagnosis-only requests, report the measured cause and remaining uncertainty; do not make a change merely to complete this workflow.
+When implementation is authorized, follow the repository change guidelines and `change-with-evidence`.
 Preserve startup cancellation, partial-failure cleanup, shared-session ownership, endpoint isolation, and terminal ownership unless the user explicitly changes those requirements.
 Do not infer a security or lifecycle requirement from architecture alone; find its documented owner or history.
 
@@ -109,7 +110,8 @@ Remove temporary instrumentation that no longer helps future diagnosis.
 
 Run focused tests through `dev/test-environment`.
 When socket creation is denied, rerun the same isolated command outside the sandbox through the approval mechanism.
-Run a real warm interactive benchmark after unit tests when the host runtime is available.
+Run a real warm interactive benchmark after unit tests when the changed path can affect interactive startup and the host runtime is available.
+For cleanup-only or component-only changes, verify the named boundary; add startup measurements only when that path can also affect startup.
 
 The change is complete when comparable runs improve the target user-visible boundary and direct regression coverage preserves required behavior.
 Attribute the remaining time to measured operations rather than guesses based on nested spans.

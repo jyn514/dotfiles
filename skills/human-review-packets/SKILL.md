@@ -30,7 +30,8 @@ If the decision depends on how a rule or category applies to a case, follow [Rul
 ### Establish the consequence
 
 Explain why the choice matters: what changes in behavior, effort, cost, risk, access, or the evidence people can rely on?
-When alternatives can be tested, compare them with other variables fixed and show the actual difference.
+Reuse available comparisons when they establish the consequence.
+When a material consequence remains uncertain and an authorized test can resolve it at proportionate cost, compare alternatives with other variables fixed and show the actual difference.
 Otherwise, give a concrete case and say what remains unverified.
 Distinguish adding an option from replacing an existing result.
 A successful test does not prove that requirements support the alternative.

@@ -44,8 +44,8 @@ needs test design, so use [testing guidance](../references/testing.md) alone.
    Preserve existing guarantees unless explicit human approval or stronger
    replacement evidence justifies the change. Do not remove or weaken a check
    merely to make progress.
-6. Verify the policy on a new violation, a resolved baseline entry, and distinct
-   violations with equal normalized text. Include exception expiry when used.
+6. Verify the policy on a new violation and distinct violations with equal normalized text.
+   When the policy uses a baseline, also verify a resolved entry. Include exception expiry when used.
    Follow [testing guidance](../references/testing.md) for oracle validation; record any policy outcome
    that cannot yet be verified rather than claiming it is enforced.
 

@@ -7,7 +7,7 @@ description: Create or revise Typst diagrams, especially Flower spec `.typ` file
 
 ## Read First
 
-- For prose and spec style, follow `contributing/doc-style.md`.
+- Follow the target repository's prose and spec style; in Flower, this lives in `contributing/doc-style.md`.
 - For Typst syntax basics, consult the global `typst` skill when needed.
 - For Flower specs, prefer the existing `bb lint --files doc/spec/flower/flower.typ` validation path over ad hoc Typst commands.
 
@@ -77,16 +77,16 @@ For source-map or provenance diagrams, distinguish:
 
 After editing a spec diagram:
 
-1. Run the narrow Typst/spec lint command, usually:
+1. Run the target repository's narrow Typst/spec validation command.
+   For Flower specs, use:
 
    ```sh
    bb lint --files doc/spec/flower/flower.typ
    ```
 
-2. Confirm that the expected `target/*-spec-lint.pdf` was refreshed.
-3. Locate the rendered figure in the PDF with `pdftotext`.
-4. Rasterize the page with `pdftoppm` into `$TMPDIR`.
-5. Inspect the image with `view_image`.
+2. Confirm that the rendered output reflects the edit; Flower's lint output is `target/*-spec-lint.pdf`.
+3. Inspect the affected figure at its final page scale using the available preview or image viewer.
+   For PDF output without a direct preview, locate the figure with `pdftotext`, then rasterize its page with `pdftoppm` into `$TMPDIR`.
 
 Check for:
 
