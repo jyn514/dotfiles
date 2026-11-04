@@ -243,11 +243,17 @@ class TestEnvironmentTest(unittest.TestCase):
         ):
             self.assertNotIn(name, environment)
 
-    def test_attachment_selectors_are_removed_without_stripping_runtime_capabilities(self) -> None:
-        values = {name: f"poison-{name}" for name in ATTACHMENT_NAMES}
+    def test_sandbox_environment_is_removed_without_stripping_docker_gateway(self) -> None:
+        removed = set(ATTACHMENT_NAMES) | {
+            "CODEX_SANDBOX_FUTURE_ENDPOINT", "CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT",
+            "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
+            "CODEX_SANDBOX_DOCKER_STATE", "CODEX_SANDBOX_LIMA_STATE",
+            "CODEX_SANDBOX_RUNTIME", "CODEX_SANDBOX_ZULIPRC",
+            "CODEX_SANDBOX_TIMING", "CODEX_SANDBOX_QUIET_NOTICES",
+        }
+        values = {name: f"poison-{name}" for name in removed}
         values.update({
-            "CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT": "poison-future-endpoint",
-            "CODEX_SANDBOX_TIMING": "1", "CODEX_SANDBOX_QUIET_NOTICES": "1",
+            "NOT_CODEX_SANDBOX_CONTROL": "unrelated-prefix",
             "DOCKER_HOST": "ssh://disposable-gateway",
             "AGENT_DOCKER_SSHKEY": "/fixture/docker-key",
             "AGENT_DOCKER_KNOWN_HOSTS": "/fixture/known-hosts",
@@ -263,10 +269,21 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 environment = dict(entry.split("=", 1)
                     for entry in result.stdout.rstrip("\0").split("\0"))
-                for name in (*ATTACHMENT_NAMES, "CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT"):
+                for name in removed:
                     self.assertNotIn(name, set(environment))
-                for name in values.keys() - set(ATTACHMENT_NAMES) - {"CODEX_SANDBOX_TOOL_FUTURE_ENDPOINT"}:
+                self.assertFalse(any(name.startswith("CODEX_SANDBOX_") for name in environment))
+                for name in values.keys() - removed:
                     self.assertEqual(values[name], environment[name])
+
+    def test_child_can_explicitly_select_sandbox_runtime_after_isolation(self) -> None:
+        result = subprocess.run(
+            [WRAPPER, "env", "CODEX_SANDBOX_RUNTIME=fixture-runtime",
+             sys.executable, "-c", "import os; print(os.environ['CODEX_SANDBOX_RUNTIME'])"],
+            env=self.inherited | {"CODEX_SANDBOX_RUNTIME": "poison-runtime"},
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("fixture-runtime\n", result.stdout)
 
     @unittest.skipUnless(shutil.which("node"), "Node is required for the tool worker")
     def test_poisoned_attachment_is_untouched_and_child_can_supply_a_private_worker(self) -> None:
