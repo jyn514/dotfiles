@@ -46,10 +46,13 @@ Identify what the proposed revision changes at the failed decision point.
 Do not assume either that rewording will improve compliance or that existing clarity makes improvement impossible.
 Correct an isolated miss without invoking this workflow merely to redesign the instruction.
 Use failure analysis here when evidence points to ambiguous or conflicting guidance, bad routing, or a missing decision rule.
+Also use it when following an instruction produces an unwanted action.
 
 For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
 Do not infer the cause from an outcome summary alone.
-Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
+Distinguish missing guidance, ignored guidance, restrictions introduced by the chosen approach, and guidance that permits or directs the unwanted action.
+Inspect the instructions available at the decision, not only the agent's retrospective explanation.
+When compliance produces the problem, revise the prescription rather than strengthen reminders to exercise judgment.
 
 For a correction-driven revision, identify the assumption being challenged, the question or counterexample that challenged it, and why reconsideration was warranted.
 Teach what the agent must inspect or construct to answer that question, and how different answers change its next action.
@@ -173,9 +176,11 @@ Separate observed facts, assumptions, decisions, and unresolved questions when c
 Distinguish discovery signals from proof.
 Inspect the owning artifact before turning search matches, metrics, or worker reports into findings.
 
-Add hazard-specific rules only when the workflow needs them:
+Select hazard-specific protections for concrete failure modes, not merely because a workflow belongs to a category.
+Preserve protections required by governing instructions.
+Use the concerns below to choose relevant rules, not as a checklist every matching skill must implement:
 
-- **Mutable state:** define freshness, authorization, bypass paths, idempotency, interruption, partial effects, unknown outcomes, cleanup, recovery, and independent verification.
+- **Mutable state:** consider freshness, authorization, bypass paths, idempotency, interruption, partial effects, unknown outcomes, cleanup, recovery, and independent verification.
 - **Bounded audits:** account for inspected, excluded, skipped, and unexamined scope so silence cannot imply completeness.
 - **Delegation:** use self-contained, non-overlapping packets and assign one owner for shared effects, deduplication, and synthesis.
 - **Resumability:** persist only state expensive to reconstruct—completed evidence, unresolved work, governing decisions, and invalidation conditions.
@@ -213,6 +218,14 @@ When loaded guidance leaves the target decision unchanged, check whether the fai
 If the guidance permits the failure, correct the missing distinction or decision rule rather than adding stronger exhortations.
 
 Review when each recommended operation is warranted, not just whether its syntax is valid.
+Trace one representative task through the work this guidance would generate.
+Identify consequential investigations, artifacts, staffing, approvals, and prerequisites introduced by the instructions rather than required by the request.
+For each material addition, establish when its benefit warrants its cost.
+Evaluate the work under the agent's expected operating conditions, including attention, context load, and competing responsibilities—not only the number of steps or handoff cost.
+Before making a required mechanism conditional, check whether the agent can reliably judge that condition when the mechanism is needed.
+Preserve the governing requirement and justify whether its mechanism must be required or conditional.
+This is a focused task trace, not an exhaustive audit of every instruction.
+
 When importing or adapting a guide, inspect inherited workflow advice rather than accepting it as policy.
 Remove or qualify recommendations that lack a task or project-workflow reason; command availability does not make an operation required.
 For example, a tracker supporting reviews or specs does not require agents to create them for every change.
@@ -224,14 +237,23 @@ Check that the procedure works without that domain's unstated vocabulary, data m
 Explain domain-specific examples rather than treating them as prerequisites.
 The existing positive task can meet this check; add another only when needed.
 
+For a conditionally recommended consequential mechanism, trace two in-scope tasks: one where it is warranted and one where it is not.
+Check that the instructions produce different actions for a concrete reason, rather than merely describe exceptions.
+For example, delegation can apply to both tasks while only one benefits from another worker.
+Reuse the routing examples when they also establish this distinction; this textual check does not require behavioral trials.
+A justified mandatory mechanism need not have a skip case.
+These contrasting-task checks test an existing conditional prescription; they do not require making every prescription conditional.
+
 When revising a collaboration process, use the proposed responsibility split in the revision itself where practical and within existing authorization.
 Use the experience to notice where work falls back into the old responsibilities, not as proof that the new process is reliable.
 This practice does not require a team, an efficacy study, or trial infrastructure.
 
-Trace cases where two requirements interact.
+Keep evidence checks within the requested review or change scope, including affected interactions with existing requirements.
+Trace cases where those requirements interact.
 Verify that the instructions produce compatible actions or explicitly resolve the conflict.
-For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it.
-Do not claim completion while a requirement lacks evidence.
+For each consequential requirement in that scope, identify supporting evidence and the cheapest check that could disprove it.
+Do not claim completion while evidence required for that scope is missing.
+A textual trace can support the prescribed decision; it does not establish that agents reliably follow the instructions.
 Remove rules that merely restate normal competence.
 
 For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
@@ -241,7 +263,7 @@ A review procedure in the body does not make the skill discoverable when its des
 
 Before arranging behavioral evidence about a prompt or skill change, read [Behavioral trials](references/behavioral-trials.md).
 This includes passive observation of ongoing work and paired behavioral or summarization trials; consult it before preparing inputs or contacting an observed agent.
-A textual review does not require a trial and does not establish measured compliance.
+A textual review does not require a trial.
 
 ## 7. Validate and tighten
 
