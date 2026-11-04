@@ -62,6 +62,8 @@ Compare the downstream cost with the proposed upstream work and maintenance.
 Read the target project's `CONTRIBUTING.md` and current issue template before drafting, plus any linked instructions that apply.
 If `CONTRIBUTING.md` is absent, check the project's documented contribution instructions.
 Follow issue-reporting requirements, not unrelated PR-only requirements; drafting does not authorize fixes or PR checks.
+For required diagnostic collectors, check their effects and attempt collection within authorization rather than dismissing them because the suspected cause lies elsewhere.
+If access or privilege blocks collection, report the actual blocker and request the specific human step needed; do not silently substitute “not collected.”
 Use the applicable issue or discussion template, retaining its headings, order, and required fields; omit template comments and metadata.
 If no template is available, tell jyn.
 For remote source, shallow-clone the repository into a temporary directory.
@@ -72,17 +74,21 @@ Distinguish goals and reported experience from verification.
 Describe agent-run checks with their commands, reproducers, and captured results; never say jyn ran them.
 Do not present proposed steps as completed checks or invent commands, logs, environment details, or successful tests.
 A source defect does not prove a runtime reproduction.
+In a field about an unperformed runtime comparison, also state any supported source-based expectation; distinguish that expectation from a tested result.
 Include relevant local patches, forks, nonstandard configuration, and prior attempts with their results.
 Include a working control when it narrows the failure, such as one picker order failing while the reverse order works.
 In the report, include facts that help the maintainer reproduce, diagnose, or fix the failure; omit investigation narration and redundant checks when a working control already establishes the relevant difference.
 
 Record the installed version, installation source, and relevant runtime dependencies.
 Name the source precisely (for example, a GitHub release asset, distribution package, or local source build); say when it is unknown rather than using “official.”
+For a required latest-version test, compare the running and installed versions with current release or package metadata before proposing an upgrade.
+If the failing installation is already current, an upgrade is not a prerequisite.
 If the project requests a development-version test, check that requirement and report whether it was met.
 If that test needs another build, prefer an isolated standalone directory to replacing the installed program.
 Follow `dependency-review` for a requested build or update; do not silently expand drafting into installation.
 
 Inspect source when making a source-based claim.
+When upstream-versus-downstream attribution matters, compare the actual patched build's failing path with upstream and identify the relevant patch.
 For GitHub, resolve the full commit hash and use a permalink with precise line anchors—never a branch name or abbreviated hash.
 For other hosts, use an equivalent stable, revision-specific link when available.
 Omit source links when the report makes no source-based claim.
@@ -131,15 +137,23 @@ Add a small fix suggestion only when evidence supports it; do not turn the repor
 ### Present reproduction and technical details
 
 Keep required template headings and fields visible.
+Reduce the reproducer to the smallest verified operation that retains the failure being reported; remove unrelated callers, dependencies, and setup.
+Keep the original application when its own behavior is part of that failure.
+State actual prerequisites; omit lists of dependencies or workflows that the minimized reproducer no longer involves.
 Put the installation or invocation in the reproduction.
 Give a concrete command and the point where failure appears; use numbered steps when several actions or the template requires them.
 Include relevant inputs, configuration, cursor position, or keystrokes.
+When a step requires a machine-specific identifier, provide a discovery command and explain which result to select, not just the value from one machine.
 Mark proposed steps unverified when needed, and distinguish runnable reproducers from illustrative code with omitted setup or placeholders.
 If inaccessible infrastructure prevents reproduction, state that limit and provide available evidence.
+Explain reproduction limits concretely: identify the required hardware, environment, or unavailable input, and distinguish the observed reproduction from any missing portable or minimized reproducer.
+Avoid merely labeling steps “hardware-dependent” or “not minimal” without explaining what that means for someone trying them.
 Include a failing input or artifact when useful, even if not minimized; state any minimization limit.
 Use screenshots for visual failures.
 
-Keep decisive evidence visible, and put most reproduction setup, source, and supporting output inside `<details>` unless needed to understand the failure.
+Keep decisive evidence visible, including any supported conclusion about upstream versus downstream responsibility.
+Put most reproduction setup, source tracing, patch identification, and supporting output inside `<details>` unless needed to understand the failure.
+Point from the visible conclusion to the named details section rather than moving the full trace into the main description.
 Collapse supporting output unless it explains the visible failure.
 Do not repeat the visible excerpt inside collapsed output.
 Preserve observed output verbatim in a fenced block; say if it is an excerpt or from an older version, and never present old output as a new test.
@@ -174,6 +188,9 @@ State remaining identifying metadata or body/attachment mismatches outside the r
 
 Review each authored sentence for passive voice and hidden actors.
 Use the known actor or state the behavior directly; do not invent an actor to satisfy this check.
+For unperformed checks, name who did not run them and distinguish a deliberate skip from a check blocked by missing access or inputs.
+Write “We did not run this test,” not “No test result is available”; give the known reason when it matters.
+Limit the claim to this investigation when jyn's other testing is unknown.
 
 Save the issue body as Markdown at jyn's requested path, or use a descriptive filename in the working directory.
 Keep it current when revising.
