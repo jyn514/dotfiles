@@ -107,7 +107,7 @@ export function registerChildExtensionChannel(pi: ExtensionAPI): void {
       channelName(channel); payload = jsonValue(payload);
       // The helper is loaded live, while its parent may retain older code.
       // Fail before notifying an old manager, rather than waiting on an orphan request.
-      if (process.env.PI_SUBAGENT_EXTENSION_CHANNEL_VERSION !== "1") throw new ExtensionChannelError("unsupported", "Parent does not support extension channels; start a fresh parent Pi process.");
+      if (process.env.PI_SUBAGENT_EXTENSION_CHANNEL_VERSION !== "1") throw new ExtensionChannelError("unsupported", "Parent does not support extension channels; run /reload in the parent or start a fresh parent Pi process.");
       const ctx = context;
       if (!ctx) throw new ExtensionChannelError("closed", "Worker session is not started.");
       if (typeof pi.getPauseState !== "function" || pi.getPauseState() !== "unpaused") throw new ExtensionChannelError("inactive", "Worker is paused or pause state is unavailable.");

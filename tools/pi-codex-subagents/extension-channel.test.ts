@@ -25,7 +25,9 @@ test("new helper rejects old manager immediately without emitting orphan notific
     hooks.get("session_start")!({}, {
       ui: { notify(message: string) { notifications.push(message); } },
     });
-    await expect(endpoint!.request("test", { value: 1 })).rejects.toMatchObject({ code: "unsupported" });
+    await expect(endpoint!.request("test", { value: 1 })).rejects.toMatchObject({
+      code: "unsupported", message: expect.stringContaining("/reload in the parent"),
+    });
     expect(notifications).toEqual([]);
   } finally {
     if (old === undefined) delete process.env.PI_SUBAGENT_EXTENSION_CHANNEL_VERSION;

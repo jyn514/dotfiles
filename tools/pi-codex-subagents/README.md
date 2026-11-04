@@ -393,7 +393,8 @@ Failures reject an `Error` with a stable `code`:
 Invalid local calls use `invalid_payload` or `invalid_channel`.
 A timeout, process closure, or unknown outcome can follow an application effect; never retry automatically.
 An old parent lacks the child-launch capability flag, so a new helper refuses immediately instead of silently publishing an invisible request.
-Restart the parent to load new transport support; replacing source or restarting only the child does not update its manager.
+Run `/reload` in the parent to load new transport support and reconnect endpoints; starting a fresh parent Pi process also works.
+Replacing source, using `/new`, or restarting only the child does not update its loaded manager.
 
 Parent requests can reopen a completed worker's saved session but never failed, interrupted, suspended, or paused work.
 A command that starts no model run restores the completed state without fabricating a new completion.

@@ -544,8 +544,9 @@ The browser also offers the question again; failures never send the answer to th
 If publication fails after saving, the tool reports that questions remain saved but their presentation is not confirmed.
 An RPC session without a child channel cannot queue questions through this tool.
 
-Start a fresh Pi process after updating the manager and this extension.
-An already-loaded older manager does not gain the transport when it launches a newly updated child helper.
+Run `/reload` after updating the manager and this extension; it replaces the extension runtime and reconnects the channel.
+Starting a fresh Pi process also works, but `/new` alone does not reload extension code.
+An already-loaded older manager does not gain the transport just by launching a newly updated child helper.
 The helper rejects that unsupported pairing rather than waiting for a missing response.
 
 ### Cancelling obsolete questions
