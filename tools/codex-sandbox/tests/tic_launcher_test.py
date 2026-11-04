@@ -1045,7 +1045,7 @@ class TicLauncherTest(unittest.TestCase):
     def test_guest_worker_receives_only_current_launch_token_in_private_env_file(self):
         self.state.pi_model_session_id = 'fixture-session'
         self.state.codex_container = 'worker'
-        self.state.container_repository = Path('/src/workspace')
+        self.state.container_repository = Path('/home/codex/src/workspace')
         self.state.handoff_origin = None
         fresh = {'SANDBOX_TIC_TOKEN': 'fresh-fixture-token', 'SANDBOX_TIC_ENDPOINT': '10.0.0.2:2225'}
         self.state.tic_environment = fresh
@@ -1059,7 +1059,7 @@ class TicLauncherTest(unittest.TestCase):
             with mock.patch.dict('os.environ', {'SANDBOX_TIC_TOKEN': 'stale-token',
                                                 'SANDBOX_TIC_ENDPOINT': 'old-endpoint'}), mock.patch.dict(
                     self.globals, {'prepare_agent_mountpoints': mock.Mock(),
-                                   'host_pi_resource_paths': lambda state: {str(state.repository): '/src/workspace'},
+                                   'host_pi_resource_paths': lambda state: {str(state.repository): '/home/codex/src/workspace'},
                                    'build_agent_command': mock.Mock(return_value=command),
                                    'keychain_environment': lambda state: {}}):
                 with self.assertRaisesRegex(self.launcher['LauncherError'], 'worker exited'):

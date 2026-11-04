@@ -378,11 +378,11 @@ class RoutingTests(unittest.TestCase):
         dotfiles = self.repo('relocated-config')
         alias = self.repo('outside-alias')
         mounts = (mount(1, 0, '/') +
-                  mount(2, 1, '/src', '/host/src', '0:36', 'virtiofs', 'source') +
+                  mount(2, 1, '/home/codex/src', '/host/src', '0:36', 'virtiofs', 'source') +
                   mount(3, 1, self.host, '/host/project', '0:35', 'virtiofs', 'host') +
                   mount(4, 1, dotfiles, '/outside-source/config', '0:37', 'virtiofs', 'dotfiles') +
                   mount(5, 1, alias, '/outside-source/config', '0:37', 'virtiofs', 'dotfiles'))
-        # Neither /src's backing nor the active workspace covers this mount.
+        # Neither /home/codex/src's backing nor the active workspace covers this mount.
         self.assertDecision(['commit'], cwd=dotfiles, workspace=dotfiles, mounts=mounts)
         env = dict(self.env, JJ_PROXY_ROOTS=json.dumps([str(self.host), str(dotfiles)]))
         for selected in (dotfiles, alias):
@@ -416,8 +416,8 @@ class RoutingTests(unittest.TestCase):
 
     def test_malformed_explicit_root_projection_fails_instead_of_routing_native(self):
         for roots in ('', '{', '{}', 'null', '[]', '[null]', '[1]',
-                      '["relative"]', '["/src/../escape"]',
-                      json.dumps(['/src/bad\0root'])):
+                      '["relative"]', '["/home/codex/src/../escape"]',
+                      json.dumps(['/home/codex/src/bad\0root'])):
             with self.subTest(roots=roots), self.assertRaises(router.RouteError):
                 self.decision(['commit'], env=dict(self.env, JJ_PROXY_ROOTS=roots))
 
@@ -470,8 +470,8 @@ class RoutingTests(unittest.TestCase):
         self.assertDecision(['commit'], cwd=alias, workspace=alias, mounts=mounts, backend='proxy')
 
     def test_source_view_and_private_source_view_submount(self):
-        # Path /src is a namespace anchor, not an arbitrary fixture parameter.
-        mounts = mount(1, 0, '/') + mount(2, 1, '/src', '/host/src', '0:35', 'virtiofs', 'host')
+        # Path /home/codex/src is a namespace anchor, not an arbitrary fixture parameter.
+        mounts = mount(1, 0, '/') + mount(2, 1, '/home/codex/src', '/host/src', '0:35', 'virtiofs', 'host')
         alias = self.repo('source-alias')
         mounts += mount(3, 1, alias, '/host/src/other-project', '0:35', 'virtiofs', 'host')
         self.assertDecision(['commit'], cwd=alias, workspace=alias, mounts=mounts, backend='proxy')
@@ -518,8 +518,8 @@ class RoutingTests(unittest.TestCase):
         self.assertDecision(['commit', '-m'], command=['commit'], hooks=False)
 
     def test_no_known_host_evidence_does_not_deny_bootstrap_by_lexical_src(self):
-        self.assertDecision(['git', 'init', '/src/not-host-backed'], mounts=mount(1, 0, '/'),
-                            workspace=False, destination=Path('/src/not-host-backed'), command=['git', 'init'])
+        self.assertDecision(['git', 'init', '/home/codex/src/not-host-backed'], mounts=mount(1, 0, '/'),
+                            workspace=False, destination=Path('/home/codex/src/not-host-backed'), command=['git', 'init'])
         # Routing parses aliases as data and never executes native probes.
         with patch.object(subprocess, 'run', side_effect=AssertionError('router probe')):
             self.assertDecision(['commit'])

@@ -1,5 +1,5 @@
 set -eu
-for repo in /src/project /src/dotfiles; do
+for repo in /home/codex/src/project /home/codex/src/dotfiles; do
 	/trusted/bin/busybox touch "$repo/guest-write"
 	for metadata in .git .jj; do
 		if /trusted/bin/busybox touch "$repo/$metadata/guest-probe" 2>/dev/null; then
@@ -8,11 +8,11 @@ for repo in /src/project /src/dotfiles; do
 		fi
 	done
 done
-if /trusted/bin/busybox touch /src/dotfiles/.agents/sandbox/guest-policy 2>/dev/null; then
+if /trusted/bin/busybox touch /home/codex/src/dotfiles/.agents/sandbox/guest-policy 2>/dev/null; then
 	echo 'writable dotfiles sandbox policy' >&2
 	exit 1
 fi
-if /trusted/bin/busybox touch /src/sibling/guest-probe 2>/dev/null; then
+if /trusted/bin/busybox touch /home/codex/src/sibling/guest-probe 2>/dev/null; then
 	echo 'writable unrelated source tree' >&2
 	exit 1
 fi

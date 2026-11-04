@@ -33,7 +33,7 @@ test("/cd prepares images before stopping Pi and preserves the session on build 
   process.env.CODEX_SANDBOX_CD_REQUEST = request;
   process.env.CODEX_SANDBOX_CD_VALIDATE = validator;
   try {
-    // The real validator maps HOME/src/workspace to /src/workspace. Own both
+    // The real validator maps HOME/src/workspace to /home/codex/src/workspace. Own both
     // ends of that boundary rather than relying on a developer's HOME/src or
     // the checkout's writable Jujutsu metadata.
     mkdirSync(workspace, { recursive: true });

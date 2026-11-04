@@ -75,7 +75,7 @@ advertise the guest working directory in the same projection. Stored messages re
 rewriting alone does not constrain the preceding resource reads. Host Pi's README,
 docs, and examples are mounted read-only at guest Pi package paths; their
 advertised host paths map to those guest paths. Project-relative resources, including project skills, map
-from the host repository root to its `/src` guest mount.
+from the host repository root to its `/home/codex/src` guest mount.
 Resources under launcher dotfiles project to its selected guest root even when the host checkout is outside the source tree.
 Other sibling and historical paths remain unchanged.
 A saved conversation's cwd is historical context, not a request to mount that
@@ -257,12 +257,12 @@ This is not a user-configurable multi-repository facility.
 
 Ordinary files in both workspaces are writable.
 Protect `.git`, `.jj`, their external backing paths, and `.agents/sandbox` through every exposed alias in both checkouts.
-Other `/src` siblings remain inspection-only; independent container-local repositories retain native JJ operation.
+Other `/home/codex/src` siblings remain inspection-only; independent container-local repositories retain native JJ operation.
 Filesystem access does not authorize unrelated edits or ownership of another contributor's changes.
 The active project's accepted policy alone selects optional services and credentials; dotfiles supplies no additional service policy.
 
 Retain the active workspace's guest path and working directory.
-Prefer dotfiles' existing source-tree mapping, normally `/src/dotfiles`; otherwise allocate a destination unused by visible source entries and other mounts.
+Prefer dotfiles' existing source-tree mapping, normally `/home/codex/src/dotfiles`; otherwise allocate a destination unused by visible source entries and other mounts.
 A conventional-name collision must not hide another source tree or reject a valid layout.
 An active worktree nested inside dotfiles does not conflict with dotfiles' parent mapping when the relative host and guest paths agree.
 Retain the nested worktree's own mount and protected metadata and policy overlays within the writable parent checkout.

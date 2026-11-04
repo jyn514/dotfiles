@@ -34,7 +34,7 @@ class TicCdPreflightTest(unittest.TestCase):
         (self.repository / '.jj').mkdir()
         (self.home / '.agents/skills').mkdir(parents=True)
         self.workspace = WorkspaceLayout(
-            self.repository, Path('/src/target'), self.repository / '.git',
+            self.repository, Path('/home/codex/src/target'), self.repository / '.git',
             self.repository / '.git', self.repository / '.jj', self.home / 'request.lock')
         self.launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
         self.launch = self.launcher['launch']
@@ -269,7 +269,7 @@ class TicCdPreflightTest(unittest.TestCase):
         (cache / '.git').mkdir()
         (cache / '.jj').mkdir()
         self.replacements['discover_launch_workspaces'].return_value.append(WorkspaceLayout(
-            cache, Path('/src/dotfiles'), cache / '.git', cache / '.git',
+            cache, Path('/home/codex/src/dotfiles'), cache / '.git', cache / '.git',
             cache / '.jj', self.home / 'second-request.lock'))
         with self.patched():
             code, output, errors = self.prepare()

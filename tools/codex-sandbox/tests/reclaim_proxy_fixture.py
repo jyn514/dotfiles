@@ -50,7 +50,7 @@ def main():
     owner = GuestDocker()
     proxies.OUTER_RUNTIME = owner
     args.prefix = 'reclaim-proxy-' + uuid.uuid4().hex[:12]
-    args.container_repo = '/src/reclaim'
+    args.container_repo = '/home/codex/src/reclaim'
     args.network = 'none'
     args.state = str(args.repo / 'proxy-state.json')
     credential = args.repo / 'dummy-zuliprc'
@@ -60,7 +60,7 @@ def main():
     state = {'proxies': []}
     name = args.prefix + '-zulip'
     command = {'network': False, 'workdir': '.', 'mounts': [],
-               'argv': ['python3', '/src/reclaim/probe.py', 'readwait', '/src/reclaim/helper']}
+               'argv': ['python3', '/home/codex/src/reclaim/probe.py', 'readwait', '/home/codex/src/reclaim/helper']}
     try:
         proxies.start_one_proxy(args, args.repo, args.prefix, {'zulip': args.image},
                                 state, threading.Lock(), 'zulip', command)

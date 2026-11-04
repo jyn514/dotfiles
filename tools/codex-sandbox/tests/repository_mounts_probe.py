@@ -33,7 +33,7 @@ if layout == "shared":
         assert_readonly(root / ".jj")
     for path in json.loads(os.environ["PROTECTED_PATHS"]):
         assert_readonly(Path(path))
-    assert_readonly(Path("/src/unlisted"))
+    assert_readonly(Path("/home/codex/src/unlisted"))
     skills = Path("/home/codex/.agents/skills/shared")
     skills.write_text("live skills alias")
     assert (roots[1] / "skills/shared").read_text() == "live skills alias"

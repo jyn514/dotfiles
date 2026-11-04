@@ -298,7 +298,7 @@
         capture (ns-resolve 'scripts.jj-split-patch 'current-operation-id)
         split (ns-resolve 'scripts.jj-split-patch 'run-split!)
         native {:backend "native" :workspace "/tmp/independent"}
-        proxy {:backend "proxy" :workspace "/src/protected"}]
+        proxy {:backend "proxy" :workspace "/home/codex/src/protected"}]
     (with-redefs-fn {#'babashka.process/shell shell
                     run-read (fn [& args] (swap! calls conj args) {:out "op-id"})
                     (ns-resolve 'scripts.jj-split-patch 'sandbox-proxy-dir) (constantly "/mounted")}

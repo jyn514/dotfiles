@@ -126,13 +126,13 @@ def main():
             setup.guest(record, "nerdctl", "pull", IMAGE)
             setup.guest(record, "nerdctl", "run", "--rm", "--pull=never", "--network=none",
                         "--cap-drop=ALL", "--security-opt=no-new-privileges",
-                        "--mount", f"type=bind,src={work},dst=/src,readonly",
-                        "--mount", f"type=bind,src={project},dst=/src/project with spaces,bind-nonrecursive=true",
-                        "--mount", f"type=bind,src={project / '.git'},dst=/src/project with spaces/.git,readonly",
-                        "--mount", f"type=bind,src={empty},dst=/src/project with spaces/.agents,readonly",
+                        "--mount", f"type=bind,src={work},dst=/home/codex/src,readonly",
+                        "--mount", f"type=bind,src={project},dst=/home/codex/src/project with spaces,bind-nonrecursive=true",
+                        "--mount", f"type=bind,src={project / '.git'},dst=/home/codex/src/project with spaces/.git,readonly",
+                        "--mount", f"type=bind,src={empty},dst=/home/codex/src/project with spaces/.agents,readonly",
                         "--mount", f"type=bind,src={external},dst=/metadata,readonly",
                         "--mount", f"type=bind,src={probe},dst=/probe.py,readonly",
-                        "--workdir", "/src/project with spaces/nested", IMAGE, "python3", "/probe.py")
+                        "--workdir", "/home/codex/src/project with spaces/nested", IMAGE, "python3", "/probe.py")
             assert (project / "written.txt").read_text() == "container edit"
             endpoint = f"http://host.lima.internal:{server.server_port}/{marker}"
             network.install_probe(instance, endpoint, expected_shares=record["shares"])

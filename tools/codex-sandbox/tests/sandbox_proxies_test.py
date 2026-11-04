@@ -311,7 +311,7 @@ class ManifestTest(unittest.TestCase):
         (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.sandbox = self.repo / ".agents" / "sandbox"
         self.sandbox.mkdir(parents=True)
-        self.container_repo = Path("/src/example")
+        self.container_repo = Path("/home/codex/src/example")
 
     def jj_mount_arguments(self, repo: Path, container_repo: Path, command: dict) -> list[str]:
         from workspace_layout import WorkspaceLayout, ensure_request_lock
@@ -736,16 +736,16 @@ class ManifestTest(unittest.TestCase):
         command = self.command(mounts=[{
             "builtin": "git", "proxy": "read-write", "agent": "read-only",
         }])
-        container_repo = Path("/src/main/.workspaces/other")
+        container_repo = Path("/home/codex/src/main/.workspaces/other")
 
         self.assertFalse((workspace / ".git").exists())
         arguments = sandbox_proxies.proxy_repository_mount_args(
             workspace, container_repo, "bug", command,
         )
         backing = (main / ".git").resolve()
-        self.assertIn(f"type=bind,src={backing},dst=/src/main/.git", arguments)
+        self.assertIn(f"type=bind,src={backing},dst=/home/codex/src/main/.git", arguments)
         self.assertEqual(
-            ["--env", "SANDBOX_GIT_DIR=/src/main/.git"],
+            ["--env", "SANDBOX_GIT_DIR=/home/codex/src/main/.git"],
             sandbox_proxies.proxy_git_environment_args(workspace, container_repo, command),
         )
 
@@ -758,7 +758,7 @@ class ManifestTest(unittest.TestCase):
             self.repo, self.container_repo, "bug", command,
         )
         self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/example/.git,readonly",
+            f"type=bind,src={(self.repo / '.git').resolve()},dst=/home/codex/src/example/.git,readonly",
             arguments,
         )
 
@@ -860,9 +860,9 @@ class ManifestTest(unittest.TestCase):
         nested_repository.mkdir(parents=True)
         sibling.mkdir()
         self.assertEqual(
-            Path("/src/shared"),
+            Path("/home/codex/src/shared"),
             sandbox_proxies.metadata_container_path(
-                nested_repository, sibling, Path("/src/team/project"),
+                nested_repository, sibling, Path("/home/codex/src/team/project"),
             ),
         )
 
@@ -976,7 +976,7 @@ class ManifestTest(unittest.TestCase):
         self.assertIn(f"JJ_PROXY_REPO={self.container_repo}", generated)
         self.assertIn("src=shared-example,dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
-        self.assertIn("dst=/src/example/state,readonly", generated)
+        self.assertIn("dst=/home/codex/src/example/state,readonly", generated)
         # Check the two real producers together: each used to add the policy mount.
         from workspace_layout import WorkspaceLayout
         launcher = runpy.run_path(str(ROOT / "tools/codex-sandbox/codex-sandbox"))
@@ -996,8 +996,8 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual([
             f"type=bind,src={self.sandbox},dst={self.container_repo}/.agents/sandbox,readonly",
         ], policy_mounts)
-        self.assertIn("/src/example/secret:ro,noexec", generated)
-        self.assertNotIn("dst=/src,readonly", generated)
+        self.assertIn("/home/codex/src/example/secret:ro,noexec", generated)
+        self.assertNotIn("dst=/home/codex/src,readonly", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
         self.assertNotIn("secret.not.for-agent", generated)
 

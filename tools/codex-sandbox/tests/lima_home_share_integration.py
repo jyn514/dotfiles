@@ -37,9 +37,9 @@ def exercise(state):
             with runtime.workload(image, "home-boundary-" + secrets.token_hex(6), [
                     "--network", "none", "--user", f"{uid}:{os.getgid()}",
                     "--env", f"HOST_ONLY_FILE={secret}",
-                    "--mount", f"type=bind,src={home / 'src'},dst=/src,readonly",
-                    "--mount", f"type=bind,src={repo},dst=/src/dotfiles",
-                    "--mount", f"type=bind,src={repo / '.git'},dst=/src/dotfiles/.git,readonly",
+                    "--mount", f"type=bind,src={home / 'src'},dst=/home/codex/src,readonly",
+                    "--mount", f"type=bind,src={repo},dst=/home/codex/src/dotfiles",
+                    "--mount", f"type=bind,src={repo / '.git'},dst=/home/codex/src/dotfiles/.git,readonly",
                     "--mount", f"type=bind,src={ROOT / 'tests/lima_home_guest.py'},dst=/probe.py,readonly",
                     "--entrypoint", "python3"], ["/probe.py"]) as process:
                 assert process.wait(timeout=30) == 0

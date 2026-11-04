@@ -468,7 +468,7 @@ class BakeTest(unittest.TestCase):
 
     def test_external_context_symlink_is_ignored(self):
         link = self.repo / 'ci/container-python'
-        link.symlink_to('/src/personal/lapwing/stint/.uv-python/python')
+        link.symlink_to('/home/codex/src/personal/lapwing/stint/.uv-python/python')
 
         resolve(self.engine, self.repo, ['base'])
 

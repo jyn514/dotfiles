@@ -27,7 +27,7 @@ export function rewritePiResourcePaths(
 
 function resourcePath(value: string, paths: PathMappings): string {
   // Translate once. A host path such as /home/user/src can itself contain
-  // the guest prefix /src; repeated text replacement would corrupt it.
+  // the guest prefix /home/codex/src; repeated text replacement would corrupt it.
   for (const [from, to] of Object.entries(paths).sort(([left], [right]) => right.length - left.length)) {
     if (value === from || value.startsWith(from + "/")) return to + value.slice(from.length);
   }

@@ -93,15 +93,15 @@ Sidecars drop all capabilities.
 This takes effect on new launches;
 restart existing sessions to apply it.
 
-The launcher mounts `~/src` read-only at `/src`, then overlays ordinary files in the active workspace and its own `DOTFILES` checkout writable.
-The active workspace keeps its existing guest path: its relative path beneath `~/src`, or `/src/repository` for an external repository.
+The launcher mounts `~/home/codex/src` read-only at `/home/codex/src`, then overlays ordinary files in the active workspace and its own `DOTFILES` checkout writable.
+The active workspace keeps its existing guest path: its relative path beneath `~/home/codex/src`, or `/home/codex/src/repository` for an external repository.
 That active path remains the agent and proxy working directory.
-Dotfiles normally maps to `/src/dotfiles`; the launcher uses its existing source mapping where possible and allocates an unused `/src` path otherwise.
+Dotfiles normally maps to `/home/codex/src/dotfiles`; the launcher uses its existing source mapping where possible and allocates an unused `/home/codex/src` path otherwise.
 A collision must neither hide another source entry nor reject an otherwise valid layout.
 When dotfiles is the active workspace, the launcher retains that path and deduplicates its mounts and authority.
 A worktree nested inside dotfiles also retains dotfiles' existing source path when the host and guest nesting agree.
 The parent checkout mounts writable there; the nested worktree keeps its own mount and read-only metadata and policy overlays.
-Use the launcher's selected path rather than assuming `/src/dotfiles`.
+Use the launcher's selected path rather than assuming `/home/codex/src/dotfiles`.
 Other source siblings remain inspection-only.
 Both writable checkouts retain protection for `.git`, `.jj`, external metadata backing paths, and `.agents/sandbox` through every exposed alias.
 The active project's accepted policy owns services and credentials; exposing dotfiles does not accept its optional capabilities.
@@ -110,7 +110,7 @@ One JJ proxy per active shared session accepts exactly those workspace roots, wi
 For a scoped commit from another project, use a root-relative fileset and the selected dotfiles path:
 
 ```sh
-jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
+jj -R /home/codex/src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 ```
 
 Ordinary filesets retain invocation-cwd semantics even with `-R`; only author hooks target the resolved repository.
@@ -126,8 +126,8 @@ Distinct proxies serialize all mutation-mode requests, including author hooks, w
 Independent repositories remain concurrent; this lock does not coordinate arbitrary host writers or ordinary file edits.
 See the [JJ proxy contract](../jj-proxy/design.typ) for protocol and permission details.
 
-For external worktrees whose mountpoints are missing beneath `/src`, the launcher stages those directories in temporary sandbox state and binds the existing source subtrees read-only.
-This also accommodates linked Git metadata without creating placeholder directories under `~/src`.
+For external worktrees whose mountpoints are missing beneath `/home/codex/src`, the launcher stages those directories in temporary sandbox state and binds the existing source subtrees read-only.
+This also accommodates linked Git metadata without creating placeholder directories under `~/home/codex/src`.
 Before launch, it rejects duplicate mount destinations in the assembled container arguments.
 The launcher alone adds the agent's protected `.agents/sandbox` mounts; proxy-generated arguments do not repeat them.
 When this staging is needed, new entries in staged parent directories appear on the next launch;
@@ -216,7 +216,7 @@ The relay keeps no credential cache and returns the pair only if both reads succ
 Flower's local CI client consumes the framed protocol in [the relay design](spec/r2-keychain-relay-design.typ);
 there is no credential-printing command. It sends one credential frame after connecting, so one
 invocation can produce at most one Keychain consent sequence. Bounded connection-establishment
-retry is still pending in the read-only `/src/flower` checkout; until Flower implements it, an
+retry is still pending in the read-only `/home/codex/src/flower` checkout; until Flower implements it, an
 early request can fail instead of waiting for the best-effort relay. Explicit R2 environment
 credentials bypass the relay, and unavailable relay credentials skip optional upload without
 failing CI.

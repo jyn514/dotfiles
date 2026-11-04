@@ -28,7 +28,7 @@ def main():
         (source / 'repository').mkdir()
         (source / 'repository/old').touch()
         (metadata / 'marker').write_text('protected')
-        destinations = [Path('/src/repository'), Path('/src/team/main/.git')]
+        destinations = [Path('/home/codex/src/repository'), Path('/home/codex/src/team/main/.git')]
         overlays = ['--mount', f'type=bind,src={repo},dst={destinations[0]}',
                     '--mount', f'type=bind,src={metadata},dst={destinations[1]},readonly']
         script = Path(__file__).with_name('source_view_probe.py')
@@ -37,7 +37,7 @@ def main():
         baseline_name = 'source-view-baseline-' + uuid.uuid4().hex[:12]
         try:
             baseline = runtime.run(['run', '--rm', '--name', baseline_name, *common,
-                                    '--mount', f'type=bind,src={source},dst=/src,readonly',
+                                    '--mount', f'type=bind,src={source},dst=/home/codex/src,readonly',
                                     *overlays, image.config, '/probe.py'], check=False, capture_output=True)
         finally:
             runtime.terminate(baseline_name)

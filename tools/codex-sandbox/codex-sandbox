@@ -42,7 +42,7 @@ from relay_lifecycle import RelayResourcePlan
 from source_view import check_mount_destinations, source_mounts
 from workspace_layout import (
     WorkspaceLayout, WorkspaceError, discover_repository_metadata, discover_workspace,
-    ensure_request_lock, workspace_guest_root, workspace_work_volume, WORK_DIRECTORY,
+    ensure_request_lock, workspace_guest_root, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY,
 )
 from keychain_bridge import HostKeychainBridge
 from host_tcp_bridge import FixedTcpBridge
@@ -499,10 +499,10 @@ def container_repository_path(home: Path, repository: Path) -> Path:
     try:
         relative = repository.relative_to(source_root)
     except ValueError:
-        return Path("/src/repository")
+        return SOURCE_ROOT / "repository"
     if relative == Path("."):
-        return Path("/src/repository")
-    return Path("/src") / relative
+        return SOURCE_ROOT / "repository"
+    return SOURCE_ROOT / relative
 
 
 def container_working_directory_path(
@@ -1704,7 +1704,7 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
         for relative in PI_RESOURCE_PATHS
     })
     source_root = (state.home / "src").resolve()
-    paths[str(source_root)] = "/src"
+    paths[str(source_root)] = str(SOURCE_ROOT)
     paths[str(state.repository)] = str(state.container_repository)
     paths.update({str(workspace.host_root): str(workspace.guest_root)
                   for workspace in getattr(state, "workspaces", [])})
@@ -1714,7 +1714,7 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
     for host_root, guest_root in (
         *((workspace.host_root, workspace.guest_root)
           for workspace in getattr(state, "workspaces", [])),
-        (state.repository, state.container_repository), (source_root, Path("/src")),
+        (state.repository, state.container_repository), (source_root, SOURCE_ROOT),
     ):
         if agents_source.is_relative_to(host_root):
             paths[str(state.home / ".pi/agent/AGENTS.md")] = str(

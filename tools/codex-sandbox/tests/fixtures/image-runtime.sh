@@ -10,6 +10,8 @@ else
 fi
 test -d /opt/agent-pi/src/packages/coding-agent/docs
 test -d /opt/agent-pi/src/packages/coding-agent/examples
+test -d /home/codex/src
+test ! -e /src
 test ! -e /opt/agent-pi/src/node_modules/typescript/package.json
 test ! -d /opt/agent-pi/src/scripts
 if [ -e /etc/alpine-release ]; then

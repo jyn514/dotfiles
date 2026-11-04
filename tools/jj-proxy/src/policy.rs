@@ -477,7 +477,7 @@ mod tests {
                 for position in 0..=command.len() {
                     let mut argv = command.clone();
                     argv.splice(position..position, option.iter().copied());
-                    for selector in [vec![], vec!["-R", "/src/selected"]] {
+                    for selector in [vec![], vec!["-R", "/home/codex/src/selected"]] {
                         let input = [selector, argv.clone()].concat()
                             .into_iter().map(str::to_owned).collect::<Vec<_>>();
                         let (_, extracted) = extract_repository(&input).unwrap();
@@ -500,7 +500,7 @@ mod tests {
         assert!(!check(&["op", "log", "--at-operation", "@-"]));
         for args in [
             &["op", "restore", "@-"][..], &["file", "track", "src/main.rs"][..], &["file", "untrack", "src/main.rs"][..],
-            &["file", "chmod", "+x", "src/main.rs"][..], &["workspace", "add", "other"][..], &["status", "--repository", "/src/other"][..],
+            &["file", "chmod", "+x", "src/main.rs"][..], &["workspace", "add", "other"][..], &["status", "--repository", "/home/codex/src/other"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
     #[test]
@@ -533,16 +533,16 @@ mod tests {
 
     #[test]
     fn repository_selector_is_extracted_once_without_hiding_other_options() {
-        for input in [vec!["-R", "/src/other", "status"], vec!["-R/src/other", "status"], vec!["--repository", "/src/other", "status"], vec!["status", "--repository=/src/other"]] {
+        for input in [vec!["-R", "/home/codex/src/other", "status"], vec!["-R/home/codex/src/other", "status"], vec!["--repository", "/home/codex/src/other", "status"], vec!["status", "--repository=/home/codex/src/other"]] {
             let args = input.into_iter().map(str::to_owned).collect::<Vec<_>>();
             let (repo, command) = extract_repository(&args).unwrap();
-            assert_eq!(repo.as_deref(), Some("/src/other"));
+            assert_eq!(repo.as_deref(), Some("/home/codex/src/other"));
             assert_eq!(command, ["status"]);
         }
-        for input in [vec!["-R", "/src/one", "-R", "/src/two", "status"], vec!["--repository=", "status"], vec!["-R"]] {
+        for input in [vec!["-R", "/home/codex/src/one", "-R", "/home/codex/src/two", "status"], vec!["--repository=", "status"], vec!["-R"]] {
             assert!(extract_repository(&input.into_iter().map(str::to_owned).collect::<Vec<_>>()).is_err());
         }
-        let (_, command) = extract_repository(&["status", "--", "-R", "/src/other"].map(str::to_owned)).unwrap();
+        let (_, command) = extract_repository(&["status", "--", "-R", "/home/codex/src/other"].map(str::to_owned)).unwrap();
         assert!(validate_inspect(&command).is_err());
     }
 }

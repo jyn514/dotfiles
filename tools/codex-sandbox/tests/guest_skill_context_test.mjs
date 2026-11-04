@@ -23,8 +23,8 @@ test("guest context rewrites expanded skills in history without changing stored 
   const savedEnvironment = { ...process.env };
   try {
     process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture";
-    process.env.CODEX_SANDBOX_GUEST_CWD = "/src/repository";
-    process.env.CODEX_SANDBOX_GUEST_REPO = "/src/repository";
+    process.env.CODEX_SANDBOX_GUEST_CWD = "/home/codex/src/repository";
+    process.env.CODEX_SANDBOX_GUEST_REPO = "/home/codex/src/repository";
     delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
       "/home/jyn/.agents/skills": "/home/codex/.agents/skills",
@@ -70,7 +70,7 @@ test("guest context rewrites expanded skills in history without changing stored 
     ];
     const storedSystems = structuredClone(systems);
     const projected = await runner.emitContext(systems);
-    assert.equal(projected[0].content, "Current working directory: /src/repository");
+    assert.equal(projected[0].content, "Current working directory: /home/codex/src/repository");
     assert.equal(projected[0].sections.cwd, "<cwd>\n/src/repository\n</cwd>");
     assert.equal(projected[0].sections.skills, expected);
     assert.deepEqual(projected[0].toolsAdded, systems[0].toolsAdded);
@@ -102,17 +102,17 @@ test("sandbox context projects link-list cwd metadata without changing identitie
     rmSync(directory, { recursive: true, force: true });
   });
   Object.assign(process.env, {
-    CODEX_SANDBOX_GUEST_CWD: "/src/llms/pi/nested",
-    CODEX_SANDBOX_GUEST_REPO: "/src/llms/pi",
+    CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/llms/pi/nested",
+    CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/llms/pi",
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
-      "/host/src": "/src",
-      "/host/src/dotfiles": "/src/launcher-dotfiles",
+      "/host/src": "/home/codex/src",
+      "/host/src/dotfiles": "/home/codex/src/launcher-dotfiles",
     }),
   });
   const cwds = [
-    ["/host/src/llms/pi/nested", "/src/llms/pi/nested"],
-    ["/host/src/llms/prose-eval", "/src/llms/prose-eval"],
-    ["/host/src/dotfiles", "/src/launcher-dotfiles"],
+    ["/host/src/llms/pi/nested", "/home/codex/src/llms/pi/nested"],
+    ["/host/src/llms/prose-eval", "/home/codex/src/llms/prose-eval"],
+    ["/host/src/dotfiles", "/home/codex/src/launcher-dotfiles"],
     ["/outside/project", "/outside/project"],
     ["/host/src-old/project", "/host/src-old/project"],
   ];
@@ -196,7 +196,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   writeFileSync(join(agentDir, "AGENTS.md"), "Ordinary host user instruction.");
   writeFileSync(join(skillDir, "SKILL.md"),
     "---\nname: ready-workqueue\ndescription: offline queue fixture\n---\nRead the queue.");
-  const guestRepository = "/src/renamed-project";
+  const guestRepository = "/home/codex/src/renamed-project";
   const guestCwd = `${guestRepository}/nested`;
   Object.assign(process.env, {
     HOME: home,
@@ -206,9 +206,9 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
       [cwd]: guestRepository,
       [home]: "/home/codex",
-      [join(home, "src")]: "/src",
-      [join(agentDir, "AGENTS.md")]: "/src/dotfiles/config/pi-agent/AGENTS.md",
-      "/host/previous-project": "/src/previous-project",
+      [join(home, "src")]: "/home/codex/src",
+      [join(agentDir, "AGENTS.md")]: "/home/codex/src/dotfiles/config/pi-agent/AGENTS.md",
+      "/host/previous-project": "/home/codex/src/previous-project",
     }),
     CODEX_SANDBOX_PREVIOUS_CWD: "/host/previous-project",
   });
@@ -285,7 +285,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
       assert.equal(text.split(rule).length - 1, 1, `provider receives ${rule} exactly once`);
     }
     assert.ok(text.includes(`${guestRepository}/.agents/sandbox/AGENTS.md`));
-    assert.ok(text.includes("/src/dotfiles/config/agents/nested.md"));
+    assert.ok(text.includes("/home/codex/src/dotfiles/config/agents/nested.md"));
   }
   assert.ok(systemText(requests[1]).includes("Updated repository sandbox rule."));
   assert.ok(systemText(requests[1]).includes("Updated nested home sandbox rule."));
@@ -296,7 +296,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     assert.ok(system.includes(`<cwd>\n${guestCwd}\n</cwd>`), system);
     assert.ok(system.includes(expectedSandbox), "provider receives the rendered template with the launch repository");
     assert.ok(system.includes("Ordinary host user instruction."), "sandbox guidance preserves normal host instructions");
-    assert.ok(system.includes('/src/dotfiles/config/pi-agent/AGENTS.md'), "the host context advertises its readable source");
+    assert.ok(system.includes('/home/codex/src/dotfiles/config/pi-agent/AGENTS.md'), "the host context advertises its readable source");
     assert.ok(!system.includes(incorrectSandbox), "nested cwd is not the writable root");
     assert.ok(!system.includes("{{repository}}"), "provider never receives the placeholder");
     assert.ok(!system.includes(cwd), "host repository paths never reach the provider");
@@ -309,7 +309,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
         : message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"))
       .join("\n");
     assert.equal(userText.split("Working directory switched from").length - 1, 1);
-    assert.ok(userText.includes(`from /src/previous-project to ${guestCwd}.`));
+    assert.ok(userText.includes(`from /home/codex/src/previous-project to ${guestCwd}.`));
     assert.ok(!userText.includes("/host/previous-project"), "previous directory uses the guest view too");
     assert.match(userText, /Continue the user's objective/);
     assert.match(userText, /authorizes work in the destination within that objective/);
@@ -351,9 +351,9 @@ test("sandbox instructions stay sandbox-only and each optional root loads indepe
   mkdirSync(join(home, ".agents/sandbox"), { recursive: true });
   Object.assign(process.env, {
     HOME: home,
-    CODEX_SANDBOX_GUEST_REPO: "/src/project",
-    CODEX_SANDBOX_GUEST_CWD: "/src/project/nested",
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [repository]: "/src/project", [home]: "/home/codex" }),
+    CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/project",
+    CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/project/nested",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [repository]: "/home/codex/src/project", [home]: "/home/codex" }),
   });
   delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
   for (const [sandbox, withHome, withRepository] of [
@@ -411,15 +411,15 @@ test("editable sandbox prose follows the launch repository and replaces stale se
     }
     Object.assign(process.env, {
       CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
-      CODEX_SANDBOX_GUEST_CWD: "/src/current/nested",
+      CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/current/nested",
       CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
     });
     delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
     const template = join(agents, "sandbox-context.md");
     const cases = [
-      { repository: "/src/current", prose: "Selected: {{repository}}.", expected: "Selected: /src/current." },
-      { repository: "/src/$&-other", prose: "New wording: {{repository}}; again {{repository}}.",
-        expected: "New wording: /src/$&-other; again /src/$&-other." },
+      { repository: "/home/codex/src/current", prose: "Selected: {{repository}}.", expected: "Selected: /home/codex/src/current." },
+      { repository: "/home/codex/src/$&-other", prose: "New wording: {{repository}}; again {{repository}}.",
+        expected: "New wording: /home/codex/src/$&-other; again /home/codex/src/$&-other." },
     ];
     for (const { repository, prose, expected } of cases) {
       process.env.CODEX_SANDBOX_GUEST_REPO = repository;
@@ -434,7 +434,7 @@ test("editable sandbox prose follows the launch repository and replaces stale se
       runner.onError((error) => errors.push(error));
       const messages = [
         { role: "system", content: "Original instructions", timestamp: 0 },
-        { role: "system", content: "", sections: { sandbox_context: "Stale repository: /src/old" }, timestamp: 1 },
+        { role: "system", content: "", sections: { sandbox_context: "Stale repository: /home/codex/src/old" }, timestamp: 1 },
       ];
       const original = structuredClone(messages);
       const projected = await runner.emitContext(messages);
@@ -453,7 +453,7 @@ test("editable sandbox prose follows the launch repository and replaces stale se
     );
     assert.ok(runner.getToolDefinition("bash"), "an older launcher keeps guest tools attached");
     const cleared = await runner.emitContext([
-      { role: "system", content: "Original instructions", sections: { sandbox_context: "Stale repository: /src/old" }, timestamp: 0 },
+      { role: "system", content: "Original instructions", sections: { sandbox_context: "Stale repository: /home/codex/src/old" }, timestamp: 0 },
     ]);
     assert.equal(cleared[0].sections.sandbox_context, null, "missing launch repository clears stale facts without guessing from cwd");
   } finally {
@@ -488,10 +488,10 @@ test("handoff notice survives real Codex request conversion with later directory
   });
   Object.assign(process.env, {
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
-    CODEX_SANDBOX_GUEST_CWD: "/src/destination/nested",
-    CODEX_SANDBOX_GUEST_REPO: "/src/destination",
+    CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/destination/nested",
+    CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/destination",
     CODEX_SANDBOX_PREVIOUS_CWD: "/host/origin",
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/origin": "/src/origin" }),
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/origin": "/home/codex/src/origin" }),
   });
   const loaded = await discoverAndLoadExtensions([
     join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
@@ -544,7 +544,7 @@ test("handoff notice survives real Codex request conversion with later directory
       "Codex receives the handoff at the end, not in its historical prompt");
     const rendered = [payload.instructions, ...payload.input.map((message) => JSON.stringify(message.content))].join("\n");
     assert.equal(rendered.split("Working directory switched from").length - 1, 1);
-    assert.match(rendered, /from \/src\/origin to \/src\/destination\/nested\./);
+    assert.match(rendered, /from \/home/codex/src\/origin to \/home/codex/src\/destination\/nested\./);
     assert.match(rendered, /authorizes work in the destination within that objective/);
     assert.match(rendered, /repository instructions and inspect working-copy state and change ownership/);
     assert.match(rendered, /Destination instructions/);
@@ -562,24 +562,24 @@ test("recorded handoffs preserve history and do not repeat on reload or ordinary
   try {
     Object.assign(process.env, {
       CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
-      CODEX_SANDBOX_GUEST_CWD: "/src/current",
-      CODEX_SANDBOX_GUEST_REPO: "/src/current",
+      CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/current",
+      CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/current",
       CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
-        "/host/origin": "/src/origin", "/host/current": "/src/current",
+        "/host/origin": "/home/codex/src/origin", "/host/current": "/home/codex/src/current",
       }),
     });
     const cases = [
       { previous: undefined, reason: "startup", expected: 0 },
-      { previous: "/src/current", reason: "startup", expected: 0 },
+      { previous: "/home/codex/src/current", reason: "startup", expected: 0 },
       { previous: "/host/current", reason: "startup", expected: 0 },
       { previous: "/host/origin", reason: "startup", expected: 1 },
-      { previous: "/src/origin", reason: "reload", expected: 1 },
-      { previous: "/src/origin", reason: "startup", pending: true, expected: 0 },
-      { previous: "/src/origin", reason: "new", expected: 0 },
-      { previous: "/src/origin", reason: "resume", expected: 0 },
-      { previous: "/src/origin", reason: "fork", expected: 0 },
-      { previous: "/src/origin", reason: "startup", existing: "current", expected: 0 },
-      { previous: "/src/origin", reason: "startup", existing: "source", expected: 1 },
+      { previous: "/home/codex/src/origin", reason: "reload", expected: 1 },
+      { previous: "/home/codex/src/origin", reason: "startup", pending: true, expected: 0 },
+      { previous: "/home/codex/src/origin", reason: "new", expected: 0 },
+      { previous: "/home/codex/src/origin", reason: "resume", expected: 0 },
+      { previous: "/home/codex/src/origin", reason: "fork", expected: 0 },
+      { previous: "/home/codex/src/origin", reason: "startup", existing: "current", expected: 0 },
+      { previous: "/home/codex/src/origin", reason: "startup", existing: "source", expected: 1 },
     ];
     for (const example of cases) {
       if (example.previous === undefined) delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
@@ -611,7 +611,7 @@ test("recorded handoffs preserve history and do not repeat on reload or ordinary
       assert.deepEqual(manager.getBranch().slice(0, prefix.length), prefix);
       if (example.expected) {
         assert.deepEqual(messages[0].options, { triggerTurn: false }, "a directory switch does not start new work");
-        assert.match(messages[0].message.content, /from \/src\/origin to \/src\/current\./);
+        assert.match(messages[0].message.content, /from \/home/codex/src\/origin to \/home/codex/src\/current\./);
         assert.ok(!messages[0].message.content.includes("/host/"));
       }
     }

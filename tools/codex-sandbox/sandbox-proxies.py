@@ -44,7 +44,7 @@ from caddy_foundation import (
 )
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 from source_view import check_mount_destinations, source_mounts
-from workspace_layout import jj_repository_path, workspace_work_volume, WORK_DIRECTORY
+from workspace_layout import jj_repository_path, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY
 
 OUTER_RUNTIME = ContainerRuntime()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -97,8 +97,8 @@ def container_repository(value: str) -> Path:
     path = Path(value)
     if not path.is_absolute() or path != Path(os.path.normpath(path)):
         raise ConfigError("container repository path must be normalized and absolute")
-    if path == Path("/src") or not path.is_relative_to("/src"):
-        raise ConfigError("container repository path must stay beneath /src")
+    if path == SOURCE_ROOT or not path.is_relative_to(SOURCE_ROOT):
+        raise ConfigError(f"container repository path must stay beneath {SOURCE_ROOT}")
     return path
 
 
@@ -507,7 +507,7 @@ def metadata_container_path(repo: Path, host_path: Path, container_repo: Path) -
     relative = Path(os.path.relpath(host_path, repo))
     target = Path(os.path.normpath(container_repo / relative))
     try:
-        target.relative_to("/src")
+        target.relative_to(SOURCE_ROOT)
     except ValueError as error:
         raise ConfigError(f"repository metadata path escapes the container workspace: {host_path}") from error
     return target
@@ -1265,7 +1265,7 @@ def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path) ->
         host_src.mkdir(parents=True, exist_ok=True)
     backing = [(source, target) for item in layouts for source, target in item.metadata_mounts()]
     aliases = [(item.host_root, target) for item in layouts for target in item.repository_aliases()]
-    destinations = [item.guest_root for item in layouts] + [target for _, target in backing + aliases if target.is_relative_to("/src")]
+    destinations = [item.guest_root for item in layouts] + [target for _, target in backing + aliases if target.is_relative_to(SOURCE_ROOT)]
     arguments = source_mounts(host_src, destinations, staging / "source-view")
     mounts: dict[Path, Path] = {}
     for source, target in [*((item.host_root, item.guest_root) for item in layouts), *backing, *aliases]:
@@ -2584,7 +2584,7 @@ def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any])
     for mount in mounts:
         target = mount.get("Destination", "")
         if (mount.get("RW") is True and
-                (target == "/src" or target.startswith("/src/") or target.startswith("/run/jj-locks/")) and
+                (target == str(SOURCE_ROOT) or target.startswith(f"{SOURCE_ROOT}/") or target.startswith("/run/jj-locks/")) and
                 target not in expected and target not in work_volumes):
             raise ConfigError(f"unexpected writable JJ workspace mount: {target}")
 

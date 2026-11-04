@@ -350,7 +350,7 @@ def clone_destination(source, cwd):
 
 def host_regions(env, mounts, cwd):
     anchors = []
-    source = Path('/src').resolve()
+    source = Path('/home/codex/src').resolve()
     mount = effective_mount(source, mounts)
     if mount and mount.point == source:
         anchors.append((source, False))
@@ -366,7 +366,7 @@ def host_regions(env, mounts, cwd):
             raise RouteError('malformed JJ_PROXY_ROOTS: expected absolute guest roots')
         selected_roots = [(physical(root, cwd), True) for root in roots]
     else:
-        selected_roots = [(physical(env.get('JJ_PROXY_REPO', '/src/work'), cwd),
+        selected_roots = [(physical(env.get('JJ_PROXY_REPO', '/home/codex/src/work'), cwd),
                            bool(env.get('JJ_PROXY_REPO')))]
     for selected, explicit_selected in selected_roots:
         if selected.exists():

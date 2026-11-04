@@ -31,7 +31,7 @@ test("host Pi resource paths are rewritten to guest paths", () => {
 
 test("host project paths are rewritten without touching sibling paths", () => {
   const host = "/Users/jyn/src/personal/lapwing/stint";
-  const guest = "/src/personal/lapwing/stint";
+  const guest = "/home/codex/src/personal/lapwing/stint";
   const prompt = [
     `Skill location: ${host}/.agents/skills/spec-review/SKILL.md`,
     `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`,
@@ -46,13 +46,13 @@ test("host project paths are rewritten without touching sibling paths", () => {
 const sessionPaths = {
   "/host/sessions": "/guest/sessions",
   "/host/subagents": "/guest/subagents",
-  "/host/project": "/src/project",
+  "/host/project": "/home/codex/src/project",
 };
 
 test("session calls translate guest selectors without rewriting queries, cursors, or unrelated tools", () => {
   for (const [tool, field, guest, host] of [
     ["read_session", "sessionFile", "/guest/subagents/parent/child.jsonl", "/host/subagents/parent/child.jsonl"],
-    ["search_sessions", "cwd", "/src/project/subdir", "/host/project/subdir"],
+    ["search_sessions", "cwd", "/home/codex/src/project/subdir", "/host/project/subdir"],
     ["read_session", "sessionFile", "relative/session.jsonl", "relative/session.jsonl"],
     ["read_session", "sessionFile", "/guest/subagents-old/child.jsonl", "/guest/subagents-old/child.jsonl"],
     ["read_session", "sessionFile", "/host/sessions/file.jsonl", "/host/sessions/file.jsonl"],
@@ -67,9 +67,9 @@ test("session calls translate guest selectors without rewriting queries, cursors
   const nested = { sessionFile: "/guest/subagents/nested/file.jsonl" };
   sessionToolInputToHost("read_session", nested, { ...sessionPaths, "/special/store": "/guest/subagents/nested" });
   expect(nested.sessionFile).toBe("/special/store/file.jsonl");
-  const overlapping = { sessionFile: "/src/project/child.jsonl" };
+  const overlapping = { sessionFile: "/home/codex/src/project/child.jsonl" };
   sessionToolInputToHost("read_session", overlapping, {
-    "/home/user/src": "/src", "/home/user/src/project": "/src/project",
+    "/home/user/src": "/home/codex/src", "/home/user/src/project": "/home/codex/src/project",
   });
   expect(overlapping.sessionFile).toBe("/home/user/src/project/child.jsonl");
 });
@@ -82,7 +82,7 @@ test("search results project only metadata and retain historical snippets", () =
   const original = structuredClone(result);
   const projected = JSON.parse(sessionToolTextToGuest("search_sessions", JSON.stringify(result), {}, sessionPaths));
   expect(projected.hits[0]).toEqual({
-    sessionFile: "/guest/subagents/parent/child.jsonl", sessionCwd: "/src/project", snippet: "read /host/project/file",
+    sessionFile: "/guest/subagents/parent/child.jsonl", sessionCwd: "/home/codex/src/project", snippet: "read /host/project/file",
   });
   expect(projected.hits[1]).toEqual(result.hits[1]);
   expect(result).toEqual(original);
@@ -95,7 +95,7 @@ test("read results project headers and version metadata without changing transcr
   const details = { sessionFile: "/host/subagents/parent/child.jsonl", nextCursor: "opaque-host-receipt",
     messages: [{ text: "/host/project/file" }] };
   const projected = sessionToolTextToGuest("read_session", transcript, details, sessionPaths);
-  expect(projected.split("\n")[0]).toBe("# Session id — cwd: /src/project — started: today");
+  expect(projected.split("\n")[0]).toBe("# Session id — cwd: /home/codex/src/project — started: today");
   expect(projected.slice(projected.indexOf("\n"))).toBe(transcript.slice(transcript.indexOf("\n")));
   expect(sessionToolMetadataToGuest(details, sessionPaths)).toEqual({ ...details, sessionFile: "/guest/subagents/parent/child.jsonl" });
   expect(details.sessionFile).toBe("/host/subagents/parent/child.jsonl");
@@ -103,10 +103,10 @@ test("read results project headers and version metadata without changing transcr
   const text = '# Versions\n1. today — cwd: /host/project\n   sessionFile: "/host/sessions/a.jsonl"\n'
     + '   sessionFile: "/host/sessions/a.jsonl"\n'; // Preview resembling a metadata line.
   expect(sessionToolTextToGuest("read_session", text, { versions }, sessionPaths)).toBe(
-    '# Versions\n1. today — cwd: /src/project\n   sessionFile: "/guest/sessions/a.jsonl"\n'
+    '# Versions\n1. today — cwd: /home/codex/src/project\n   sessionFile: "/guest/sessions/a.jsonl"\n'
     + '   sessionFile: "/host/sessions/a.jsonl"\n');
   expect(sessionToolMetadataToGuest({ versions }, sessionPaths)).toEqual({ versions: [
-    { ...versions[0], sessionFile: "/guest/sessions/a.jsonl", sessionCwd: "/src/project" },
+    { ...versions[0], sessionFile: "/guest/sessions/a.jsonl", sessionCwd: "/home/codex/src/project" },
   ] });
   expect(sessionToolTextToGuest("read_session", "read_session failed: ENOENT /host/sessions/missing.jsonl", {}, sessionPaths))
     .toBe("read_session failed: ENOENT /guest/sessions/missing.jsonl");
@@ -132,8 +132,8 @@ const { default: guestTools, createGuestAttachment, waitForGuestToolReady } = aw
 
 test("guest routing projects session-tool results at request time and reverses their selectors", async () => {
   const env = {
-    CODEX_SANDBOX_TOOL_CONTAINER: "fixture", CODEX_SANDBOX_GUEST_CWD: "/src/project",
-    CODEX_SANDBOX_GUEST_REPO: "/src/project", CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify(sessionPaths),
+    CODEX_SANDBOX_TOOL_CONTAINER: "fixture", CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/project",
+    CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/project", CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify(sessionPaths),
   };
   const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
@@ -157,7 +157,7 @@ test("guest routing projects session-tool results at request time and reverses t
     expect(JSON.parse(projected[0].content[0].text).hits[0].sessionFile).toBe("/guest/subagents/parent/child.jsonl");
     expect(projected[1].details.sessionFile).toBe("/guest/subagents/parent/child.jsonl");
     expect(projected[1].details.nextCursor).toBe("opaque");
-    expect(projected[1].content[0].text).toBe("# Session id — cwd: /src/project — started: today\nuser quoted /host/project");
+    expect(projected[1].content[0].text).toBe("# Session id — cwd: /home/codex/src/project — started: today\nuser quoted /host/project");
     expect(projected[2]).toEqual(original[2]);
     expect(messages).toEqual(original);
   } finally {

@@ -26,9 +26,9 @@ RUN python3 -m venv /opt/test-venv \
        pytest-sugar==1.1.1 \
        docker==7.2.0
 
-# Repositories mount beneath /src, so Bun resolves these shared Pi test
-# dependencies from /src/node_modules without modifying each checkout.
-RUN npm install --prefix /src --ignore-scripts --no-save \
+# Repositories mount beneath /home/codex/src, so Bun resolves these shared Pi test
+# dependencies from /home/codex/src/node_modules without modifying each checkout.
+RUN npm install --prefix /home/codex/src --ignore-scripts --no-save \
        @earendil-works/pi-coding-agent@0.84.4 \
        @earendil-works/pi-ai@0.84.4 \
        typebox@1.3.7

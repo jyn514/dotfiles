@@ -266,7 +266,7 @@ Command proxies receive a read-only repository view by default and a read-only `
 Declared writable mounts may override the repository view but cannot weaken that overlay.
 The launcher-owned JJ proxy instead uses a writable repository view without a sandbox configuration overlay.
 `workdir`, mount sources, and mount targets are relative to the repository root unless the schema explicitly defines a launcher-owned source.
-The launcher resolves targets beneath its container repository path, so the manifest does not depend on an absolute path such as `/src/work`.
+The launcher resolves targets beneath its container repository path, so the manifest does not depend on an absolute path such as `/home/codex/src/work`.
 The configuration loader rejects unknown fields, unsupported schema versions, malformed paths, escaping paths, duplicate targets, and configurations that would hide the proxy executable or socket. The launcher receives validated execution policy rather than manifest fields.
 
 `mounts` grants additional or overriding views without command-specific launcher knowledge.
@@ -657,12 +657,12 @@ Linked workspaces inherit the matched backing repository's authority and request
 A fail-closed Landlock policy admits the authorized worktrees, resolved metadata, request locks, private configuration, socket directory, and trusted runtime files.
 Mutation execution may write ordinary files and metadata in the authorized workspaces.
 Inspection children apply a separate read-only policy and `--ignore-working-copy`, even for explicit inspection of an authorized root.
-Protocol version 2 carries a physical absolute invocation cwd under `/src` in both modes.
+Protocol version 3 carries a physical absolute invocation cwd under `/home/codex/src` in both modes.
 The server derives mutation authority from the resolved backing repository's device and inode, not cwd spelling or path-prefix membership.
 Linked mutation children restrict writes to a pinned workspace directory and its matched backing/Git metadata; mutable workspace pointers cannot enlarge those grants.
 Scopes containing nested mount aliases or another protected repository's metadata are rejected.
 Linked workspaces on read-only source mounts remain unable to snapshot or update files.
-Independent `/src` siblings remain inspection-only; independent guest repositories remain native.
+Independent `/home/codex/src` siblings remain inspection-only; independent guest repositories remain native.
 Execution is permitted only beneath `/trusted/bin`, giving the working tree the same effective `noexec` property under Docker and Podman without unsafe syscall bindings or a hard-coded kernel ABI.
 The `bug` protocol is narrower than Jujutsu's grammar: it forwards one bridge subcommand, rewrites body input, rejects `push` and `raw`, and leaves issue-operation validation to the trusted bridge.
 

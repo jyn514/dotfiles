@@ -5,7 +5,7 @@ resource ownership, schema 4 atomic publication and joins, worker
 cancellation/joining, and owner-validated recovery. Caddy 2.11.4-alpine plus private
 profile-helper containers is the selected Zulip authenticated-egress architecture.
 The remaining acceptance gap is Flower's bounded R2 connection-establishment
-retry, blocked because `/src/flower` is read-only in this checkout. Until that
+retry, blocked because `/home/codex/src/flower` is read-only in this checkout. Until that
 external client change lands, an early R2 request may fail rather than wait for
 the best-effort relay; no possibly accepted request is replayed.
 The #link("tic-proxy.typ")[TicGit broker] uses best-effort `agent-launch` startup with a host-native command-proxy adapter.
@@ -333,7 +333,7 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
   Reuse per-launch readiness and resource cleanup with a launcher-owned child and lifetime pipe, not shared-session endpoint/token or durable PID records.
 + Completed: the Zulip trust domain uses a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container, minimal helper container, and private socket volume; credentials mount only into the helper, and the custom authenticated HTTP brokers are removed.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
-+ External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
++ External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/home/codex/src/flower`.
 + Keep compatibility recovery for pre-schema-4 records until deployed stale records no longer need cleanup; active legacy records must never join.
 
 Each migration slice must leave the launcher with one owner for the migrated resource.

@@ -56,7 +56,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
         layouts = {}
         for root in (self.main, linked_git, linked_jj):
             with self.subTest(root=root.name):
-                layout = discover_workspace(root, Path("/src/team") / root.name, self.home)
+                layout = discover_workspace(root, Path("/home/codex/src/team") / root.name, self.home)
                 layouts[root.name] = layout
                 self.assertEqual(layout, WorkspaceLayout.from_dict(json.loads(json.dumps(layout.to_dict()))))
                 ensure_request_lock(layout)
@@ -99,7 +99,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
         ]
         for root in (self.main, linked_git, linked_jj, standalone):
             expected = discover_repository_metadata(root)
-            expected_layout = discover_workspace(root, Path("/src/selected"), self.home)
+            expected_layout = discover_workspace(root, Path("/home/codex/src/selected"), self.home)
             expected_plan = launcher["_workspace_mount_plan"](SimpleNamespace(workspaces=[expected_layout]))
             for environment in overrides:
                 for runner in (None, launcher["run"]):
@@ -107,7 +107,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
                             mock.patch.dict(os.environ, environment):
                         before = dict(os.environ)
                         self.assertEqual(expected, discover_repository_metadata(root, runner=runner))
-                        layout = discover_workspace(root, Path("/src/selected"), self.home, runner=runner)
+                        layout = discover_workspace(root, Path("/home/codex/src/selected"), self.home, runner=runner)
                         self.assertEqual(expected_layout.proxy_authority(), layout.proxy_authority())
                         self.assertEqual(expected_layout.metadata_mounts(), layout.metadata_mounts())
                         self.assertEqual(expected_plan, launcher["_workspace_mount_plan"](
@@ -123,7 +123,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
                 discover_repository_metadata(self.main)
 
     def test_persisted_records_parse_after_host_checkout_is_gone(self):
-        layout = discover_workspace(self.main, Path("/src/main"), self.home)
+        layout = discover_workspace(self.main, Path("/home/codex/src/main"), self.home)
         data = layout.to_dict()
         for key in data:
             if key != "guest_root":
@@ -133,7 +133,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
         self.assertTrue(recovered.metadata_mounts())
         for invalid in ({}, {**data, "unknown": "/extra"}, {**data, "host_root": "relative"},
                         {**data, "git_dir": "/unsafe,delimiter"}, {**data, "jj_repo": "/a/../b"},
-                        {**data, "guest_root": "/src"}, {**data, "guest_root": "/other/repo"}):
+                        {**data, "guest_root": "/home/codex/src"}, {**data, "guest_root": "/other/repo"}):
             with self.subTest(invalid=invalid), self.assertRaises(WorkspaceError):
                 WorkspaceLayout.from_dict(invalid)
 
@@ -142,26 +142,26 @@ class WorkspaceLayoutTest(unittest.TestCase):
         (self.home / "src/dotfiles").mkdir()
         (self.home / "src/dotfiles-1").symlink_to("missing")
         cases = [
-            (self.main, Path("/src/team/main"), self.main, Path("/src/team/main")),
-            (outside, Path("/src/repository"), outside, Path("/src/repository")),
-            (self.main, Path("/src/team/main"), outside, Path("/src/dotfiles-2")),
-            (outside, Path("/src/repository"), self.main, Path("/src/team/main")),
+            (self.main, Path("/home/codex/src/team/main"), self.main, Path("/home/codex/src/team/main")),
+            (outside, Path("/home/codex/src/repository"), outside, Path("/home/codex/src/repository")),
+            (self.main, Path("/home/codex/src/team/main"), outside, Path("/home/codex/src/dotfiles-2")),
+            (outside, Path("/home/codex/src/repository"), self.main, Path("/home/codex/src/team/main")),
         ]
         for active, active_guest, dotfiles, expected in cases:
             with self.subTest(active=active, dotfiles=dotfiles):
                 self.assertEqual(expected, workspace_guest_root(self.home, active, active_guest, dotfiles))
 
     def test_parent_source_mapping_preserves_active_paths_and_metadata_reservations(self):
-        natural = Path("/src/team/main")
+        natural = Path("/home/codex/src/team/main")
         active_guest = natural / "target/worktree"
         nested = self.main / "target/worktree"
         foreign = self.home / "elsewhere"
         cases = [
             (nested, [], natural),
-            (foreign, [], Path("/src/dotfiles")),
+            (foreign, [], Path("/home/codex/src/dotfiles")),
             (nested, [(foreign / ".git", active_guest / ".git")], natural),
             (nested, [(self.main / ".git", natural / ".git")], natural),
-            (nested, [(foreign / ".git", natural / ".git")], Path("/src/dotfiles")),
+            (nested, [(foreign / ".git", natural / ".git")], Path("/home/codex/src/dotfiles")),
         ]
         for active, reserved, expected in cases:
             with self.subTest(active=active, reserved=reserved):
@@ -175,10 +175,10 @@ class WorkspaceLayoutTest(unittest.TestCase):
         native("jj", "git", "init", "--colocate", str(active), cwd=active)
         dotfiles = git_fixture(self.home / "installed/dotfiles")
         (self.home / "src/dotfiles").mkdir()
-        layout = discover_workspace(active, Path("/src/repository"), self.home)
+        layout = discover_workspace(active, Path("/home/codex/src/repository"), self.home)
         reservations = [*layout.metadata_mounts(),
                         *((layout.host_root, alias) for alias in layout.repository_aliases())]
-        self.assertEqual(Path("/src/dotfiles-2"), workspace_guest_root(
+        self.assertEqual(Path("/home/codex/src/dotfiles-2"), workspace_guest_root(
             self.home, active, layout.guest_root, dotfiles, reserved=reservations))
 
     def test_validate_initializes_git_only_dotfiles_without_changing_cwd_and_deduplicates(self):
@@ -216,7 +216,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
             futures = [pool.submit(initialize) for _ in range(2)]
             for future in futures:
                 future.result(timeout=10)
-        layout = discover_workspace(root, Path("/src/dotfiles"), self.home)
+        layout = discover_workspace(root, Path("/home/codex/src/dotfiles"), self.home)
         self.assertEqual(root / ".jj/repo", layout.jj_repo)
 
     def test_relocated_authority_drives_resources_and_vm_permissions(self):
@@ -231,8 +231,8 @@ class WorkspaceLayoutTest(unittest.TestCase):
             path.touch()
         runtime_directory = self.home / ".cache/proxy-session"
         runtime_directory.mkdir(parents=True)
-        workspaces = [discover_workspace(self.main, Path("/src/team/main"), self.home),
-                      discover_workspace(dotfiles, Path("/src/dotfiles-3"), self.home)]
+        workspaces = [discover_workspace(self.main, Path("/home/codex/src/team/main"), self.home),
+                      discover_workspace(dotfiles, Path("/home/codex/src/dotfiles-3"), self.home)]
         for workspace in workspaces:
             ensure_request_lock(workspace)
         state = SimpleNamespace(home=self.home, repository=self.main,
@@ -244,8 +244,8 @@ class WorkspaceLayoutTest(unittest.TestCase):
         with mock.patch.dict(launcher["host_pi_resource_paths"].__globals__,
                 installed_config_source=lambda _: dotfiles / "config/pi-agent/AGENTS.md"):
             resources = launcher["host_pi_resource_paths"](state)
-        self.assertEqual("/src/dotfiles-3", resources[str(dotfiles)])
-        self.assertEqual("/src/dotfiles-3/config/pi-agent/AGENTS.md",
+        self.assertEqual("/home/codex/src/dotfiles-3", resources[str(dotfiles)])
+        self.assertEqual("/home/codex/src/dotfiles-3/config/pi-agent/AGENTS.md",
                          resources[str(self.home / ".pi/agent/AGENTS.md")])
         backend = mock.Mock()
         with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
@@ -259,7 +259,7 @@ class WorkspaceLayoutTest(unittest.TestCase):
 
     def test_join_and_attach_pass_the_same_workspace_description_file(self):
         launcher = runpy.run_path(str(LAUNCHER))
-        state = SimpleNamespace(repository=self.main, container_repository=Path("/src/main"),
+        state = SimpleNamespace(repository=self.main, container_repository=Path("/home/codex/src/main"),
             workspaces_file=self.home / "workspaces.json", uid=os.getuid(), gid=os.getgid(),
             proxy_state=self.home / "state.json", proxy_prefix="fixture", image="agent",
             sidecar_image="", manifest=self.home / "manifest.json", prepared_images=None,

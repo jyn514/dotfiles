@@ -230,7 +230,7 @@ test("inherited targets survive self-compaction and a later Luna checkpoint with
   expect(result.compaction.details.modifiedFiles).toEqual(["new.ts", "prior.ts", "β.ts"]);
 });
 
-test.each([undefined, "/src/dotfiles/config/pi-agent/pi-extensions", "/relocated/resources/pi"])( 
+test.each([undefined, "/home/codex/src/dotfiles/config/pi-agent/pi-extensions", "/relocated/resources/pi"])( 
   "registered instruction path follows the agent resource mapping: %j", async guestDirectory => {
     const previous = process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
     try {

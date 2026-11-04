@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from workspace_layout import SOURCE_ROOT
+
 
 def check_mount_destinations(arguments: list[str]) -> None:
     """Reject duplicate container targets in a complete run argument list."""
@@ -25,7 +27,7 @@ def check_mount_destinations(arguments: list[str]) -> None:
 
 
 def source_mounts(source: Path, destinations: list[Path], staging: Path) -> list[str]:
-    target = Path('/src')
+    target = SOURCE_ROOT
     required = [path.relative_to(target) for path in destinations if path.is_relative_to(target)]
     missing = [path for path in required if not (source / path).exists()]
     if not missing:

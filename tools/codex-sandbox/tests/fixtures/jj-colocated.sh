@@ -16,11 +16,11 @@ jj -R linked status
 test -s /etc/ssl/cert.pem
 
 # Exercise packaged Git transport helpers through the proxy's Landlock policy.
-jj git init --colocate /src/transport
-cd /src/transport
-export JJ_PROXY_REPO=/src/transport
+jj git init --colocate /home/codex/src/transport
+cd /home/codex/src/transport
+export JJ_PROXY_REPO=/home/codex/src/transport
 busybox touch /run/jj-locks/abcdef.lock
-export JJ_PROXY_WORKSPACES='[{"root":"/src/transport","git_dir":"/src/transport/.git","common_dir":"/src/transport/.git","jj_repo":"/src/transport/.jj/repo","lock":"/run/jj-locks/abcdef.lock"}]'
+export JJ_PROXY_WORKSPACES='[{"root":"/home/codex/src/transport","git_dir":"/home/codex/src/transport/.git","common_dir":"/home/codex/src/transport/.git","jj_repo":"/home/codex/src/transport/.jj/repo","lock":"/run/jj-locks/abcdef.lock"}]'
 export SANDBOX_PROXY_DIR=/run/sandbox-proxy
 git remote add origin http://127.0.0.1:1/missing
 jj-proxy serve >/tmp/jj-proxy.log 2>&1 &

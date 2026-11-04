@@ -3,8 +3,8 @@
 ## Differences between guest and host
 
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
-- The active workspace and launcher dotfiles checkout are the two writable checkouts under `/src`; ordinary files in both are writable. The launcher-selected dotfiles checkout is normally `/src/dotfiles`; relocated checkouts or name collisions can use another path.
-  Other `/src` repositories are inspection-only; use `/cd` before editing them. This does not apply to the launcher dotfiles checkout.
+- The active workspace and launcher dotfiles checkout are the two writable checkouts under `/home/codex/src`; ordinary files in both are writable. The launcher-selected dotfiles checkout is normally `/home/codex/src/dotfiles`; relocated checkouts or name collisions can use another path.
+  Other `/home/codex/src` repositories are inspection-only; use `/cd` before editing them. This does not apply to the launcher dotfiles checkout.
   Writable access does not authorize unrelated edits or taking ownership of another contributor's changes.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
 - Choose the fix for the affected environment, not for the environment you can modify.
@@ -22,7 +22,7 @@
 - Repository metadata and sandbox policy—including `.git`, `.jj`, their external backing paths, and `.agents/sandbox`—are protected in both writable checkouts.
   Use ordinary wrapped commands such as `jj`; proxy failure is fail-closed and does not authorize bypassing the mount or invoking another binary.
   For a scoped cross-repository commit, use the selected dotfiles path and a root-relative fileset, for example:
-  `jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'`.
+  `jj -R /home/codex/src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'`.
 - The active project's accepted policy owns services and credentials; writable dotfiles does not enable its optional services.
 - Host and private-network services are blocked except through designated relays or proxies. Proxy capabilities are fixed at session startup; direct failure does not authorize another route.
 - Public network access is allowed, but must be READ-ONLY unless explicitly authorized by a human.

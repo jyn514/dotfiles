@@ -37,8 +37,8 @@ class TicGuestEntrypointTest(unittest.TestCase):
                 state = SimpleNamespace(
                     image='accepted-old-image', sidecar_image='accepted-helper',
                     capabilities={'tic'} if enabled else set(), tic_environment={},
-                    repository=workspace, container_repository=Path('/src/workspace'),
-                    workspaces=[SimpleNamespace(host_root=workspace, guest_root=Path('/src/workspace'))],
+                    repository=workspace, container_repository=Path('/home/codex/src/workspace'),
+                    workspaces=[SimpleNamespace(host_root=workspace, guest_root=Path('/home/codex/src/workspace'))],
                     skills_tmp=root / 'scratch', skills_source=root / 'skills',
                     pi_agent_tmp=root / 'private-agent', home=root / 'home', host_pi_package=root / 'pi',
                     codex_container='worker', github_credential=None, term='xterm', pi_model_session_id='fixture',
@@ -56,7 +56,7 @@ class TicGuestEntrypointTest(unittest.TestCase):
                     'OUTER_RUNTIME': runtime, 'resolved_tic_build': resolve, 'proxy_flags': lambda: [],
                     'installed_config_source': lambda target: root / 'installed-config',
                     'agent_repository_mounts': lambda value: [
-                        '--mount', f'type=bind,src={workspace},dst=/src/workspace'],
+                        '--mount', f'type=bind,src={workspace},dst=/home/codex/src/workspace'],
                 }
                 with mock.patch.dict(globals_, replacements), mock.patch('sys.stderr', new_callable=io.StringIO) as warning:
                     self.assertEqual([], launcher['start_tic'](state))

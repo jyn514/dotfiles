@@ -138,7 +138,7 @@ COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-pro
 ENV HOME=/home/codex
 ENV DOTFILES_SANDBOX=1
 ENV EDITOR=vi VISUAL=vi
-RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace
+RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex ${HOME}/src /workspace
 
 # Reuse noninteractive dotfile semantics without personal shell hooks.
 ENV JJ_CONFIG=${HOME}/.config/jj/config.toml

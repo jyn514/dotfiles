@@ -99,7 +99,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             subdirectory.mkdir()
             state = SimpleNamespace(
                 repository=repository, git_repository=repository,
-                container_repository=Path("/src/repo"), home=root / "home",
+                container_repository=Path("/home/codex/src/repo"), home=root / "home",
                 host_working_directory=subdirectory, skills_tmp=root / "skills",
                 image="agent-image", codex_container="worker-container",
                 codex_arguments=[], pi_model_session_id="test-session",
@@ -149,7 +149,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                             "run": mock.Mock(return_value=SimpleNamespace(
                                 stdout=f"{git_directory}\n{git_directory}\n")),
                             "host_pi_resource_paths": lambda _state: {
-                                str(repository): "/src/repo"},
+                                str(repository): "/home/codex/src/repo"},
                             "build_agent_command": mock.Mock(return_value=[
                                 "docker", "run", "--name", "worker-container", "agent-image"]),
                         }):
@@ -160,8 +160,8 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                     owner.return_value.start.assert_called_once_with()
                     owner.return_value.worker_lost.assert_called_once_with()
                     environment = owner.call_args.args[3]
-                    self.assertEqual("/src/repo", environment["CODEX_SANDBOX_GUEST_REPO"])
-                    self.assertEqual("/src/repo/nested", environment["CODEX_SANDBOX_GUEST_CWD"])
+                    self.assertEqual("/home/codex/src/repo", environment["CODEX_SANDBOX_GUEST_REPO"])
+                    self.assertEqual("/home/codex/src/repo/nested", environment["CODEX_SANDBOX_GUEST_CWD"])
                     self.assertEqual(["admitted-engine", "fixed-channel"],
                                      json.loads(environment["CODEX_SANDBOX_TOOL_COMMAND"]))
                     self.assertEqual(state.pi_tool_connector,
@@ -248,7 +248,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
         lock = mock.Mock(shared=False)
         state = SimpleNamespace(proxy_lock=lock, repository=Path('/repo'),
-            container_repository=Path('/src/repo'), proxy_prefix='proxy', proxy_state=Path('/state'),
+            container_repository=Path('/home/codex/src/repo'), proxy_prefix='proxy', proxy_state=Path('/state'),
             sidecar_image='image', image='agent', uid=501, gid=20,
             policy_source_present=True, manifest=Path('/manifest'), zuliprc=None,
             prepared_images=None)
@@ -265,7 +265,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             root = Path(directory)
             output = root / 'args'
             state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), proxy_reused=False, repository=root,
-                                    container_repository=Path('/src/repo'),
+                                    container_repository=Path('/home/codex/src/repo'),
                                     proxy_state=root / 'state', manifest=root / 'manifest')
             def helper(operation, *arguments):
                 output.write_text('--read-only\n')
@@ -372,14 +372,14 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             home = Path(directory).resolve()
             repository = home / "src" / "nested" / "project"
             repository.mkdir(parents=True)
-            self.assertEqual(Path("/src/nested/project"), function(home, repository))
+            self.assertEqual(Path("/home/codex/src/nested/project"), function(home, repository))
 
     def test_preserves_invocation_subdirectory_inside_repository(self) -> None:
         function = runpy.run_path(str(LAUNCHER))["container_working_directory_path"]
         repository = Path("/host/src/llms")
         self.assertEqual(
-            Path("/src/llms/playground"),
-            function(repository, Path("/src/llms"), repository / "playground"),
+            Path("/home/codex/src/llms/playground"),
+            function(repository, Path("/home/codex/src/llms"), repository / "playground"),
         )
 
     def test_uses_stable_fallback_outside_home_source_root(self) -> None:
@@ -390,7 +390,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             (home / "src").mkdir(parents=True)
             repository = root / "project"
             repository.mkdir()
-            self.assertEqual(Path("/src/repository"), function(home, repository))
+            self.assertEqual(Path("/home/codex/src/repository"), function(home, repository))
 
 
 class SharedProxyCleanupTest(unittest.TestCase):
@@ -684,7 +684,7 @@ class HostPiWrapperTest(unittest.TestCase):
                 "  `Agent instructions: <project_instructions path=\\\"${home}/.pi/agent/AGENTS.md\\\">`,\n"
                 "  `Pi examples: ${piPackage}/examples`,\n"
                 "  `Guest package: /opt/agent-pi/src/packages/coding-agent/README.md`,\n"
-                "  `Guest checkout: /src/dotfiles/AGENTS.md`,\n"
+                "  `Guest checkout: /home/codex/src/dotfiles/AGENTS.md`,\n"
                 "  `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`,\n"
                 "].join(\"\\n\");\n"
                 "console.log(JSON.stringify({args: process.argv.slice(2),\n"
@@ -704,7 +704,7 @@ class HostPiWrapperTest(unittest.TestCase):
                     home=home,
                     host_pi_package=host_pi_package,
                     repository=host_repository,
-                    container_repository=Path("/src/personal/lapwing/stint"),
+                    container_repository=Path("/home/codex/src/personal/lapwing/stint"),
                 ))
             result = subprocess.run(
                 [str(TOOL / "sandbox-host-pi"), "--mode", "rpc"],
@@ -723,14 +723,14 @@ class HostPiWrapperTest(unittest.TestCase):
             )
             self.assertEqual(
                 [
-                    "Project config: /src/personal/lapwing/stint/config/agents/breq.md",
+                    "Project config: /home/codex/src/personal/lapwing/stint/config/agents/breq.md",
                     "Shared skill: /home/codex/.agents/skills/spec-review/SKILL.md",
                     "Package skill: /home/codex/.pi/agent/pi-link/skills/pi-link-tools/SKILL.md",
-                    "Agent instructions: <project_instructions path=\"/src/dotfiles/config/pi-agent/AGENTS.md\">",
+                    "Agent instructions: <project_instructions path=\"/home/codex/src/dotfiles/config/pi-agent/AGENTS.md\">",
                     "Pi examples: /opt/agent-pi/src/packages/coding-agent/examples",
                     "Guest package: /opt/agent-pi/src/packages/coding-agent/README.md",
-                    "Guest checkout: /src/dotfiles/AGENTS.md",
-                    "Sibling location: /src/personal/lapwing/stint-old/.agents/skills/spec-review/SKILL.md",
+                    "Guest checkout: /home/codex/src/dotfiles/AGENTS.md",
+                    "Sibling location: /home/codex/src/personal/lapwing/stint-old/.agents/skills/spec-review/SKILL.md",
                 ],
                 output["prompt"].splitlines(),
             )
@@ -1298,10 +1298,10 @@ class BackgroundRelayTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'builder batch failed'):
                     execute(state)
                 replacements['ensure_network'].assert_not_called()
-                preparation.side_effect = OSError("[Errno 2] No such file or directory: '/src'")
+                preparation.side_effect = OSError("[Errno 2] No such file or directory: '/home/codex/src'")
                 with self.assertRaisesRegex(
                     execute.__globals__['LauncherError'],
-                    r"image preparation failed: .*'/src'",
+                    r"image preparation failed: .*'/home/codex/src'",
                 ):
                     execute(state)
 
@@ -1479,7 +1479,7 @@ class AgentSandboxImageTest(unittest.TestCase):
         dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
         self.assertIn(
-            "mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace",
+            "mkdir -p ${HOME}/.pi/agent ${HOME}/.codex ${HOME}/src /workspace",
             dockerfile,
         )
 
@@ -2024,7 +2024,7 @@ class CodexSandboxTest(unittest.TestCase):
         launcher = runpy.run_path(str(LAUNCHER))
         state = SimpleNamespace(
             home=self.home, repository=self.repo,
-            container_repository=Path("/src/repository"), skills_tmp=None,
+            container_repository=Path("/home/codex/src/repository"), skills_tmp=None,
         )
         try:
             launcher["stage_skills"](state)
@@ -2759,7 +2759,7 @@ class CodexSandboxTest(unittest.TestCase):
         result = self.run_launcher(cwd=playground)
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
-        self.assertEqual("/src/repository/playground", run[run.index("--workdir") + 1])
+        self.assertEqual("/home/codex/src/repository/playground", run[run.index("--workdir") + 1])
 
     def test_constructs_secured_agent_and_trusted_proxy_arguments(self) -> None:
         pi_agent = self.home / ".pi/agent"
@@ -2776,11 +2776,11 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertNotIn("--cap-drop=ALL", run)
         self.assertNotIn("--security-opt=no-new-privileges", run)
-        self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/repository,bind-nonrecursive=true", run)
-        self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly", run)
-        self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
-        self.assertEqual(1, sum(argument.startswith("type=bind,") and "dst=/src,readonly" in argument for argument in run))
-        self.assertEqual("/src/repository", run[run.index("--workdir") + 1])
+        self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/home/codex/src/repository,bind-nonrecursive=true", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/home/codex/src/repository/.git,readonly", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/home/codex/src/repository/.jj,readonly", run)
+        self.assertEqual(1, sum(argument.startswith("type=bind,") and "dst=/home/codex/src,readonly" in argument for argument in run))
+        self.assertEqual("/home/codex/src/repository", run[run.index("--workdir") + 1])
         self.assertFalse(any("dst=/home/codex/.codex/" in argument for argument in run))
         self.assertNotIn(
             f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
@@ -2891,7 +2891,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
         repository = self.repo.resolve()
-        git_mount = f"type=bind,src={self.repo / '.git'},dst=/src/repository/.git,readonly"
+        git_mount = f"type=bind,src={self.repo / '.git'},dst=/home/codex/src/repository/.git,readonly"
         self.assertIn(git_mount, run)
         self.assertEqual(1, run.count(git_mount))
         self.assertIn(
@@ -2903,7 +2903,7 @@ class CodexSandboxTest(unittest.TestCase):
             run,
         )
         relative_target = Path(os.path.normpath(
-            Path("/src/repository") / os.path.relpath(common_dir.resolve(), self.repo.resolve())
+            Path("/home/codex/src/repository") / os.path.relpath(common_dir.resolve(), self.repo.resolve())
         ))
         self.assertIn(
             f"type=bind,src={common_dir.resolve()},dst={relative_target},readonly",

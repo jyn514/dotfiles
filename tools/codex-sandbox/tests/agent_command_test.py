@@ -35,7 +35,7 @@ class AgentCommandTest(unittest.TestCase):
                 home=root / "home",
                 host_pi_package=root / "pi-package",
                 repository=Path("/Users/jyn/src/personal/lapwing/stint"),
-                container_repository=Path("/src/personal/lapwing/stint"),
+                container_repository=Path("/home/codex/src/personal/lapwing/stint"),
             )
             agents_source = state.home / "src/dotfiles/renamed-instructions.md"
             agents_source.parent.mkdir(parents=True)
@@ -46,13 +46,13 @@ class AgentCommandTest(unittest.TestCase):
             }):
                 paths = resource_paths(state)
             self.assertEqual(
-                "/src/dotfiles/renamed-instructions.md",
+                "/home/codex/src/dotfiles/renamed-instructions.md",
                 paths[str(state.home / ".pi/agent/AGENTS.md")],
             )
             self.assertNotIn("/home/codex/.pi/agent/AGENTS.md", paths.values())
 
             self.assertEqual(
-                "/src/personal/lapwing/stint",
+                "/home/codex/src/personal/lapwing/stint",
                 paths[str(state.repository)],
             )
             self.assertEqual(
@@ -95,7 +95,7 @@ class AgentCommandTest(unittest.TestCase):
                 skills_tmp=root / "staged",
                 home=root / "home",
                 host_pi_package=root / "pi-package",
-                container_repository=Path("/src/repository"),
+                container_repository=Path("/home/codex/src/repository"),
                 repository=root / "repository",
                 host_working_directory=root / "repository",
                 git_repository=root / "repository/.git",
@@ -113,7 +113,7 @@ class AgentCommandTest(unittest.TestCase):
             dotfiles = git_fixture(root / "installed/dotfiles")
             state.workspaces = [
                 launcher["discover_workspace"](state.repository, state.container_repository, state.home),
-                launcher["discover_workspace"](dotfiles, Path("/src/shared-dotfiles"), state.home),
+                launcher["discover_workspace"](dotfiles, Path("/home/codex/src/shared-dotfiles"), state.home),
             ]
             extensions = root / "pi-extensions"
             extensions.mkdir()
@@ -128,7 +128,7 @@ class AgentCommandTest(unittest.TestCase):
                 command = build(
                     state, ["image", "pi"], timing=False,
                     resource_paths=resource_paths,
-                    guest_working_directory=Path("/src/repository"),
+                    guest_working_directory=Path("/home/codex/src/repository"),
                     pi_extensions=extensions,
                 )
 
@@ -144,15 +144,15 @@ class AgentCommandTest(unittest.TestCase):
                 selected = build(
                     state, ["image", "pi"], timing=False,
                     resource_paths=resource_paths,
-                    guest_working_directory=Path("/src/repository"), pi_extensions=extensions,
+                    guest_working_directory=Path("/home/codex/src/repository"), pi_extensions=extensions,
                 )
             self.assertEqual("fixture-runtime", selected[selected.index("--entrypoint") + 1])
             self.assertIn(
-                "CARGO_TARGET_DIR=/src/repository/work/cargo-target", command)
-            self.assertIn("MYPY_CACHE_DIR=/src/repository/work/cache/mypy", command)
+                "CARGO_TARGET_DIR=/home/codex/src/repository/work/cargo-target", command)
+            self.assertIn("MYPY_CACHE_DIR=/home/codex/src/repository/work/cache/mypy", command)
             self.assertIn(
-                "PYTHONPYCACHEPREFIX=/src/repository/work/cache/python-bytecode", command)
-            self.assertIn("RUFF_CACHE_DIR=/src/repository/work/cache/ruff", command)
+                "PYTHONPYCACHEPREFIX=/home/codex/src/repository/work/cache/python-bytecode", command)
+            self.assertIn("RUFF_CACHE_DIR=/home/codex/src/repository/work/cache/ruff", command)
             self.assertIn("BUN_INSTALL_CACHE_DIR=/home/codex/.cache/bun", command)
             self.assertIn("GOCACHE=/home/codex/.cache/go-build", command)
             self.assertIn("GOMODCACHE=/home/codex/.cache/go-mod", command)
@@ -224,17 +224,17 @@ class AgentCommandTest(unittest.TestCase):
                 command,
             )
             self.assertIn(
-                f"type=bind,src={dotfiles},dst=/src/shared-dotfiles,bind-nonrecursive", command,
+                f"type=bind,src={dotfiles},dst=/home/codex/src/shared-dotfiles,bind-nonrecursive", command,
             )
             self.assertIn(
-                f"type=bind,src={dotfiles / '.jj'},dst=/src/shared-dotfiles/.jj,readonly", command,
+                f"type=bind,src={dotfiles / '.jj'},dst=/home/codex/src/shared-dotfiles/.jj,readonly", command,
             )
             self.assertIn(
                 f"type=bind,src={dotfiles / '.agents/sandbox'},"
-                "dst=/src/shared-dotfiles/.agents/sandbox,readonly", command,
+                "dst=/home/codex/src/shared-dotfiles/.agents/sandbox,readonly", command,
             )
             launcher["check_mount_destinations"](command)
-            self.assertEqual("/src/repository", command[command.index("--workdir") + 1])
+            self.assertEqual("/home/codex/src/repository", command[command.index("--workdir") + 1])
 
 
 if __name__ == "__main__":

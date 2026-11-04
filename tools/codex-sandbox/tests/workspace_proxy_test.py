@@ -31,8 +31,8 @@ class WorkspaceProxyTest(unittest.TestCase):
         self.environment = mock.patch.dict(os.environ, {"HOME": str(self.home)})
         self.environment.start()
         self.addCleanup(self.environment.stop)
-        self.records = [self.record(self.home / "src/project", "/src/project"),
-                        self.record(self.root / "external-dotfiles", "/src/dotfiles-2")]
+        self.records = [self.record(self.home / "src/project", "/home/codex/src/project"),
+                        self.record(self.root / "external-dotfiles", "/home/codex/src/dotfiles-2")]
         self.repo = Path(self.records[0]["host_root"])
         self.authority = self.root / "workspaces.json"
         self.authority.write_text(json.dumps(self.records))
@@ -76,15 +76,15 @@ class WorkspaceProxyTest(unittest.TestCase):
         if authorized:
             accepted["workspaces"] = deepcopy(self.records)
         return {"version": 4, "repository": helpers.repository_identity(self.repo),
-                "container_repository": "/src/project", "runtime-owner": {"provider": "container"},
+                "container_repository": "/home/codex/src/project", "runtime-owner": {"provider": "container"},
                 "accepted": accepted, "services": {"jj": service}}
 
     def test_authority_rejects_duplicate_or_nonactive_roots(self):
-        args = SimpleNamespace(workspaces=self.authority, repo=self.repo, container_repo="/src/project")
+        args = SimpleNamespace(workspaces=self.authority, repo=self.repo, container_repo="/home/codex/src/project")
         self.assertEqual(self.records, helpers.requested_workspaces(args))
         with self.assertRaisesRegex(helpers.ConfigError, "duplicate"):
             helpers.workspace_records([self.records[0], self.records[0]])
-        args.container_repo = "/src/other"
+        args.container_repo = "/home/codex/src/other"
         with self.assertRaisesRegex(helpers.ConfigError, "active repository"):
             helpers.requested_workspaces(args)
 
@@ -101,7 +101,7 @@ class WorkspaceProxyTest(unittest.TestCase):
             helpers._accepted_schema4(envelope, expected_parameters={"uid": 501, "gid": 20})
 
     def test_join_cannot_promote_an_old_session_by_adding_worker_mounts(self):
-        args = SimpleNamespace(workspaces=self.authority, repo=self.repo, container_repo="/src/project", uid=501, gid=20)
+        args = SimpleNamespace(workspaces=self.authority, repo=self.repo, container_repo="/home/codex/src/project", uid=501, gid=20)
         with self.assertRaisesRegex(helpers.ConfigError, "workspace authority changed"):
             helpers.accepted_session(args, self.repo, self.metadata(authorized=False))
 
@@ -114,7 +114,7 @@ class WorkspaceProxyTest(unittest.TestCase):
                 | {"RW": "readonly" not in arg.split(",")} for arg in args[1::2]]
 
     def snapshot(self):
-        return {"Config": {"Env": ["JJ_PROXY_REPO=/src/project", "JJ_PROXY_WORKSPACES=" + helpers.workspace_environment(self.records)]},
+        return {"Config": {"Env": ["JJ_PROXY_REPO=/home/codex/src/project", "JJ_PROXY_WORKSPACES=" + helpers.workspace_environment(self.records)]},
                 "Mounts": [{"Destination": item["dst"], "Source": item["src"], "RW": item["RW"],
                             "Type": item["type"], **({"Name": item["src"]} if item["type"] == "volume" else {})}
                            for item in self.mounts()]}
@@ -126,7 +126,7 @@ class WorkspaceProxyTest(unittest.TestCase):
             worktree = next(item for item in snapshot["Mounts"] if item["Destination"] == record["guest_root"])
             self.assertEqual(record["host_root"], worktree["Source"])
             self.assertTrue(worktree["RW"])
-        self.assertFalse(next(item for item in snapshot["Mounts"] if item["Destination"] == "/src")["RW"])
+        self.assertFalse(next(item for item in snapshot["Mounts"] if item["Destination"] == "/home/codex/src")["RW"])
         helpers.validate_workspace_snapshot(self.proxy(), snapshot)
 
     def test_live_authority_rejects_changed_environment_and_mount_permissions(self):
@@ -136,11 +136,11 @@ class WorkspaceProxyTest(unittest.TestCase):
             if mutation == "environment":
                 snapshot["Config"]["Env"] = ["JJ_PROXY_WORKSPACES=[]"]
             elif mutation == "readonly":
-                next(item for item in snapshot["Mounts"] if item["Destination"] == "/src/project")["RW"] = False
+                next(item for item in snapshot["Mounts"] if item["Destination"] == "/home/codex/src/project")["RW"] = False
             elif mutation == "missing":
-                snapshot["Mounts"] = [item for item in snapshot["Mounts"] if item["Destination"] != "/src/dotfiles-2"]
+                snapshot["Mounts"] = [item for item in snapshot["Mounts"] if item["Destination"] != "/home/codex/src/dotfiles-2"]
             else:
-                snapshot["Mounts"].append({"Source": "/outside", "Destination": "/src/unlisted", "RW": True})
+                snapshot["Mounts"].append({"Source": "/outside", "Destination": "/home/codex/src/unlisted", "RW": True})
             with self.subTest(mutation=mutation), self.assertRaises(helpers.ConfigError):
                 helpers.validate_workspace_snapshot(self.proxy(), snapshot)
 
@@ -177,7 +177,7 @@ class WorkspaceProxyTest(unittest.TestCase):
     def test_jj_startup_and_readiness_share_the_configured_lock_wait_budget(self):
         runtime = helpers.runtime_directory(self.repo)
         args = SimpleNamespace(_workspace_records=self.records, prefix="fixture", state=self.root / "state.json",
-                               repo=str(self.repo), container_repo="/src/project", network="none")
+                               repo=str(self.repo), container_repo="/home/codex/src/project", network="none")
         command = {"argv": ["jj-proxy", "serve"], "workdir": ".", "network": False, "mounts": []}
         clock = iter(range(0, 1000, 11))
         not_ready = subprocess.CompletedProcess([], 125, stderr="waiting for startup lock")

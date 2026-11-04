@@ -12,6 +12,7 @@ import stat
 import subprocess
 
 
+SOURCE_ROOT = Path("/home/codex/src")
 WORK_DIRECTORY = "work"
 
 
@@ -38,8 +39,8 @@ class WorkspaceLayout:
         for path in (self.host_root, self.guest_root, self.git_dir,
                      self.common_dir, self.jj_repo, self.lock_file):
             _safe_path(path)
-        if self.guest_root == Path("/src") or not self.guest_root.is_relative_to("/src"):
-            raise WorkspaceError(f"Workspace guest root must be below /src: {self.guest_root}")
+        if self.guest_root == SOURCE_ROOT or not self.guest_root.is_relative_to(SOURCE_ROOT):
+            raise WorkspaceError(f"Workspace guest root must be below {SOURCE_ROOT}: {self.guest_root}")
 
     def to_dict(self) -> dict[str, str]:
         return {key: str(getattr(self, key)) for key in (
@@ -88,7 +89,7 @@ class WorkspaceLayout:
             if not path.is_relative_to(self.host_root):
                 for target in (path, self.guest_path(path)):
                     alias = Path(os.path.normpath(target / os.path.relpath(self.host_root, path)))
-                    if alias in (Path("/"), Path("/src")):
+                    if alias in (Path("/"), SOURCE_ROOT):
                         raise WorkspaceError(f"Metadata produced an unsafe worktree alias: {alias}")
                     if alias != self.guest_root:
                         aliases.append(alias)
@@ -223,14 +224,14 @@ def workspace_guest_root(home: Path, active_host: Path, active_guest: Path, dotf
         return False
 
     if dotfiles.is_relative_to(source) and dotfiles != source:
-        natural = Path("/src") / dotfiles.relative_to(source)
+        natural = SOURCE_ROOT / dotfiles.relative_to(source)
         if not collides(natural):
             return natural
-    candidate = Path("/src/dotfiles")
+    candidate = SOURCE_ROOT / "dotfiles"
     suffix = 0
-    while ((source / candidate.relative_to("/src")).exists()
-           or (source / candidate.relative_to("/src")).is_symlink()
+    while ((source / candidate.relative_to(SOURCE_ROOT)).exists()
+           or (source / candidate.relative_to(SOURCE_ROOT)).is_symlink()
            or collides(candidate)):
         suffix += 1
-        candidate = Path(f"/src/dotfiles-{suffix}")
+        candidate = SOURCE_ROOT / f"dotfiles-{suffix}"
     return candidate

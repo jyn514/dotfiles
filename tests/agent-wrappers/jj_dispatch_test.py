@@ -492,7 +492,8 @@ class JjDispatchTest(unittest.TestCase):
         self.assertIn("proxy-only", result.stderr)
         self.assertEqual([], self.calls())
 
-    @unittest.skipUnless(Path('/src') in ROOT.parents, 'wire protocol fixture requires checkout under /src')
+    @unittest.skipUnless(Path('/home/codex/src') in ROOT.parents,
+                         'wire protocol fixture requires checkout under /home/codex/src')
     def test_private_split_runtime_identity_reaches_actual_client_request(self):
         target = ROOT / "target"
         target.mkdir(exist_ok=True)

@@ -257,7 +257,7 @@ test("the installed bundle registers one tool pointing to the source instruction
   await symlink(join(repository, "config/pi-agent/pi-extensions"), installed, "dir");
   const prior = process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
   try {
-    for (const guestRoot of [undefined, "/src/dotfiles", "/relocated/dotfiles"]) {
+    for (const guestRoot of [undefined, "/home/codex/src/dotfiles", "/relocated/dotfiles"]) {
       if (guestRoot === undefined) delete process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
       else process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({ [repository]: guestRoot });
       const loaded = await sdk.discoverAndLoadExtensions([join(installed, "index.ts")], root, agentDir);

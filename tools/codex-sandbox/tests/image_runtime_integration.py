@@ -71,7 +71,7 @@ def probe_jj_mounts(image: str) -> None:
 
     launcher = runpy.run_path(str(ROOT / 'tools/codex-sandbox/sandbox-proxies.py'))
     generate = launcher['proxy_repository_mount_args']
-    container_repo = Path('/src/work')
+    container_repo = Path('/home/codex/src/work')
     with tempfile.TemporaryDirectory(prefix='jj-mount-fixture-') as directory:
         root = Path(directory).resolve()
         repo = root / 'repo'
@@ -222,7 +222,7 @@ def main() -> None:
             colocated = probes.submit(
                 run, 'docker', 'run', '--rm', '--interactive', '--network', 'none',
                 '--tmpfs', '/tmp:mode=1777', '--tmpfs', '/run/sandbox-proxy:mode=1777',
-                '--tmpfs', '/src:mode=1777', '--tmpfs', '/run/jj-locks:mode=1777',
+                '--tmpfs', '/home/codex/src:mode=1777', '--tmpfs', '/run/jj-locks:mode=1777',
                 '--entrypoint', '/trusted/bin/sh', jj_image,
                 input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
             )

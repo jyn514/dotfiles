@@ -118,7 +118,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             time.sleep(0.05)
         raise RuntimeError(f"timed out waiting for {name}")
 
-    def request(service, identity, *argv, cwd="/src/project", inspect=False):
+    def request(service, identity, *argv, cwd="/home/codex/src/project", inspect=False):
         process = subprocess.Popen([
             "docker", "exec", "--workdir", cwd, "--env", "JJ_USER=" + identity,
             "--env", "JJ_EMAIL=" + identity.lower() + "@example.test",
@@ -135,7 +135,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
         return stdout
 
     def query(service, repo, revision, template):
-        return run("docker", "exec", "--workdir", "/src/project", "--env", "JJ_PROXY_INSPECT=1", service,
+        return run("docker", "exec", "--workdir", "/home/codex/src/project", "--env", "JJ_PROXY_INSPECT=1", service,
                    "/trusted/bin/jj-proxy", "-R", repo, "log", "-r", revision,
                    "--no-graph", "-T", template).stdout.strip()
 
@@ -185,8 +185,8 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                                "--config-file", "/trusted/jj.toml", *arguments[1:])
                 return subprocess.run(arguments, check=True, text=True, capture_output=capture, cwd=cwd)
 
-            layouts = [discover_workspace(project, Path("/src/project"), home, runner=metadata_runner),
-                       discover_workspace(dotfiles, Path("/src/dotfiles"), home, runner=metadata_runner)]
+            layouts = [discover_workspace(project, Path("/home/codex/src/project"), home, runner=metadata_runner),
+                       discover_workspace(dotfiles, Path("/home/codex/src/dotfiles"), home, runner=metadata_runner)]
             for layout in layouts:
                 ensure_request_lock(layout)
                 # The launcher prepares empty host mountpoints before either consumer starts.
@@ -201,7 +201,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             guest_staging = root / "guest-staging"
             guest_staging.mkdir()
             from types import SimpleNamespace
-            state = SimpleNamespace(home=home, repository=project, container_repository=Path("/src/project"),
+            state = SimpleNamespace(home=home, repository=project, container_repository=Path("/home/codex/src/project"),
                                     git_repository=project / ".git", git_mount_source=project / ".git",
                                     skills_tmp=guest_staging, workspaces=layouts)
             with mock.patch.object(launcher["OUTER_RUNTIME"], "nonrecursive_bind", Docker.nonrecursive_bind):
@@ -231,7 +231,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                     "--network", "none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
                     "--tmpfs", "/tmp:mode=1777",
                     "--mount", f"type=volume,src={socket},dst=/run/sandbox-proxy,volume-nocopy",
-                    "--workdir", "/src/project", "--env", "JJ_PROXY_REPO=/src/project",
+                    "--workdir", "/home/codex/src/project", "--env", "JJ_PROXY_REPO=/home/codex/src/project",
                     "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxy",
                     "--env", "JJ_PROXY_WORKSPACES=" + authority,
                     *relocate(mounts),
@@ -253,7 +253,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 module["validate_workspace_snapshot"]({"workspaces": records}, snapshot)
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
-                    result = run("docker", "exec", "--workdir", "/src/project", service,
+                    result = run("docker", "exec", "--workdir", "/home/codex/src/project", service,
                                  "/trusted/bin/jj-proxy", ":ready", check=False)
                     if result.returncode == 0:
                         break
@@ -264,8 +264,8 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 else:
                     raise RuntimeError(f"workspace server not ready: {result.stderr}")
 
-            finish(request(services[0], "Pi-D", "-R", "/src/sibling", "status"))
-            for unlisted in ("/src/sibling", "/src/project/independent-nested"):
+            finish(request(services[0], "Pi-D", "-R", "/home/codex/src/sibling", "status"))
+            for unlisted in ("/home/codex/src/sibling", "/home/codex/src/project/independent-nested"):
                 denied = request(services[0], "Pi-D", "-R", unlisted, "commit", "-m", "Must be rejected")
                 stdout, stderr = denied.communicate(timeout=20)
                 if denied.returncode == 0:
@@ -273,9 +273,9 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             if linked:
                 # This root shares dotfiles' store, but its worktree remains on
                 # the read-only source mount. Do not demand a disk snapshot here.
-                finish(request(services[0], "Pi-D", "-R", "/src/linked-source", "root"))
+                finish(request(services[0], "Pi-D", "-R", "/home/codex/src/linked-source", "root"))
                 readonly = run("docker", "exec", services[0], "/trusted/bin/busybox", "touch",
-                               "/src/linked-source/must-stay-readonly", check=False)
+                               "/home/codex/src/linked-source/must-stay-readonly", check=False)
                 if readonly.returncode == 0:
                     raise RuntimeError("linked source worktree mount became writable")
 
@@ -285,7 +285,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                              "--user", "65532:65532", "--network", "none", "--cap-drop=ALL",
                              "--read-only", "--tmpfs", "/tmp:mode=1777", *relocate(guest_mounts),
                              "--mount", f"type=volume,src={socket_volumes[services[0]]},dst=/run/sandbox-proxy,readonly,volume-nocopy",
-                             "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxy", "--workdir", "/src/project",
+                             "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxy", "--workdir", "/home/codex/src/project",
                              "--entrypoint", "/trusted/bin/busybox", image, "sleep", "3600"]
             run(*guest_command)
 
@@ -315,17 +315,17 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 if recorded != content:
                     raise RuntimeError(f"linked workspace committed wrong content: {child}: {recorded!r}")
 
-            commit_child_edit("/src/project/preexisting-child", "Preexisting linked child")
+            commit_child_edit("/home/codex/src/project/preexisting-child", "Preexisting linked child")
             for repo in ("project", "dotfiles"):
-                work_child = f"/src/{repo}/work/consumer-child"
+                work_child = f"/home/codex/src/{repo}/work/consumer-child"
                 name = repo + "-work-child"
-                finish(request(guest, "Pi-D", "-R", f"/src/{repo}", "workspace", "add", "--name", name, work_child))
+                finish(request(guest, "Pi-D", "-R", f"/home/codex/src/{repo}", "workspace", "add", "--name", name, work_child))
                 run("docker", "exec", guest, "/trusted/bin/busybox", "test", "-f", work_child + "/.jj/repo")
                 commit_child_edit(work_child, repo + " work linked child")
                 # Requests originate from the guest's actual cwd and cross its RO socket mount.
                 finish(request(guest, "Pi-D", "status", cwd=work_child))
-            target_child = "/src/project/target/consumer-child"
-            run("docker", "exec", guest, "/trusted/bin/busybox", "mkdir", "-p", "/src/project/target")
+            target_child = "/home/codex/src/project/target/consumer-child"
+            run("docker", "exec", guest, "/trusted/bin/busybox", "mkdir", "-p", "/home/codex/src/project/target")
             finish(request(guest, "Pi-D", "workspace", "add", target_child))
             commit_child_edit(target_child, "Host-visible target linked child")
 
@@ -343,14 +343,14 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             else:
                 raise RuntimeError(f"recreated proxy not ready: {ready.stderr}")
             for repo in ("project", "dotfiles"):
-                work_child = f"/src/{repo}/work/consumer-child"
+                work_child = f"/home/codex/src/{repo}/work/consumer-child"
                 finish(request(guest, "Pi-D", "status", cwd=work_child))
                 content = run("docker", "exec", guest, "/trusted/bin/busybox", "cat", work_child + "/acceptance.txt").stdout
                 if content != repo + " work linked child disk content\n":
                     raise RuntimeError(f"recreated consumers lost work content: {repo}: {content!r}")
 
             # Native host-equivalent view mounts only the host fixture, not guest work volumes.
-            # Registered /src/.../work children are inaccessible here; ordinary main JJ still works.
+            # Registered /home/codex/src/.../work children are inaccessible here; ordinary main JJ still works.
             host = [*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/jj", image,
                     "--config-file", "/trusted/jj.toml"]
             for args in (("status",), ("log",), ("workspace", "list"),
@@ -369,17 +369,17 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                     raise RuntimeError(f"proxy wrote hidden host work files: {result.stdout}")
             run(*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/busybox", image,
                 "test", "-f", str(project / "target/consumer-child/acceptance.txt"))
-            child = "/src/project/runtime-child"
+            child = "/home/codex/src/project/runtime-child"
             finish(request(services[0], "Pi-D", "workspace", "add", child))
             commit_child_edit(child, "Runtime linked child")
             # A second linked child shares dotfiles' lock, not project's lock,
             # despite living beneath the writable project worktree.
-            lock_child = "/src/project/shared-lock-child"
-            finish(request(services[0], "Pi-D", "-R", "/src/dotfiles", "workspace", "add", lock_child))
-            before = query(services[0], "/src/project", "@", "commit_id ++ author.name()")
-            a = request(services[0], "Pi-A", "-R", "/src/dotfiles", "commit", "root:skills/example", "-m", "A skill")
+            lock_child = "/home/codex/src/project/shared-lock-child"
+            finish(request(services[0], "Pi-D", "-R", "/home/codex/src/dotfiles", "workspace", "add", lock_child))
+            before = query(services[0], "/home/codex/src/project", "@", "commit_id ++ author.name()")
+            a = request(services[0], "Pi-A", "-R", "/home/codex/src/dotfiles", "commit", "root:skills/example", "-m", "A skill")
             wait_marker(services[0], "paused-a", a)
-            b = request(services[1], "Pi-B", "-R", "/src/dotfiles", "commit", "root:unrelated", "-m", "B unrelated")
+            b = request(services[1], "Pi-B", "-R", "/home/codex/src/dotfiles", "commit", "root:unrelated", "-m", "B unrelated")
             time.sleep(0.3)
             if b.poll() is not None or marker(services[1], "entered-b"):
                 raise RuntimeError("second proxy entered mutation during A's attribution sequence")
@@ -387,14 +387,14 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             finish(a)
             finish(b)
             for description, identity in (("A skill", "Pi-A"), ("B unrelated", "Pi-B")):
-                value = query(services[0], "/src/dotfiles", fixture_commit_revision(description),
+                value = query(services[0], "/home/codex/src/dotfiles", fixture_commit_revision(description),
                               'author.name() ++ "|" ++ committer.name()')
                 if value != identity + "|" + identity:
                     raise RuntimeError(f"wrong cross-proxy attribution: {description}: {value}")
-            if query(services[0], "/src/project", "@", "commit_id ++ author.name()") != before:
+            if query(services[0], "/home/codex/src/project", "@", "commit_id ++ author.name()") != before:
                 raise RuntimeError("cross-repository commit rewrote its invoking workspace")
-            files = run("docker", "exec", "--workdir", "/src/dotfiles", "--env", "JJ_PROXY_INSPECT=1", services[0],
-                        "/trusted/bin/jj-proxy", "-R", "/src/dotfiles", "diff", "-r", fixture_commit_revision("A skill"),
+            files = run("docker", "exec", "--workdir", "/home/codex/src/dotfiles", "--env", "JJ_PROXY_INSPECT=1", services[0],
+                        "/trusted/bin/jj-proxy", "-R", "/home/codex/src/dotfiles", "diff", "-r", fixture_commit_revision("A skill"),
                         "--name-only").stdout.strip()
             if files != "skills/example/SKILL.md":
                 raise RuntimeError(f"scoped commit included unrelated changes: {files}")
@@ -404,7 +404,7 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 run("docker", "exec", services[0], "/trusted/bin/busybox", "rm", "-f",
                     "/run/sandbox-proxy/" + marker_name)
             run("docker", "exec", services[1], "/trusted/bin/busybox", "rm", "-f", "/run/sandbox-proxy/entered-b")
-            a = request(services[0], "Pi-A", "-R", "/src/dotfiles", "commit", "-m", "A empty")
+            a = request(services[0], "Pi-A", "-R", "/home/codex/src/dotfiles", "commit", "-m", "A empty")
             wait_marker(services[0], "paused-a", a)
             independent = request(services[1], "Pi-C", "new", "-m", "Independent project")
             finish(independent)
@@ -423,9 +423,9 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                 for marker_name in ("paused-a", "release-a", "pause-complete"):
                     run("docker", "exec", services[0], "/trusted/bin/busybox", "rm", "-f",
                         "/run/sandbox-proxy/" + marker_name)
-                a = request(services[0], "Pi-A", "-R", "/src/dotfiles", "commit", "-m", "A source lock")
+                a = request(services[0], "Pi-A", "-R", "/home/codex/src/dotfiles", "commit", "-m", "A source lock")
                 wait_marker(services[0], "paused-a", a)
-                source = request(services[1], "Pi-D", "-R", "/src/linked-source", "root")
+                source = request(services[1], "Pi-D", "-R", "/home/codex/src/linked-source", "root")
                 time.sleep(0.3)
                 if source.poll() is not None:
                     stdout, stderr = source.communicate()

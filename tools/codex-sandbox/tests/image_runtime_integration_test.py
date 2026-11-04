@@ -61,7 +61,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             fields = launch[index + 1].split(',')
             values = dict(field.split('=', 1) for field in fields if '=' in field)
             mounts[values['dst']] = (values['src'], 'readonly' not in fields)
-            # All bind sources, including the persistent lock and staged /src,
+            # All bind sources, including the persistent lock and staged /home/codex/src,
             # must have been copied before the Docker daemon consumes them.
             if values['type'] == 'bind':
                 self.assertIn(str(Path(values['src']).relative_to('/daemon/fixture')), archived)
@@ -75,7 +75,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             target = Path(authority[key])
             mountpoint = next(parent for parent in (target, *target.parents) if str(parent) in mounts)
             self.assertTrue(mounts[str(mountpoint)][1], key)
-        self.assertFalse(mounts['/src'][1])
+        self.assertFalse(mounts['/home/codex/src'][1])
         self.assertTrue(any(name.startswith('proxy-staging/') for name in archived))
         self.assertTrue(any(name.endswith(Path(authority['lock']).name) for name in archived))
 

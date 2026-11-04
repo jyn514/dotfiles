@@ -88,7 +88,7 @@ class ServiceTimingTest(unittest.TestCase):
 
     def test_launcher_separates_commands_and_publication_in_order(self):
         launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
-        state = SimpleNamespace(repository=Path('/repo'), container_repository=Path('/src/repo'),
+        state = SimpleNamespace(repository=Path('/repo'), container_repository=Path('/home/codex/src/repo'),
                                 proxy_prefix='prefix', proxy_lock=SimpleNamespace(shared=False,
                                     release_coordination=lambda: events.append('unlock')),
                                 proxy_state=Path('/state'), sidecar_image='', manifest=Path('/manifest'),
@@ -110,7 +110,7 @@ class ServiceTimingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = SimpleNamespace(prefix='test', state=str(root / 'state'),
-                                   network='sandbox', container_repo='/src/repository', zuliprc=None)
+                                   network='sandbox', container_repo='/home/codex/src/repository', zuliprc=None)
             command = {'argv': ['example-proxy', 'serve'], 'network': False,
                        'workdir': '.', 'mounts': []}
             completed = subprocess.CompletedProcess([], 0, stdout='', stderr='')

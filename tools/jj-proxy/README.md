@@ -42,16 +42,16 @@ The launcher validates metadata indirections, creates the private socket volume,
 Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
 Each entry describes an authorized guest workspace, its resolved metadata, and its persistent request-lock path.
 The launcher derives these entries from the active workspace and its own `DOTFILES`, deduplicating identical roots.
-Dotfiles normally maps to `/src/dotfiles`, but the launcher retains an active mapping or allocates a collision-free path when needed.
+Dotfiles normally maps to `/home/codex/src/dotfiles`, but the launcher retains an active mapping or allocates a collision-free path when needed.
 A manually started proxy without the validated mounts and authority is not protected.
 
-The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
-Protocol version 2 always carries a physical absolute invocation cwd under `/src`; cwd addressing does not grant write permission.
+The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/home/codex/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
+Protocol version 3 always carries a physical absolute invocation cwd under `/home/codex/src`; cwd addressing does not grant write permission.
 The server grants mutation access to workspaces whose resolved JJ backing repository has the same filesystem identity as a trusted startup repository.
 When startup roots share a backing repository, selecting either root uses its own authority entry regardless of entry order.
 Only an unlisted linked root needs the additional pinned-directory restriction.
 Existing and newly created linked workspaces inherit that repository's request lock; nesting alone grants no access.
-Independent host-backed Jujutsu repositories under `/src` permit inspection only.
+Independent host-backed Jujutsu repositories under `/home/codex/src` permit inspection only.
 Linked access does not widen mounts: workspaces on the read-only source view still cannot snapshot or update files.
 The sandbox launcher shares its existing per-checkout `work/` volume with JJ at each authorized primary guest root.
 Linked workspaces beneath that path support create/edit/snapshot/commit while their working files stay invisible on the host.
@@ -66,9 +66,9 @@ For a repository with a Jujutsu secure-config ID, the trusted proxy prepares a
 private config-cache entry before inspection. It never initializes or rewrites
 the inspected repository's `.jj` metadata; the inspection child can only read
 that cache.
-Use `jj -R /src/flower/paracress status` to inspect another repository without
+Use `jj -R /home/codex/src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
-`--repository` is equivalent. A selector outside `/src` is refused, and mutation
+`--repository` is equivalent. A selector outside `/home/codex/src` is refused, and mutation
 access follows the selected workspace's authorized backing repository.
 One existing JJ service per active shared session knows both roots; other command proxies, services, and credentials remain active-project scoped.
 
@@ -116,7 +116,7 @@ jj rebase -r @ -d main
 jj undo
 jj git fetch --remote upstream
 # From another project, using the launcher's selected dotfiles path:
-jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
+jj -R /home/codex/src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 ```
 
 `root:` filesets select paths relative to the target repository.

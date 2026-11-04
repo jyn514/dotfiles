@@ -27,7 +27,7 @@ class HostPiWrapperTest(unittest.TestCase):
             "CODEX_SANDBOX_TOOL_CONTAINER": "codex-sandbox-test-worker",
             "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/staged-tool-connect",
             "CODEX_SANDBOX_TOOL_COMMAND": '["selected-engine", "fixed-worker-channel"]',
-            "CODEX_SANDBOX_GUEST_CWD": "/src/example",
+            "CODEX_SANDBOX_GUEST_CWD": "/home/codex/src/example",
             "CODEX_SANDBOX_PI_OWNER": "/private/owner.sock",
             "CODEX_SANDBOX_PI_ATTACHMENT": "parent-attachment",
             "CODEX_SANDBOX_PI_OWNER_FD": "123",
@@ -52,7 +52,7 @@ class HostPiWrapperTest(unittest.TestCase):
             "CODEX_SANDBOX_TOOL_CONTAINER": "codex-sandbox-test-worker",
             "CODEX_SANDBOX_TOOL_CONNECT": "/trusted/staged-tool-connect",
             "CODEX_SANDBOX_TOOL_COMMAND": '["selected-engine", "fixed-worker-channel"]',
-            "CODEX_SANDBOX_GUEST_CWD": "/src/example",
+            "CODEX_SANDBOX_GUEST_CWD": "/home/codex/src/example",
         }, native["sandbox_environment"])
         self.assertEqual([
             "--extension", str(ROOT / "config/pi-agent/pi-extensions/index.ts"),

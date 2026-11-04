@@ -65,7 +65,7 @@ def normalize_model(model):
 
 def normalize_cwd(cwd):
     if cwd == "/Users/jyn/src" or cwd.startswith("/Users/jyn/src/"):
-        return "/src" + cwd[len("/Users/jyn/src"):]
+        return "/home/codex/src" + cwd[len("/Users/jyn/src"):]
     return cwd.replace("/Users/jyn", "/home/codex", 1)
 
 

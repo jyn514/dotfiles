@@ -5,7 +5,7 @@
 
 = Jujutsu metadata proxy
 
-*Status:* The shared-dotfiles workspace authority, protocol version 2, and cross-proxy mutation-lock contract below are implemented.
+*Status:* The shared-dotfiles workspace authority, protocol version 3, and cross-proxy mutation-lock contract below are implemented.
 
 == Objective
 
@@ -98,7 +98,7 @@ This example applies to each workspace with colocated directory metadata:
 
 The proxy receives both workspaces and their metadata read-write and no-exec at the same absolute guest paths, plus the socket volume read-write.
 The launcher derives dotfiles from its own `DOTFILES`, not cwd, guest input, or sibling policy.
-The active guest path remains unchanged; dotfiles normally maps to `/src/dotfiles`, with an unused `/src` fallback for relocated checkouts or collisions.
+The active guest path remains unchanged; dotfiles normally maps to `/home/codex/src/dotfiles`, with an unused `/home/codex/src` fallback for relocated checkouts or collisions.
 When dotfiles is active, retain its active path and deduplicate mounts and authority.
 The active project's accepted policy alone owns optional services and credentials.
 Before runtime startup, the host initializes valid Git-only dotfiles with `jj git init --colocate` only when JJ metadata is absent.
@@ -160,9 +160,9 @@ Requests are length-delimited JSON objects, not shell command strings:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "mode": "mutate",
-  "cwd": "/src/project/subdirectory",
+  "cwd": "/home/codex/src/project/subdirectory",
   "argv": ["commit", "-m", "Fix parser recovery", "src/parser.clj"]
 }
 ```
@@ -171,7 +171,7 @@ Responses contain the exit status and captured streams:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "exit": 0,
   "stdout": "...",
   "stderr": "..."
@@ -180,8 +180,8 @@ Responses contain the exit status and captured streams:
 
 Set explicit request and response size limits. Reject malformed UTF-8, unknown
 fields, embedded NUL bytes, excessive argument counts, and oversized messages.
-Protocol version 2 requires a physical absolute `cwd` beneath `/src` in both mutation and inspection modes.
-Resolve it through checked filesystem traversal from an already-open `/src` descriptor without magic links or escape.
+Protocol version 3 requires a physical absolute `cwd` beneath `/home/codex/src` in both mutation and inspection modes.
+Resolve it through checked filesystem traversal from an already-open `/home/codex/src` descriptor without magic links or escape.
 Retain the resulting descriptor and enter it with `fchdir`.
 String canonicalization followed by unchecked `chdir` is insufficient because working-tree paths can change between those operations.
 Resolve a single `-R` or `--repository` selector relative to this checked invocation cwd and pass the resolved repository to JJ.
@@ -192,7 +192,7 @@ Private agent-split targets the workspace resolved from its invocation cwd.
 For a scoped commit from another project, use the selected dotfiles path and a root-relative fileset:
 
 ```sh
-jj -R /src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
+jj -R /home/codex/src/dotfiles commit 'root:skills/example' -m 'Improve example guidance'
 ```
 
 `root:` selects paths relative to the target repository; other filesets retain invocation-cwd semantics and native errors.
@@ -226,14 +226,14 @@ They do not freeze workspace selection across phases or protect newly created wo
 Only mutation mode may snapshot a working copy or change repository state.
 
 The launcher admits repositories by mounting the host source tree read-only at
-`/src` in both containers. An inspection request identifies a directory beneath
+`/home/codex/src` in both containers. An inspection request identifies a directory beneath
 that mount. The proxy opens its `cwd` components without following symlinks, requires
 an ancestor with a `.jj` directory, and runs Jujutsu in a child process with a
 second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces
 whose metadata is outside the mounted tree are not admitted by this mechanism.
 The trusted proxy may also resolve a single `-R` or `--repository` selector
 against the invocation directory. It canonicalizes the target, requires a
-workspace under `/src`, and derives mutation permission from backing-repository filesystem identity, not a path prefix.
+workspace under `/home/codex/src`, and derives mutation permission from backing-repository filesystem identity, not a path prefix.
 A client may request stricter inspection, including for an authorized root, but cannot grant additional mutation access.
 Inspection requests are restricted to commands whose reviewed grammar has no
 repository mutation path, initially `status`, `diff`, `log`, `show`,
@@ -245,7 +245,7 @@ their write authority.
 Read-only classification is an enforced command-policy property, not a label
 in the client. The proxy must reject commands that can snapshot, update stores,
 write configuration, invoke helpers, or access credentials even when their
-usual invocation appears observational. The `/src` mount defines inspection
+usual invocation appears observational. The `/home/codex/src` mount defines inspection
 admission; mutation requires a backing repository authorized at startup.
 
 == Mutation ownership across proxies
@@ -407,7 +407,7 @@ surfaces:
 - configuration mutation and all command-line configuration overrides;
 - alternate workspace or config paths; a repository selector is accepted only
   when it resolves to a workspace of an authorized backing repository or an inspection workspace
-  beneath the read-only `/src` mount;
+  beneath the read-only `/home/codex/src` mount;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
 - irreversible recovery deletion such as operation abandonment or garbage
@@ -536,9 +536,9 @@ Existing accepted sessions without workspace authority reject new joins without 
   trusted interpreters or tools cannot be selected to interpret working-tree
   content.
 - Shell metacharacters in commit messages remain literal data.
-- Config overrides, repositories outside the `/src` mount, external tools, and
+- Config overrides, repositories outside the `/home/codex/src` mount, external tools, and
   `util exec` are rejected.
-- Inspection requests can read only repositories under `/src` and cannot
+- Inspection requests can read only repositories under `/home/codex/src` and cannot
   mutate their working trees, Jujutsu stores, Git metadata, configuration, or
   credentials.
 - Git fetch uses host-configured remotes, requests cannot change remote configuration,

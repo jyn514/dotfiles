@@ -1,3 +1,4 @@
+use crate::SOURCE_ROOT;
 use color_eyre::eyre::Result;
 use std::path::Path;
 
@@ -25,7 +26,7 @@ pub fn install(repo: &str) -> Result<()> {
     install_with_paths(
         repo,
         &PolicyPaths {
-            source: Path::new("/src"),
+            source: Path::new(SOURCE_ROOT),
             trusted: Path::new("/trusted"),
             trusted_bin: Path::new("/trusted/bin"),
             config: Path::new("/tmp/jj-config"),
@@ -44,7 +45,7 @@ pub fn install_inspect(repo: &str) -> Result<()> {
     install_inspect_with_paths(
         repo,
         &PolicyPaths {
-            source: Path::new("/src"),
+            source: Path::new(SOURCE_ROOT),
             trusted: Path::new("/trusted"),
             trusted_bin: Path::new("/trusted/bin"),
             config: Path::new("/tmp/jj-config"),
@@ -117,7 +118,7 @@ fn install_scoped_with_paths(repo: &str, paths: &PolicyPaths<'_>, writable: bool
         .add_rule(PathBeneath::new(trusted_bin, AccessFs::Execute))
         .wrap_err("cannot add trusted Landlock execution rule")?
         .add_rule(PathBeneath::new(source, read_access))
-        .wrap_err("cannot add /src read-only rule")?
+        .wrap_err("cannot add /home/codex/src read-only rule")?
         .add_rule(PathBeneath::new(config, if writable { read_access | write_access } else { read_access }))
         .wrap_err("cannot add configuration access rule")?
         .add_rule(PathBeneath::new(socket, read_access | write_access))
@@ -203,7 +204,7 @@ pub fn install_linked_workspace_with_paths(_: &crate::workspaces::Workspace,
 #[cfg(target_os = "linux")]
 pub fn install_workspaces(workspaces: &[crate::workspaces::Workspace], writable: bool) -> Result<()> {
     install_workspaces_with_paths(workspaces, &PolicyPaths {
-        source: Path::new("/src"), trusted: Path::new("/trusted"),
+        source: Path::new("/home/codex/src"), trusted: Path::new("/trusted"),
         trusted_bin: Path::new("/trusted/bin"), config: Path::new("/tmp/jj-config"),
         socket: Path::new("/run/sandbox-proxy"),
     }, writable)

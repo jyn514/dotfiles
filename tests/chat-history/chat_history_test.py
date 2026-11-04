@@ -166,7 +166,8 @@ class SharedChatHistoryTests(unittest.TestCase):
         result = self.run_command(CONVERT, latest, "--normalize", "-o", self.output, cwd=self.root)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["café", "parent continuation", "current child"], self.converted_messages())
-        self.assertEqual("/src/example", json.loads(self.output.read_text().splitlines()[0])["cwd"])
+        self.assertEqual("/home/codex/src/example",
+                         json.loads(self.output.read_text().splitlines()[0])["cwd"])
 
     def test_history_failure_does_not_replace_existing_pi_output(self):
         _, latest = self.lineage()

@@ -126,7 +126,7 @@ class TicCapabilityTest(unittest.TestCase):
                 self.assertEqual({}, snapshot["commands"])
                 envelope = {
                     "version": 4, "repository": "accepted-repository",
-                    "container_repository": "/src/example", "runtime-owner": {"provider": "container"},
+                    "container_repository": "/home/codex/src/example", "runtime-owner": {"provider": "container"},
                     "accepted": {
                         "policy": snapshot, "source-present": True, "broker-roles": [],
                         "images": {"agent": "agent", "helper": None, "services": {}},

@@ -1,5 +1,6 @@
 //! Trusted launch authority. Guest requests can select, but cannot extend, it.
 use color_eyre::eyre::{bail, Result, WrapErr};
+use crate::SOURCE_ROOT;
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, fs, os::unix::fs::MetadataExt, path::Path};
 
@@ -31,7 +32,7 @@ fn validate_description(workspaces: &[Workspace]) -> Result<()> {
     for workspace in workspaces {
         if !roots.insert(&workspace.root) { bail!("duplicate workspace root"); }
         let root = Path::new(&workspace.root);
-        if root == Path::new("/src") || !root.starts_with("/src") { bail!("workspace root is outside /src"); }
+        if root == Path::new(SOURCE_ROOT) || !root.starts_with(SOURCE_ROOT) { bail!("workspace root is outside {SOURCE_ROOT}"); }
         for path in [&workspace.root, &workspace.git_dir, &workspace.common_dir, &workspace.jj_repo] {
             if !Path::new(path).is_absolute() || path.contains('\0') || path.split('/').any(|part| part == "." || part == "..")
                 || path.contains("//") || path.ends_with('/') { bail!("launch path is not canonical absolute: {path}"); }
@@ -215,8 +216,8 @@ fn validate_identity(stores: &mut HashMap<Identity, Identity>, locks: &mut HashM
 mod tests {
     use super::*;
     fn workspace(root: &str) -> Workspace {
-        Workspace { root: root.into(), git_dir: "/src/repository/.git".into(), common_dir: "/src/repository/.git".into(),
-            jj_repo: "/src/repository/.jj/repo".into(), lock: "/run/jj-locks/abcdef.lock".into() }
+        Workspace { root: root.into(), git_dir: "/home/codex/src/repository/.git".into(), common_dir: "/home/codex/src/repository/.git".into(),
+            jj_repo: "/home/codex/src/repository/.jj/repo".into(), lock: "/run/jj-locks/abcdef.lock".into() }
     }
 
     fn fixture_workspace(root: &Path, name: &str) -> Workspace {
@@ -301,15 +302,15 @@ mod tests {
 
     #[test]
     fn launch_authority_is_nonempty_exact_and_store_lock_consistent() {
-        let one = workspace("/src/relocated");
+        let one = workspace("/home/codex/src/relocated");
         assert!(validate_description(&[one.clone()]).is_ok());
         assert!(validate_description(&[]).is_err());
         assert!(validate_description(&[one.clone(), one.clone()]).is_err());
-        let linked = workspace("/src/linked");
+        let linked = workspace("/home/codex/src/linked");
         assert!(validate_description(&[one.clone(), linked.clone()]).is_ok());
         let mut mismatch = linked.clone(); mismatch.lock = "/run/jj-locks/123456.lock".into();
         assert!(validate_description(&[one.clone(), mismatch]).is_err());
-        let mut independent = linked; independent.jj_repo = "/src/other/.jj/repo".into();
+        let mut independent = linked; independent.jj_repo = "/home/codex/src/other/.jj/repo".into();
         // Guest spellings alone cannot distinguish two bind aliases of one store.
         assert!(validate_description(&[one.clone(), independent.clone()]).is_ok());
         independent.lock = "/run/jj-locks/123456.lock".into();
@@ -318,10 +319,10 @@ mod tests {
 
     #[test]
     fn authority_rejects_ambiguous_paths_and_extra_or_missing_fields() {
-        for root in ["relative", "/outside/repo", "/src", "/src/../outside", "/src/./repo", "/src//repo", "/src/repo/"] {
+        for root in ["relative", "/outside/repo", "/home/codex/src", "/home/codex/src/../outside", "/home/codex/src/./repo", "/home/codex/src//repo", "/home/codex/src/repo/"] {
             assert!(validate_description(&[workspace(root)]).is_err(), "accepted {root}");
         }
-        let encoded = serde_json::to_value(workspace("/src/relocated")).unwrap();
+        let encoded = serde_json::to_value(workspace("/home/codex/src/relocated")).unwrap();
         let mut extra = encoded.clone(); extra["writable"] = true.into();
         assert!(serde_json::from_value::<Workspace>(extra).is_err());
         let mut missing = encoded.clone(); missing.as_object_mut().unwrap().remove("lock");

@@ -10,7 +10,7 @@ const dotfilesRoot = resolve(here, "../../..");
 const coreRoot = resolve(process.env.PI_TEST_CORE_ROOT
   ?? (process.env.PI_PACKAGE_DIR && existsSync(resolve(process.env.PI_PACKAGE_DIR, "../../tsconfig.json"))
     ? resolve(process.env.PI_PACKAGE_DIR, "../..")
-    : existsSync("/src/llms/pi/tsconfig.json") ? "/src/llms/pi"
+    : existsSync("/home/codex/src/llms/pi/tsconfig.json") ? "/home/codex/src/llms/pi"
     : join(process.env.HOME!, ".local/share/pi/source")));
 const includesSource = resolve(process.env.PI_TEST_INSTRUCTION_INCLUDES_SOURCE
   ?? join(dotfilesRoot, "config/pi-agent/pi-extensions/pi-instruction-includes.ts"));

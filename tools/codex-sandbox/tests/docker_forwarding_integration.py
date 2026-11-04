@@ -48,7 +48,7 @@ def main():
         images, state = work / 'images.json', work / 'state.json'
         images.write_text(json.dumps({'bug': image}))
         manifest = repo / '.agents/sandbox/proxy-commands.json'
-        common = ['--repo', str(repo), '--container-repo', '/src/work',
+        common = ['--repo', str(repo), '--container-repo', '/home/codex/src/work',
                   '--state', str(state), '--manifest', str(manifest)]
         try:
             assert router['main'](['start', *common, '--prefix', prefix, '--helper-image', image,
@@ -59,14 +59,14 @@ def main():
             assert len(os.fsencode(proxy['forwarding']['target'])) >= 108, 'exercise long guest path'
             container = runtime.inspect_container(proxy['container'])
             assert container['HostConfig']['NetworkMode'] == 'none'
-            assert container['Config']['WorkingDir'] == '/src/work'
+            assert container['Config']['WorkingDir'] == '/home/codex/src/work'
             assert container['Config']['Entrypoint'] == ['bb-bug-proxy']
             mounts = {m['Destination']: m['RW'] for m in container['Mounts']}
-            assert not mounts['/src/work'] and mounts['/src/work/.agent-git-bug']
+            assert not mounts['/home/codex/src/work'] and mounts['/home/codex/src/work/.agent-git-bug']
             assert router['main'](['publish', *common], runtime=runtime) == 0
             session = router['runtime_directory'](repo)
             metadata = json.loads((session / 'session.json').read_text())
-            cache_args = argparse.Namespace(container_repo='/src/work', helper_image=image)
+            cache_args = argparse.Namespace(container_repo='/home/codex/src/work', helper_image=image)
             parsed = router['load_manifest_file'](manifest)
             assert router['cached_session_state'](cache_args, repo, metadata, parsed) is not None
             old = json.loads(json.dumps(metadata))
@@ -77,7 +77,7 @@ def main():
             assert router['cached_session_state'](cache_args, repo, incomplete, parsed) is None
             agent_args = work / 'agent-args'
             assert router['main'](['agent-args', *common, '--output', str(agent_args)], runtime=runtime) == 0
-            assert 'dst=/src/work/.agent-git-bug,readonly' in agent_args.read_text()
+            assert 'dst=/home/codex/src/work/.agent-git-bug,readonly' in agent_args.read_text()
             route = [sys.executable, str(ROOT / 'sandbox-proxies.py'), 'route',
                      '--repo', str(repo), '--command', 'bug', '--', '/usr/bin/false']
             with (session / 'session.lock').open('a+b') as lock:

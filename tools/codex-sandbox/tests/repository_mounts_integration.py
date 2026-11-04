@@ -37,7 +37,7 @@ def main():
             originally_missing = not entry.exists() and not entry.is_symlink()
             command = mounts(state)
             launcher["check_mount_destinations"](command)
-            expected_common = common if absolute else Path("/src/team/main/.git")
+            expected_common = common if absolute else Path("/home/codex/src/team/main/.git")
             probe = Path(__file__).with_name("repository_mounts_probe.py")
             options = [
                 "--network", "none", "--cap-drop=ALL", "--read-only",
@@ -93,7 +93,7 @@ def main():
                     validate(state)
                 assert state.workspaces[1].guest_root == workspace_guest_root(
                     home, active, state.container_repository, dotfiles)
-                assert state.workspaces[1].guest_root != Path("/src/dotfiles")
+                assert state.workspaces[1].guest_root != Path("/home/codex/src/dotfiles")
                 command = mounts(state)
                 launcher["check_mount_destinations"](command)
                 protected = sorted({str(target) for workspace in state.workspaces

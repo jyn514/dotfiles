@@ -13,6 +13,7 @@ import sys
 
 MAX_REQUEST = 1 << 20
 MAX_RESPONSE = 24 << 20
+PROTOCOL_VERSION = 3
 
 
 def receive_exact(connection: socket.socket, length: int) -> bytes:
@@ -30,14 +31,14 @@ def main() -> int:
     if not proxy_dir:
         raise RuntimeError("sandbox proxy directory is not configured")
     current = Path.cwd().resolve(strict=True)
-    if current != Path("/src") and Path("/src") not in current.parents:
+    if current != Path("/home/codex/src") and Path("/home/codex/src") not in current.parents:
         raise RuntimeError("current directory is outside the protected source tree; run from the mounted workspace")
     # Cwd addresses the invocation, not its permission or selected repository.
     # Keep selectors/filesets unchanged; only the server's launch authority can
     # authorize mutation or demote an unlisted sibling to inspection.
     inspect = bool(os.environ.get("JJ_PROXY_INSPECT"))
     argv = sys.argv[1:]
-    request = {"version": 2, "mode": "inspect" if inspect else "mutate", "cwd": str(current), "argv": argv}
+    request = {"version": PROTOCOL_VERSION, "mode": "inspect" if inspect else "mutate", "cwd": str(current), "argv": argv}
     if argv[:1] == ["--agent-split"]:
         if len(argv) != 4:
             raise RuntimeError("--agent-split requires PATCH MESSAGE REVISION")
@@ -69,7 +70,7 @@ def main() -> int:
         response = json.loads(receive_exact(connection, length))
         if connection.recv(1):
             raise RuntimeError("proxy response has trailing bytes")
-    if set(response) != {"version", "exit", "stdout", "stderr"} or response["version"] != 2:
+    if set(response) != {"version", "exit", "stdout", "stderr"} or response["version"] != PROTOCOL_VERSION:
         raise RuntimeError("unsupported or malformed proxy response")
     sys.stdout.write(response["stdout"])
     sys.stderr.write(response["stderr"])
@@ -82,3 +83,4 @@ if __name__ == "__main__":
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         print(f"jj proxy: {error}", file=sys.stderr)
         raise SystemExit(125)
+

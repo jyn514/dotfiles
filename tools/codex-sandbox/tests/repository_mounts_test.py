@@ -36,7 +36,7 @@ def repository_fixture(root: Path, layout: str, *, absolute: bool = False):
     (repo / ".jj/marker").write_text("protected")
     staging = root / "staged"
     staging.mkdir()
-    guest = Path("/src/team") / repo.name
+    guest = Path("/home/codex/src/team") / repo.name
     state = SimpleNamespace(
         home=home, repository=repo, container_repository=guest,
         skills_tmp=staging, git_repository=common, git_mount_source=common,
@@ -64,7 +64,7 @@ class RepositoryMountsTest(unittest.TestCase):
                         f"dst={state.container_repository / '.git'},readonly",
                     ], gitfile_mounts)
                     self.assertIn(f"type=bind,src={common},dst={common},readonly", command)
-                    self.assertIn(f"type=bind,src={common},dst=/src/team/main/.git,readonly", command)
+                    self.assertIn(f"type=bind,src={common},dst=/home/codex/src/team/main/.git,readonly", command)
 
     def test_directory_and_missing_git_entries_keep_a_directory_overlay(self):
         launcher = runpy.run_path(str(LAUNCHER))
@@ -100,10 +100,10 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                 staging = root / "staged"
                 staging.mkdir()
                 state = SimpleNamespace(home=home, repository=repo,
-                    container_repository=Path("/src/team") / repo.name,
+                    container_repository=Path("/home/codex/src/team") / repo.name,
                     skills_tmp=staging, skills_source=dotfiles / "skills",
-                    workspaces=[discover_workspace(repo, Path("/src/team") / repo.name, home),
-                                discover_workspace(dotfiles, Path("/src/dotfiles-2"), home)])
+                    workspaces=[discover_workspace(repo, Path("/home/codex/src/team") / repo.name, home),
+                                discover_workspace(dotfiles, Path("/home/codex/src/dotfiles-2"), home)])
                 launcher = runpy.run_path(str(LAUNCHER))
                 command = launcher["agent_repository_mounts"](state)
                 launcher["check_mount_destinations"](command)
@@ -170,7 +170,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                 with mock.patch.dict(discover.__globals__, DOTFILES=dotfiles):
                     workspaces = discover(home, repo)
                 self.assertEqual(
-                    [Path("/src/dotfiles/target/worktree"), Path("/src/dotfiles")],
+                    [Path("/home/codex/src/dotfiles/target/worktree"), Path("/home/codex/src/dotfiles")],
                     [workspace.guest_root for workspace in workspaces],
                 )
                 state = SimpleNamespace(home=home, repository=repo,
@@ -194,12 +194,12 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                         f"type=bind,src={workspace.host_root}/.agents/sandbox,"
                         f"dst={workspace.guest_root}/.agents/sandbox,readonly", records)
                 self.assertIn(
-                    f"type=bind,src={dotfiles}/.git,dst=/src/dotfiles/.git,readonly", records)
+                    f"type=bind,src={dotfiles}/.git,dst=/home/codex/src/dotfiles/.git,readonly", records)
                 active_git = repo / ".git" if layout == "git-linked" else dotfiles / ".git"
                 self.assertIn(
-                    f"type=bind,src={active_git},dst=/src/dotfiles/target/worktree/.git,readonly",
+                    f"type=bind,src={active_git},dst=/home/codex/src/dotfiles/target/worktree/.git,readonly",
                     records)
-                self.assertFalse(any("dst=/src/dotfiles-1" in item for item in command))
+                self.assertFalse(any("dst=/home/codex/src/dotfiles-1" in item for item in command))
 
     def test_workspace_work_volume_is_stable_guest_storage_and_refuses_hidden_host_data(self):
         from workspace_layout_test import git_fixture
@@ -207,7 +207,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
             repo = git_fixture(home / "src/project")
-            workspace = discover_workspace(repo, Path("/src/project"), home)
+            workspace = discover_workspace(repo, Path("/home/codex/src/project"), home)
             state = SimpleNamespace(workspaces=[workspace], uid=501, gid=20)
             launcher = runpy.run_path(str(LAUNCHER))
             runtime = mock.Mock()
@@ -220,7 +220,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
             # selected guest root changes. Different host roots must not merge.
             from dataclasses import replace
             self.assertEqual((volume, owner), launcher["workspace_work_volume"](
-                replace(workspace, guest_root=Path("/src/relocated"))))
+                replace(workspace, guest_root=Path("/home/codex/src/relocated"))))
             self.assertNotEqual((volume, owner), launcher["workspace_work_volume"](
                 replace(workspace, host_root=home / "other")))
             self.assertEqual(
@@ -240,7 +240,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
 
             dotfiles = git_fixture(home / "src/dotfiles")
             dotfiles_workspace = discover_workspace(
-                dotfiles, Path("/src/dotfiles"), home)
+                dotfiles, Path("/home/codex/src/dotfiles"), home)
             (dotfiles / "work").mkdir()
             (dotfiles / "work/host-artifact").write_text("keep")
             state.workspaces = [workspace, dotfiles_workspace]
@@ -259,11 +259,11 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
             home = Path(directory).resolve()
             repo = git_fixture(home / "src/relocated")
             state = SimpleNamespace(home=home, skills_tmp=home / "staged",
-                workspaces=[discover_workspace(repo, Path("/src/relocated"), home)])
+                workspaces=[discover_workspace(repo, Path("/home/codex/src/relocated"), home)])
             launcher = runpy.run_path(str(LAUNCHER))
             command = launcher["agent_repository_mounts"](state)
             launcher["check_mount_destinations"](command)
-            roots = [item for item in command if "dst=/src/relocated," in item]
+            roots = [item for item in command if "dst=/home/codex/src/relocated," in item]
             self.assertEqual(1, len(roots))
 
     def test_conflicting_workspace_destinations_fail_before_mount_construction(self):
@@ -274,7 +274,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
             first = git_fixture(home / "src/first")
             second = git_fixture(home / "src/second")
             state = SimpleNamespace(home=home, skills_tmp=home / "staged", workspaces=[
-                discover_workspace(root, Path("/src/repository"), home) for root in (first, second)])
+                discover_workspace(root, Path("/home/codex/src/repository"), home) for root in (first, second)])
             launcher = runpy.run_path(str(LAUNCHER))
             with self.assertRaisesRegex(launcher["LauncherError"], "Conflicting workspace mount"):
                 launcher["agent_repository_mounts"](state)

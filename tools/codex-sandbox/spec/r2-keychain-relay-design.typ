@@ -1,6 +1,6 @@
 = Prompted R2 Keychain relay for sandboxed local CI
 
-#emph[Status:] The dotfiles relay, lifecycle ownership, and Flower protocol integration are implemented; live R2 upload remains untested. Flower's bounded connection-establishment retry remains pending in the read-only `/src/flower` checkout, so the complete design is not yet implemented. \
+#emph[Status:] The dotfiles relay, lifecycle ownership, and Flower protocol integration are implemented; live R2 upload remains untested. Flower's bounded connection-establishment retry remains pending in the read-only `/home/codex/src/flower` checkout, so the complete design is not yet implemented. \
 #emph[Owners:] `tools/codex-sandbox` owns relay lifecycle and transport; Flower owns local CI policy and Woodpecker invocation. \
 #emph[Consent evidence:] The disposable access-key item prompted for two consecutive successful reads, denial, and a successful read after denial; jyn confirmed that Always Allow remained unselected.
 On September 12, jyn waived the remaining manual checks and authorized implementation.

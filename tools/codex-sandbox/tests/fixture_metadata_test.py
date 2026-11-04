@@ -14,21 +14,21 @@ TRUSTED_CONFIG = Path(__file__).resolve().parents[2] / "jj-proxy/jj.toml"
 
 class FixtureMetadataTest(unittest.TestCase):
     def test_mount_relocation_separates_bind_paths_from_fixture_owned_volume_names(self):
-        arguments = ["--mount", "type=bind,src=/fixture/project,dst=/src/project,readonly",
-                     "--mount", "type=volume,src=codex-work-production,dst=/src/project/work",
-                     "--mount", "type=volume,src=codex-work-production,dst=/src/alias/work",
+        arguments = ["--mount", "type=bind,src=/fixture/project,dst=/home/codex/src/project,readonly",
+                     "--mount", "type=volume,src=codex-work-production,dst=/home/codex/src/project/work",
+                     "--mount", "type=volume,src=codex-work-production,dst=/home/codex/src/alias/work",
                      "--tmpfs", "/tmp:mode=1777"]
         self.assertEqual(
-            ["--mount", "type=bind,src=/daemon/fixture/project,dst=/src/project,readonly",
-             "--mount", "type=volume,src=jj-test-guest-volume-0,dst=/src/project/work",
-             "--mount", "type=volume,src=jj-test-guest-volume-0,dst=/src/alias/work",
+            ["--mount", "type=bind,src=/daemon/fixture/project,dst=/home/codex/src/project,readonly",
+             "--mount", "type=volume,src=jj-test-guest-volume-0,dst=/home/codex/src/project/work",
+             "--mount", "type=volume,src=jj-test-guest-volume-0,dst=/home/codex/src/alias/work",
              "--tmpfs", "/tmp:mode=1777"],
             relocate_fixture_mounts(arguments, Path("/fixture"), Path("/daemon/fixture"),
                                     {"codex-work-production": "jj-test-guest-volume-0"}))
         with self.assertRaises(KeyError):
             relocate_fixture_mounts(arguments, Path("/fixture"), Path("/daemon/fixture"), {})
         with self.assertRaises(ValueError):
-            relocate_fixture_mounts(["--mount", "type=bind,src=/outside,dst=/src/project"],
+            relocate_fixture_mounts(["--mount", "type=bind,src=/outside,dst=/home/codex/src/project"],
                                     Path("/fixture"), Path("/daemon/fixture"), {})
 
     def test_fixture_queries_find_native_commits_and_their_scoped_changes(self):

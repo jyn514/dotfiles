@@ -27,12 +27,12 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
 
 class JjProxyClientTest(unittest.TestCase):
     def run_client(self, arguments: list[str], *, files: dict[str, str] | None = None,
-                   location="active", inspect=False, response_version=2,
+                   location="active", inspect=False, response_version=3,
                    symlink=False) -> tuple[subprocess.CompletedProcess[str], dict]:
-        # The wire contract addresses physical /src paths, not arbitrary host
+        # The wire contract addresses physical /home/codex/src paths, not arbitrary host
         # temporary paths. All fixture writes remain in disposable storage.
-        if Path('/src') not in ROOT.parents:
-            self.skipTest('wire protocol fixture requires checkout under /src')
+        if Path('/home/codex/src') not in ROOT.parents:
+            self.skipTest('wire protocol fixture requires checkout under /home/codex/src')
         target = ROOT / "target"
         target.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=target, prefix="jj-client-") as temporary:
@@ -98,7 +98,7 @@ class JjProxyClientTest(unittest.TestCase):
         self.assertEqual("output\n", result.stdout)
         self.assertEqual("warning\n", result.stderr)
         self.assertEqual({
-            "version": 2,
+            "version": 3,
             "mode": "mutate",
             "cwd": str(self.current),
             "argv": ["status", "--quiet"],
@@ -113,7 +113,7 @@ class JjProxyClientTest(unittest.TestCase):
         self.assertEqual("mutate", request["mode"])
 
     def test_selector_and_fileset_do_not_rebase_invocation_cwd(self) -> None:
-        for selector in ("../other", "/src/relocated-dotfiles"):
+        for selector in ("../other", "/home/codex/src/relocated-dotfiles"):
             with self.subTest(selector=selector):
                 args = ["-R", selector, "commit", "root:skills/example", "-m", "change"]
                 result, request = self.run_client(args)
@@ -146,8 +146,8 @@ class JjProxyClientTest(unittest.TestCase):
         self.assertEqual({"patch": patch, "message": "Extract note", "revision": "@"}, request["agent_split"])
 
     def test_old_response_is_rejected_without_publishing_its_output(self) -> None:
-        result, request = self.run_client(["status"], response_version=1)
-        self.assertEqual(2, request["version"])
+        result, request = self.run_client(["status"], response_version=2)
+        self.assertEqual(3, request["version"])
         self.assertEqual(125, result.returncode)
         self.assertEqual("", result.stdout)
         self.assertIn("unsupported or malformed proxy response", result.stderr)
