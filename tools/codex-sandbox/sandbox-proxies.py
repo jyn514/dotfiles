@@ -647,19 +647,32 @@ def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> No
     (runtime / "idle-cleanup.lease").unlink(missing_ok=True)
 
 
-def workspace_records(value: Any) -> list[dict[str, str]]:
+def workspace_records(value: Any, *, recovery: bool = False) -> list[dict[str, str]]:
     """Parse persisted authority without opening paths needed only by live services."""
     from workspace_layout import WorkspaceLayout
     if not isinstance(value, list) or not 1 <= len(value) <= 2:
         raise ConfigError("workspace authority must contain one or two workspaces")
     try:
-        layouts = [WorkspaceLayout.from_dict(item) for item in value]
+        if recovery:
+            keys = {"host_root", "guest_root", "git_dir", "common_dir", "jj_repo", "lock_file"}
+            if any(not isinstance(item, dict) or set(item) != keys or
+                   any(not isinstance(path, str) for path in item.values()) for item in value):
+                raise ValueError("Invalid workspace description")
+            paths = [[Path(item[key]) for key in keys] for item in value]
+            if any(not path.is_absolute() or str(path).startswith("//") or ".." in path.parts or
+                   any(char in str(path) for char in (",", "\0", "\n", "\r"))
+                   for item in paths for path in item):
+                raise ValueError("Unsafe workspace mount path")
+            layouts = value
+        else:
+            layouts = [WorkspaceLayout.from_dict(item) for item in value]
     except (ValueError, TypeError, KeyError) as error:
         raise ConfigError(f"invalid workspace authority: {error}") from error
-    if (len({item.host_root for item in layouts}) != len(layouts) or
-            len({item.guest_root for item in layouts}) != len(layouts)):
+    host_roots = [item["host_root"] if recovery else item.host_root for item in layouts]
+    guest_roots = [item["guest_root"] if recovery else item.guest_root for item in layouts]
+    if len(set(host_roots)) != len(layouts) or len(set(guest_roots)) != len(layouts):
         raise ConfigError("workspace authority contains duplicate roots")
-    return [item.to_dict() for item in layouts]
+    return [dict(item) if recovery else item.to_dict() for item in layouts]
 
 
 def requested_workspaces(args: argparse.Namespace) -> list[dict[str, str]] | None:
@@ -751,7 +764,7 @@ def session_state(metadata):
         runtimes = []
         proxies, auth = [], None
         for role, service in services.items():
-            parsed = _parse_service_record(role, service)
+            parsed = _parse_service_record(role, service, recovery_mode=True)
             runtimes.append(parsed["runtime-owner"])
             recovery = parsed["recovery"]
             if parsed["family"] == "command-proxy" or role == "zulip":
@@ -797,7 +810,7 @@ def _valid_runtime_owner(value: Any) -> bool:
             and Path(value["state"]).is_absolute())
 
 
-def _parse_service_record(role: str, value: Any) -> dict[str, Any]:
+def _parse_service_record(role: str, value: Any, *, recovery_mode: bool = False) -> dict[str, Any]:
     if not isinstance(role, str) or not NAME_RE.fullmatch(role) or not isinstance(value, dict):
         raise ConfigError("invalid schema-4 service record")
     fields = set(value)
@@ -827,14 +840,14 @@ def _parse_service_record(role: str, value: Any) -> dict[str, Any]:
         raise ConfigError("schema-4 service identity is invalid")
     try:
         if family == "command-proxy":
-            parsed_recovery = _managed_proxy_record(recovery)
+            parsed_recovery = _managed_proxy_record(recovery, recovery=recovery_mode)
             if parsed_recovery is None or role == "zulip":
                 raise ConfigError("schema-4 command recovery has the wrong family")
             endpoint_fields = {"container", "socket"} | ({"forward"} if "forwarding" in recovery else set())
             if set(endpoints[0]) != endpoint_fields or endpoints[0].get("socket") != "/run/sandbox-proxy/socket":
                 raise ConfigError("schema-4 command endpoint is invalid")
         elif role == "zulip":
-            parsed_recovery = _managed_proxy_record(recovery)
+            parsed_recovery = _managed_proxy_record(recovery, recovery=recovery_mode)
             endpoint_fields = {"container", "socket"} | ({"forward"} if "forwarding" in recovery else set())
             if parsed_recovery is None or set(endpoints[0]) != endpoint_fields or endpoints[0].get("socket") != "/run/sandbox-proxy/socket":
                 raise ConfigError("schema-4 Zulip endpoint is invalid")
@@ -1912,7 +1925,7 @@ _MANAGED_PROXY_OPTIONAL = {
 }
 
 
-def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
+def _managed_proxy_record(proxy: Any, *, recovery: bool = False) -> dict[str, Any] | None:
     """Parse a managed record; records without service-owner are explicit legacy schema 3."""
     if not isinstance(proxy, dict):
         raise ConfigError("proxy recovery record must be an object")
@@ -1946,7 +1959,7 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
     if "workspaces" in proxy or "workspace-source-view" in proxy:
         if proxy["name"] != "jj" or not {"workspaces", "workspace-source-view"} <= set(proxy):
             raise ConfigError("workspace authority belongs only to the JJ service")
-        workspace_records(proxy["workspaces"])
+        workspace_records(proxy["workspaces"], recovery=recovery)
         source_view = Path(proxy["workspace-source-view"])
         base = Path.home() / ".cache/codex-sandbox-proxies"
         if (source_view.name != "jj-source-view-" + owner or
@@ -2038,7 +2051,7 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
 
 
 def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
-    managed_record = _managed_proxy_record(proxy)
+    managed_record = _managed_proxy_record(proxy, recovery=True)
     service_owner = proxy.get("service-owner")
     managed = managed_record is not None
     if not managed:
@@ -2270,7 +2283,7 @@ def stop_state(state: dict[str, Any]) -> None:
     # Validate recorded ownership before opening the runtime. A mismatched
     # recovery record must not trigger any backend interaction.
     for proxy in all_proxies:
-        _managed_proxy_record(proxy)
+        _managed_proxy_record(proxy, recovery=True)
     with service_timing("proxies", "cleanup-runtime-query"):
         owner = state_runtime(state, recovery=True)
     if (not managed_auth and
@@ -2287,7 +2300,7 @@ def stop_state(state: dict[str, Any]) -> None:
     proxies = list(reversed(all_proxies))
     seen: set[str] = set()
     for proxy in proxies:
-        managed = _managed_proxy_record(proxy)
+        managed = _managed_proxy_record(proxy, recovery=True)
         if managed is not None:
             service_owner = managed["service-owner"]
             if service_owner in seen:

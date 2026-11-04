@@ -1627,6 +1627,29 @@ class ManifestTest(unittest.TestCase):
         reconstruct.assert_called_once_with("lima", Path(identity["state"]))
         cleanup.assert_called_once_with(state, owner)
 
+    def test_retired_workspace_root_is_cleanup_only(self) -> None:
+        proxy = self.managed_proxy("jj")
+        proxy["workspaces"] = [{
+            "host_root": "/home/jyn/src/dotfiles", "guest_root": "/src/dotfiles",
+            "git_dir": "/home/jyn/src/dotfiles/.git",
+            "common_dir": "/home/jyn/src/dotfiles/.git",
+            "jj_repo": "/home/jyn/src/dotfiles/.jj/repo",
+            "lock_file": "/home/jyn/.cache/codex-sandbox-proxies/request-locks/old.lock",
+        }]
+        proxy["workspace-source-view"] = str(
+            Path.home() / ".cache/codex-sandbox-proxies" / ("0" * 64) /
+            ("jj-source-view-" + proxy["service-owner"])
+        )
+        proxy["resource-status"]["source-view"] = "created"
+        service = sandbox_proxies._service_record("jj", proxy, {"provider": "container"})
+        metadata = self.schema4({"jj": self.command()}, services={"jj": service})
+
+        state = sandbox_proxies.session_state(metadata)
+        self.assertEqual("/src/dotfiles", state["proxies"][0]["workspaces"][0]["guest_root"])
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "invalid workspace authority"):
+            sandbox_proxies._accepted_schema4(
+                metadata, expected_parameters={"uid": 501, "gid": 20})
+
     def test_new_schema_requires_an_explicit_owner_and_legacy_is_podman(self) -> None:
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing its runtime"):
             sandbox_proxies.session_state({"version": 2, "state": {"proxies": []}})
