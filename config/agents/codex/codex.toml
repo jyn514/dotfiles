@@ -11,6 +11,48 @@ extends = ":workspace"
 [permissions.default_permission_rules.filesystem]
 "/private/tmp" = "write"
 
+[permissions.default_permission_rules.network]
+enabled = true
+mode = "limited"
+
+[permissions.default_permission_rules.network.domains]
+"api.github.com" = "allow"
+"api.rubygems.org" = "allow"
+"archive.ubuntu.com" = "allow"
+"auth.docker.io" = "allow"
+"codeload.github.com" = "allow"
+"crates.io" = "allow"
+"deb.debian.org" = "allow"
+"developer.mozilla.org" = "allow"
+"doc.rust-lang.org" = "allow"
+"docs.python.org" = "allow"
+"docs.rs" = "allow"
+"files.pythonhosted.org" = "allow"
+"github.com" = "allow"
+"index.crates.io" = "allow"
+"nodejs.org" = "allow"
+"objects.githubusercontent.com" = "allow"
+"packagist.org" = "allow"
+"pkg.go.dev" = "allow"
+"plugins.gradle.org" = "allow"
+"production.cloudflare.docker.com" = "allow"
+"proxy.golang.org" = "allow"
+"pypi.org" = "allow"
+"raw.githubusercontent.com" = "allow"
+"registry-1.docker.io" = "allow"
+"registry.npmjs.org" = "allow"
+"release-assets.githubusercontent.com" = "allow"
+"repo.packagist.org" = "allow"
+"repo1.maven.org" = "allow"
+"rubygems.org" = "allow"
+"security.debian.org" = "allow"
+"services.gradle.org" = "allow"
+"static.crates.io" = "allow"
+"sum.golang.org" = "allow"
+
+[features]
+network_proxy = true
+
 [features.multi_agent_v2]
 # breaks /agent and max_threads
 enabled = false
