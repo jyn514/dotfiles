@@ -188,6 +188,8 @@ Use the concerns below to choose relevant rules, not as a checklist every matchi
 
 Separate requirements from examples.
 Preserve reasons for non-obvious constraints and rejected tempting alternatives.
+Judge examples by what they help the consuming agent decide, not what they help the author remember or substantiate.
+Keep development history out of the reading path unless understanding that history changes the reader's action.
 Avoid motivational prose, broad expertise summaries, and duplicated repository documentation.
 Avoid exhaustive catalogs the agent can discover when needed.
 
