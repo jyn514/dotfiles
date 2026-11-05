@@ -71,6 +71,51 @@ class EmojiDownloadTests(unittest.TestCase):
             files,
         )
 
+    def assert_rejected_cases(
+        self, cases: list[tuple[str, list[str], list[tuple[str, str]]]],
+    ) -> None:
+        records = []
+        sentinels = []
+        expected_groups = []
+        expected_files = {}
+        for index, (_, rejected, expected) in enumerate(cases):
+            name = f"accepted_after_{index}"
+            identifier = str(900000 + index)
+            records.extend(rejected)
+            records.append(f"<:{name}:{identifier}>")
+            sentinel = [
+                f"https://cdn.discordapp.com/emojis/{identifier}.png?size=128&quality=lossless",
+                "-o", f"{name}.png",
+            ]
+            sentinels.append(sentinel)
+            expected_groups.append([
+                [f"https://cdn.discordapp.com/emojis/{expected_id}.png?size=128&quality=lossless",
+                 "-o", f"{expected_name}.png"]
+                for expected_name, expected_id in expected
+            ] + [sentinel])
+            expected_files.update({
+                f"output/{expected_name}.png": "offline emoji fixture\n"
+                for expected_name, _ in expected
+            })
+            expected_files[f"output/{name}.png"] = "offline emoji fixture\n"
+
+        calls, files = self.download(records, stdin=True)
+        start = 0
+        for index, (label, _, _) in enumerate(cases):
+            with self.subTest(case=label):
+                try:
+                    end = calls.index(sentinels[index], start)
+                except ValueError:
+                    self.fail(f"accepted sentinel did not run; remaining calls: {calls[start:]}")
+                observed = calls[start:end + 1]
+                start = end + 1
+                self.assertEqual(expected_groups[index], observed)
+        self.assertEqual([], calls[start:])
+        self.assertEqual(
+            expected_files,
+            files,
+        )
+
     def test_native_static_and_animated_markup_can_be_adjacent(self) -> None:
         # Discord's Message Formatting examples; animated input still requests PNG.
         self.assert_downloads(
@@ -104,24 +149,27 @@ class EmojiDownloadTests(unittest.TestCase):
         )
 
     def test_path_bearing_names_do_not_reach_the_filename_writer(self) -> None:
-        for name in ("../outside", "..\\outside", "/absolute", "\\absolute", "part/name", "part\\name", ".", "..", "nul\0name"):
-            with self.subTest(name=name):
-                self.assert_downloads([f"<:{name}:123>", f":{name}:456"], [])
+        self.assert_rejected_cases([
+            (name, [f"<:{name}:123>", f":{name}:456"], [])
+            for name in ("../outside", "..\\outside", "/absolute", "\\absolute", "part/name",
+                         "part\\name", ".", "..", "nul\0name")
+        ])
 
     def test_incomplete_or_unrelated_tokens_do_not_reach_curl(self) -> None:
         # Empty NAME/ID is missing a field of the complete NAME:ID fragment.
-        for token in (
+        tokens = (
             "hello", "<t:1618953630>", "<@123>", "<wrong:ok:123>", "wrong:ok:123",
             "<:ok:123/extra>", "<:ok:123?x>", "<:ok:-123>", "<:ok:１２３>",
             "<:ok:123:456>", "<:ok:123", ":ok:123>", "<:ok:>", "<::123>",
             "::123", "<a::123>", "a::123", "prefix<:ok:123>", "<:ok:123>suffix",
             "<<:ok:123>>", "<:ok:123><broken>", "", " ",
-        ):
-            with self.subTest(token=token):
-                # Adjacent chunks are independent, not an atomic batch: the valid
-                # token preceding <broken> should still run.
-                expected = [("ok", "123")] if token == "<:ok:123><broken>" else []
-                self.assert_downloads([token], expected)
+        )
+        self.assert_rejected_cases([
+            # Adjacent chunks are independent, not an atomic batch: the valid
+            # token preceding <broken> should still run.
+            (token, [token], [("ok", "123")] if token == "<:ok:123><broken>" else [])
+            for token in tokens
+        ])
 
     def test_invalid_tokens_do_not_block_later_valid_tokens(self) -> None:
         self.assert_downloads(
