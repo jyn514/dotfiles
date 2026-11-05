@@ -100,8 +100,8 @@ sourceTest("two real linked roots deliver to owned active children and return pr
     const all = [own, first, sibling];
     for (const { info } of all) {
       const tools = jsonl(providerCallsFile(info.sessionFile))[0].tools;
-      expect(tools).toContain("link_reply");
-      for (const forbidden of ["link_send", "link_set_identity", "link_list", "link_compact"]) expect(tools).not.toContain(forbidden);
+      expect(tools).toContain("link_send");
+      for (const forbidden of ["link_reply", "link_set_identity", "link_list", "link_compact"]) expect(tools).not.toContain(forbidden);
     }
     const broadcast = await tool(sender, "link_send", { to: { broadcast: true }, message: "ask-link-question", includeSubagents: true });
     const outcomes = broadcast.details.outcomes;
@@ -132,7 +132,7 @@ sourceTest("two real linked roots deliver to owned active children and return pr
     // questions; private routing is not a parent-model forwarding instruction.
     expect(rootLinks(await entries(owner)).flatMap(entry => entry.details?.deliveries ?? []).some(message => message.fromWorker)).toBe(false);
     const question = questions.find(message => message.fromWorker.workerId === first.info.id);
-    const answer = await tool(sender, "link_reply", { replyTo: question.id, message: "private-only-to-one" });
+    const answer = await tool(sender, "link_send", { to: { authorOf: question.id }, message: "private-only-to-one" });
     expect(answer.details.outcomes).toEqual([expect.objectContaining({ kind: "worker", workerId: first.info.id,
       sessionId: ownerId, status: "submitted" })]);
     expect(JSON.stringify(rootLinks(await entries(owner)))).not.toContain("private-only-to-one");
@@ -201,13 +201,13 @@ sourceTest("configured pi-link workers expose selected tools and reply through b
         return Boolean(info && (readOnly ? jsonl(providerCallsFile(info.sessionFile)).length : existsSync(heldToolFiles(marker).started)));
       }, `${label} native worker ready`);
       const actualTools = jsonl(providerCallsFile(info.sessionFile))[0].tools;
-      expect(actualTools).toContain("link_reply");
+      expect(actualTools).toContain("link_send");
       if (readOnly) {
-        expect(actualTools.sort()).toEqual(["find", "grep", "link_reply", "ls", "peer_escalate", "peer_list", "peer_send", "read"]);
+        expect(actualTools.sort()).toEqual(["find", "grep", "link_send", "ls", "peer_escalate", "peer_list", "peer_send", "read"]);
         continue;
       }
       for (const name of ["link_list", "link_set_identity"]) expect(actualTools).toContain(name);
-      if (tools !== undefined) expect(actualTools.sort()).toEqual(["faux_hold", "link_list", "link_reply", "link_set_identity", "peer_escalate", "peer_list", "peer_send"]);
+      if (tools !== undefined) expect(actualTools.sort()).toEqual(["faux_hold", "link_list", "link_send", "link_set_identity", "peer_escalate", "peer_list", "peer_send"]);
       else for (const name of ["link_send", "link_compact"]) expect(actualTools).toContain(name);
       const identity = jsonl(info.sessionFile).find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_set_identity");
       expect(identity.message.isError).not.toBe(true);
@@ -233,7 +233,7 @@ sourceTest("configured pi-link workers expose selected tools and reply through b
       expect(listing.message.details.sessionIds[`${label}@native-tools`]).toBe(jsonl(info.sessionFile).find(entry => entry.type === "session").id);
       expect(rootLinks(jsonl(info.sessionFile)).flatMap(entry => entry.details.deliveries).some(message => message.id === direct.details.messageId)).toBe(true);
       expect(workerLinks(info.sessionFile).some(entry => entry.details.delivery.id === managed.details.messageId)).toBe(true);
-      const replies = jsonl(info.sessionFile).filter(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_reply");
+      const replies = jsonl(info.sessionFile).filter(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_send");
       expect(replies).toHaveLength(2);
       expect(replies.every(entry => !entry.message.isError && !entry.message.details.error)).toBe(true);
     }

@@ -771,7 +771,7 @@ describe("completion delivery", () => {
     }
   });
 
-  test("delivers an adopted terminal state observed through child output to wait_all_agents", async () => {
+  test("delivers an adopted terminal state observed through child output to the all-target wait", async () => {
     process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
     const parentSessionId = "completion-external-output";
     const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
@@ -851,7 +851,7 @@ describe("completion delivery", () => {
     }
   });
 
-  test("releases suppressed completions when wait_all_agents is cancelled", async () => {
+  test("releases suppressed completions when the all-target wait is cancelled", async () => {
     process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
     const parentSessionId = "completion-wait-cancel";
     const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
@@ -1098,6 +1098,13 @@ describe("extension completion delivery and TUI", () => {
       expect(tools.get("spawn_agent").description).toContain("`model` takes one of the values its schema lists");
       expect(commands.has("subagents")).toBe(true);
       expect(tools.has("steer_subagent")).toBe(true);
+      expect(tools.has("wait_all_agents")).toBe(false);
+      const waitTool = tools.get("wait_agent");
+      expect(waitTool.parameters.properties.until.enum).toEqual(["any", "all"]);
+      expect(waitTool.parameters.required ?? []).toEqual([]);
+      // Direct execution also validates before observing steering or entering a manager wait.
+      await expect(waitTool.execute("invalid-wait", { until: "invalid" }, undefined, undefined, ctx))
+        .rejects.toThrow("until must be");
       expect(tools.has("send_message")).toBe(false);
       const steeringTool = tools.get("steer_subagent");
       expect(steeringTool.parameters.required).toEqual(["target", "message"]);

@@ -28,7 +28,7 @@ export function registerChildLink(pi: ExtensionAPI): void {
   });
   pi.registerTool({
     name: "peer_send", label: "Send Peer Message",
-    description: "Send information to a sibling worker by stable worker ID or task name from peer_list. Reopens a completed peer's saved conversation, never failed/interrupted/paused work. A completed peer's follow-up final answer returns here without routine parent notification; a running parent-assigned peer can answer explicitly with link_reply. Returns submission, not a model response. Does not expand either assignment.",
+    description: "Send information to a sibling worker by stable worker ID or task name from peer_list. Reopens a completed peer's saved conversation, never failed/interrupted/paused work. A completed peer's follow-up final answer returns here without routine parent notification; a running parent-assigned peer can answer explicitly with link_send to: {authorOf: messageId}. Returns submission, not a model response. Does not expand either assignment.",
     parameters: Type.Object({ target: Type.String({ minLength: 1 }), message: Type.String({ minLength: 1 }) },
       { additionalProperties: false }),
     execute: (_id, params, signal, _update, ctx) => request({ action: "send", ...params }, PEER_NOTIFY, signal, ctx),
@@ -44,13 +44,13 @@ export function registerChildLink(pi: ExtensionAPI): void {
     context = ctx;
     // Full pi-link owns the public tool when enabled. Runtime registration is
     // supported by Pi, so the helper supplies a fallback only after discovery.
-    if (!pi.getAllTools().some(tool => tool.name === "link_reply")) {
+    if (!pi.getAllTools().some(tool => tool.name === "link_send")) {
       pi.registerTool({
-        name: "link_reply", label: "Link Reply",
-        description: "Privately reply to the author of a message actually delivered to this worker. replyTo must be a full received message ID. Cannot choose another recipient or broadcast. Returns routing acceptance, not a model response.",
-        parameters: Type.Object({ replyTo: Type.String({ minLength: 1 }), message: Type.String({ minLength: 1 }) },
+        name: "link_send", label: "Link Send",
+        description: "Privately reply to the author of a message actually delivered to this worker. to.authorOf must be a full received message ID. Cannot choose another recipient or broadcast. Returns routing acceptance, not a model response.",
+        parameters: Type.Object({ to: Type.Object({ authorOf: Type.String({ minLength: 1 }) }, { additionalProperties: false }), message: Type.String({ minLength: 1 }) },
           { additionalProperties: false }),
-        execute: (_toolCallId, params, signal, _onUpdate, toolContext) => reply(params, signal, toolContext),
+        execute: (_toolCallId, params, signal, _onUpdate, toolContext) => reply({ replyTo: params.to.authorOf, message: params.message }, signal, toolContext),
       });
     }
     // Keep manager communication available without changing the template's task tools.

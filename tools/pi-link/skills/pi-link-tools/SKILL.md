@@ -1,6 +1,6 @@
 ---
 name: pi-link-tools
-description: "Coordinate Pi sessions with link_set_identity, link_send, link_reply, link_list, and link_compact. Use for link identity or group changes, direct messages, group clarifications, delivered-author replies, callbacks, status, and remote compaction. Covers manager-delivered worker replies and configured worker tool access; not general subagent creation or task management."
+description: "Coordinate Pi sessions with link_set_identity, link_send, link_list, and link_compact. Use for link identity or group changes, direct messages, group clarifications, delivered-author replies, callbacks, status, and remote compaction. Covers manager-delivered worker replies and configured worker tool access; not general subagent creation or task management."
 ---
 
 # Pi-Link Tools
@@ -52,12 +52,13 @@ Its UUID is `messageId` in the result.
 
 ### Reply to a delivered message
 
-Use `link_reply({ replyTo: "<full-received-message-id>", message: "..." })` to answer a delivered message's author privately.
+Use `link_send({ to: { authorOf: "<full-received-message-id>" }, message: "..." })` to answer a delivered message's author privately.
 It resolves the author by session identity, not a remembered mutable name.
 Unknown references fail; an author offline or outside the permitted group is not replaced by a fallback recipient.
 Root delivery references survive reload and resume from admitted transcript messages, but old peers may lack sufficient attribution.
 Queued or cleared steering messages grant no reply permission.
-`link_send.replyTo` remains unchecked correlation only; it does not select the recipient.
+Do not supply `inReplyTo` or `includeSubagents` with `authorOf`; the tool supplies the reference and chooses one author.
+`link_send.inReplyTo` remains unchecked correlation only; it does not select the recipient.
 
 ### Broadcast a group clarification
 
@@ -76,13 +77,13 @@ Do not claim workers received a root broadcast or invent an automatic parent-for
 
 ### Keep replies private
 
-Keep task-specific answers private through `link_reply` to the received message.
+Keep task-specific answers private through `link_send` with `to: { authorOf: messageId }` to the received message.
 A reply to a broadcast reaches its author only, not its audience.
 Do not automatically forward or rebroadcast received messages.
 
 ### Interpret routing results
 
-Broadcast and `link_reply` wait at most five seconds for routing, not a model response.
+Broadcast and `link_send` with `to: { authorOf: messageId }` wait at most five seconds for routing, not a model response.
 Inspect `details.outcomes`: `submitted`, `failed`, `skipped`, `unsupported`, and `unknown` can coexist.
 `details.messageId` is the new message UUID; `empty` identifies an empty selection.
 Submission is transport acceptance, not model reading or completion.
@@ -102,12 +103,12 @@ A callback does not prove its sender is idle or has completed other work.
 
 ## Worker conventions with manager integration
 
-These rules apply only when a supported manager/child bridge exposes `link_reply` and delivers attributed messages to workers.
+These rules apply only when a supported manager/child bridge exposes `link_send` with `to: { authorOf: messageId }` and delivers attributed messages to workers.
 The installed `pi-codex-subagents` manager/child bridge supplies this capability; without it, worker delivery is unsupported.
 
 ### Reply to a manager-delivered worker message
 
-The manager helper's `link_reply` addresses the author of a message actually delivered to that worker.
+Without full pi-link, the manager helper exposes only author-targeted `link_send`, which addresses the author of a message actually delivered to that worker.
 Ask the delivered author only for clarification that can change the next action, or send an answer they requested.
 Send normal task completions through the parent channel.
 Private answers go only to the requesting worker, not siblings or the parent's model context.

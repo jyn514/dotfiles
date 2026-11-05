@@ -5,9 +5,41 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { LINK_MESSAGE_TYPE, admittedLink, type LinkDelivery } from "../link.ts";
 import { heldToolFiles, providerCallsFile } from "./held-tool-extension.ts";
-import { heldExtension, jsonl, until } from "./source-runtime.ts";
+import { heldExtension, jsonl, sourceRpc, until } from "./source-runtime.ts";
 
 const sourceTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG);
+sourceTest("helper-only link_send rejects named and broadcast destinations and grants no authority for unknown references", async () => {
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "link-schema-"));
+  const peer = sourceRpc(cwd, join(cwd, "session.jsonl"), false, undefined, {
+    PI_SUBAGENT_PARENT_SESSION_ID: randomUUID(), PI_SUBAGENT_ID: randomUUID(),
+  });
+  try {
+    for (const args of [
+      { to: "some-root", message: "not arbitrary outreach" },
+      { to: { broadcast: true }, message: "not broadcast" },
+      { to: { authorOf: "unknown", broadcast: true }, message: "not combined" },
+      { to: { authorOf: "unknown" }, inReplyTo: "another", message: "not correlation" },
+      { to: { authorOf: "unknown" }, includeSubagents: false, message: "not inclusion" },
+      { replyTo: "unknown", message: "not old public API" },
+      { to: { authorOf: "unknown" }, message: "unknown author" },
+    ]) {
+      const start = peer.records.length;
+      await peer.request({ type: "prompt", message: `invoke-tool:${JSON.stringify({ name: "link_send", args })}` });
+      await until(() => peer.records.slice(start).some(event => event.type === "agent_end"), "invalid fallback send finishes");
+      const result = jsonl(join(cwd, "session.jsonl")).findLast(entry => entry.message?.toolName === "link_send");
+      expect(result.message.isError).toBe(true);
+      if (args.message === "unknown author") expect(result.message.details).toEqual({ status: "failed", reason: "unknown_reference" });
+    }
+    expect(peer.records.some(event => event.type === "extension_ui_request" && event.message?.startsWith("subagent-link-reply:"))).toBe(false);
+    const tools = jsonl(providerCallsFile(join(cwd, "session.jsonl")))[0].tools;
+    expect(tools).toContain("link_send");
+    expect(tools).not.toContain("link_reply");
+  } finally {
+    await peer.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 15000);
+
 sourceTest("Manager link selects owned live workers, validates native replies and routes by stable ID without waking paused/completed tasks", async () => {
   const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
   const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "manager-link-"));
@@ -44,7 +76,7 @@ sourceTest("Manager link selects owned live workers, validates native replies an
     expect((await manager.replyLink(parentId, { workerId: privateWorker.info.id, taskName: "one" }, delivery())).status).toBe("skipped");
     for (const worker of [one, two, foreign, privateWorker]) {
       expect(worker.info.tools).toBe("faux_hold");
-      expect(jsonl(providerCallsFile(worker.info.sessionFile))[0].tools.sort()).toEqual(["faux_hold", "link_reply", "peer_escalate", "peer_list", "peer_send"]);
+      expect(jsonl(providerCallsFile(worker.info.sessionFile))[0].tools.sort()).toEqual(["faux_hold", "link_send", "peer_escalate", "peer_list", "peer_send"]);
     }
     const message = delivery();
     const result = await manager.broadcastLink(parentId, message);
@@ -70,7 +102,7 @@ sourceTest("Manager link selects owned live workers, validates native replies an
     }
     for (const worker of [one, two]) {
       await until(() => existsSync(heldToolFiles(`${worker.marker}.second`).started), "reply tool returned native routing result");
-      const replyResult = entries(worker.info.sessionFile).find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_reply");
+      const replyResult = entries(worker.info.sessionFile).find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_send");
       expect(replyResult?.message.details).toEqual({ status: "submitted" });
     }
     const privateMessage = { ...delivery(), broadcast: false, replyTo: message.id, content: "private stable worker reply" };
@@ -147,7 +179,7 @@ sourceTest("Manager link never releases restored-held children and remains avail
     await until(() => manager.getAgentInfo("resumed", parentId).status === "completed", "resumed worker completion");
     const records = jsonl(info.sessionFile);
     expect(records.some(entry => admittedLink(entry, parentId, info.id)?.id === message.id)).toBe(true);
-    expect(records.find(entry => entry.message?.toolName === "link_reply")?.message.details).toEqual({
+    expect(records.find(entry => entry.message?.toolName === "link_send")?.message.details).toEqual({
       status: "unsupported", reason: "link_integration_unavailable" });
   } finally {
     await manager.shutdown();
@@ -180,11 +212,11 @@ sourceTest("native queued link admission does not grant reply authority to the s
     expect(await manager.replyLink(parentId, { workerId: info.id, taskName: info.canonicalName }, message)).toEqual({ status: "submitted" });
     expect(jsonl(info.sessionFile).some(entry => admittedLink(entry, parentId, info.id)?.id === message.id)).toBe(false);
     expect(existsSync(`${marker}.link-reply-started`)).toBe(false);
-    expect(jsonl(info.sessionFile).some(entry => entry.message?.toolName === "link_reply")).toBe(false);
+    expect(jsonl(info.sessionFile).some(entry => entry.message?.toolName === "link_send")).toBe(false);
     writeFileSync(heldToolFiles(marker).release, "release");
     await until(() => manager.getAgentInfo("queued", parentId).status === "completed", "same batch reply denied and queued message consumed normally");
     const records = jsonl(info.sessionFile);
-    const reply = records.find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_reply");
+    const reply = records.find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "link_send");
     const hold = records.find(entry => entry.message?.role === "toolResult" && entry.message.toolName === "faux_hold_sequential");
     expect(hold).toBeDefined();
     expect(records.indexOf(hold)).toBeLessThan(records.indexOf(reply));
@@ -240,7 +272,7 @@ sourceTest("Manager broadcast snapshots a starting worker, waits existing native
     await until(() => existsSync(heldToolFiles(`${marker}.second`).started), "native helper delivery admitted after first tool");
     const records = jsonl(info.sessionFile);
     expect(records.filter(entry => admittedLink(entry, parentId, info.id, startup.sessionId)?.id === message.id)).toHaveLength(1);
-    expect(records.find(entry => entry.message?.toolName === "link_reply")?.message.details).toEqual({
+    expect(records.find(entry => entry.message?.toolName === "link_send")?.message.details).toEqual({
       status: "unsupported", reason: "link_integration_unavailable" });
   } finally {
     writeFileSync(join(cwd, "startup-release"), "cleanup releases owned barrier");
@@ -277,7 +309,7 @@ sourceTest("an admitted worker reply reference survives child recreation and nat
     expect(admittedBefore).toBeDefined();
     const sessionId = admittedBefore.details.recipientSessionId;
     expect(typeof sessionId).toBe("string");
-    expect(jsonl(info.sessionFile).some(entry => entry.message?.toolName === "link_reply")).toBe(false);
+    expect(jsonl(info.sessionFile).some(entry => entry.message?.toolName === "link_send")).toBe(false);
     manager.beginPause(parentId);
     await manager.drainSubmissions(parentId);
     const capture = manager.captureChildren(parentId, randomUUID(), () => {});
@@ -305,12 +337,12 @@ sourceTest("an admitted worker reply reference survives child recreation and nat
     await until(() => existsSync(heldToolFiles(`${marker}.resume`).started), "resumed tool batch waits for group release");
     writeFileSync(heldToolFiles(`${marker}.resume`).release, "group release completed; allow reply against old reference");
     await until(() => manager.getAgentInfo("persisted", parentId).status === "completed", "resumed worker finishes reply tool");
-    expect(replies, JSON.stringify(jsonl(info.sessionFile).filter(entry => entry.message?.toolName === "link_reply"))).toHaveLength(1);
+    expect(replies, JSON.stringify(jsonl(info.sessionFile).filter(entry => entry.message?.toolName === "link_send"))).toHaveLength(1);
     expect(replies[0]).toEqual({ ownerSessionId: parentId, worker, reference: message, message: "reply after child recreation" });
     await until(() => manager.getAgentInfo("persisted", parentId).status === "completed", "resumed native reply result returns to worker");
     const records = jsonl(info.sessionFile);
     expect(records.filter(entry => admittedLink(entry, parentId, info.id, sessionId)?.id === message.id)).toHaveLength(1);
-    expect(records.find(entry => entry.message?.toolName === "link_reply")?.message.details).toEqual({ status: "submitted" });
+    expect(records.find(entry => entry.message?.toolName === "link_send")?.message.details).toEqual({ status: "submitted" });
     expect(records.find(entry => entry.type === "session")?.id).toBe(sessionId);
   } finally {
     await manager.shutdown();
@@ -321,7 +353,7 @@ sourceTest("an admitted worker reply reference survives child recreation and nat
 
 for (const configuration of [
   { label: "empty allowlist", tools: "", held: false },
-  { label: "native tool modifiers", tools: "+faux_hold,-link_reply", held: true },
+  { label: "native tool modifiers", tools: "+faux_hold,-link_send", held: true },
 ]) {
   sourceTest(`Manager derives helper registration without widening ${configuration.label}`, async () => {
     const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
@@ -341,8 +373,8 @@ for (const configuration of [
       await until(() => jsonl(providerCallsFile(info.sessionFile)).length > 0, "actual native provider tool inventory");
       expect(info.tools).toBe(configuration.tools);
       const tools = jsonl(providerCallsFile(info.sessionFile))[0].tools as string[];
-      expect(tools).toContain("link_reply");
-      for (const rootTool of ["link_send", "link_set_identity", "link_list", "link_compact"]) expect(tools).not.toContain(rootTool);
+      expect(tools).toContain("link_send");
+      for (const rootTool of ["link_reply", "link_set_identity", "link_list", "link_compact"]) expect(tools).not.toContain(rootTool);
       if (configuration.held) {
         for (const intendedTool of ["read", "bash", "edit", "write", "faux_hold"]) expect(tools).toContain(intendedTool);
         await until(() => existsSync(heldToolFiles(`${marker}.first`).started), "modifier retains intended task tool");
@@ -350,10 +382,10 @@ for (const configuration of [
         expect(await manager.replyLink(parentId, { workerId: info.id, taskName: info.canonicalName }, message)).toEqual({ status: "submitted" });
         writeFileSync(heldToolFiles(`${marker}.first`).release, "release for actual helper invocation");
         await until(() => existsSync(heldToolFiles(`${marker}.second`).started), "modifier worker invoked helper and received native result");
-        expect(jsonl(info.sessionFile).find(entry => entry.message?.toolName === "link_reply")?.message.details).toEqual({
+        expect(jsonl(info.sessionFile).find(entry => entry.message?.toolName === "link_send")?.message.details).toEqual({
           status: "unsupported", reason: "link_integration_unavailable" });
       } else {
-        expect(tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send"]);
+        expect(tools.sort()).toEqual(["link_send", "peer_escalate", "peer_list", "peer_send"]);
         await until(() => manager.getAgentInfo("tools", parentId).status === "completed", "empty task allowlist completes normally");
       }
     } finally {
@@ -468,7 +500,7 @@ for (const answer of ["auto", "explicit", "escalate"]) {
       expect(all.responses[0].finalResponse).toBe("faux:detective-parent-result");
       if (answer === "escalate") expect(manager.getCompletionState(parentId).mailbox.some(event => event.attention)).toBe(true);
       if (answer === "explicit") {
-        expect(jsonl(current.sessionFile).find(entry => entry.message?.toolName === "link_reply").message.details.status).toBe("submitted");
+        expect(jsonl(current.sessionFile).find(entry => entry.message?.toolName === "link_send").message.details.status).toBe("submitted");
       }
       // A real parent send resets completion ownership.
       await manager.sendMessage(parentId, "detective", "new parent assignment");

@@ -79,7 +79,7 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
     expect(context).not.toContain("excluded active head");
     expect(request.messages.filter((message: any) => message.role === "user").at(-1).content)
       .toEqual([{ type: "text", text: "current template task prefix\n\nrequired new task" }]);
-    expect(request.tools.sort()).toEqual(["link_reply", "peer_escalate", "peer_list", "peer_send", "read"]);
+    expect(request.tools.sort()).toEqual(["link_send", "peer_escalate", "peer_list", "peer_send", "read"]);
     expect(request.systemPrompt.split("EDITED_FORK_ROLE_INITIAL_MARKER")).toHaveLength(2);
     expect(request.systemPrompt.split("FORK_SHARED_INITIAL_MARKER")).toHaveLength(2);
     expect(request.systemPrompt).toContain("You are an expert coding assistant");
@@ -214,9 +214,9 @@ sourceTest("fork restores native source selection, applies native modifiers and 
     await manager.ready();
     for (const selection of [
       { name: "omitted", tools: undefined,
-        expected: ["grep", "link_reply", "peer_escalate", "peer_list", "peer_send", "read"] },
+        expected: ["grep", "link_send", "peer_escalate", "peer_list", "peer_send", "read"] },
       { name: "modifiers", tools: "-read,+ls",
-        expected: ["grep", "link_reply", "ls", "peer_escalate", "peer_list", "peer_send"] },
+        expected: ["grep", "link_send", "ls", "peer_escalate", "peer_list", "peer_send"] },
     ]) {
       const template = `fork-${selection.name}-${randomUUID()}`;
       const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);

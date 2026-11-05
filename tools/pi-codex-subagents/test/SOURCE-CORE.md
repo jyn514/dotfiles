@@ -150,7 +150,7 @@ The removed manager/helper checkpoint handoff is not a supported integration.
 `manager-link.test.ts` exercises the real manager, child helper, native transcript, and RPC control path.
 It checks worker ownership, selection during startup, delivered-reference replies before and after child recreation, and stable-ID private delivery.
 It also checks the external bridge's refusal to wake paused or completed children and helper-tool availability with empty and modifier-based task-tool selections.
-Its manager-local peer cases invoke real `peer_list`, `peer_send`, `link_reply` and `peer_escalate` tools.
+Its manager-local peer cases invoke real `peer_list`, `peer_send`, author-targeted `link_send` and `peer_escalate` tools.
 They check stable-ID/name addressing, the same saved conversation on reopening, automatic and explicit private answers, no duplicate final reply, and preservation of parent completion ownership and wait results.
 Fast-settling recipients protect receipt collection before process hibernation and reopening across a known no-submission settlement race.
 Native failure, interruption, pause and suspension cases protect the peer-specific no-restart rules; peer failures and non-failure escalations remain parent-visible without replacing the original parent wait result.

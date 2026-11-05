@@ -94,7 +94,7 @@ Keep the current direct-send call and add an explicit broadcast target:
 link_send({
   to: "reviewer@prose",
   message: "The condition is missing.",
-  replyTo: "<received-message-id>",
+  inReplyTo: "<received-message-id>",
 });
 
 link_send({
@@ -104,10 +104,10 @@ link_send({
 });
 ```
 
-- `to` accepts either one terminal-name string or exactly `{ broadcast: true }`.
+- `to` accepts one terminal-name string, exactly `{ broadcast: true }`, or exactly `{ authorOf: "<received-message-id>" }`.
   An object avoids reserving a currently valid terminal name such as `all` or `*`.
-- `message` remains required; `replyTo` remains optional and does not select recipients.
-  For broadcasts, an empty `replyTo` is treated as omitted.
+- `message` remains required; `inReplyTo` is optional for direct/broadcast and does not select recipients.
+  For broadcasts, an empty `inReplyTo` is treated as omitted.
 - `includeSubagents` defaults to `false` and may be `true` only for a broadcast.
   Direct sends remain one-recipient operations.
 - Broadcast selects connected root sessions in the sender's current group, excluding the sending session.
@@ -122,8 +122,8 @@ The existing all-groups `hubBroadcast()` used for membership and status traffic 
 
 Generate one message UUID and preserve it, the sender attribution, content, and optional `replyTo` across all copies.
 Show that a received message was broadcast, so recipients do not mistake it for an individual assignment.
-Root recipients can use `link_reply` with that UUID to resolve the delivered author by session identity.
-An ordinary direct `link_send` may still carry `replyTo` as unchecked correlation only.
+Root recipients can use author-targeted `link_send` with that UUID to resolve the delivered author by session identity.
+An ordinary direct `link_send` may still carry `inReplyTo` as unchecked correlation only.
 Manager-delivered messages use the delivered-author reply API below; receiving a broadcast does not itself grant additional tools.
 There is no automatic response or reply-all.
 The existing inbox batching, busy/idle delivery behavior, and compaction holds still apply to root deliveries.
@@ -165,32 +165,32 @@ Automatic recursive delivery to deeper descendant managers is outside this propo
 
 #### Delivered-author replies and worker conversations
 
-Root-to-root `link_reply` and the worker exchange below use admitted transcript references; workers additionally require the installed manager/child bridge.
+Root-to-root author-targeted `link_send` and the worker exchange below use admitted transcript references; workers additionally require the installed manager/child bridge.
 A worker receiving a directness correction may need to ask whether it applies to quoted source material.
 Requiring the parent model to relay both the question and answer would recreate the delay broadcast delivery removes.
 Allow a private conversation with that sender, without arbitrary outreach or broadcast:
 
 ```typescript
 // With manager integration: ask the sender of a delivered correction.
-link_reply({
-  replyTo: "<received-correction-id>",
+link_send({
+  to: { authorOf: "<received-correction-id>" },
   message: "Does this also apply to quoted source material?",
 });
 
 // With manager integration: root answers through the worker's manager.
-link_reply({
-  replyTo: "<received-worker-question-id>",
+link_send({
+  to: { authorOf: "<received-worker-question-id>" },
   message: "No. Preserve quoted source wording; assess only our explanation.",
 });
 ```
 
-`link_reply` is available to roots with required `replyTo` and `message` fields.
-The manager/child integration itself supplies only this reply API; an enabled pi-link extension additionally registers its ordinary tools.
-It has no `to`, recipient-list, broadcast, or worker-inclusion option.
+`link_send` with `to: { authorOf: id }` selects one delivered author.
+The manager/child integration supplies only this destination when full pi-link is absent; an enabled pi-link extension registers its ordinary destinations too.
+`authorOf` rejects `inReplyTo` and `includeSubagents`, and target objects reject combined selectors.
 One call replies to the original author of one message delivered to the caller, never to everyone who received that message.
 A received broadcast therefore permits a private reply to its sender, not to its audience.
 
-Unlike the optional correlation field on existing `link_send`, this `replyTo` selects the destination.
+Unlike the optional correlation field on existing `link_send`, `to.authorOf` selects the destination.
 For roots, resolve it from the actual transcript of messages admitted to this Pi session's model input.
 Outgoing custom `link` batches carry minimal references in `details.deliveries` and the receiver's `recipientSessionId`.
 Only native Pi `message_end` for a matching admitted custom `link` message confers reply permission.
@@ -227,8 +227,8 @@ Unicast prevents every worker from seeing every response; it cannot prevent seve
 Ask only when an answer can change the next action.
 Do not add semantic deduplication, a suppression registry, or a wait period.
 Roots broadcast general clarifications to the current group with `includeSubagents: true`, inspecting each owner and worker outcome.
-Task-specific answers stay private through `link_reply` to the received message.
-Normal task completion still goes to the parent, not through `link_reply` merely because a broadcast was received.
+Task-specific answers stay private through author-targeted `link_send` to the received message.
+Normal task completion still goes to the parent, not through author-targeted `link_send` merely because a broadcast was received.
 
 #### Routing receipt and failures
 
@@ -283,7 +283,7 @@ The manager is responsible for validating child transcript admission before emit
 Worker metadata survives owner-to-hub-to-recipient transport.
 
 `PI_SUBAGENT_OWNER_TOKEN` does not suppress pi-link. Template extension exclusions decide whether a managed child loads it; explicit tool lists decide which ordinary tools the model can use.
-When both packages load, pi-link owns public `link_reply`; the helper registers a fallback at `session_start` only if that tool is absent.
+When both packages load, pi-link owns public `link_send`; the helper registers an author-only fallback at `session_start` only if that tool is absent.
 Before independent endpoint routing, pi-link synchronously emits `pi-link:child-reply:v1` with `{ version: 1, replyTo, message, signal, respond(Promise<LinkResult>) }`.
 The helper claims only an admitted manager-delivery reference in this child's transcript and reuses its normal reply implementation.
 No claim means ordinary pi-link reply resolution; a claim selects the manager route permanently, including failure or unknown outcomes, without retrying on the endpoint.
@@ -300,7 +300,7 @@ There is no read acknowledgment, completion timeout, cancellation of work, or au
 
 ### Implementation boundaries and checks
 
-The implemented boundary comprises root `link_set_identity`, group broadcast through `link_send`, and `link_reply` to admitted root-message authors.
+The implemented boundary comprises root `link_set_identity`, group broadcast through `link_send`, and author-targeted `link_send` to admitted root-message authors.
 Direct sends, existing user naming entrypoints, collision behavior, and saved session identity remain supported.
 Identity provenance is persisted separately from runtime collision suffixes; unknown legacy ownership stays protected.
 Root delivery references survive reload and resume through actual persisted `type: "custom_message"`, `customType: "link"` transcript entries.
@@ -337,7 +337,7 @@ Worker checks below additionally require the actual subagent manager/helper, not
 | 4   | **No offline backlog**                    | A definitely absent target is rejected and nothing is stored, so a terminal that reconnects receives no messages it missed while offline.                        |
 | 5   | **Client rename triggers full reconnect** | Changing a client's name requires a new `register` message, so the client disconnects and reconnects. Hub renames are handled in-place.                          |
 | 6   | **Single-machine / localhost-only**       | Link only binds to `127.0.0.1`; terminals on different machines cannot join.                                                                                     |
-| 7   | **Replies remain asynchronous** | `link_reply` waits only for routing outcomes, not model responses; `link_send.replyTo` remains unchecked correlation. |
+| 7   | **Replies remain asynchronous** | author-targeted `link_send` waits only for routing outcomes, not model responses; `link_send.inReplyTo` remains unchecked correlation. |
 | 8   | **Groups isolate attention, not access**  | No auth: any process may pick any group, and `pi-link --status` shows all of them; isolation needs one version everywhere, so upgrade and restart together.      |
 
 ---
@@ -404,7 +404,7 @@ Cwd and context fields are optional.
 New `chat` messages carry `id` and optional `replyTo`; these references are independent of terminal names.
 Old hubs forward additional direct-chat fields, but old receivers may discard them and old senders omit them.
 Plain direct messages remain supported without invented IDs or author references.
-Broadcast and `link_reply` use the capability-checked frames described under [Routing receipt and failures](#routing-receipt-and-failures).
+Broadcast and author-targeted `link_send` use the capability-checked frames described under [Routing receipt and failures](#routing-receipt-and-failures).
 
 | Type               | Direction       | Purpose                                                                                             |
 | ------------------ | --------------- | --------------------------------------------------------------------------------------------------- |

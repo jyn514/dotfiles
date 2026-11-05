@@ -161,7 +161,7 @@ With two projects open, you may not want their terminals to see each other. Put 
 
 ## LLM Tools
 
-Five tools cover identity, messaging, discovery, and remote compaction.
+Four tools cover identity, messaging, discovery, and remote compaction.
 The bundled **pi-link-tools** skill supplies model action conventions; the reference below describes observable behavior.
 
 ### Which tool should I use?
@@ -169,8 +169,7 @@ The bundled **pi-link-tools** skill supplies model action conventions; the refer
 | Tool | Behavior | Returns |
 | --- | --- | --- |
 | `link_set_identity` | Set this session's preferred name and/or group | Preference, origins, assigned name, connection state, and pending state |
-| `link_send` | Send to one terminal or broadcast to the current group | Direct-send status, or a bounded broadcast routing receipt |
-| `link_reply` | Reply privately to a delivered message's author | A bounded routing receipt for the resolved destination |
+| `link_send` | Send to a named terminal, a delivered message's author, or the current group | Direct-send status, or a bounded routing receipt |
 | `link_list` | List connected terminals in your group | Roles, Pi session IDs, status, cwd, and context |
 | `link_compact` | Request remote compaction and wait for its result | Compacted, declined, or failed |
 
@@ -215,9 +214,9 @@ Agree on a group before moving: these tools cannot discover or contact sessions 
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `to` | `string` or exactly `{ broadcast: true }` | One terminal name, or the current group's connected roots |
+| `to` | `string`, `{ authorOf: string }`, or `{ broadcast: true }` | One terminal name, one delivered author, or the current group's connected roots |
 | `message` | `string` | Message content |
-| `replyTo` | optional `string` | Correlation only; does not select recipients or prove prior delivery |
+| `inReplyTo` | optional `string` | Direct/broadcast correlation only; not accepted with `authorOf` |
 | `includeSubagents` | optional `boolean` | Defaults to `false`; `true` is allowed only for broadcast |
 
 #### Direct send
@@ -233,8 +232,8 @@ For a client, success means the message was handed to the hub connection, not th
 A later hub routing failure appears as a human notification, not a new result to the sending model.
 Successful direct sends return a UUID as `messageId` in their text and details.
 
-The optional `replyTo` field records a correlation without checking history or selecting the recipient.
-Use [`link_reply`](#link_reply) to answer a received message by its delivered author rather than a remembered name.
+The optional `inReplyTo` field records a correlation without checking history or selecting the recipient.
+Use [`to: { authorOf: messageId }`](#reply-to-a-delivered-author) to answer a received message by its delivered author rather than a remembered name.
 
 #### Group broadcast
 
@@ -252,8 +251,8 @@ All plain names share the empty group, so an ungrouped broadcast can interrupt u
 Agree on a named group before moving there or sending project-specific broadcasts.
 There is no special string target: names such as `all` and `*` remain ordinary names.
 
-All selected copies retain one UUID, sender attribution, content, optional `replyTo`, and a visible broadcast marker.
-For broadcasts, an empty `replyTo` is treated as omitted.
+All selected copies retain one UUID, sender attribution, content, optional correlation (wire `replyTo`), and a visible broadcast marker.
+For broadcasts, an empty `inReplyTo` is treated as omitted.
 Late joiners receive no replay, and later group changes do not retract accepted copies.
 The call waits at most five seconds for routing outcomes, never for a model response.
 Its details contain `messageId`, `operation` (`broadcast` or `reply`), `outcomes`, and `empty`.
@@ -273,13 +272,46 @@ Children also need Pi's native fresh-input admission and pause APIs; missing cap
 The manager owns selection and lifecycle: finished or paused workers are not restarted or resumed.
 Root delivery does not wait for the parent model to forward the correction.
 Without a manager, that owner's worker outcome is `unsupported` with `worker_integration_unavailable`; root copies can still succeed.
-The manager's child helper supplies `link_reply` for manager-delivered messages.
+The manager's child helper supplies author-only `link_send` for manager-delivered messages when pi-link is disabled.
 Workers also load configured extensions normally: if pi-link is enabled, it registers its ordinary tools and an independent connection.
 Use template `disabledExtensions` to opt out of pi-link, or an explicit `tools` list to restrict the model's tools; worker status alone does not suppress the extension.
 Private replies route by stable worker ID and owner session, never by task name.
-Older hubs or peers without messaging v2 (which preserves worker reply attribution) remain explicitly unsupported for broadcast and `link_reply`.
+Older hubs or peers without messaging v2 (which preserves worker reply attribution) remain explicitly unsupported for broadcast and author-targeted `link_send`.
 Upgrade and restart linked terminals together.
 See [active subagents](design.md#active-subagents) for the bridge boundary.
+
+**API migration:** replace `link_reply({ replyTo: id, message })` with `link_send({ to: { authorOf: id }, message })`.
+Replace direct/broadcast correlation `replyTo` with `inReplyTo`; the old public tool and field are not aliases.
+The transport still uses its existing `replyTo` fields and versioned manager events.
+Reload existing parents before spawning or recreating workers with explicit tool lists: an old manager admits only the old tool name.
+New helpers retain the existing manager wire contract, so old managers with omitted tool lists can still route replies.
+An already running child retains its loaded tool surface until it is recreated or reloaded.
+No saved records need migration; this update does not restart or resume tasks automatically.
+
+#### Reply to a delivered author
+
+Reply privately to the author of a message actually delivered to this Pi session:
+
+```typescript
+link_send({ to: { authorOf: "<full-received-message-id>" }, message: "The condition needs a null check." });
+```
+
+`to.authorOf` and `message` are required for this destination.
+Do not supply `inReplyTo` or `includeSubagents`, even `false`: this destination supplies its own reference and selects exactly one author.
+Combining selectors in the target object is rejected.
+The tool resolves the author from messages admitted to Pi's model input and recorded in this session's actual transcript.
+An ID copied from elsewhere or an unknown reference fails without sending.
+Queued messages do not grant reply permission before model admission, including messages cleared from the steering queue.
+A message from an old peer without sufficient author attribution cannot establish a usable reference.
+
+Root authors are identified by Pi session ID, not their mutable link names.
+Renaming does not redirect a reply to someone who later takes the old name.
+The author must still be connected and in the permitted group.
+A broadcast reply goes only to its author, never its audience.
+Replies have new IDs and can themselves be answered after delivery.
+They use the same bounded routing receipt and structured details as broadcasts, not a model-response wait.
+
+With the manager/child bridge installed, worker-authored questions retain worker attribution, and answers reach only that stable worker through its owner manager, not the parent model or siblings. Worker reply authority comes from actual child transcript admission, not a root inbox copy. Without the bridge, worker replies remain explicitly unsupported.
 
 #### Incoming messages
 
@@ -294,29 +326,6 @@ The receiver's state is read when the batch is delivered, not when it is sent.
 A running receiver is steered at Pi's next safe boundary, after current tool calls finish and before the next LLM call.
 An idle receiver starts a turn.
 There is no send mode that bypasses the receiver's reasoning, and no automatic model response.
-
-### `link_reply`
-
-Reply privately to the author of a message actually delivered to this Pi session:
-
-```typescript
-link_reply({ replyTo: "<full-received-message-id>", message: "The condition needs a null check." });
-```
-
-Both `replyTo` and `message` are required; there is no `to`, broadcast, or worker-inclusion option.
-The tool resolves the author from messages admitted to Pi's model input and recorded in this session's actual transcript.
-An ID copied from elsewhere or an unknown reference fails without sending.
-Queued messages do not grant reply permission before model admission, including messages cleared from the steering queue.
-A message from an old peer without sufficient author attribution cannot establish a usable reference.
-
-Root authors are identified by Pi session ID, not their mutable link names.
-Renaming does not redirect a reply to someone who later takes the old name.
-The author must still be connected and in the permitted group.
-A broadcast reply goes only to its author, never its audience.
-Replies have new IDs and can themselves be answered after delivery.
-They use the same bounded routing receipt and structured details as broadcasts, not a model-response wait.
-
-With the manager/child bridge installed, worker-authored questions retain worker attribution, and answers reach only that stable worker through its owner manager, not the parent model or siblings. Worker reply authority comes from actual child transcript admission, not a root inbox copy. Without the bridge, worker replies remain explicitly unsupported.
 
 ### `link_list`
 
@@ -591,7 +600,7 @@ The bundled skill tells agents not to repeat those messages in their ordinary re
   `archon@pi-link` is in `pi-link`, and `a@g@h` is in `g@h`.
   A name without `@`, or ending in one such as `a@`, belongs to the single implicit group of plain names.
   Comparison is **case-sensitive**: `a@Team` and `a@team` are different groups.
-  `link_list`, `link_send`, `link_reply`, `link_compact`, `/link` and the footer see or reach only your own group.
+  `link_list`, `link_send`, `link_compact`, `/link` and the footer see or reach only your own group.
   The hub still routes for every group, and `pi-link --status` shows all of them.
   Renaming with `/link-name` or an accepted `link_set_identity` group change moves you.
 - **Pi session name** — identity Pi gives the session itself; lives in the session JSONL's latest `session_info` entry.
@@ -639,7 +648,7 @@ A `link_compact` request does not interrupt work the target is still doing, so i
 
 A successful send is not a confirmation, and a message ID does not establish delivery.
 For a direct send from a client, success means the message was handed to the hub connection.
-For broadcasts and `link_reply`, inspect the routing receipt: even `submitted` does not mean a model read or acted on the message.
+For broadcasts and author-targeted `link_send`, inspect the routing receipt: even `submitted` does not mean a model read or acted on the message.
 Replies are ordinary messages the other agent chooses to send, so nothing produces one automatically.
 Run `/link`, or ask your model to call `link_list`, and check the target: confirm the name is still exactly right.
 A target in the `compacting` state holds messages that reach it until that state clears.

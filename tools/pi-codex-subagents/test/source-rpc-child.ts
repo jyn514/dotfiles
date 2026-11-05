@@ -58,8 +58,8 @@ const respond: FauxResponseFactory = (context) => {
     const reference = text.match(/^Message ID: (.+)$/m)?.[1];
     const lastIndex = context.messages.findLastIndex(message => message === last);
     if (peerTask[1] === "explicit" && reference && !context.messages.slice(lastIndex + 1)
-      .some(message => message.role === "toolResult" && message.toolName === "link_reply")) {
-      return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference, message: "faux:explicit-detective-answer" }), { stopReason: "toolUse" });
+      .some(message => message.role === "toolResult" && message.toolName === "link_send")) {
+      return fauxAssistantMessage(fauxToolCall("link_send", { to: { authorOf: reference }, message: "faux:explicit-detective-answer" }), { stopReason: "toolUse" });
     }
     if (peerTask[1] === "escalate" && !context.messages.slice(lastIndex + 1)
       .some(message => message.role === "toolResult" && message.toolName === "peer_escalate")) {
@@ -73,12 +73,12 @@ const respond: FauxResponseFactory = (context) => {
     const request = JSON.parse(savedLinkTask[1]) as { path: string; replyTo: string };
     if (text === CONTINUATION_MESSAGE) {
       const userIndex = context.messages.findLastIndex(message => message === last);
-      const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+      const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_send");
       if (completed) return fauxAssistantMessage("faux:saved-reference-replied");
       const held = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult"
         && message.toolName === "faux_hold" && message.details?.path === `${request.path}.resume`);
-      return held ? fauxAssistantMessage(fauxToolCall("link_reply", {
-        replyTo: request.replyTo, message: "reply after child recreation",
+      return held ? fauxAssistantMessage(fauxToolCall("link_send", {
+        to: { authorOf: request.replyTo }, message: "reply after child recreation",
       }), { stopReason: "toolUse" })
         : fauxAssistantMessage(fauxToolCall("faux_hold", { path: `${request.path}.resume` }), { stopReason: "toolUse" });
     }
@@ -98,10 +98,10 @@ const respond: FauxResponseFactory = (context) => {
   if (queuedReply) {
     const request = JSON.parse(queuedReply[1]) as { path: string; replyTo: string };
     const userIndex = context.messages.findLastIndex(message => message === last);
-    const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+    const completed = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_send");
     return completed ? fauxAssistantMessage("faux:queued-reply-complete") : fauxAssistantMessage([
       fauxToolCall("faux_hold_sequential", { path: request.path }),
-      fauxToolCall("link_reply", { replyTo: request.replyTo, message: "queued attempt" }),
+      fauxToolCall("link_send", { to: { authorOf: request.replyTo }, message: "queued attempt" }),
     ], { stopReason: "toolUse" });
   }
   const accessTask = context.messages.filter(message => message.role === "user").map(messageText)
@@ -121,8 +121,8 @@ const respond: FauxResponseFactory = (context) => {
       .filter(text => text.includes("native-access-request:"))
       .flatMap(text => [...text.matchAll(/Message ID: ([a-z0-9-]+)/g)].map(match => ({ id: match[1],
         mode: text.includes("native-access-request:direct") ? "direct" : "managed" })))
-      .find(reference => !calls.some(call => call.name === "link_reply" && call.arguments.replyTo === reference.id));
-    if (reference) return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference.id,
+      .find(reference => !calls.some(call => call.name === "link_send" && call.arguments.to?.authorOf === reference.id));
+    if (reference) return fauxAssistantMessage(fauxToolCall("link_send", { to: { authorOf: reference.id },
       message: `native-access-answer:${reference.mode}` }), { stopReason: "toolUse" });
     return fauxAssistantMessage("faux:link-access-complete");
   }
@@ -139,9 +139,9 @@ const respond: FauxResponseFactory = (context) => {
     const originalHold = context.messages.filter(message => message.role === "user")
       .map(messageText).map(text => text.match(/^hold-tool:(.+)$/m)).find(Boolean);
     const userIndex = context.messages.findLastIndex(message => message === last);
-    const called = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_reply");
+    const called = context.messages.slice(userIndex + 1).some(message => message.role === "toolResult" && message.toolName === "link_send");
     if (reference && originalHold && !called) return fauxAssistantMessage([
-      fauxToolCall("link_reply", { replyTo: reference, message: "same question" }),
+      fauxToolCall("link_send", { to: { authorOf: reference }, message: "same question" }),
       fauxToolCall("faux_hold", { path: `${originalHold[1]}.after-question` }),
     ], { stopReason: "toolUse" });
   }
@@ -157,8 +157,8 @@ const respond: FauxResponseFactory = (context) => {
     }
     const delivered = context.messages.filter(message => message.role === "user").map(messageText)
       .filter(text => text.startsWith("[Link")).map(text => text.match(/^Message ID: (.+)$/m)?.[1]).filter(Boolean);
-    const reference = delivered.find(id => !calls.some(call => call.name === "link_reply" && call.arguments.replyTo === id));
-    if (reference) return fauxAssistantMessage(fauxToolCall("link_reply", { replyTo: reference, message: "native worker reply" }), { stopReason: "toolUse" });
+    const reference = delivered.find(id => !calls.some(call => call.name === "link_send" && call.arguments.to?.authorOf === id));
+    if (reference) return fauxAssistantMessage(fauxToolCall("link_send", { to: { authorOf: reference }, message: "native worker reply" }), { stopReason: "toolUse" });
     if (!calls.some(call => call.name === "faux_hold" && call.arguments.path === second)) {
       return fauxAssistantMessage(fauxToolCall("faux_hold", { path: second }), { stopReason: "toolUse" });
     }

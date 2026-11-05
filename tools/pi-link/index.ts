@@ -6,7 +6,7 @@
  * First terminal to connect becomes the hub; others join as clients.
  * Hub loss triggers automatic promotion of a surviving client.
  *
- * Tools: link_send, link_reply, link_set_identity, link_list, link_compact
+ * Tools: link_send, link_set_identity, link_list, link_compact
  * Commands: /link, /link-name, /link-connect, /link-disconnect
  */
 
@@ -1812,7 +1812,8 @@ export default function (pi: ExtensionAPI) {
     name: "link_send",
     label: "Link Send",
     description: [
-      "Send a message to one other Pi terminal, or broadcast to connected roots in your group with to: {broadcast: true}.",
+      "Send to one Pi terminal by name, privately to a delivered message author with to: {authorOf: messageId}, or to connected group roots with to: {broadcast: true}.",
+      "authorOf resolves one admitted reference by stable root/worker identity and attaches its reply reference; no name fallback. Returns submission, not a model answer.",
       "includeSubagents is opt-in for broadcast only; unavailable worker integration is reported explicitly.",
       "The message always acts: it steers a busy receiver at its next safe boundary, or starts a turn on an idle one.",
     ].join(" "),
@@ -1822,16 +1823,36 @@ export default function (pi: ExtensionAPI) {
       to: Type.Union([
         Type.String({ description: "Target terminal name" }),
         Type.Object({ broadcast: Type.Literal(true) }, { additionalProperties: false }),
+        Type.Object({
+          authorOf: Type.String({ minLength: 1, description: "Full ID of a message delivered to this session" }),
+        }, { additionalProperties: false }),
       ]),
       message: Type.String({ description: "Message content" }),
-      replyTo: Type.Optional(
-        Type.String({ description: "Correlation only; does not select recipients" }),
+      inReplyTo: Type.Optional(
+        Type.String({ description: "Correlation only for direct/broadcast; authorOf supplies its own reference" }),
       ),
       includeSubagents: Type.Optional(Type.Boolean({ description: "Include active owned workers; broadcast only" })),
     }, { additionalProperties: false }),
 
     async execute(_toolCallId, params, signal) {
-      if (typeof params.to !== "string") return messaging.broadcast(params, signal);
+      if (typeof params.to === "object" && "authorOf" in params.to) {
+        if (params.includeSubagents !== undefined || params.inReplyTo !== undefined) {
+          return textResult("authorOf supplies its own reference and cannot include workers or correlation options", { error: "invalid_target" });
+        }
+        const reply = { replyTo: params.to.authorOf, message: params.message };
+        // The child helper alone validates manager-delivered transcript entries.
+        // A claimed failure is final; never fall through to a different recipient.
+        let managed: Promise<LinkResult> | undefined;
+        pi.events.emit("pi-link:child-reply:v1", {
+          version: 1, ...reply, signal,
+          respond(result: Promise<LinkResult>) { managed ??= result; },
+        });
+        return managed ?? messaging.reply(reply, signal);
+      }
+      if (typeof params.to !== "string") {
+        return messaging.broadcast({ message: params.message, replyTo: params.inReplyTo,
+          includeSubagents: params.includeSubagents }, signal);
+      }
       if (params.includeSubagents) return textResult("includeSubagents is valid only for broadcast", { error: "invalid_target" });
       if (role === "disconnected") return notConnectedResult();
 
@@ -1851,7 +1872,7 @@ export default function (pi: ExtensionAPI) {
         to: params.to,
         content: params.message,
         id: messageId,
-        replyTo: params.replyTo,
+        replyTo: params.inReplyTo,
         fromSessionId: ctx?.sessionManager.getSessionId(),
       });
 
@@ -1867,7 +1888,7 @@ export default function (pi: ExtensionAPI) {
       return textResult(`${verb} ${target} (Message ID: ${messageId})`, {
         to: params.to,
         messageId,
-        ...(params.replyTo !== undefined ? { replyTo: params.replyTo } : {}),
+        ...(params.inReplyTo !== undefined ? { inReplyTo: params.inReplyTo } : {}),
       });
     },
 
@@ -1879,36 +1900,16 @@ export default function (pi: ExtensionAPI) {
             ? dim(args.message)
             : truncatePreview(args.message, dim)
           : dim("...");
+      const target = typeof args.to === "string" ? args.to
+        : args.to && "authorOf" in args.to ? `author of ${args.to.authorOf}` : "group broadcast";
       const text =
         theme.fg("toolTitle", theme.bold("link_send ")) +
-        theme.fg("accent", typeof args.to === "string" ? args.to : "group broadcast") +
+        theme.fg("accent", target) +
         "\n  " +
         preview;
       return new Text(text, 0, 0);
     },
 
-    renderResult: (result, _options, theme) => renderIconResult(result, theme),
-  });
-
-  pi.registerTool({
-    ...TOP_LEVEL_TOOL,
-    name: "link_reply",
-    label: "Link Reply",
-    description: "Privately reply to the author of a message actually delivered to this session. replyTo selects that single original root or worker by stable session identity; it cannot broadcast or select an arbitrary destination. Does not wait for a model response.",
-    parameters: Type.Object({
-      replyTo: Type.String({ minLength: 1, description: "Full ID of a message delivered to this session" }),
-      message: Type.String({ description: "Reply content" }),
-    }, { additionalProperties: false }),
-    async execute(_toolCallId, params, signal) {
-      // The child helper alone validates manager-delivered transcript entries.
-      // Claim synchronously, before sending; a claimed unknown/failure is final.
-      let managed: Promise<LinkResult> | undefined;
-      pi.events.emit("pi-link:child-reply:v1", {
-        version: 1, ...params, signal,
-        respond(result: Promise<LinkResult>) { managed ??= result; },
-      });
-      return managed ?? messaging.reply(params, signal);
-    },
     renderResult: (result, _options, theme) => renderIconResult(result, theme),
   });
 

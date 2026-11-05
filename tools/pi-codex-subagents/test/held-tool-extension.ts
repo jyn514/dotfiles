@@ -20,7 +20,7 @@ function assertOwned(path: string): void {
 export default function heldToolExtension(pi: ExtensionAPI): void {
   let lastHeldPath: string | undefined;
   pi.on("tool_execution_start", event => {
-    if (event.toolName !== "link_reply" || !lastHeldPath) return;
+    if (event.toolName !== "link_send" || !lastHeldPath) return;
     assertOwned(lastHeldPath);
     writeFileSync(`${lastHeldPath}.link-reply-started`, JSON.stringify({
       holdEnded: existsSync(heldToolFiles(lastHeldPath).ended), toolCallId: event.toolCallId,

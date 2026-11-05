@@ -14,7 +14,7 @@ export const LINK_MESSAGE_TYPE = "subagent-link-message";
 export const LINK_REPLY_NOTIFY = "subagent-link-reply:";
 /** Package-local helper/manager requests, independent of pi-link's root protocol. */
 export const PEER_NOTIFY = "subagent-peer:";
-export const CHILD_LINK_TOOLS = ["link_reply", "peer_list", "peer_send", "peer_escalate"] as const;
+export const CHILD_LINK_TOOLS = ["link_send", "peer_list", "peer_send", "peer_escalate"] as const;
 export type PeerRequest = { version: 1; requestId: string } & (
   | { action: "list" }
   | { action: "send"; target: string; message: string }

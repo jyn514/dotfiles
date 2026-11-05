@@ -19,6 +19,10 @@ The upstream package is `@ogulcancelik/pi-codex-subagents`; install only one cop
 Updating package source files does not replace an already-loaded parent manager.
 Each new worker process loads the child helper from the package path, so restarting only a worker can pair a new helper with an old manager.
 That helper can advertise tools its parent does not support.
+After the `link_reply` → `link_send` migration, reload the parent before spawning or recreating workers with explicit tool lists.
+An old manager adds only `link_reply` to that list, excluding the new helper tool.
+Omitted tool lists retain reply routing because the manager wire protocol is unchanged.
+Existing children retain their loaded tool names; saved records do not need migration and no task restarts automatically.
 
 To smoke-test uncommitted changes without installing or updating a package, start a fresh Pi process from the repository root:
 
@@ -35,8 +39,7 @@ Children still use the resource-discovery rules described under [Agent templates
 | Tool | Purpose |
 |---|---|
 | `spawn_agent` | Spawn a child Pi process, optionally from bounded native session history |
-| `wait_agent` | Wait for one completion, or return early for queued steering |
-| `wait_all_agents` | Wait until every selected agent finishes, or steering arrives |
+| `wait_agent` | Wait for any selected completion (default) or all selected agents with `until: "all"`; queued steering returns early |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
 | `read_agent_response` | Read an agent's latest final raw text response |
 | `steer_subagent` | Steer a running agent or start another turn when settled |
@@ -142,7 +145,7 @@ For example, `pi-codex-subagents` excludes this package's manager entrypoint wit
 Use it on templates that should not expose subagent management tools.
 Exclusions apply to both discovered extensions and explicit `extensions` additions, before modules, factories, or hooks execute.
 Package-name exclusions match the package's declared entrypoints, not every file in its directory.
-The packaged child helper always loads independently, preserving pause support, `link_reply`, and the [peer tools](#peer-conversations) even with an empty task-tool allowlist.
+The packaged child helper always loads independently, preserving pause support, author-targeted `link_send`, and the [peer tools](#peer-conversations) even with an empty task-tool allowlist.
 Exclusions persist with each worker; older worker records without exclusions have none.
 
 The manager uses Pi's public package resolver to select enabled entrypoints before starting the child.
@@ -255,9 +258,16 @@ A thinking level written into an `enabledModels` pattern, such as `anthropic/cla
 
 ## Completion delivery
 
-A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` or `wait_all_agents` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
+A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
 
-Both wait tools return a normal `{ interrupted: true, message: "..." }` result when steering is already queued or arrives during the wait.
+`wait_agent({ targets?: string[], until?: "any" | "all" })` selects agents by their current-session-owned task names.
+`until` defaults to `"any"`, returning one completion in `event`; `"all"` returns final responses in `responses` after every selected agent finishes.
+A single target works with either mode.
+For example, `wait_agent({ targets: ["/builder"] })` waits for that agent, and `wait_agent({ targets: ["/builder", "/qa"], until: "all" })` waits for both.
+With `targets` omitted (or empty), `"any"` waits for the next owned completion; `"all"` uses the session's remaining tracked agents, excluding completions already consumed by earlier waits.
+An invalid `until` fails before waiting, including when steering is queued.
+
+The tool returns a normal `{ interrupted: true, message: "..." }` result when steering is already queued or arrives during the wait.
 User and custom messages both wake the wait; follow-up messages do not.
 Interruption leaves the queued messages intact and does not stop the parent run or its child agents.
 If the manager has already returned a completion, the tool returns that completion rather than replacing it with an interruption.
@@ -277,7 +287,7 @@ The always-loaded child helper provides these tools even when the template disab
 |---|---|
 | `peer_list` | List sibling task names, immutable worker IDs and current statuses |
 | `peer_send` | Send `{ target, message }` to a sibling by its worker ID or task name |
-| `link_reply` | Reply privately to the author of an admitted message using `{ replyTo, message }` |
+| author-targeted `link_send` | Reply privately to the author of an admitted message using `{ to: { authorOf: id }, message }` |
 | `peer_escalate` | Request parent attention on completion of a peer-follow-up episode using `{ message }` |
 
 For example, a builder calls `peer_list`, then `peer_send` with the detective's returned `workerId` and changed evidence.
@@ -296,10 +306,10 @@ Unknown admission is not retried automatically.
 The manager must remain available; this is not an offline mailbox or cross-root worker network.
 
 A reopened worker runs a **peer-follow-up episode**.
-Its final answer returns to the requesting peer; a submitted explicit `link_reply` suppresses that request's automatic final answer.
+Its final answer returns to the requesting peer; a submitted explicit author-targeted `link_send` suppresses that request's automatic final answer.
 Replies can reopen a completed requester too, but receiving a reply does not itself request another automatic answer.
 This prevents an automatic reply loop.
-An already-running parent-assigned episode keeps its parent completion route; it can answer the peer explicitly with `link_reply`.
+An already-running parent-assigned episode keeps its parent completion route; it can answer the peer explicitly with author-targeted `link_send`.
 
 Peer episodes update saved status, response and UI without routine completion-triggered parent-model turns.
 Parent-assigned results still reach the parent, and parent waits retain that assignment's result even during or after peer follow-up.
@@ -320,10 +330,11 @@ This includes the sender's workers.
 The parent model does not forward those messages.
 Completed, interrupted, suspended, and paused workers are not restarted or resumed for delivery.
 
-`link_reply` accepts a full received message ID and reply text.
+`link_send({ to: { authorOf: id }, message })` accepts a full received message ID and reply text.
 When pi-link is enabled, it owns that public tool and delegates admitted manager-delivery references to the helper; direct endpoint references stay with pi-link.
-When pi-link is disabled, the helper registers the fallback tool at session startup.
-The manager preserves reply support even when a template explicitly limits task tools or selects no task tools.
+When pi-link is disabled, the helper registers an author-only `link_send` at session startup; it cannot send to names or broadcast.
+The manager keeps `link_send` available even when a template explicitly limits task tools or selects no task tools.
+With full pi-link enabled, that tool supports named sends and broadcasts too; disable pi-link for the helper's author-only destination.
 Other link tools follow ordinary extension configuration and the template's explicit tool list, with no worker-role exclusion.
 A queued message does not grant reply permission until it enters that child's native transcript.
 The manager validates the worker's stable ID and parent session before routing its reply.

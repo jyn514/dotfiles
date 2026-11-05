@@ -129,7 +129,7 @@ async function network(t, names = ["hub", "alice", "bob"], { startup = false, di
       "restored fixture must contain the saved disconnect");
     }
     const { session } = await createAgentSession({ cwd, agentDir, settingsManager, modelRuntime, resourceLoader: loader,
-      sessionManager, model: provider.getModel(), tools: ["link_send", "link_list", "link_compact", "link_set_identity", "link_reply"] });
+      sessionManager, model: provider.getModel(), tools: ["link_send", "link_list", "link_compact", "link_set_identity"] });
     peer.session = session;
     peer.sessionManager = sessionManager;
     peers.push(peer);
@@ -183,7 +183,7 @@ async function tool(peer, name, args) {
   return results().at(-1);
 }
 async function send(peer, to, message, replyTo) {
-  const result = await tool(peer, "link_send", { to, message, ...(replyTo === undefined ? {} : { replyTo }) });
+  const result = await tool(peer, "link_send", { to, message, ...(replyTo === undefined ? {} : { inReplyTo: replyTo }) });
   if (typeof to === "string" && !result.isError && !result.details?.error) {
     assert.match(result.details.messageId, uuid, "ordinary direct sends retain their original messageId detail");
   }
@@ -284,7 +284,7 @@ test("configured local package loads the fork and its skill through the bootstra
   assert.ok(!loaded.extensions.some(extension => extension.path.includes("/pi-dashboard/")),
     "normal guest discovery must not load the absent host-only Dashboard bridge");
   assert.equal(await realpath(fork.path), await realpath(join(root, "tools/pi-link/index.ts")));
-  assert.ok(fork.tools.get("link_send").definition.parameters.properties.replyTo,
+  assert.ok(fork.tools.get("link_send").definition.parameters.properties.inReplyTo,
     "the configured package must expose the fork's reply references");
   const { skills, diagnostics } = loader.getSkills();
   assert.deepEqual(diagnostics, []);
@@ -379,8 +379,8 @@ test("native sessions preserve full ordinary IDs and reply references in all Web
   assert.equal(new Set(ids).size, ids.length, "distinct ordinary and reply occurrences must not share IDs");
   const schema = alice.session.extensionRunner.getToolDefinition("link_send").parameters;
   assert.ok(schema.required.includes("to"));
-  assert.ok(schema.properties.replyTo, "replyTo is part of the loaded public tool schema");
-  assert.ok(!schema.required.includes("replyTo"), "ordinary sends remain valid");
+  assert.ok(schema.properties.inReplyTo, "inReplyTo is part of the loaded public tool schema");
+  assert.ok(!schema.required.includes("inReplyTo"), "ordinary sends remain valid");
   // No outstanding ask/pending request exists; a caller may reference any prior full ID.
   const arbitrary = "487fe623-5eab-489b-a5c1-e6a492ea29f2";
   const freeId = messageId(await send(bob, "hub", "reference without pending ask", arbitrary));
@@ -566,7 +566,40 @@ test("all and star remain ordinary direct names and invalid broadcast forms neve
   }
 });
 
-test("reply-only resolves received direct and broadcast references into chained private conversations", async (t) => {
+test("author targets reject ambiguous options and offline authors without name fallback", async (t) => {
+  const { peers: [hub, alice, bob], addPeer } = await network(t);
+  const reference = messageId(await send(alice, "hub", "admitted author reference"));
+  await received(hub, "admitted author reference");
+  for (const options of [
+    { to: { authorOf: reference, broadcast: true } },
+    { to: { authorOf: reference, extra: true } },
+    { to: { authorOf: reference }, inReplyTo: reference },
+    { to: { authorOf: reference }, inReplyTo: "another-id" },
+    { to: { authorOf: reference }, includeSubagents: false },
+    { to: { authorOf: reference }, includeSubagents: true },
+    { to: "alice", replyTo: reference },
+    { to: { broadcast: true }, replyTo: reference },
+  ]) {
+    const body = `invalid author options ${JSON.stringify(options)}`;
+    const result = await tool(hub, "link_send", { ...options, message: body });
+    refused(result);
+    assert.ok(result.isError || result.details?.error === "invalid_target", "reject options before reference routing");
+    await noDelivery([alice, bob], body);
+  }
+  const renderer = hub.session.extensionRunner.getToolDefinition("link_send");
+  assert.ok(plainRows(renderer.renderCall({ to: { authorOf: reference }, message: "private" }, theme, { expanded: false }), 140)
+    .join(" ").includes(`author of ${reference}`));
+  await command(alice, "link-disconnect");
+  await until(async () => !(await tool(hub, "link_list", {})).details.sessionIds.alice, "author disconnected");
+  const replacement = await addPeer("alice");
+  const body = "offline author cannot redirect to name replacement";
+  const result = await tool(hub, "link_send", { to: { authorOf: reference }, message: body });
+  refused(result);
+  assert.ok(result.details.outcomes.every(outcome => outcome.status !== "submitted"));
+  await noDelivery([replacement, bob], body);
+});
+
+test("authorOf resolves received direct and broadcast references into chained private conversations", async (t) => {
   const { peers: [hub, alice, bob] } = await network(t);
   for (const broadcast of [false, true]) {
     const correction = `correction ${broadcast ? "broadcast" : "direct"}`;
@@ -574,29 +607,29 @@ test("reply-only resolves received direct and broadcast references into chained 
     await received(alice, correction);
     if (broadcast) await received(bob, correction);
     const question = `private question ${broadcast}`;
-    const questionId = messageId(await tool(alice, "link_reply", { replyTo: original, message: question }));
+    const questionId = messageId(await tool(alice, "link_send", { to: { authorOf: original }, message: question }));
     assertHeader(await received(hub, question), "alice", questionId, original);
     const answer = `private answer ${broadcast}`;
-    const answerId = messageId(await tool(hub, "link_reply", { replyTo: questionId, message: answer }));
+    const answerId = messageId(await tool(hub, "link_send", { to: { authorOf: questionId }, message: answer }));
     assertHeader(await received(alice, answer), "hub", answerId, questionId);
     const continuation = `private continuation ${broadcast}`;
-    const continuationId = messageId(await tool(alice, "link_reply", { replyTo: answerId, message: continuation }));
+    const continuationId = messageId(await tool(alice, "link_send", { to: { authorOf: answerId }, message: continuation }));
     assertHeader(await received(hub, continuation), "alice", continuationId, answerId);
     await noDelivery([bob], question);
     await noDelivery([bob], answer);
     await noDelivery([bob], continuation);
     if (!broadcast) {
-      refused(await tool(bob, "link_reply", { replyTo: original, message: "guessed but never received" }));
+      refused(await tool(bob, "link_send", { to: { authorOf: original }, message: "guessed but never received" }));
       await noDelivery([hub, alice], "guessed but never received");
     }
   }
-  refused(await tool(alice, "link_reply", {
-    replyTo: "a57b57aa-81f1-43b4-99ad-825c4517d9f1", message: "unknown reference",
+  refused(await tool(alice, "link_send", { to: { authorOf: "a57b57aa-81f1-43b4-99ad-825c4517d9f1" }, message: "unknown reference",
   }));
   await noDelivery([hub, bob], "unknown reference");
-  const schema = alice.session.extensionRunner.getToolDefinition("link_reply").parameters;
-  assert.deepEqual([...schema.required].sort(), ["message", "replyTo"]);
-  assert.deepEqual(Object.keys(schema.properties).sort(), ["message", "replyTo"]);
+  const schema = alice.session.extensionRunner.getToolDefinition("link_send").parameters;
+  assert.deepEqual([...schema.required].sort(), ["message", "to"]);
+  assert.deepEqual(Object.keys(schema.properties).sort(), ["inReplyTo", "includeSubagents", "message", "to"]);
+  assert.equal(alice.session.extensionRunner.getToolDefinition("link_reply"), undefined);
 });
 
 test("reply routing follows original Pi identity across rename and name reuse, but not a group move", async (t) => {
@@ -613,12 +646,12 @@ test("reply routing follows original Pi identity across rename and name reuse, b
   const replacement = await addPeer("origin@review", undefined, {});
   await named(alice, "origin@review");
   assert.equal((await roster(alice)).sessionIds["renamed@review"], originalSessionId);
-  const reply = messageId(await tool(alice, "link_reply", { replyTo: original, message: "only the original author" }));
+  const reply = messageId(await tool(alice, "link_send", { to: { authorOf: original }, message: "only the original author" }));
   assertHeader(await received(hub, "only the original author"), "alice@review", reply, original);
   await noDelivery([replacement, sibling], "only the original author");
   await tool(hub, "link_set_identity", { group: "elsewhere" });
   await named(hub, "renamed@elsewhere");
-  refused(await tool(alice, "link_reply", { replyTo: original, message: "group move must fail closed" }));
+  refused(await tool(alice, "link_send", { to: { authorOf: original }, message: "group move must fail closed" }));
   await noDelivery([hub, replacement, sibling], "group move must fail closed");
 });
 
@@ -778,7 +811,7 @@ test("native session resume restores only that session's received direct and bro
   }
   for (const [reference, kind] of [[direct, "direct"], [broadcast, "broadcast"]]) {
     const body = `private ${kind} clarification after native resume`;
-    const id = messageId(await tool(resumed, "link_reply", { replyTo: reference, message: body }));
+    const id = messageId(await tool(resumed, "link_send", { to: { authorOf: reference }, message: body }));
     assertHeader(await received(hub, body), "alice", id, reference);
     await noDelivery([alice, sibling], body);
   }
@@ -787,7 +820,7 @@ test("native session resume restores only that session's received direct and bro
     ["db9835a8-8be4-4607-8a3f-bf66adc03c87", "unknown"],
   ]) {
     const body = `rejected ${kind} reference after native resume`;
-    refused(await tool(resumed, "link_reply", { replyTo: reference, message: body }));
+    refused(await tool(resumed, "link_send", { to: { authorOf: reference }, message: body }));
     await noDelivery([hub, alice, sibling], body);
   }
 });
@@ -861,7 +894,7 @@ test("cleared queued correction grants no reply authority; admitted message_end 
   await noDelivery([alice], correction);
   assert.equal(admitted.length, 0, "the discarded copy never emitted message_end");
   const rejectedBody = "must not reply to a cleared correction";
-  const rejected = await tool(alice, "link_reply", { replyTo: queuedId, message: rejectedBody });
+  const rejected = await tool(alice, "link_send", { to: { authorOf: queuedId }, message: rejectedBody });
   assert.equal(rejected.details.error, "unknown_reference", "transport queueing must confer no received-message capability");
   refused(rejected);
   await noDelivery([hub, sibling], rejectedBody);
@@ -871,7 +904,7 @@ test("cleared queued correction grants no reply authority; admitted message_end 
   await received(alice, validBody);
   await until(() => admitted.some((message) => text(message).includes(validBody)), "actual custom message_end admission");
   const liveBody = "reply to an admitted correction before resume";
-  const liveId = messageId(await tool(alice, "link_reply", { replyTo: validId, message: liveBody }));
+  const liveId = messageId(await tool(alice, "link_send", { to: { authorOf: validId }, message: liveBody }));
   assertHeader(await received(hub, liveBody), "alice", liveId, validId);
   await noDelivery([sibling], liveBody);
   await until(() => !alice.session.isStreaming, "admitted correction persisted");
@@ -883,11 +916,11 @@ test("cleared queued correction grants no reply authority; admitted message_end 
   assert.ok(hasReceived(resumed, validBody));
   assert.equal(hasReceived(resumed, correction), false);
   const resumedBody = "reply to admitted message_end after resume";
-  const resumedId = messageId(await tool(resumed, "link_reply", { replyTo: validId, message: resumedBody }));
+  const resumedId = messageId(await tool(resumed, "link_send", { to: { authorOf: validId }, message: resumedBody }));
   assertHeader(await received(hub, resumedBody), "alice", resumedId, validId);
   await noDelivery([alice, sibling], resumedBody);
   const stillRejectedBody = "cleared correction must remain unauthorized after resume";
-  const stillRejected = await tool(resumed, "link_reply", { replyTo: queuedId, message: stillRejectedBody });
+  const stillRejected = await tool(resumed, "link_send", { to: { authorOf: queuedId }, message: stillRejectedBody });
   assert.equal(stillRejected.details.error, "unknown_reference");
   refused(stillRejected);
   await noDelivery([hub, alice, sibling], stillRejectedBody);
@@ -1016,7 +1049,7 @@ test("installed root bridge discovers per operation and transports worker replie
   assert.match(question, uuid);
   const entry = await received(author, "native worker private question");
   assert.ok(text(entry).includes(worker.taskName));
-  const answer = messageId(await tool(author, "link_reply", { replyTo: question, message: "native private worker answer" }));
+  const answer = messageId(await tool(author, "link_send", { to: { authorOf: question }, message: "native private worker answer" }));
   assert.equal(answers.length, 1);
   assert.deepEqual(answers[0].target, worker);
   assert.equal(answers[0].message.id, answer);
@@ -1040,7 +1073,7 @@ test("installed root bridge discovers per operation and transports worker replie
     assert.equal(request.version, 1);
     if (request.replyTo === direct) request.respond(Promise.resolve(claimed));
   });
-  const settled = await tool(owner, "link_reply", { replyTo: direct, message: "must not retry on endpoint" });
+  const settled = await tool(owner, "link_send", { to: { authorOf: direct }, message: "must not retry on endpoint" });
   assert.deepEqual(settled.details, claimed.details);
   stopChild();
   await pause(300);
@@ -1109,7 +1142,7 @@ test("managed child loading the configured package registers ordinary link tools
     assert.deepEqual(loaded.errors, []);
     const extension = loaded.extensions[0];
     assert.deepEqual([...extension.tools.keys()].sort(),
-      ["link_compact", "link_list", "link_reply", "link_send", "link_set_identity"]);
+      ["link_compact", "link_list", "link_send", "link_set_identity"]);
     assert.ok(extension.flags.has("link"));
     assert.ok(extension.handlers.has("session_start"));
     assert.ok(extension.commands.has("link-connect"));

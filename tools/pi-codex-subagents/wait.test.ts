@@ -43,7 +43,7 @@ describe("steering-interruptible waits", () => {
     expect(checks).toBe(settledChecks);
   });
 
-  test("recognizes the timer cancellation shape used by wait_all_agents", async () => {
+  test("recognizes the timer cancellation shape used by the all-target wait", async () => {
     let queued = false;
     const result = waitWithSteering({ hasPendingSteeringMessages: () => queued }, async (signal) => {
       await delay(10000, undefined, { signal });
