@@ -1,6 +1,5 @@
 """Exercise interrupt provenance through a private controlling terminal."""
 import errno
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -8,6 +7,7 @@ import pty
 import select
 import shlex
 import signal
+import subprocess
 import sys
 import tempfile
 import termios
@@ -16,6 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).parent / "fixtures/terminal_child.py"
+TERMINAL_EXEC = Path(__file__).parent / "fixtures/terminal_exec.py"
 
 
 def terminal_scenario(
@@ -38,16 +39,11 @@ def terminal_scenario(
         environment.update(TERM="xterm", SHELL="/bin/sh", WATCH_TEST_OVERRIDE_LOG=str(log))
         master, slave = pty.openpty()
         original = termios.tcgetattr(slave)
-        pid = os.fork()
-        if pid == 0:
-            os.close(master)
-            os.setsid()
-            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
-            for fd in (0, 1, 2):
-                os.dup2(slave, fd)
-            if slave > 2:
-                os.close(slave)
-            os.execvpe(invocation[0], invocation, environment)
+        process = subprocess.Popen(
+            [sys.executable, str(TERMINAL_EXEC), os.ttyname(slave), *invocation],
+            env=environment,
+        )
+        pid = process.pid
         reaped = False
         output = bytearray()
 
@@ -89,8 +85,7 @@ def terminal_scenario(
             if legacy:
                 until(lambda: b"[exit 130]" in output)
                 first_interrupt_restored = termios.tcgetattr(slave) == original
-                waited, _ = os.waitpid(pid, os.WNOHANG)
-                if waited:
+                if process.poll() is not None:
                     reaped = True
                     raise AssertionError("legacy watch unexpectedly quit on the command interrupt")
                 # Legacy callers keep their first-interrupt frame behavior, but
@@ -101,10 +96,9 @@ def terminal_scenario(
             deadline = time.monotonic() + 1.5
             while time.monotonic() < deadline:
                 drain()
-                waited, raw_status = os.waitpid(pid, os.WNOHANG)
-                if waited:
+                status = process.poll()
+                if status is not None:
                     reaped = True
-                    status = os.waitstatus_to_exitcode(raw_status)
                     break
                 time.sleep(.01)
             drain()
@@ -128,7 +122,7 @@ def terminal_scenario(
                 except ProcessLookupError:
                     pass
             if not reaped:
-                os.waitpid(pid, 0)
+                process.wait()
             os.close(master)
             os.close(slave)
 
