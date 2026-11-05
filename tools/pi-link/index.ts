@@ -1815,7 +1815,7 @@ export default function (pi: ExtensionAPI) {
       "Send to one Pi terminal by name, privately to a delivered message author with to: {authorOf: messageId}, or to connected group roots with to: {broadcast: true}.",
       "authorOf resolves one admitted reference by stable root/worker identity and attaches its reply reference; no name fallback. Returns submission, not a model answer.",
       "includeSubagents is opt-in for broadcast only; unavailable worker integration is reported explicitly.",
-      "The message always acts: it steers a busy receiver at its next safe boundary, or starts a turn on an idle one.",
+      "A busy receiver queues steering input under its steeringMode; delivery is not guaranteed at the next turn boundary. An idle receiver starts a turn. Submission does not acknowledge model admission.",
     ].join(" "),
     promptSnippet:
       "Send a message to another Pi terminal on the local link network",

@@ -323,8 +323,14 @@ Older direct-message peers may omit IDs or session attribution.
 The batching window, caps, and compaction holds are described in [Inbox](design.md#inbox).
 
 The receiver's state is read when the batch is delivered, not when it is sent.
-A running receiver is steered at Pi's next safe boundary, after current tool calls finish and before the next LLM call.
+A running receiver's batch enters Pi's steering queue; submission does not guarantee that the model sees it at the next turn boundary.
+The receiver's `steeringMode` controls queue delivery:
+
+- `"one-at-a-time"` delivers one queued message per model turn, preferring the oldest user-role message over custom-role link messages.
+- `"all"` delivers all queued messages together, in arrival order.
+
 An idle receiver starts a turn.
+A submission receipt does not acknowledge that the receiving model has seen the message.
 There is no send mode that bypasses the receiver's reasoning, and no automatic model response.
 
 ### `link_list`
