@@ -150,8 +150,10 @@ private HOME. Pytest arguments and exit status pass through unchanged.
 For focused tests and ad-hoc Pi probes, including `--help` checks, use `dev/test-environment COMMAND [ARGS...]`:
 
 ```sh
-dev/test-environment bun test tests/pi/luna_compaction_test.ts tests/pi/replay_compaction_test.ts
+dev/test-environment bun test ./tests/pi/luna_compaction_test.ts ./tests/pi/replay_compaction_test.ts
 ```
+
+Prefix focused Bun file arguments with `./` to select exact paths rather than substring filters that can also match copied suites.
 
 ### Isolation and permissions
 

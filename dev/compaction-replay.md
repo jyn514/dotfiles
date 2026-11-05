@@ -82,7 +82,7 @@ They inject the model-registry boundary without requests and check native CLI in
 Run them through the isolated test wrapper:
 
 ```sh
-dev/test-environment bun test tests/pi/replay_compaction_test.ts
+dev/test-environment bun test ./tests/pi/replay_compaction_test.ts
 ```
 
 See the [extension guide](../config/pi-agent/pi-extensions/README.md#compaction) for compaction behavior and instruction updates.

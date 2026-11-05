@@ -89,7 +89,7 @@ Replace `CHECKOUT` with the container-side path:
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 npm run typecheck
-bun test test/sandbox/linux-read-write-restores.test.ts
+bun test ./test/sandbox/linux-read-write-restores.test.ts
 npm run build
 npm run build:seccomp
 npm pack --ignore-scripts --pack-destination /probe
@@ -262,7 +262,7 @@ The guest-tools suite checks session-tool path projection and reverse argument t
 Set `PI_SESSION_SEARCH_PACKAGE_DIR` to a reader checkout or installation for native reader, search-to-read, and cursor tests:
 
 ```sh
-PI_SESSION_SEARCH_PACKAGE_DIR=/path/to/pi-session-search dev/test-environment bun test tools/codex-sandbox/tests/guest_tools_test.ts
+PI_SESSION_SEARCH_PACKAGE_DIR=/path/to/pi-session-search dev/test-environment bun test ./tools/codex-sandbox/tests/guest_tools_test.ts
 ```
 
 This optional integration creates private transcripts and filesystem aliases; it does not read user history or establish live container-mount acceptance.

@@ -114,7 +114,7 @@ Install the existing locked prerequisites first as documented in [the testing gu
 Focused checks after implementation:
 
 ```sh
-dev/test-environment bun test tests/pi/compact_session_test.ts tests/pi/luna_compaction_test.ts tests/pi/replay_compaction_test.ts
+dev/test-environment bun test ./tests/pi/compact_session_test.ts ./tests/pi/luna_compaction_test.ts ./tests/pi/replay_compaction_test.ts
 dev/test-environment node --test tests/pi/native_compact_session.mjs
 ```
 

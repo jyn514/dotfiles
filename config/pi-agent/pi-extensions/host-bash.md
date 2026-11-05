@@ -65,7 +65,7 @@ Output is buffered with a 64 KiB cap per stream and the default execution timeou
 
 ## Verification
 
-`dev/test-environment bun test tests/pi/host_bash_test.ts` checks approval decisions, command identity, transcript authority, and session-local activation.
+`dev/test-environment bun test ./tests/pi/host_bash_test.ts` checks approval decisions, command identity, transcript authority, and session-local activation.
 `dev/test-environment node --test tests/pi/native_host_bash.mjs` loads host and guest extensions through the installed Pi loader and checks saved restart state against real session reopening, forks, and tool allowlists.
 The source-backed `tools/pi-codex-subagents/test/restart-control-roundtrip.test.ts` checks activation across controller pause, shutdown, reopen, and unpause; run it with the [changed-core test driver](../../../tools/pi-codex-subagents/test/SOURCE-CORE.md).
 These checks are discovered by `dev/test`.
@@ -75,7 +75,7 @@ For a live smoke test, unpack the desired Codex release under temporary storage,
 ```sh
 PI_HOST_CODEX_BIN=/absolute/path/to/temporary/codex \
 DOTFILES_TEST_HOST_AUTH="$HOME/.codex/auth.json" \
-dev/test-environment bun test tests/pi/host_bash_test.ts --test-name-pattern 'native alpha'
+dev/test-environment bun test ./tests/pi/host_bash_test.ts --test-name-pattern 'native alpha'
 ```
 
 The opt-in smoke test copies authentication into its private HOME, uses a disposable workspace, and removes both afterward.
