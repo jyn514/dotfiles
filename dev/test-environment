@@ -140,11 +140,14 @@ def host_tool_path(tool: str, environment: dict[str, str]) -> str:
             continue
         if resolved.name != "mise":
             return str(resolved)
+        # Python is task-scoped in this repository. An inactive shim must fall
+        # through to the native interpreter instead of activating or locking it.
+        if tool == "python3":
+            continue
         # Shims consult HOME for trust and tool selection. Resolve them before
         # changing HOME rather than letting a setup failure look like no matches.
-        mise_tool = "python" if tool == "python3" else tool
         result = subprocess.run(
-            [str(resolved), "which", mise_tool], env=environment,
+            [str(resolved), "--locked", "which", tool], env=environment,
             text=True, capture_output=True, check=False,
         )
         if result.returncode:

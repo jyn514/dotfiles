@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 
-if sys.argv[1:] != ["which", "rg"]:
+if sys.argv[1:] != ["--locked", "which", "rg"]:
     raise SystemExit(2)
 Path(os.environ["FIXTURE_MISE_CALL"]).write_text(os.environ["HOME"])
 if os.environ.get("FIXTURE_MISE_FAIL"):
