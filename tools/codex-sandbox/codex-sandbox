@@ -2699,6 +2699,7 @@ def request_restart_control(registration: dict[str, object], operation: str,
 
     request_id = str(uuid.uuid4())
     request = {"version": 1, "id": request_id, "operation": operation}
+    unknown = "; reload completion is unknown" if operation == "reload" else ""
     connection = socket.socket(socket.AF_UNIX)
     connection.settimeout(timeout)
     try:
@@ -2711,7 +2712,7 @@ def request_restart_control(registration: dict[str, object], operation: str,
             stream.close()
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise LauncherError(
-            f"pane {registration['pane']}: Pi {operation} control failed: {error}"
+            f"pane {registration['pane']}: Pi {operation} control failed: {error}{unknown}"
         ) from error
     finally:
         connection.close()
@@ -2719,9 +2720,37 @@ def request_restart_control(registration: dict[str, object], operation: str,
     if set(response) != expected or response.get("version") != 1 or response.get("id") != request_id \
             or not isinstance(response.get("ok"), bool) \
             or (response.get("ok") is False and not isinstance(response.get("error"), str)):
-        raise LauncherError(f"pane {registration['pane']}: invalid Pi {operation} control response")
+        raise LauncherError(f"pane {registration['pane']}: invalid Pi {operation} control response{unknown}")
     if not response["ok"]:
         raise LauncherError(f"pane {registration['pane']}: Pi {operation} failed: {response['error']}")
+
+
+def reload_tmux_sessions() -> int:
+    if "TMUX" not in os.environ:
+        raise LauncherError("sandbox reload must run inside tmux")
+    registrations = [item for item in tmux_registrations() if not item["dead"]]
+    if not registrations:
+        raise LauncherError("tmux has no live registered sandbox sessions")
+
+    def reload(registration: dict[str, object]) -> None:
+        if registration["version"] != 3:
+            raise LauncherError(
+                f"pane {registration['pane']}: no Pi control socket; run /reload in that Pi pane first"
+            )
+        request_restart_control(registration, "reload")
+
+    succeeded = 0
+    with ThreadPoolExecutor(max_workers=len(registrations)) as executor:
+        futures = {executor.submit(reload, registration): registration for registration in registrations}
+        for future, registration in futures.items():
+            try:
+                future.result()
+                print(f"pane {registration['pane']}: reload completed")
+                succeeded += 1
+            except LauncherError as error:
+                print(f"error: {error}", file=sys.stderr)
+    print(f"Reloaded {succeeded} of {len(registrations)} sandboxed Pi attachments.")
+    return 0 if succeeded == len(registrations) else 1
 
 
 def restart_attachment_active(registration: dict[str, object]) -> bool:
@@ -2942,7 +2971,7 @@ def main(arguments: list[str]) -> int:
     # Administrative and noninteractive interfaces retain their existing process
     # ownership. Interactive UI is separated before execute creates any resources.
     administrative = arguments[:1] in (
-        ["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"], ["cache"],
+        ["validate-cd"], ["prepare-cd"], ["restart"], ["restart-all"], ["reload-all"], ["cache"],
     )
     options = arguments[:arguments.index("--")] if "--" in arguments else arguments
     noninteractive = any(argument in ("--print", "-p", "--export") for argument in options)
@@ -3004,6 +3033,14 @@ def launch(arguments: list[str]) -> int:
                               "repository": str(checked.repository)}))
             return 0
         except (LauncherError, OSError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+    if arguments[:1] == ["reload-all"]:
+        try:
+            if arguments != ["reload-all"]:
+                raise LauncherError("usage: codex-sandbox reload-all")
+            return reload_tmux_sessions()
+        except (LauncherError, OSError, subprocess.CalledProcessError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
     if arguments[:1] in (["restart"], ["restart-all"]):

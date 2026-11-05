@@ -347,6 +347,7 @@ pi --session SESSION_ID         # resume a Pi session
 pi --export session.jsonl out.html  # export HTML locally without sandbox startup
 codex-sandbox restart --repo "$PWD"  # restart this repo's Pi attachments; run inside tmux
 codex-sandbox restart-all       # restart all sandboxed Pi attachments; run inside tmux
+codex-sandbox reload-all        # reload all live sandboxed Pi attachments; run inside tmux
 codex-sandbox cache clean       # remove the VM-wide guest tool cache; stop sandboxes first
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
 tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images without build cache
@@ -388,6 +389,17 @@ Reloading that session does not duplicate the notice or insert it into the histo
 The notice authorizes work in the destination within the user's existing objective.
 It prompts the agent to read local instructions and check working-copy state and change ownership before editing.
 The switch does not authorize unrelated work or taking ownership of existing changes.
+
+`reload-all` reloads every live registered sandboxed Pi attachment in the current tmux server, including `/split` panes across repositories.
+It refreshes the same resources as `/reload` without restarting Pi, containers, or shared services.
+It does not restage guest configuration, replace mounts, or update runtime versions.
+Each pane reports completion only after Pi's reload finishes.
+Busy panes queue at the next safe response boundary, or after compaction or tree navigation finishes, without interrupting work.
+Queueing requires a Pi build with `ctx.requestReload(onComplete)`; older installations retain idle-only reload and report an update hint when busy.
+Other panes still reload if one fails, and any failure makes the command exit nonzero.
+A lost connection or timeout leaves reload completion unknown.
+Dead panes are skipped, and no live registered panes is an error.
+Existing panes need one manual `/reload` to load the new control handler before using `reload-all`.
 
 `restart --repo DIRECTORY` stops, resets, and resumes all registered Pi attachments for that repository in the current tmux server.
 This includes main and `/split` panes; `restart-all` selects every repository in that server.

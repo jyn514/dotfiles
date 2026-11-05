@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { ExtensionAPI, MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MessageRenderer, SessionShutdownEvent, Theme } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -480,8 +480,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     }
   });
 
-  pi.on("session_shutdown", async (_event: any, ctx: any) => {
-    await restartController?.close();
+  pi.on("session_shutdown", async (event: SessionShutdownEvent, ctx: any) => {
+    await restartController?.close(event.reason);
     if (activeContext?.mode === "tui") activeContext.ui.setWidget(widgetKey, undefined);
     activeContext = undefined;
     activeAgents.clear();

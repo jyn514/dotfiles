@@ -51,7 +51,8 @@ class RestartHookTest(unittest.TestCase):
             environment = {**os.environ, "LC_ALL": "C.UTF-8",
                 "HOME": str(home), "PI_CODING_AGENT_DIR": str(home / ".pi/agent"),
                 "XDG_CONFIG_HOME": str(home / ".config"), "XDG_DATA_HOME": str(home / ".local/share"),
-                "XDG_CACHE_HOME": str(home / ".cache"), "PI_OFFLINE": "1", "TERM": "xterm-256color"}
+                "XDG_CACHE_HOME": str(home / ".cache"), "PI_OFFLINE": "1", "TERM": "xterm-256color",
+                "PI_TEST_RELOAD_BOUNDARY": str(root / "reload-boundary")}
             environment.pop("TMUX", None)
             environment.pop("TMUX_PANE", None)
             tmux_socket = str(root / "tmux.sock")
@@ -124,14 +125,19 @@ class RestartHookTest(unittest.TestCase):
                     launcher["register_tmux_pane"](state)
                 pending = registration(pane)
                 self.assertIsNone(pending["session"])
-                expected = {**pending, "session": str(saved), "cwd": str(project)}
+                control = root / "hook-attachment.sock"
+                expected = {**pending, "version": 3, "control": str(control),
+                    "session": str(saved), "cwd": str(project)}
                 def pi_command(attachment, session):
                     return shlex.join(["env", f"CODEX_SANDBOX_PI_OWNER={owner_socket}",
                         f"CODEX_SANDBOX_PI_ATTACHMENT={attachment}",
+                        f"CODEX_SANDBOX_PI_CONTROL={root / (attachment + '.sock')}",
                         f"CODEX_SANDBOX_CD_VALIDATE={ROOT / 'tools/codex-sandbox/codex-sandbox'}",
                         node, str(cli), "--offline", "--no-extensions", "--no-skills",
                         "--no-prompt-templates", "--no-context-files", "--no-approve",
                         "--extension", str(ROOT / "config/pi-agent/pi-extensions/session-side.ts"),
+                        "--extension", str(ROOT / "tools/pi-codex-subagents/index.ts"),
+                        "--extension", str(ROOT / "tools/codex-sandbox/tests/reload-boundary.ts"),
                         "--session", str(session)])
                 command = pi_command("hook-attachment", saved)
                 tmux("respawn-pane", "-k", "-t", pane, "-c", str(project), command)
@@ -148,6 +154,16 @@ class RestartHookTest(unittest.TestCase):
                 tmux("send-keys", "-t", pane, "Enter")
                 wait_for(lambda: len(requests) >= 2 and registration(pane) == expected, "reload publication", pane)
                 self.assertEqual(requests, [requests[0], requests[0]])
+                # Exercise the real controller through Node and the installed TUI,
+                # including old-server shutdown and rebinding the same socket.
+                wait_for(control.is_socket, "reload controller startup", pane)
+                selected = {"pane": pane, "control": str(control)}
+                for reload_count in range(2):
+                    launcher["request_restart_control"](selected, "reload", timeout=15)
+                    self.assertEqual(len(requests), 3 + reload_count)
+                    self.assertEqual(registration(pane), expected)
+                    self.assertTrue(control.is_socket())
+                    self.assertEqual(resurrect_registration(pane)["pid"], resume["pid"])
                 # A real split starts without a launcher registration and uses
                 # another session in custom storage, sharing only repository authority.
                 split_saved = root / "split-selected.jsonl"
@@ -158,7 +174,8 @@ class RestartHookTest(unittest.TestCase):
                     "-c", str(project), pi_command("side-attachment", split_saved)).stdout.strip()
                 wait_for(lambda: tmux("show-option", "-pqv", "-t", side,
                     "@codex_sandbox_restart").stdout.strip() != "", "split registration", side)
-                split_expected = {**expected, "pane": side, "session": str(split_saved), "token": registration(side)["token"]}
+                split_expected = {**expected, "pane": side, "session": str(split_saved),
+                    "control": str(root / "side-attachment.sock"), "token": registration(side)["token"]}
                 self.assertNotEqual(split_expected["token"], "side-attachment")
                 wait_for(lambda: registration(side) == split_expected, "split startup publication", side)
                 self.assertEqual(registration(pane), expected)
@@ -167,12 +184,61 @@ class RestartHookTest(unittest.TestCase):
                 tmux("set-option", "-pu", "-t", side, "@codex_sandbox_restart")
                 tmux("send-keys", "-t", side, "-l", "/reload")
                 tmux("send-keys", "-t", side, "Enter")
-                wait_for(lambda: len(requests) >= 4 and registration(side) is not None,
+                wait_for(lambda: len(requests) >= 6 and registration(side) is not None,
                     "split reload publication", side)
                 reloaded = registration(side)
                 self.assertNotEqual(reloaded["token"], split_expected["token"])
                 self.assertEqual({**reloaded, "token": split_expected["token"]}, split_expected)
                 self.assertEqual(resurrect_registration(side)["session"], str(split_saved))
+                split_pid = resurrect_registration(side)["pid"]
+                reload_all = subprocess.run([str(ROOT / "tools/codex-sandbox/codex-sandbox"), "reload-all"],
+                    env={**environment, "TMUX": tmux_env}, check=True, capture_output=True, text=True, timeout=20)
+                self.assertIn(f"pane {pane}: reload completed", reload_all.stdout)
+                self.assertIn(f"pane {side}: reload completed", reload_all.stdout)
+                self.assertIn("Reloaded 2 of 2", reload_all.stdout)
+                self.assertEqual(len(requests), 8)
+                self.assertEqual(resurrect_registration(side)["pid"], split_pid)
+                self.assertEqual(registration(pane), expected)
+                self.assertEqual(registration(side), reloaded)
+                self.assertEqual(resurrect_registration(pane)["pid"], resume["pid"])
+                # Hold a real exclusive operation. New Pi must queue the main
+                # pane while reloading the idle split, without an early reply.
+                boundary = root / "reload-boundary.started"
+                release = root / "reload-boundary.release"
+                tmux("send-keys", "-t", pane, "-l", "/hold-reload-boundary")
+                tmux("send-keys", "-t", pane, "Enter")
+                wait_for(boundary.exists, "held tree navigation", pane)
+                supports_queue = boundary.read_text() == "queued"
+                if os.environ.get("PI_TEST_REQUIRE_QUEUED_RELOAD") == "1":
+                    self.assertTrue(supports_queue, "Selected Pi build must expose ctx.requestReload")
+                queued_reload = subprocess.Popen([str(ROOT / "tools/codex-sandbox/codex-sandbox"), "reload-all"],
+                    env={**environment, "TMUX": tmux_env}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    wait_for(lambda: len(requests) >= 9, "idle split reload while main is busy", side)
+                    if supports_queue:
+                        self.assertIsNone(queued_reload.poll())
+                        self.assertEqual(len(requests), 9)
+                    else:
+                        stdout, stderr = queued_reload.communicate(timeout=20)
+                        self.assertEqual(queued_reload.returncode, 1, (stdout, stderr))
+                        self.assertIn("busy", stderr)
+                        self.assertIn("updated Pi", stderr)
+                    release.touch()
+                    if supports_queue:
+                        stdout, stderr = queued_reload.communicate(timeout=20)
+                        self.assertEqual(queued_reload.returncode, 0, (stdout, stderr))
+                        self.assertIn(f"pane {pane}: reload completed", stdout)
+                        self.assertIn(f"pane {side}: reload completed", stdout)
+                        self.assertEqual(len(requests), 10)
+                    self.assertEqual(resurrect_registration(pane)["pid"], resume["pid"])
+                    self.assertEqual(resurrect_registration(side)["pid"], split_pid)
+                    self.assertEqual(registration(pane), expected)
+                    self.assertEqual(registration(side), reloaded)
+                finally:
+                    release.touch()
+                    if queued_reload.poll() is None:
+                        queued_reload.kill()
+                    queued_reload.communicate(timeout=5)
                 # Join the real SDK publisher to the actual save hook, including
                 # the reporting child's ancestry within the live tmux pane.
                 snapshot = root / "resurrect.txt"
@@ -188,7 +254,8 @@ class RestartHookTest(unittest.TestCase):
                 # Assert session identity/header, not a no-write guarantee for Pi itself.
                 self.assertEqual(saved.read_bytes().splitlines()[0], original.splitlines()[0])
                 self.assertEqual(errors, [])
-                print(f"Actual installed Pi {manifest['version']} TUI: startup and /reload ready acknowledgements "
+                busy_behavior = "queued reload completed" if supports_queue else "legacy busy rejection retained"
+                print(f"Selected Pi {manifest['version']} TUI: {busy_behavior}; startup and /reload ready acknowledgements "
                     "each published exact SDK file/cwd; launcher generation and session header retained.")
             finally:
                 tmux("kill-server", check=False)

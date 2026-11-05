@@ -2227,6 +2227,10 @@ class CodexSandboxTest(unittest.TestCase):
             ("pause", "success", None),
             ("shutdown", "success", None),
             ("unpause", "success", None),
+            ("reload", "success", None),
+            ("reload", "failure", "Pi reload failed: cannot pause"),
+            ("reload", "closed", "reload completion is unknown"),
+            ("reload", "wrong-id", "reload completion is unknown"),
             ("pause", "failure", "Pi pause failed: cannot pause"),
             ("pause", "wrong-id", "invalid Pi pause control response"),
             ("pause", "malformed", "Pi pause control failed"),
@@ -2797,6 +2801,74 @@ class CodexSandboxTest(unittest.TestCase):
             restart.reset_mock()
             self.assertEqual(0, launcher["main"](["restart-all"]))
             restart.assert_called_once_with(None)
+
+    def test_reload_all_is_administrative_and_rejects_extra_arguments(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        reload_sessions = mock.Mock(return_value=0)
+        with mock.patch("host_pi_owner.detached_frontend", side_effect=AssertionError("reload detached")), \
+                mock.patch.dict(launcher["main"].__globals__, {"reload_tmux_sessions": reload_sessions}), \
+                contextlib.redirect_stderr(io.StringIO()) as diagnostics:
+            self.assertEqual(0, launcher["main"](["reload-all"]))
+            reload_sessions.assert_called_once_with()
+            self.assertEqual(1, launcher["main"](["reload-all", "extra"]))
+            self.assertEqual(1, reload_sessions.call_count)
+        self.assertIn("usage: codex-sandbox reload-all", diagnostics.getvalue())
+
+    def test_reload_all_selects_live_panes_across_repositories_without_saved_sessions(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        first = self.restart_registration(control=self.root / "first.sock")
+        other = self.restart_registration("%4", "other", control=self.root / "other.sock")
+        other.update(repository=str(self.root / "another-repo"), session=None)
+        dead = self.restart_registration("%5", "dead", dead=True)
+        control = mock.Mock()
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+                launcher["reload_tmux_sessions"].__globals__, {
+                    "tmux_registrations": lambda: [first, other, dead],
+                    "request_restart_control": control,
+                    "run": mock.Mock(side_effect=AssertionError("reload spawned a process")),
+                    "helper": mock.Mock(side_effect=AssertionError("reload reset the sandbox")),
+                }), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, launcher["reload_tmux_sessions"]())
+        self.assertCountEqual(control.call_args_list, [mock.call(first, "reload"), mock.call(other, "reload")])
+        self.assertIn("pane %3: reload completed", output.getvalue())
+        self.assertIn("pane %4: reload completed", output.getvalue())
+        self.assertNotIn("pane %5", output.getvalue())
+
+    def test_reload_all_reports_each_failure_and_still_reloads_other_panes(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        legacy = self.restart_registration()
+        busy = self.restart_registration("%4", "busy", control=self.root / "busy.sock")
+        healthy = self.restart_registration("%5", "healthy", control=self.root / "healthy.sock")
+        def control(registration, operation):
+            self.assertEqual("reload", operation)
+            if registration is busy:
+                raise launcher["LauncherError"]("pane %4: Pi reload failed: busy")
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+                launcher["reload_tmux_sessions"].__globals__, {
+                    "tmux_registrations": lambda: [legacy, busy, healthy],
+                    "request_restart_control": control,
+                }), contextlib.redirect_stdout(io.StringIO()) as output, \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(1, launcher["reload_tmux_sessions"]())
+        self.assertIn("pane %3", errors.getvalue())
+        self.assertIn("run /reload", errors.getvalue())
+        self.assertIn("pane %4: Pi reload failed: busy", errors.getvalue())
+        self.assertIn("pane %5: reload completed", output.getvalue())
+        self.assertIn("Reloaded 1 of 3", output.getvalue())
+
+    def test_reload_all_requires_tmux_and_live_registrations(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        discover = mock.Mock(return_value=[])
+        with mock.patch.dict(launcher["reload_tmux_sessions"].__globals__, {"tmux_registrations": discover}):
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(launcher["LauncherError"], "inside tmux"):
+                    launcher["reload_tmux_sessions"]()
+            discover.assert_not_called()
+            for registrations in ([], [self.restart_registration(dead=True)]):
+                discover.return_value = registrations
+                with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}):
+                    with self.assertRaisesRegex(launcher["LauncherError"], "no live registered"):
+                        launcher["reload_tmux_sessions"]()
 
     def test_cache_clean_is_administrative_and_removes_the_owned_volume(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

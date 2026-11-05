@@ -181,6 +181,17 @@ Failure after acknowledged shutdown retains the pane's resume registration and d
 Legacy registrations without restart control retain signal-based restart until replaced.
 Retain resume registrations through old-owner cleanup so a failed restart can be retried from dead panes.
 
+`codex-sandbox reload-all` sends a reload control request to every live registered Pi attachment in the current tmux server, including split panes across repositories.
+It requires no saved conversation and skips dead panes without replacing them.
+The extension uses `ctx.requestReload(onComplete)` to queue busy attachments at the next safe response boundary without interrupting their work.
+It acknowledges success from its completion callback only after Pi finishes reloading, including the interactive UI refresh.
+Older installed Pi builds retain immediate idle-only reload and report an update hint when busy.
+The reply connection survives old-extension shutdown; completion does not depend on an early `session_start` notification.
+Reload leaves Pi processes, sandbox workers, shared services, staged configuration, and mounts in place.
+Report each pane's result, continue after individual failures, and exit nonzero if any selected pane fails.
+A transport failure leaves completion unknown; never substitute terminal keystrokes.
+Existing attachments must manually `/reload` once to load reload-capable control handlers.
+
 The host derives the conversation, worker, directory, executable, and pane target
 from the invoking session. This is a bounded human operation, not a model-facing
 host shell or a way to select another container, environment, or capability set.

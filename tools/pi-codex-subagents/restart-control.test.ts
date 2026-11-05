@@ -133,6 +133,97 @@ for (const clientState of ["idle", "half-open reply"] as const) {
   });
 }
 
+for (const outcome of ["success", "failure", "queued", "cancelled", "legacy-success", "legacy-busy"] as const) {
+  test(`sandbox reload control reports ${outcome} after reload teardown`, async () => {
+    const root = join(tmpdir(), `reload-control-${randomUUID()}`);
+    roots.push(root); mkdirSync(root);
+    const path = join(root, "control.sock");
+    process.env.CODEX_SANDBOX_PI_CONTROL = path;
+    let handler: any;
+    let reloadStarted = false;
+    let admitted = false;
+    let startReload!: () => void;
+    let finishReload!: () => void;
+    const heldReload = new Promise<void>(resolve => { finishReload = resolve; });
+    const ctx = {
+      isIdle: () => outcome !== "legacy-busy",
+      async reload() {
+        reloadStarted = true;
+        // Real reload awaits session_shutdown, which closes the old controller.
+        await controller!.close("reload");
+        await heldReload;
+        if (outcome === "failure") throw new Error("resource discovery failed");
+      },
+      ui: { notify() {} },
+    };
+    if (!outcome.startsWith("legacy")) Object.assign(ctx, {
+      async requestReload(onComplete: (error?: Error) => void) {
+        admitted = true;
+        const run = async () => {
+          try { await ctx.reload(); onComplete(); }
+          catch (error) { onComplete(error instanceof Error ? error : new Error(String(error))); }
+        };
+        startReload = () => { void run(); };
+        if (outcome !== "queued" && outcome !== "cancelled") await run();
+      },
+    });
+    const pi = {
+      events,
+      registerCommand(_name: string, options: any) { handler = options.handler; },
+      sendUserMessage(message: string) {
+        queueMicrotask(() => void handler(message.split(" ", 2)[1], ctx));
+      },
+    };
+    controller = startRestartController(pi as any, {} as any);
+    await until(() => existsSync(path));
+
+    let replied = false;
+    const response = request(path, "reload").then(value => { replied = true; return value; });
+    try {
+      if (outcome === "queued" || outcome === "cancelled") {
+        await until(() => admitted);
+        expect(replied).toBe(false);
+        expect(reloadStarted).toBe(false);
+        expect(existsSync(path)).toBe(true);
+        if (outcome === "cancelled") {
+          await controller!.close("quit");
+          const result = await response;
+          expect(result.ok).toBe(false);
+          expect(result.error).toBe("Pi is shutting down");
+          return;
+        }
+        startReload();
+      }
+      if (outcome !== "legacy-busy") {
+        await until(() => reloadStarted && !existsSync(path));
+        expect(replied).toBe(false);
+        // The replacement must be able to own the same path before the old
+        // request finishes, and late old-controller cleanup must leave it alone.
+        const replacement = startRestartController(pi as any, {} as any)!;
+        try {
+          await until(() => existsSync(path));
+          finishReload();
+          const result = await response;
+          expect(result.ok).toBe(outcome !== "failure");
+          if (outcome === "failure") expect(result.error).toBe("resource discovery failed");
+          await controller!.close();
+          expect(existsSync(path)).toBe(true);
+        } finally {
+          await replacement.close();
+        }
+      } else {
+        const result = await response;
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain("busy");
+        expect(reloadStarted).toBe(false);
+        expect(existsSync(path)).toBe(true);
+      }
+    } finally {
+      finishReload();
+    }
+  });
+}
+
 test("sandbox restart control returns suspension failures without shutting down", async () => {
   const root = join(tmpdir(), `restart-control-${randomUUID()}`);
   roots.push(root); mkdirSync(root);
