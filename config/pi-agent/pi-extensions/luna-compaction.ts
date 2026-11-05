@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import {
   convertToLlm,
   serializeConversation,
+  SettingsManager,
+  shouldCompact,
   type ExtensionAPI,
   type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 
 import { captureCheckpoint, checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "./checkpoint-capture.ts";
+import { toolOutputPruning } from "./tool-output-pruning.ts";
 
 export const COMPACTION_MODEL = {
   provider: "openai",
@@ -25,6 +28,27 @@ function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefine
 }
 
 export default function lunaCompaction(pi: ExtensionAPI): void {
+  pi.on("turn_end", (event, ctx) => {
+    if (event.outcome !== "completed" || ctx.signal?.aborted) return;
+    // An explicit checkpoint or tool-output-only request owns this boundary,
+    // including when its handler runs later.
+    if (event.entries.some(entry => entry.type === "compaction") ||
+        event.toolResults.some(result => result.toolName === "compact_session")) return;
+    const usage = ctx.getContextUsage();
+    if (!ctx.model || !usage || usage.contextWindow <= 0) return;
+    // Reuse Pi's settings resolver, including per-model overrides and defaults.
+    const settings = SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(ctx.model);
+    const pruning = toolOutputPruning(event, ctx);
+    if (!pruning) return;
+    const tokensBefore = event.entries.length ? pruning.tokensBefore : usage.tokens ?? pruning.tokensBefore;
+    if (!shouldCompact(tokensBefore, usage.contextWindow, settings)) return;
+    // All-or-nothing: unsuccessful pruning leaves the original outputs for Luna.
+    // Do not trust assistant usage measured before these proposed replacements.
+    if (!pruning.edits.length || pruning.tokensAfter > 0.2 * usage.contextWindow ||
+        shouldCompact(pruning.tokensAfter, usage.contextWindow, settings)) return;
+    return { entries: [...event.entries, ...pruning.edits] };
+  });
+
   pi.on("session_before_compact", async (event, ctx) => {
     const { preparation, signal } = event;
     try {

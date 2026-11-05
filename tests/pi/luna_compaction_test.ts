@@ -36,8 +36,7 @@ function harness() {
   };
   const pi: any = {
     on(name: string, callback: any) {
-      expect(name).toBe("session_before_compact");
-      handler = callback;
+      if (name === "session_before_compact") handler = callback;
     },
     async exec(command: string, args: string[], options: any) {
       executions.push({ command, args, options, afterRequests: requests.length });
@@ -424,12 +423,14 @@ describe("Luna compaction", () => {
       const original = resolve("config/pi-agent/pi-extensions/luna-compaction.ts");
       expect(Bun.spawnSync(["cp", original, source]).exitCode).toBe(0);
       expect(Bun.spawnSync(["cmp", original, source]).exitCode).toBe(0);
-      const helper = resolve("config/pi-agent/pi-extensions/checkpoint-capture.ts");
-      const copiedHelper = join(dirname(source), "checkpoint-capture.ts");
-      expect(Bun.spawnSync(["cp", helper, copiedHelper]).exitCode).toBe(0);
-      expect(Bun.spawnSync(["cmp", helper, copiedHelper]).exitCode).toBe(0);
       symlinkSync(source, installed);
-      symlinkSync(copiedHelper, join(dirname(installed), "checkpoint-capture.ts"));
+      for (const name of ["checkpoint-capture.ts", "tool-output-pruning.ts"]) {
+        const helper = resolve("config/pi-agent/pi-extensions", name);
+        const copiedHelper = join(dirname(source), name);
+        expect(Bun.spawnSync(["cp", helper, copiedHelper]).exitCode).toBe(0);
+        expect(Bun.spawnSync(["cmp", helper, copiedHelper]).exitCode).toBe(0);
+        symlinkSync(copiedHelper, join(dirname(installed), name));
+      }
       const fixture = join(bin, "jj");
       expect(Bun.spawnSync(["cp", resolve("tests/pi/fixtures/jj-status.sh"), fixture]).exitCode).toBe(0);
       expect(Bun.spawnSync(["cmp", resolve("tests/pi/fixtures/jj-status.sh"), fixture]).exitCode).toBe(0);

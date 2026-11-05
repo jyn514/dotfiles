@@ -2,14 +2,14 @@ import type { CompactionEntryDraft, ExtensionAPI, ExtensionContext } from "@eare
 import { Type } from "typebox";
 import { captureCheckpoint, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "./checkpoint-capture.ts";
 import { parsePiResourcePaths, rewritePiResourcePaths } from "./guest-tools-core.ts";
+import { toolOutputPruning } from "./tool-output-pruning.ts";
 
-type PendingCheckpoint = {
+type PendingCompaction = {
   sessionId: string;
   messageEntryId: string;
   toolCallId: string;
   signal: AbortSignal;
-  draft: CompactionEntryDraft;
-};
+} & ({ mode: "checkpoint"; draft: CompactionEntryDraft } | { mode: "tool_output" });
 
 function callingMessage(ctx: ExtensionContext, toolCallId: string) {
   const entry = ctx.sessionManager.getBranch().findLast(entry =>
@@ -25,7 +25,7 @@ function callingMessage(ctx: ExtensionContext, toolCallId: string) {
 }
 
 export default function compactSession(pi: ExtensionAPI): void {
-  let pending: PendingCheckpoint | undefined;
+  let pending: PendingCompaction | undefined;
   let lifetime = new AbortController();
   const reset = () => {
     pending = undefined;
@@ -43,32 +43,43 @@ export default function compactSession(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "compact_session",
     label: "Compact session",
-    description: `Replace preceding conversation context with your own checkpoint, then continue in the same session. Before preparing report, read ${instructionsPath}. Pass the checkpoint itself, not instructions for another summarizer. Call this tool alone, after other tools finish. History remains recoverable through read_session; the tool supplies the recovery locator.`,
-    promptSnippet: "Replace conversation context with an agent-authored checkpoint",
+    description: `Replace preceding conversation context with your own checkpoint, or pass tool_output_only: true without report to remove older tool-output bodies while keeping conversation messages. Both modes continue in the same session. Before preparing report, read ${instructionsPath}. Pass the checkpoint itself, not instructions for another summarizer. Call this tool alone, after other tools finish. History remains recoverable through read_session; checkpoint metadata or output markers supply recovery references.`,
+    promptSnippet: "Replace conversation context with a checkpoint or remove only older tool-output bodies",
     parameters: Type.Object({
-      report: Type.String({ minLength: 1, description: "Checkpoint prepared using compaction.md, including an Objective and authority Markdown heading" }),
+      report: Type.Optional(Type.String({ minLength: 1, description: "Checkpoint prepared using compaction.md, including an Objective and authority Markdown heading. Omit for tool_output_only." })),
+      tool_output_only: Type.Optional(Type.Boolean({ description: "Remove only older tool-output bodies, without a checkpoint or summarizer. Raw history remains recoverable. Works below the automatic threshold; no 20% target is required. Ordinary automatic compaction still applies. Do not combine with report." })),
     }),
-    async execute(toolCallId, { report }, signal, _onUpdate, ctx) {
-      requireCheckpointHeader(report);
+    async execute(toolCallId, { report, tool_output_only }, signal, _onUpdate, ctx) {
+      if (tool_output_only && report !== undefined) throw new Error("Choose report or tool_output_only, not both.");
+      const checkpoint = report ?? "";
+      if (!tool_output_only) requireCheckpointHeader(checkpoint);
       signal.throwIfAborted();
       const message = callingMessage(ctx, toolCallId);
       const sessionId = ctx.sessionManager.getSessionId();
       if (pending) throw new Error("A compact_session request is already pending for this turn.");
       const captureSignal = AbortSignal.any([signal, lifetime.signal]);
+      if (tool_output_only) {
+        if (!ctx.sessionManager.getSessionFile()) throw new Error("Tool-output pruning requires a saved transcript for recovery.");
+        pending = { mode: "tool_output", sessionId, messageEntryId: message.id, toolCallId, signal: captureSignal };
+        return {
+          content: [{ type: "text", text: "Tool-output pruning queued. Pi will replace eligible older output bodies with recovery markers after this result is saved, then continue. Conversation messages remain intact." }],
+          details: { pending: true },
+        };
+      }
       const previous = ctx.sessionManager.getBranch().findLast(entry => entry.type === "compaction");
       const inherited = (previous?.type === "compaction" ? previous.details as { modifiedFiles?: unknown } : undefined)?.modifiedFiles;
       const modifiedFiles = Array.isArray(inherited)
         ? [...new Set(inherited.filter((path): path is string => typeof path === "string"))].sort()
         : [];
       // These are prior recorded targets, not a new inventory of intervening calls.
-      const captured = await captureCheckpoint(pi, ctx, report, captureSignal,
+      const captured = await captureCheckpoint(pi, ctx, checkpoint, captureSignal,
         modifiedFiles.length ? { modifiedFiles } : {});
       captureSignal.throwIfAborted();
       if (ctx.sessionManager.getSessionId() !== sessionId || callingMessage(ctx, toolCallId).id !== message.id) {
         throw new Error("Session or branch changed during compact_session; session history was kept.");
       }
       pending = {
-        sessionId, messageEntryId: message.id, toolCallId, signal: captureSignal,
+        mode: "checkpoint", sessionId, messageEntryId: message.id, toolCallId, signal: captureSignal,
         draft: { type: "compaction", ...captured, firstKeptEntryId: null },
       };
       return {
@@ -89,6 +100,10 @@ export default function compactSession(pi: ExtensionAPI): void {
     if (resultIndex < 0 || !branch.some(entry => entry.id === event.toolResultEntryIds[resultIndex])) return;
     // Pi previews/validates the returned entries and owns persistence, context
     // projection, and queued-input ordering. Never edit agent messages directly.
+    if (request.mode === "tool_output") {
+      const pruning = toolOutputPruning(event, ctx);
+      return { entries: [...event.entries, ...(pruning?.edits ?? [])], continue: true };
+    }
     return { entries: [...event.entries, request.draft], continue: true };
   });
 }

@@ -5,6 +5,7 @@ def test_pi_native(run_native_suite):
     run_native_suite([
         "node", "--test", "--test-concurrency=1",
         "tests/pi/native_compact_session.mjs",
+        "tests/pi/native_tool_output_pruning.mjs",
         "tests/pi/native_prompt_sections.mjs",
         "tests/pi/native_web_search.mjs",
         "tests/pi/native_subscription_usage.mjs",

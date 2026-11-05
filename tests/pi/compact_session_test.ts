@@ -56,6 +56,7 @@ function harness() {
     session: (value: string) => { session = value; },
     file: (value: string | undefined) => { file = value; },
     execute: (text = report, id = "compact-call") => tools.get("compact_session").execute(id, { report: text }, controller.signal, undefined, ctx),
+    executeOutputOnly: () => tools.get("compact_session").execute("compact-call", { tool_output_only: true }, controller.signal, undefined, ctx),
     complete(overrides: any = {}) {
       const result = { role: "toolResult", toolCallId: "compact-call", toolName: "compact_session", content: [], isError: false };
       branch.push({ type: "message", id: "tool-result", message: result });
@@ -127,6 +128,28 @@ test("a request cannot replace an already staged report", async () => {
   expect(checkpointText((await h.complete()).entries[0])).toBe(report);
 });
 
+test("tool-output-only stages without repository capture and refuses to replace another pending mode", async () => {
+  const h = harness();
+  expect((await h.executeOutputOnly()).details.pending).toBe(true);
+  expect(h.executions).toHaveLength(0);
+  await expect(h.execute()).rejects.toThrow("already pending");
+  await expect(h.executeOutputOnly()).rejects.toThrow("already pending");
+});
+
+for (const change of ["session", "branch", "abort", "session_switch", "agent_settled", "session_tree", "session_shutdown"]) {
+  test(`tool-output-only discards a staged request after ${change}`, async () => {
+    const h = harness();
+    await h.executeOutputOnly();
+    if (change === "session") h.session("session-b");
+    else if (change === "branch") h.branch.splice(1);
+    else if (change === "abort") h.controller.abort();
+    else await h.emit(change);
+    expect(await h.complete()).toBeUndefined();
+    expect(await h.complete()).toBeUndefined();
+    expect(h.executions).toHaveLength(0);
+  });
+}
+
 for (const overrides of [
   { outcome: "aborted" },
   { outcome: "error" },
@@ -140,6 +163,13 @@ for (const overrides of [
     await h.execute();
     expect(await h.complete(overrides)).toBeUndefined();
     expect(await h.complete()).toBeUndefined();
+  });
+  test(`an unsuccessful or unrelated turn cannot prune tool output: ${JSON.stringify(overrides)}`, async () => {
+    const h = harness();
+    await h.executeOutputOnly();
+    expect(await h.complete(overrides)).toBeUndefined();
+    expect(await h.complete()).toBeUndefined();
+    expect(h.executions).toHaveLength(0);
   });
 }
 

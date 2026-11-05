@@ -396,7 +396,24 @@ System instructions, tools, goals, and worker state keep their existing owners; 
 This tool requires Pi's actionable `turn_end` boundary and `CompactionEntryDraft.firstKeptEntryId: null` APIs.
 Run `/reload` after updating extension code.
 
-Manual and automatic compaction still use the Luna extension and [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
+`compact_session({ tool_output_only: true })` removes eligible older tool-output bodies without requiring a report or calling a summarizer.
+Do not combine it with `report`.
+It uses the same recovery markers and preserves conversation messages and the current tool-result batch.
+Unlike automatic pruning, it works below the threshold and does not require reaching the 20% target or enabling automatic compaction.
+The tool continues after the boundary even when no output can shrink.
+It requires a saved transcript; ordinary automatic compaction can still run if the remaining context exceeds its threshold.
+
+At `turn_end`, all sessions, including root conversations and managed workers, first try replacing older tool-result bodies with recovery markers at the existing automatic-compaction threshold.
+This uses Pi's effective compaction settings, including per-model overrides, and does nothing when automatic compaction is disabled.
+The newest tool batch stays intact until the model has had a response in which to read it.
+Pruning succeeds only if the estimated remaining context, including the current system prompt, tool declarations, and queued messages, fits within 20% of the context window and no longer triggers compaction.
+Successful pruning persists `context_edit` entries without a summarizer call or an extra model response.
+Markers identify the original entry: call `read_session` with this session's identity and the marker's `aroundEntryId` to recover its output.
+Raw history and tool-result metadata remain unchanged; unsaved in-memory sessions do not prune.
+If pruning cannot meet the target, no proposed omissions are saved, so the existing summarizer still receives the available tool outputs.
+This path does not intercept compaction before a prompt, on resume, or during overflow recovery.
+
+Manual compaction and automatic compaction not avoided by pruning use the Luna extension and [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
 Its three sections are **Objective and authority**, **Current work**, and **Recovery**.
 Checkpoints carry forward the last established user request when no newer request is recorded.
 Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owning session or agent, holds, and recorded next action together.
@@ -404,7 +421,7 @@ Generated checkpoints must include an `Objective and authority` Markdown heading
 If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
 If generation fails, session history is kept.
 
-Both paths append a short `jj status` excerpt, working directory, capture time, and recovery locator, with a recorded-target count when target metadata is available.
+Self-authored and Luna checkpoints append a short `jj status` excerpt, working directory, capture time, and recovery locator, with a recorded-target count when target metadata is available.
 Oversized status retains the beginning and end of text fields, marks omissions, and sets `truncated: true`.
 The end preserves revision information without parsing individual status lines.
 Failed captures report unknown state; omitted paths do not establish a clean working copy.
