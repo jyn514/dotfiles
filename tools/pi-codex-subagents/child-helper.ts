@@ -11,11 +11,15 @@ import { readChildPrompt } from "./child-prompt.js";
 export default function childHelper(pi: ExtensionAPI): void {
   // Read during loading, not a run hook: invalid role files must fail startup.
   const role = readChildPrompt();
+  const parentSessionId = process.env.PI_SUBAGENT_PARENT_SESSION_ID;
+  const childContext = parentSessionId
+    ? { ...role, content: `${role.content}\n\nParent session ID: ${parentSessionId}` }
+    : role;
   pi.on("before_agent_start", (event) => {
     // Configured include hooks run later and can expand this context normally.
     event.systemPromptOptions.contextFiles = [
       ...event.systemPromptOptions.contextFiles.filter((file) => file.path !== role.path),
-      role,
+      childContext,
     ];
   });
   registerChildExtensionChannel(pi);

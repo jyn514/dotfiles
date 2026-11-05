@@ -225,9 +225,9 @@ for (const withIncludes of [false, true]) for (const configured of [false, true]
       if (configured) {
         expect(count(prompt, "CONFIGURED_GLOBAL_BASE_MARKER")).toBe(1);
         expect(count(prompt, "CONFIGURED_GLOBAL_APPEND_MARKER")).toBe(1);
-        expect(prompt).not.toContain("You are an expert coding assistant");
+        expect(prompt).not.toContain("coding assistant");
       } else {
-        expect(prompt).toContain("You are an expert coding assistant");
+        expect(prompt).toContain("coding assistant");
         expect(prompt).toContain("Pi documentation");
       }
       if (withIncludes) for (const marker of ["SHARED_SYMLINK_INCLUDE_MARKER", "SHARED_NESTED_INCLUDE_MARKER"]) expect(count(prompt, marker), marker).toBe(1);
@@ -237,6 +237,7 @@ for (const withIncludes of [false, true]) for (const configured of [false, true]
       await until(() => root.records.filter(record => record.type === "agent_settled").length === 1, "root without optional ROOT settles");
       const firstRoot = jsonl(providerCallsFile(rootFile))[0];
       checkShared(firstRoot.systemPrompt);
+      expect(firstRoot.systemPrompt).not.toContain("Parent session ID:");
       expect(firstRoot.systemPrompt).not.toContain("EDITED_COMPOSITION_CHILD_ROLE_MARKER");
       expect(firstRoot.systemPrompt).not.toContain("ROOT_ONLY_COMPOSITION_MARKER");
       if (withIncludes) {
@@ -269,6 +270,13 @@ for (const withIncludes of [false, true]) for (const configured of [false, true]
       expect(count(calls[0].text, "COMPOSITION_TEMPLATE_MARKER")).toBe(1);
       expect(count(calls[0].text, "COMPOSITION_ASSIGNED_TASK_MARKER")).toBe(1);
       expect(calls[0].tools.sort()).toEqual(["link_send", "peer_escalate", "peer_list", "peer_send", "read"]);
+      expect(count(calls[0].systemPrompt, `Parent session ID: ${parentSessionId}`)).toBe(1);
+      await manager.sendMessage(parentSessionId, "composition", "COMPOSITION_FOLLOWUP_MARKER");
+      await until(() => manager.getAgentInfo("composition", parentSessionId).status === "completed", "child followup completes");
+      const followup = jsonl(providerCallsFile(info.sessionFile));
+      expect(followup).toHaveLength(2);
+      expect(count(followup[1].systemPrompt, `Parent session ID: ${parentSessionId}`)).toBe(1);
+      expect(count(followup[1].systemPrompt, "EDITED_COMPOSITION_CHILD_ROLE_MARKER")).toBe(1);
       expect(readFileSync(roleFile, "utf8")).toBe(editedRole);
     } finally {
       await root.close();

@@ -82,8 +82,10 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
     expect(request.tools.sort()).toEqual(["link_send", "peer_escalate", "peer_list", "peer_send", "read"]);
     expect(request.systemPrompt.split("EDITED_FORK_ROLE_INITIAL_MARKER")).toHaveLength(2);
     expect(request.systemPrompt.split("FORK_SHARED_INITIAL_MARKER")).toHaveLength(2);
-    expect(request.systemPrompt).toContain("You are an expert coding assistant");
+    expect(request.systemPrompt).toContain("coding assistant");
     expect(request.systemPrompt).not.toContain("historical prompt");
+    expect(request.systemPrompt.split(`Parent session ID: ${parent.getSessionId()}`)).toHaveLength(2);
+    expect(request.systemPrompt).not.toContain(`Parent session ID: ${original.id}`);
     expect(SessionManager.open(original.file).getEntries()).toEqual(original.before);
     expect(parent.getEntries()).toEqual(parentBefore);
     expect(parent.getSessionId()).not.toBe(child.getSessionId());
@@ -103,6 +105,8 @@ sourceTest("native inclusive fork preserves history, source and parent; managed 
     expect(currentRequests[1].systemPrompt).not.toContain("EDITED_FORK_ROLE_INITIAL_MARKER");
     expect(currentRequests[1].systemPrompt).not.toContain("FORK_SHARED_INITIAL_MARKER");
     expect(currentRequests[1].systemPrompt).not.toContain("historical prompt");
+    expect(currentRequests[1].systemPrompt.split(`Parent session ID: ${parent.getSessionId()}`)).toHaveLength(2);
+    expect(currentRequests[1].systemPrompt).not.toContain(`Parent session ID: ${original.id}`);
     expect(currentRequests[1].text).toBe("continuation task");
     expect(jsonl(info.sessionFile).filter(entry => entry.message?.role === "user"
       && JSON.stringify(entry.message.content).includes("required new task"))).toHaveLength(1);
