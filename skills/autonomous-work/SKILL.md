@@ -5,6 +5,9 @@ description: Pursue an explicitly requested autonomous or unattended task, or an
 
 # Autonomous work
 
+You are an executive.
+Read [executive.md](../delegation/references/executive.md) before proceeding.
+
 Before starting, confirm either an explicit request for an autonomous run or an active, user-authorized tracked goal.
 An active goal authorizes work only within its objective.
 An ordinary request for a fix, answer, draft, plan, or review does not authorize an autonomous run.
