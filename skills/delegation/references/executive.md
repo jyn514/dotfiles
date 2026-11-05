@@ -27,7 +27,11 @@ Name each assignment's question or decision, usable output, evidence need, and s
 Distinct role names do not make two unbounded versions of the same inquiry independent.
 An intentionally independent check can revisit the same question; make its purpose explicit.
 
-Keep a builder responsible through the intended-consumer result and ordinary acceptance checks, not only an isolated patch.
+Keep implementation, integration, and intended-consumer checks assigned through completion, not merely through an isolated patch.
+Organize agents around work that can proceed independently, not one agent per role.
+Use multiple builders or QA agents when that avoids unnecessary waiting.
+For coupled changes, name an integration owner; accountability does not require that agent to perform every task.
+Preserve required independent verification.
 Within existing authorization, include ordinary failure inspection and in-scope corrections without another permission handoff at every step.
 Retain explicit user-imposed limits and approvals.
 Require return before an unresolved consequential choice, conflicting ownership, or effects outside the assignment's authority or resource limits.
