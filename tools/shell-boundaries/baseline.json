@@ -12,7 +12,6 @@
   "dev/package-plan:nested-substitution:0f34c0f7cb7a24ff",
   "dev/package-plan:unchecked-pipeline:588e831051b634c4",
   "dev/package-plan:unchecked-pipeline:8e599dfa2f42b659",
-  "dev/test:nested-substitution:0ee121d4b364b8c9",
   "dev/test:nested-substitution:17f72f46a7381f15",
   "dev/update-doas-sudo-shim:nested-substitution:0f34c0f7cb7a24ff",
   "lib/shell/realpath.sh:nested-substitution:8581f62bdb8b329a",
@@ -28,7 +27,6 @@
   "setup:persistent-write:3c00a09850546fb1",
   "setup:unchecked-pipeline:472d6036b7e11093",
   "setup:unchecked-pipeline:5924d521b84379cd",
-  "tools/codex-sandbox/auth-proxy/image:nested-substitution:06482dc3062d808b",
   "tools/macos-preferences/tests/run-disposable-domain.sh:nested-substitution:0d8e96ab238c4b10",
   "tools/macos-preferences/tests/run.sh:nested-substitution:0d8e96ab238c4b10"
 ]

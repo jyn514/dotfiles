@@ -133,8 +133,7 @@ It checks files beginning with `#!/bin/sh` in the existing setup, command, libra
 Discovery honors root and nested `.gitignore` rules, including negations, and includes non-ignored hidden scripts.
 Ripgrep configuration and other ignore-file formats cannot override those rules.
 SC2015 (compound guards) and SC1091 (unfollowed sources) are suppressed.
-Reviewed codes SC1007, SC2002, SC2016, SC2034, SC2119, SC2120, SC2237, SC2317, and SC3013 print nonblocking warnings.
-Every other diagnostic fails the runner, regardless of ShellCheck's native severity; new SC2086 quoting findings still fail.
+Every reported diagnostic fails the runner, regardless of ShellCheck's native severity.
 Discovery, dependency, and ShellCheck execution or report failures also fail the runner.
 Pytest discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/` and `tools/`, including the native-suite adapters.
 Put each independently invoked default native suite in its own adapter file under `tests/native/` so `loadfile` can schedule it separately.

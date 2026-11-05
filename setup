@@ -455,6 +455,7 @@ setup_install_local () {
 			rm -f "$fisher_installer"
 			return 1
 		}
+		# shellcheck disable=SC2016 # Fish, not this shell, expands argv.
 		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@$argv[2]' \
 			"$fisher_installer" "$fisher_revision" || {
 			result=$?
@@ -463,8 +464,10 @@ setup_install_local () {
 		}
 		rm -f "$fisher_installer"
 		nvm_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git nvm.fish revision) || return
+		# shellcheck disable=SC2016 # Fish, not this shell, expands argv.
 		fish -c 'fisher install jorgebucaran/nvm.fish@$argv[1]' "$nvm_revision" || return
 		zoxide_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git zoxide.fish revision) || return
+		# shellcheck disable=SC2016 # Fish, not this shell, expands argv.
 		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision" || return
 		unset fisher_installer fisher_revision nvm_revision zoxide_revision
 	fi

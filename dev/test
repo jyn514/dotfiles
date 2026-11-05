@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+script_dir=$(dirname "$0") || exit
+root=$(CDPATH='' cd -- "$script_dir/.." && pwd) || exit
 if [ "${1:-}" = --test-environment-ready ]; then
 	shift
 else
@@ -110,6 +111,7 @@ if [ "$run_containers" = 1 ]; then
 	mkdir "$container_results"
 	export container_results
 	printf 'Running 4 container suites in parallel...\n'
+	# shellcheck disable=SC2016 # The inner sh expands each container's variables.
 	printf '%s\n' alpine:latest archlinux:latest fedora:latest ubuntu:26.04 |
 		xargs -n1 -P 4 sh -c '
 			image=$1

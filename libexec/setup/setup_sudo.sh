@@ -203,7 +203,7 @@ main() {
 	install_security
 	install_device
 	set +x
-	copy_globals
+	copy_globals ''
 	set -x
 
 	if [ "$(uname)" = Darwin ]; then

@@ -21,6 +21,7 @@ case $image in
 esac
 
 if [ "${image%%:*}" = alpine ]; then
+	# shellcheck disable=SC2016 # The generated container script expands its own variables.
 	bootstrap_check='for option in 1; do
 			if ./setup "$option" > /tmp/dotfiles-bootstrap.out 2>&1; then
 				echo "setup option $option unexpectedly succeeded without python3" >&2

@@ -51,20 +51,20 @@ class ShellCheckTests(unittest.TestCase):
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn("SC2086", result.stdout)
 
-    def test_reviewed_diagnostics_are_visible_nonblocking_warnings(self):
+    def test_former_advisory_diagnostics_are_blocking_errors(self):
         self.script("bin/advisories.sh", fixture="shellcheck-advisory.txt")
         result = self.run_check()
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         for code in (1007, 2016, 2034):
-            self.assertIn(f"warning: SC{code}:", result.stdout)
-        self.assertNotIn("error:", result.stdout)
+            self.assertIn(f"error: SC{code}:", result.stdout)
+        self.assertNotIn("warning:", result.stdout)
 
-    def test_substantive_finding_still_fails_alongside_advisories(self):
+    def test_distinct_findings_remain_visible_together(self):
         self.script("bin/advisories.sh", fixture="shellcheck-advisory.txt")
         self.script("bin/unsafe.sh", valid=False)
         result = self.run_check()
         self.assertEqual(1, result.returncode, result.stderr)
-        self.assertIn("warning: SC1007:", result.stdout)
+        self.assertIn("error: SC1007:", result.stdout)
         self.assertIn("error: SC2086:", result.stdout)
 
     def test_requested_source_diagnostic_is_silent(self):

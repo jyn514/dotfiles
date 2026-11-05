@@ -12,9 +12,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOTS = {"setup", "track", "bin", "dev", "lib", "libexec", "tests", "tools"}
-# Reviewed idioms and analysis limitations remain visible but do not fail tests.
-# Other diagnostics, including SC2086, still fail regardless of native severity.
-ADVISORY_CODES = {1007, 2002, 2016, 2034, 2119, 2120, 2237, 2317, 3013}
 
 
 def main() -> int:
@@ -50,14 +47,10 @@ def main() -> int:
     findings = json.loads(report.stdout)
     if report.returncode and not findings:
         raise ValueError("ShellCheck failed without diagnostics")
-    failed = False
     for finding in findings:
-        advisory = finding["code"] in ADVISORY_CODES
-        failed |= not advisory
-        level = "warning" if advisory else "error"
         print(f'{finding["file"]}:{finding["line"]}:{finding["column"]}: '
-              f'{level}: SC{finding["code"]}: {finding["message"]}')
-    return int(failed)
+              f'error: SC{finding["code"]}: {finding["message"]}')
+    return int(bool(findings))
 
 
 if __name__ == "__main__":

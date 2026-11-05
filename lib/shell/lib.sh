@@ -82,7 +82,7 @@ is_macos() {
 # Sets SHIM_DIR and REAL and exports the cleaned PATH.
 shim_resolve() {
 	_shim_parent=$(dirname -- "$1") || return
-	SHIM_DIR=$(CDPATH= cd -- "$_shim_parent" && pwd -P) || return
+	SHIM_DIR=$(CDPATH='' cd -- "$_shim_parent" && pwd -P) || return
 	_clean=
 	_separator=
 	_rest=$PATH
@@ -90,7 +90,7 @@ shim_resolve() {
 		_entry=${_rest%%:*}
 		# Compare physical directories: aliases such as /var and /private/var
 		# must be removed together so each wrapper is visited at most once.
-		if _physical=$(CDPATH= cd -- "${_entry:-.}" 2>/dev/null && pwd -P) &&
+		if _physical=$(CDPATH='' cd -- "${_entry:-.}" 2>/dev/null && pwd -P) &&
 			[ "$_physical" = "$SHIM_DIR" ]; then
 			:
 		else
@@ -103,6 +103,7 @@ shim_resolve() {
 		esac
 	done
 	[ -n "$_separator" ] || fail "$2 wrapper: real $2 not found on PATH"
+	# shellcheck disable=SC2034 # Sourced wrapper callers consume REAL after resolution.
 	REAL=$(PATH="$_clean" command -v "$2") || fail "$2 wrapper: real $2 not found on PATH"
 	PATH=$_clean
 	export PATH
@@ -110,7 +111,9 @@ shim_resolve() {
 
 if ! exists realpath; then
 	. lib/shell/realpath.sh
+	# shellcheck disable=SC2034 # Sourced callers use this feature flag.
 	HAS_REALPATH=0
 else
+	# shellcheck disable=SC2034 # Sourced callers use this feature flag.
 	HAS_REALPATH=1
 fi

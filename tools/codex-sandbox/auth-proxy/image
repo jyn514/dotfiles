@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
+script_dir=$(dirname -- "$0") || exit
+root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd -P) || exit
 exec python3 "$root/tools/codex-sandbox/owned_images.py" auth
