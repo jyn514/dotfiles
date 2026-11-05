@@ -19,16 +19,30 @@ async function withClient(work) {
   finally { await client.close(); }
 }
 
-let thread = await withClient(async client => (await client.request("thread/resume", {
-  threadId: randomUUID(), cwd: process.cwd(), history: context.history, excludeTurns: true,
-})).thread);
-await appendDisplayHistory(thread, context);
-await withClient(async client => {
-  await client.request("thread/resume", { threadId: thread.id, excludeTurns: true });
-  await client.request("thread/name/set", { threadId: thread.id, name: "native export regression" });
-  if (process.argv.includes("--fork")) {
-    thread = (await client.request("thread/fork", { threadId: thread.id })).thread;
+const cases = [
+  { archived: false, fork: false },
+  { archived: true, fork: false },
+  { archived: false, fork: true },
+  { archived: true, fork: true },
+];
+
+const threads = await withClient(async client => {
+  const created = [];
+  for (const options of cases) {
+    const { thread } = await client.request("thread/resume", {
+      threadId: randomUUID(), cwd: process.cwd(), history: context.history, excludeTurns: true,
+    });
+    created.push({ ...options, thread });
   }
-  if (process.argv.includes("--archived")) await client.request("thread/archive", { threadId: thread.id });
+  return created;
 });
-console.log(JSON.stringify({ id: thread.id }));
+for (const { thread } of threads) await appendDisplayHistory(thread, context);
+await withClient(async client => {
+  for (const entry of threads) {
+    await client.request("thread/resume", { threadId: entry.thread.id, excludeTurns: true });
+    await client.request("thread/name/set", { threadId: entry.thread.id, name: "native export regression" });
+    if (entry.fork) entry.thread = (await client.request("thread/fork", { threadId: entry.thread.id })).thread;
+    if (entry.archived) await client.request("thread/archive", { threadId: entry.thread.id });
+  }
+});
+console.log(JSON.stringify(threads.map(({ archived, fork, thread }) => ({ archived, fork, id: thread.id }))));

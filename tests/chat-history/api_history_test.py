@@ -152,14 +152,18 @@ class ApiHistoryTests(unittest.TestCase):
         # Bypass only the fixture codex shim, retaining the harness's native-tool selection.
         environment = dict(self.env, PATH=os.environ["PATH"])
         (self.home / "config.toml").write_text("[features]\nplugins = false\napps = false\n")
-        for archived, fork in ((False, False), (True, False), (False, True), (True, True)):
+        created = subprocess.run(["node", str(FIXTURES / "native-codex-fixture.mjs")],
+                                 env=environment, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(0, created.returncode, created.stderr)
+        cases = json.loads(created.stdout)
+        expected = [{"archived": archived, "fork": fork}
+                    for archived, fork in ((False, False), (True, False), (False, True), (True, True))]
+        self.assertEqual(expected, [{key: case[key] for key in ("archived", "fork")} for case in cases])
+        self.assertEqual(len(cases), len({case["id"] for case in cases}))
+        for case in cases:
+            archived, fork, id = case["archived"], case["fork"], case["id"]
             with self.subTest(archived=archived, fork=fork):
                 flags = ["--archived"] if archived else []
-                created = subprocess.run(["node", str(FIXTURES / "native-codex-fixture.mjs"), *flags,
-                                          *(["--fork"] if fork else [])],
-                                         env=environment, cwd=self.root, capture_output=True, text=True)
-                self.assertEqual(0, created.returncode, created.stderr)
-                id = json.loads(created.stdout)["id"]
                 converted = subprocess.run([str(ROOT / "bin/codex-to-pi"), id, "-o", str(self.output), *flags],
                                            env=environment, capture_output=True, text=True)
                 self.assertEqual(0, converted.returncode, converted.stderr)
