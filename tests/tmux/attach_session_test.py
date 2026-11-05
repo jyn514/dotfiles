@@ -23,6 +23,7 @@ attachment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(attachment)
 NATIVE = shutil.which("tmux", path=os.pathsep.join(
     entry for entry in os.get_exec_path() if Path(entry).resolve() != ROOT / "bin"))
+TERMINAL_EXEC = ROOT / "tests/fixtures/terminal_exec.py"
 
 
 class SourceTests(unittest.TestCase):
@@ -486,12 +487,14 @@ class AttachmentTests(unittest.TestCase):
         self.assertEqual(self.session(pid), "seed")
 
     def test_terminal_suspend_and_resume_return_control_to_shell(self):
-        shell_pid, terminal = pty.fork()
-        if shell_pid == 0:
-            os.environ.clear()
-            os.environ.update(self.environment)
-            os.environ["LC_ALL"] = "C"
-            os.execv("/bin/bash", ["bash", "--noprofile", "--norc", "-i"])
+        terminal, slave = pty.openpty()
+        environment = self.environment | {"LC_ALL": "C"}
+        shell = subprocess.Popen(
+            [sys.executable, str(TERMINAL_EXEC), os.ttyname(slave),
+             "/bin/bash", "--noprofile", "--norc", "-i"],
+            env=environment,
+        )
+        os.close(slave)
         output = b""
         def contains(marker):
             nonlocal output
@@ -516,13 +519,11 @@ class AttachmentTests(unittest.TestCase):
                 "list-clients", "-F", "#{client_flags}"))
             self.tmux("detach-client", "-t", name)
             os.write(terminal, b"exit\n")
-            _, status = os.waitpid(shell_pid, 0)
-            shell_pid = None
-            self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+            self.assertEqual(shell.wait(timeout=5), 0)
         finally:
-            if shell_pid is not None:
-                os.kill(shell_pid, signal.SIGKILL)
-                os.waitpid(shell_pid, 0)
+            if shell.poll() is None:
+                shell.kill()
+                shell.wait()
             os.close(terminal)
 
 

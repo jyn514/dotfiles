@@ -16,7 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = Path(__file__).parent / "fixtures/terminal_child.py"
-TERMINAL_EXEC = Path(__file__).parent / "fixtures/terminal_exec.py"
+TERMINAL_EXEC = ROOT / "tests/fixtures/terminal_exec.py"
 
 
 def terminal_scenario(
