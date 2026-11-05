@@ -135,6 +135,10 @@ class TestEnvironmentTest(unittest.TestCase):
         self.inherited["DOTFILES_TEST_CARGO_HOME"] = str(self.cargo_home)
         self.uv_cache = self.root / "uv-test-cache"
         self.inherited["DOTFILES_TEST_UV_CACHE_DIR"] = str(self.uv_cache)
+        self.bun_cache = self.root / "bun-test-cache"
+        self.inherited["DOTFILES_TEST_BUN_CACHE_DIR"] = str(self.bun_cache)
+        self.npm_cache = self.root / "npm-test-cache"
+        self.inherited["DOTFILES_TEST_NPM_CACHE_DIR"] = str(self.npm_cache)
 
     def snapshot(self, path: Path) -> dict:
         return {
@@ -676,6 +680,34 @@ class TestEnvironmentTest(unittest.TestCase):
         for report in (outer, outer["nested"]):
             self.assert_private_home(report)
             self.assertEqual(str(self.uv_cache), report["environment"]["UV_CACHE_DIR"])
+
+    def test_package_caches_persist_without_reusing_user_home_or_config(self) -> None:
+        user_bun = self.old_home / "bun-cache"
+        user_npm = self.old_home / "npm-cache"
+        user_bun.mkdir()
+        user_npm.mkdir()
+        (user_bun / "poison").write_text("user Bun cache")
+        (user_npm / "poison").write_text("user npm cache")
+        before = self.snapshot(self.old_home)
+
+        result, outer = self.run_probe("nested", str(WRAPPER), values={
+            "BUN_INSTALL_CACHE_DIR": str(user_bun),
+            "npm_config_cache": str(user_npm),
+        })
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, outer["nested_status"], outer["nested_stderr"])
+        for report in (outer, outer["nested"]):
+            self.assert_private_home(report)
+            self.assertEqual(str(self.bun_cache), report["environment"]["BUN_INSTALL_CACHE_DIR"])
+            self.assertEqual(str(self.bun_cache),
+                             report["environment"]["DOTFILES_TEST_BUN_CACHE_DIR"])
+            self.assertEqual(str(self.npm_cache), report["environment"]["npm_config_cache"])
+            self.assertEqual(str(self.npm_cache),
+                             report["environment"]["DOTFILES_TEST_NPM_CACHE_DIR"])
+        self.assertTrue(self.bun_cache.is_dir())
+        self.assertTrue(self.npm_cache.is_dir())
+        self.assertEqual(before, self.snapshot(self.old_home))
 
     def test_invalid_uv_cache_prevents_child_start_without_falling_back(self) -> None:
         self.uv_cache.write_text("not a directory")

@@ -96,7 +96,7 @@ class NativeSuitesTests(unittest.TestCase):
             ("node", "--test", "tests/pi/native_dashboard_queue.mjs"),
             ("node", "--test", "tools/codex-sandbox/tests/guest_skill_context_test.mjs"),
             ("node", "--test", "tests/agent-wrappers/jj-conflict.test.mjs"),
-            ("node", "--test", "tests/pi/native_compact_session.mjs",
+            ("node", "--test", "--test-concurrency=1", "tests/pi/native_compact_session.mjs",
              "tests/pi/native_prompt_sections.mjs", "tests/pi/native_web_search.mjs",
              "tests/pi/native_subscription_usage.mjs", "tests/pi/native_validate_skill.mjs",
              "tests/pi/native_work_selection.mjs", "tests/pi/native_transport_diagnostics.mjs"),
@@ -156,7 +156,7 @@ class NativeSuitesTests(unittest.TestCase):
 
     def test_runner_executes_each_native_suite_once_with_private_state(self):
         # Dispatch tests cover the default worker count; two suffice for this integration.
-        result = self.run_command([self.root / "dev/test", "--jobs", "2"])
+        result = self.run_command([self.root / "dev/test", "--native", "--jobs", "2"])
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assert_native_commands()
         self.assertTrue(any(event["kind"] == "postcheck" and event["argv"] == ["dev/check-shell.py"]
@@ -165,7 +165,7 @@ class NativeSuitesTests(unittest.TestCase):
         self.assertIn("All checks passed", result.stdout)
 
     def test_native_failure_reports_output_and_blocks_repository_and_container_checks(self):
-        result = self.run_command([self.root / "dev/test", "--jobs", "2", "--containers"],
+        result = self.run_command([self.root / "dev/test", "--native", "--jobs", "2", "--containers"],
                                   env={"TEST_NATIVE_PI_STATUS": "29"})
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assert_native_commands()

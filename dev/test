@@ -22,14 +22,16 @@ unset DOTFILES_TEST_PI_REVISION
 jobs=${TEST_JOBS:-8}
 run_containers=0
 run_lima=0
+run_native=0
 verbose=0
 
 usage() {
-	echo "usage: $0 [--containers] [--lima] [--jobs count] [--verbose]" >&2
+	echo "usage: $0 [--native] [--containers] [--lima] [--jobs count] [--verbose]" >&2
 }
 
 while [ $# -gt 0 ]; do
 	case $1 in
+		--native) run_native=1;;
 		--containers) run_containers=1;;
 		--lima) run_lima=1;;
 		-v|--verbose) verbose=1;;
@@ -48,7 +50,7 @@ case $jobs in
 	''|*[!0-9]*|0) echo "test job count must be a positive integer" >&2; exit 2;;
 esac
 
-if ! command -v bun >/dev/null 2>&1; then
+if [ "$run_native" = 1 ] && ! command -v bun >/dev/null 2>&1; then
 	echo "Bun is required for Pi tests; install Bun and add it to PATH before running dev/test (see dev/README.md#testing-and-probes)" >&2
 	exit 1
 fi
@@ -66,14 +68,8 @@ pytest_args="-n $jobs --dist loadfile --quiet --no-header --force-sugar -p no:ca
 if [ "$verbose" = 1 ]; then
 	pytest_args="-n $jobs --dist loadfile --verbose --force-sugar -p no:cacheprovider"
 fi
-# Collect serially before xdist can start executing tests on other workers.
-collection_log=$results/collection.log
-if "$root/dev/pytest" --test-environment-ready --collect-only --quiet --quiet --no-header -p no:cacheprovider > "$collection_log" 2>&1; then
-	:
-else
-	status=$?
-	cat "$collection_log" >&2
-	exit "$status"
+if [ "$run_native" = 0 ]; then
+	pytest_args="$pytest_args --ignore=tests/native"
 fi
 # shellcheck disable=SC2086
 "$root/dev/pytest" --test-environment-ready $pytest_args

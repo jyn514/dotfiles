@@ -65,6 +65,15 @@ Set `DOTFILES_TEST_UV_CACHE_DIR` to another owned disposable directory when a
 fresh cache is required; nested wrapper calls retain that path.
 An unusable cache directory fails before the child starts.
 
+The wrapper also sets `BUN_INSTALL_CACHE_DIR` and `npm_config_cache` to
+`target/test-environment/bun` and `target/test-environment/npm`.
+These stable test-only directories reuse content-addressed package archives;
+registry configuration and credentials remain under the private HOME.
+Set `DOTFILES_TEST_BUN_CACHE_DIR` or `DOTFILES_TEST_NPM_CACHE_DIR` to another
+owned disposable directory when a fresh cache is required.
+Nested wrapper calls retain those paths, and unusable directories fail before
+the child starts.
+
 ### Command selection
 
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides or resolves mise shims before changing HOME.

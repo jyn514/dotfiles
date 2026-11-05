@@ -192,23 +192,23 @@ class TestRunnerTests(unittest.TestCase):
         result, arguments, probes = self.run_fallback(missing_plugin=True)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
-        self.assertEqual(2, probes)
+        self.assertEqual(1, probes)
 
-    def test_installed_pytest_checks_all_plugins_for_each_dispatch(self) -> None:
+    def test_installed_pytest_checks_all_plugins_for_the_dispatch(self) -> None:
         result, arguments, probes = self.run_fallback(installed_pytest=True, uv_available=False)
         self.assertEqual(99, result.returncode, result.stderr)
-        self.assertEqual(2, probes)
+        self.assertEqual(1, probes)
         self.assertEqual("-n", arguments[0])
 
     def test_failed_help_cannot_establish_plugin_availability(self) -> None:
         result, arguments, probes = self.run_fallback(installed_pytest=True, help_status=7)
         self.assertEqual(23, result.returncode, result.stderr)
-        self.assertEqual(2, probes)
+        self.assertEqual(1, probes)
         self.assertEqual("--from", arguments[0])
 
     def test_broken_installed_pytest_uses_uvx(self) -> None:
         result, arguments, probes = self.run_fallback(broken_pytest=True)
-        self.assertEqual(2, probes)
+        self.assertEqual(1, probes)
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
 
@@ -255,7 +255,7 @@ class TestRunnerTests(unittest.TestCase):
             self.assertIn("--force-sugar", arguments)
             self.assertNotIn("--instafail", arguments)
 
-    def test_missing_bun_stops_before_any_test_suite(self) -> None:
+    def test_missing_bun_stops_native_suite_before_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
@@ -268,7 +268,7 @@ class TestRunnerTests(unittest.TestCase):
             (binaries / "pytest").symlink_to(ROOT / "tests/fixtures/test_runner_command.sh")
             log = root / "commands.log"
             result = subprocess.run(
-                ["/bin/sh", runner, "--test-environment-ready"], cwd=root,
+                ["/bin/sh", runner, "--test-environment-ready", "--native"], cwd=root,
                 env=os.environ | {"PATH": str(binaries), "TEST_LOG": str(log)},
                 text=True, capture_output=True, check=False,
             )
@@ -279,8 +279,8 @@ class TestRunnerTests(unittest.TestCase):
             self.assertIn("dev/README.md#testing-and-probes", result.stderr)
             self.assertFalse(log.exists(), "a test suite ran before the prerequisite check")
 
-    def run_native_containers(self, *, metadata=None, containers=True,
-                              pytest_status=0, pytest_collect_status=0,
+    def run_native_containers(self, *, metadata=None, containers=True, native=False,
+                              pytest_status=0,
                               probe_status=0, shellcheck_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -313,7 +313,6 @@ class TestRunnerTests(unittest.TestCase):
                 "HOME": str(home), "PATH": f"{binaries}:{os.environ['PATH']}",
                 "TEST_LOG": str(log), "TEST_PYTHON_REAL": shutil.which("python3"),
                 "TEST_PYTEST_STATUS": str(pytest_status),
-                "TEST_PYTEST_COLLECT_STATUS": str(pytest_collect_status),
                 "TEST_PROBE_STATUS": str(probe_status),
                 "TEST_SHELLCHECK_STATUS": str(shellcheck_status),
                 # A stale inherited capture must never replace the actual marker.
@@ -323,7 +322,8 @@ class TestRunnerTests(unittest.TestCase):
                 environment[f"DOTFILES_TEST_{tool}_REAL"] = str(binaries / tool.lower())
             environment["DOTFILES_TEST_PYTHON3_REAL"] = str(binaries / "python3")
             result = subprocess.run(
-                [root / "dev/test", *(["--containers"] if containers else [])],
+                [root / "dev/test", *(["--native"] if native else []),
+                 *(["--containers"] if containers else [])],
                 cwd=root, env=environment, text=True, capture_output=True, check=False,
             )
             commands = log.read_text().splitlines() if log.exists() else []
@@ -390,17 +390,28 @@ class TestRunnerTests(unittest.TestCase):
                 else:
                     self.assertIn("All checks passed", result.stdout)
 
-    def test_collection_failure_stops_before_test_execution(self) -> None:
+    def test_pytest_failure_stops_before_repository_checks(self) -> None:
         result, commands, _ = self.run_native_containers(
-            containers=False, pytest_collect_status=42,
+            containers=False, pytest_status=42,
         )
 
         self.assertEqual(42, result.returncode, result.stderr)
         pytest_commands = [line for line in commands if line.startswith("pytest ")]
         self.assertEqual(1, len(pytest_commands))
-        self.assertIn("<--collect-only>", pytest_commands[0])
+        self.assertNotIn("<--collect-only>", pytest_commands[0])
         self.assertFalse(any("dev/check-shell.py" in line for line in commands))
         self.assertNotIn("All checks passed", result.stdout)
+
+    def test_native_suite_is_explicit(self) -> None:
+        default, default_commands, _ = self.run_native_containers(containers=False)
+        native, native_commands, _ = self.run_native_containers(containers=False, native=True)
+
+        self.assertEqual(0, default.returncode, default.stderr)
+        self.assertEqual(0, native.returncode, native.stderr)
+        default_pytest = next(line for line in default_commands if line.startswith("pytest "))
+        native_pytest = next(line for line in native_commands if line.startswith("pytest "))
+        self.assertIn("<--ignore=tests/native>", default_pytest)
+        self.assertNotIn("<--ignore=tests/native>", native_pytest)
 
     def test_native_containers_preserve_test_and_probe_failure_status(self) -> None:
         for pytest_status, probe_status in ((23, 0), (0, 31)):
