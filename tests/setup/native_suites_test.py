@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -70,7 +71,8 @@ class NativeSuitesTests(unittest.TestCase):
             "JJ_REAL": "must-not-leak", "JJ_PROXY_TEST_JJ": "must-be-overridden",
             "PYTEST_ADDOPTS": "", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "",
         }
-        for key in ("TEST_NATIVE_BARRIER", "TEST_NATIVE_PI_STATUS"):
+        for key in ("TEST_NATIVE_BARRIER", "TEST_NATIVE_HOLD", "TEST_NATIVE_JOBS",
+                    "TEST_NATIVE_PI_STATUS"):
             self.environment.pop(key, None)
         # An outer xdist worker is not the identity of the nested controller.
         for key in tuple(self.environment):
@@ -167,7 +169,7 @@ class NativeSuitesTests(unittest.TestCase):
 
     def test_native_failure_reports_output_and_blocks_repository_and_container_checks(self):
         result = self.run_command([self.root / "dev/test", "--native", "--jobs", "2", "--containers"],
-                                  env={"TEST_NATIVE_PI_STATUS": "29"})
+                                  env={"TEST_NATIVE_JOBS": "1", "TEST_NATIVE_PI_STATUS": "29"})
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assert_native_commands()
         output = result.stdout + result.stderr
@@ -179,6 +181,60 @@ class NativeSuitesTests(unittest.TestCase):
         self.assertEqual([{"kind": "postcheck", "argv": [str(self.root / "tools/codex-sandbox/owned_images.py")]}],
                          downstream)
         self.assertNotIn("All checks", output)
+
+    def run_with_held_native_suites(self, native_jobs):
+        release = self.root / "release-native-suites"
+        release.unlink(missing_ok=True)
+        command = [
+            self.root / "dev/test-environment", sys.executable, "-m", "pytest",
+            "-q", "-p", "no:cacheprovider", "-n", "3", "--dist", "loadfile",
+            "tests/native/test_native_agent_split.py",
+            "tests/native/test_native_pi_bun.py",
+            "tests/native/test_native_pi_to_codex.py",
+        ]
+        process = subprocess.Popen(
+            command, cwd=self.root,
+            env=self.environment | {"TEST_NATIVE_HOLD": str(release),
+                                    "TEST_NATIVE_JOBS": str(native_jobs)},
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            events = self.events() if self.log.exists() else []
+            if len([event for event in events if event["kind"] == "started"]) == native_jobs:
+                break
+            time.sleep(0.01)
+        else:
+            process.kill()
+            stdout, stderr = process.communicate()
+            self.fail(f"native suites did not fill {native_jobs} slots:\n{stdout}\n{stderr}")
+        time.sleep(0.1)
+        events = self.events()
+        self.assertEqual(native_jobs, len([event for event in events if event["kind"] == "started"]))
+        self.assertIsNone(process.poll(), "a waiting native suite must not finish before a slot is released")
+        release.touch()
+        stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(0, process.returncode, stdout + stderr)
+        return self.events()
+
+    def test_native_admission_limits_cross_worker_subprocesses_and_honors_override(self):
+        for native_jobs in (1, 2):
+            with self.subTest(native_jobs=native_jobs):
+                if self.log.exists():
+                    self.log.unlink()
+                events = self.run_with_held_native_suites(native_jobs)
+                self.assertEqual(3, len([event for event in events if event["kind"] == "started"]))
+                self.assertEqual(3, len([event for event in events if event["kind"] == "finished"]))
+
+    def test_native_admission_rejects_invalid_job_counts(self):
+        for value in ("0", "not-a-number"):
+            with self.subTest(value=value):
+                result = self.run_command([
+                    self.root / "dev/test-environment", sys.executable, "-m", "pytest",
+                    "-q", "-p", "no:cacheprovider", "tests/native/test_native_agent_split.py",
+                ], env={"TEST_NATIVE_JOBS": value})
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("TEST_NATIVE_JOBS must be a positive integer", result.stdout + result.stderr)
 
     def run_rendezvous(self, jobs):
         barrier = self.root / "barrier"

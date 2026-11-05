@@ -121,8 +121,12 @@ See [pytest-sugar #222](https://github.com/Teemu/pytest-sugar/issues/222).
 The runner uses installed pytest only after a successful plugin check.
 Otherwise it uses `uv` and the pinned requirements in `install/test.txt`, or prints installation guidance if `uv` is unavailable.
 Pytest performs one collection and execution pass.
-Python tests and, with `--native`, the native-suite adapters in `tests/native/` share the existing pytest-xdist scheduler: eight workers and `--dist loadfile`.
-Use `--jobs N` or `TEST_JOBS` to change the worker count.
+Python tests and, with `--native`, the native-suite adapters in `tests/native/` share the existing pytest-xdist scheduler with `--dist loadfile`.
+Every mode defaults to eight pytest workers. Native adapters separately admit two
+subprocesses at a time so Codex, Node, SQLite, and other runtimes cannot exhaust
+host memory through concurrent virtual-memory reservations. Use `--jobs N` or
+`TEST_JOBS` to override pytest workers, and `TEST_NATIVE_JOBS` to override the
+native subprocess limit.
 Each adapter runs its existing native command with a separate private HOME and XDG state; native frameworks still discover and run their own cases.
 `bunfig.toml` excludes `target/**` from Bun discovery so retained benchmark sources do not run as tests.
 Separate adapter files let xdist overlap whole suites, not individual native test cases.

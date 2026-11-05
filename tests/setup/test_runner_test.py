@@ -105,7 +105,8 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn('install uv', result.stderr)
 
     def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True, jobs=3,
-                     environment_jobs=None, installed_pytest=False, help_status=0, verbose=False):
+                     environment_jobs=None, installed_pytest=False, help_status=0, verbose=False,
+                     native=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
@@ -146,6 +147,7 @@ class TestRunnerTests(unittest.TestCase):
                 environment["TEST_JOBS"] = str(environment_jobs)
             result = subprocess.run(
                 ["/bin/sh", root / "dev/test", "--test-environment-ready",
+                 *(["--native"] if native else []),
                  *(["--jobs", str(jobs)] if jobs is not None else []),
                  *(["--verbose"] if verbose else [])],
                 cwd=root,
@@ -191,9 +193,15 @@ class TestRunnerTests(unittest.TestCase):
                 self.assertRegex(result.stdout, r"\b1\s+passed\b")
 
     def test_worker_count_and_distribution_use_existing_configuration(self) -> None:
-        for jobs, environment_jobs, expected in ((None, None, "8"), (None, 6, "6"), (3, 6, "3")):
-            with self.subTest(jobs=jobs, environment_jobs=environment_jobs):
-                result, arguments, _ = self.run_fallback(jobs=jobs, environment_jobs=environment_jobs)
+        for native, jobs, environment_jobs, expected in (
+            (False, None, None, "8"),
+            (True, None, None, "8"),
+            (True, None, 6, "6"),
+            (True, 3, 6, "3"),
+        ):
+            with self.subTest(native=native, jobs=jobs, environment_jobs=environment_jobs):
+                result, arguments, _ = self.run_fallback(
+                    native=native, jobs=jobs, environment_jobs=environment_jobs)
                 self.assertEqual(23, result.returncode, result.stderr)
                 self.assertEqual(expected, arguments[arguments.index("-n") + 1])
                 self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])

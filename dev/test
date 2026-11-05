@@ -20,7 +20,7 @@ fi
 pi_revision=${DOTFILES_TEST_PI_REVISION:-}
 unset DOTFILES_TEST_PI_REVISION
 
-jobs=${TEST_JOBS:-8}
+jobs=${TEST_JOBS:-}
 run_containers=0
 run_integration=0
 run_lima=0
@@ -49,6 +49,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
+[ -n "$jobs" ] || jobs=8
 case $jobs in
 	''|*[!0-9]*|0) echo "test job count must be a positive integer" >&2; exit 2;;
 esac

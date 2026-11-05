@@ -46,6 +46,17 @@ record("native", tool=native_role, executable=role, argv=arguments,
        directories_exist=all(Path(path).is_dir() for path in [os.environ["HOME"], *xdg.values()]),
        jj_real=os.environ.get("JJ_REAL"), jj_proxy_test_jj=os.environ.get("JJ_PROXY_TEST_JJ"))
 
+if os.environ.get("TEST_NATIVE_HOLD"):
+    release = Path(os.environ["TEST_NATIVE_HOLD"])
+    record("started", tool=native_role)
+    deadline = time.monotonic() + 10
+    while not release.exists():
+        if time.monotonic() >= deadline:
+            print("native hold timed out waiting for release", file=sys.stderr)
+            raise SystemExit(42)
+        time.sleep(0.01)
+    record("finished", tool=native_role)
+
 if os.environ.get("TEST_NATIVE_BARRIER"):
     barrier = Path(os.environ["TEST_NATIVE_BARRIER"])
     record("started", tool=native_role)
