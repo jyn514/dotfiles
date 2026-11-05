@@ -377,6 +377,7 @@ describe("manager-authoritative worker replies", () => {
     const question = await owner.link.replyFromWorker(worker, reference, "which case?");
     expect(outcomes(question)[0].status).toBe("submitted");
     expect(author.inbox[0].fromWorker).toEqual({ ...worker, ownerSessionId: owner.id });
+    expect(author.inbox[0].answer).toBe(false);
     expect(bus.hub().inbox).toEqual([]); expect(owner.inbox).toEqual([]);
     author.admit();
     const answer = await author.link.reply({ replyTo: question.details.messageId as string, message: "only direct cases" });
@@ -398,6 +399,82 @@ describe("manager-authoritative worker replies", () => {
   });
 });
 
+
+describe("native worker lifecycle locators", () => {
+  const locator = { ownerSessionId: "owner", workerId: "stable-worker", taskName: "display-only" };
+  const reference = { from: "native@children", fromSessionId: "native-session", id: "native-ping", content: "ping", fromManagedWorker: locator };
+
+  test("connected native authors retain ordinary endpoint routing with an old owner integration", async () => {
+    const bus = setup(); const requester = bus.add("requester", "requester@children");
+    const owner = bus.add("owner", "owner@owners");
+    const child = bus.add("native-session", "renamed@children");
+    requester.link.recordDelivered(reference);
+    const result = await requester.link.reply({ replyTo: reference.id, message: "ordinary active followup" });
+    expect(result.details.operation).toBe("reply");
+    expect(outcomes(result)).toEqual([{ kind: "root", name: child.name, sessionId: child.id, status: "submitted" }]);
+    expect(child.inbox[0].content).toBe("ordinary active followup");
+    expect(owner.inbox).toEqual([]);
+  });
+
+  test("offline native control uses only the native callback and does not derive answer policy from correlation", async () => {
+    const bus = setup(); const requester = bus.add("requester", "requester@children");
+    const calls: any[] = []; let legacyCalls = 0;
+    const owner = bus.add("owner", "owner@owners", { workers: {
+      broadcast: async () => [], reply: async () => { legacyCalls++; return { status: "submitted" }; },
+      replyNative: async (worker, message) => { calls.push({ worker, message }); return { status: "unknown", reason: "admission_unknown" }; },
+    } });
+    requester.link.restoreDelivered([reference]);
+    const result = await requester.link.reply({ replyTo: reference.id, message: "new request" });
+    expect(result.details.operation).toBe("native_reply");
+    expect(outcomes(result)[0]).toMatchObject({ workerId: locator.workerId, status: "unknown", reason: "admission_unknown" });
+    expect(calls).toHaveLength(1); expect(legacyCalls).toBe(0);
+    expect(calls[0].worker).toEqual({ workerId: locator.workerId, taskName: locator.taskName, nativeSessionId: reference.fromSessionId, nativeName: reference.from });
+    expect(calls[0].message.replyTo).toBe(reference.id);
+    expect(calls[0].message.answer).toBeUndefined();
+    expect(owner.inbox).toEqual([]);
+  });
+
+  test("an old integration cannot reinterpret native control as legacy worker delivery", async () => {
+    const bus = setup(); const requester = bus.add("requester", "requester@children");
+    let calls = 0;
+    bus.add("owner", "owner@owners", { workers: { broadcast: async () => [], reply: async () => { calls++; return { status: "submitted" }; } } });
+    requester.link.recordDelivered(reference);
+    expect(outcomes(await requester.link.reply({ replyTo: reference.id, message: "no downgrade" }))[0])
+      .toMatchObject({ status: "unsupported", reason: "native_worker_integration_unavailable" });
+    expect(calls).toBe(0);
+  });
+
+  test("helper attribution cannot become a wake request for its native owner", async () => {
+    const bus = setup(); let nativeCalls = 0;
+    const outer = bus.add("outer", "outer@owners", { workers: {
+      broadcast: async () => [], reply: async () => ({ status: "submitted" }),
+      replyNative: async () => { nativeCalls++; return { status: "submitted" }; },
+    } });
+    const ownerLocator = { ownerSessionId: outer.id, workerId: "owner-worker", taskName: "owner" };
+    const owner = bus.add("owner", "owner@project", { managedWorker: () => ownerLocator });
+    const helper = { workerId: "helper-worker", taskName: "helper" };
+    await owner.link.replyFromWorker(helper, { from: bus.hub().name, fromSessionId: bus.hub().id, id: "root-reference", content: "request" }, "helper question");
+    const admitted = bus.hub().inbox[0];
+    expect(admitted.fromWorker).toEqual({ ...helper, ownerSessionId: owner.id });
+    // An extra endpoint locator cannot supersede authoritative helper identity.
+    bus.hub().link.recordDelivered({ ...admitted, fromManagedWorker: ownerLocator });
+    bus.nodes.delete(owner.id);
+    const result = await bus.hub().link.reply({ replyTo: admitted.id, message: "helper answer" });
+    expect({ operation: result.details.operation, outcomes: outcomes(result), nativeCalls }).toMatchObject({
+      operation: "reply", nativeCalls: 0, outcomes: [{ workerId: helper.workerId, status: "failed", reason: "offline" }],
+    });
+    expect(admitted.fromManagedWorker).toBeUndefined();
+  });
+
+  test("automatic endpoint answers explicitly disable another answer regardless of their correlation", async () => {
+    const bus = setup(); const author = bus.add("author", "author@children");
+    const child = bus.add("native-session", "native@children", { managedWorker: () => locator });
+    const result = await child.link.replyFromEndpoint({ from: author.name, fromSessionId: author.id, id: "request-id", content: "request" }, "private final");
+    expect(outcomes(result)[0].status).toBe("submitted");
+    expect(author.inbox[0]).toMatchObject({ answer: false, replyTo: "request-id", fromSessionId: child.id, fromManagedWorker: locator });
+    expect(bus.hub().inbox).toEqual([]);
+  });
+});
 
 test("v1 messaging peers cannot silently downgrade worker attribution to a root author", async () => {
   const bus = setup(); const old = bus.add("old", "old@project"); old.version = 1;

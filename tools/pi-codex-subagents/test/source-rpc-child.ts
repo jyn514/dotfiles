@@ -67,6 +67,28 @@ const respond: FauxResponseFactory = (context) => {
     }
     return fauxAssistantMessage("faux:detective-peer-answer");
   }
+  const nativeFollowup = context.messages.filter(message => message.role === "user").map(messageText)
+    .map(text => text.match(/^native-followup-task:(.+)$/m)).find(Boolean);
+  if (nativeFollowup) {
+    const task = JSON.parse(nativeFollowup[1]);
+    const calls = context.messages.filter(message => message.role === "assistant")
+      .flatMap(message => message.content).filter(part => part.type === "toolCall");
+    if (text.startsWith("[Link")) {
+      const reference = text.match(/^Message ID: (.+)$/m)?.[1];
+      if (task.explicit && reference && !calls.some(call => call.name === "link_send" && call.arguments.to?.authorOf === reference)) {
+        return fauxAssistantMessage(fauxToolCall("link_send", { to: { authorOf: reference }, message: "native-explicit-answer" }), { stopReason: "toolUse" });
+      }
+      return fauxAssistantMessage("native-automatic-answer");
+    }
+    if (!calls.some(call => call.name === "link_set_identity")) return fauxAssistantMessage(fauxToolCall("link_set_identity", {
+      name: task.name, group: task.group,
+    }), { stopReason: "toolUse" });
+    if (!calls.some(call => call.name === "faux_hold")) return fauxAssistantMessage(fauxToolCall("faux_hold", { path: task.path }), { stopReason: "toolUse" });
+    if (!calls.some(call => call.name === "link_send")) return fauxAssistantMessage(fauxToolCall("link_send", {
+      to: task.to, message: "native-wake-ping",
+    }), { stopReason: "toolUse" });
+    return fauxAssistantMessage("native-original-result");
+  }
   const savedLinkTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^saved-link-reference:(.+)$/m)).find(Boolean);
   if (savedLinkTask) {

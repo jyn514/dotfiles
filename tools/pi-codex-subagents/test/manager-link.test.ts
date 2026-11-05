@@ -40,7 +40,7 @@ sourceTest("helper-only link_send rejects named and broadcast destinations and g
   }
 }, 15000);
 
-sourceTest("Manager link selects owned live workers, validates native replies and routes by stable ID without waking paused/completed tasks", async () => {
+sourceTest("Manager link selects owned live workers, validates native replies and routes by stable ID, reopens completed workers, and never wakes paused tasks", async () => {
   const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
   const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "manager-link-"));
   const parentId = randomUUID();
@@ -114,9 +114,14 @@ sourceTest("Manager link selects owned live workers, validates native replies an
     expect(entries(two.info.sessionFile).some(entry => admittedLink(entry, parentId, two.info.id)?.id === privateMessage.id)).toBe(false);
     const before = readFileSync(one.info.sessionFile, "utf8");
     const calls = jsonl(providerCallsFile(one.info.sessionFile)).length;
-    expect((await manager.replyLink(parentId, { workerId: one.info.id, taskName: "one" }, delivery())).status).toBe("skipped");
-    expect(readFileSync(one.info.sessionFile, "utf8")).toBe(before);
-    expect(jsonl(providerCallsFile(one.info.sessionFile))).toHaveLength(calls);
+    const followup = { ...delivery(), broadcast: false, content: "helper-only completed followup" };
+    expect((await manager.replyLink(parentId, { workerId: one.info.id, taskName: "one" }, followup)).status).toBe("submitted");
+    await until(() => manager.getAgentInfo("one", parentId).status === "completed"
+      && replies.some(event => event.reference.id === followup.id), "helper-only followup explicitly answers");
+    expect(readFileSync(one.info.sessionFile, "utf8").startsWith(before)).toBe(true);
+    expect(jsonl(providerCallsFile(one.info.sessionFile)).length).toBeGreaterThan(calls);
+    expect(manager.getAgentInfo("one", parentId).sessionId).toBe(one.info.sessionId);
+    expect(replies.filter(event => event.reference.id === followup.id)).toHaveLength(1);
     expect(completions.filter(event => event.agentName === one.info.canonicalName)).toHaveLength(1);
 
     // Native pause without the group-level pause map must still fence deliveries.

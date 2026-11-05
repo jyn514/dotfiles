@@ -23,6 +23,8 @@ export type PeerRequest = { version: 1; requestId: string } & (
 export const LINK_TIMEOUT_MS = 2_000;
 export type LinkStatus = "submitted" | "failed" | "skipped" | "unsupported" | "unknown";
 export interface LinkWorkerAddress { workerId: string; taskName: string }
+/** Native endpoint locator: the manager binds its original session before preparation. */
+export interface NativeLinkWorkerAddress extends LinkWorkerAddress { nativeSessionId: string; nativeName: string }
 export interface LinkDelivery {
   from: string;
   fromSessionId: string;
@@ -30,6 +32,8 @@ export interface LinkDelivery {
   id: string;
   replyTo?: string;
   broadcast?: boolean;
+  /** A final response does not request another automatic response. Correlation does not set this. */
+  answer?: false;
   fromWorker?: LinkWorkerAddress & { ownerSessionId: string };
 }
 export interface LinkResult {
@@ -40,6 +44,8 @@ export interface LinkResult {
 export interface LinkWorkerIntegration {
   broadcast(message: LinkDelivery): Promise<Array<LinkWorkerAddress & { status: LinkStatus; reason?: string }>>;
   reply(worker: LinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }>;
+  /** Optional capability, distinct from owner-mediated helper delivery. */
+  replyNative?(worker: NativeLinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }>;
 }
 export interface LinkDiscovery {
   version: 1;

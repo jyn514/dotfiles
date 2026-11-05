@@ -255,7 +255,7 @@ All selected copies retain one UUID, sender attribution, content, optional corre
 For broadcasts, an empty `inReplyTo` is treated as omitted.
 Late joiners receive no replay, and later group changes do not retract accepted copies.
 The call waits at most five seconds for routing outcomes, never for a model response.
-Its details contain `messageId`, `operation` (`broadcast` or `reply`), `outcomes`, and `empty`.
+Its details contain `messageId`, `operation` (`broadcast`, `reply`, or `native_reply` for an offline native worker author), `outcomes`, and `empty`.
 `error` is present when at least one outcome exists and none is `submitted`.
 Each outcome identifies its kind and destination, with `status` and an optional `reason`.
 Model-visible result text includes the full message ID and each reported recipient's identity, status, and reason.
@@ -269,7 +269,7 @@ An empty selection is reported explicitly.
 **Worker delivery requires the supported `pi-codex-subagents` manager/child bridge in each owning session.**
 Children also need Pi's native fresh-input admission and pause APIs; missing capabilities report `unsupported`.
 `includeSubagents: true` asks each manager for its active own workers, including the sender's workers.
-The manager owns selection and lifecycle: finished or paused workers are not restarted or resumed.
+Broadcast selection stays active-only; it never reopens finished or paused workers.
 Root delivery does not wait for the parent model to forward the correction.
 Without a manager, that owner's worker outcome is `unsupported` with `worker_integration_unavailable`; root copies can still succeed.
 The manager's child helper supplies author-only `link_send` for manager-delivered messages when pi-link is disabled.
@@ -282,11 +282,18 @@ See [active subagents](design.md#active-subagents) for the bridge boundary.
 
 **API migration:** replace `link_reply({ replyTo: id, message })` with `link_send({ to: { authorOf: id }, message })`.
 Replace direct/broadcast correlation `replyTo` with `inReplyTo`; the old public tool and field are not aliases.
-The transport still uses its existing `replyTo` fields and versioned manager events.
+Legacy delivery forms retain their `replyTo` fields and versioned manager events.
+Native waking adds `native_reply` requests and `link_native_workers` frames; those additions are not understood by older hubs or receivers.
 Reload existing parents before spawning or recreating workers with explicit tool lists: an old manager admits only the old tool name.
 New helpers retain the existing manager wire contract, so old managers with omitted tool lists can still route replies.
 An already running child retains its loaded tool surface until it is recreated or reloaded.
-No saved records need migration; this update does not restart or resume tasks automatically.
+No saved records need migration; replacing source does not itself restart or resume tasks.
+For **new native waking**, load the updated owner manager, owner pi-link, requester pi-link, hub, and child pi-link/helper.
+Use each participant’s normal reload/recreation boundary; reloading only the parent does not update an already loaded hub, requester, or child.
+Pre-feature native-root references without `fromManagedWorker` retain only the author’s endpoint session identity: they remain usable for connected replies, but reloading every participant does not make them wakeable offline.
+They cannot prove an owning manager and worker; no name lookup, fallback, or backfill supplies that identity.
+Legacy `fromWorker` references differ: they already carry the owning session and stable worker ID, so the updated manager can reopen completed helpers through the existing owner-mediated route.
+Old peers keep legacy basic delivery; the new operation can report `unsupported` or time out as `unknown` until all required participants update.
 
 #### Reply to a delivered author
 
@@ -306,10 +313,23 @@ A message from an old peer without sufficient author attribution cannot establis
 
 Root authors are identified by Pi session ID, not their mutable link names.
 Renaming does not redirect a reply to someone who later takes the old name.
-The author must still be connected and in the permitted group.
+Root authors must still be connected and in the permitted group.
+A completed worker can reopen through its owning manager when the admitted reference carries a stable worker identity; named sends remain connected-only.
+Failed, interrupted, suspended, and paused workers do not reopen.
+A reopened worker keeps its original assignment and native conversation.
+Its final answer returns privately to the requester, unless a submitted explicit reply already answers that request; the owner and siblings receive no routine completion.
+Parent waits retain the original assignment result.
 A broadcast reply goes only to its author, never its audience.
 Replies have new IDs and can themselves be answered after delivery.
 They use the same bounded routing receipt and structured details as broadcasts, not a model-response wait.
+
+Full pi-link children retain their independent names and groups.
+Connected native authors use ordinary endpoint routing, including with an older manager.
+For an offline native author, an optional manager locator routes control to the owner; the manager checks the original native session binding before preparing a process.
+The child’s pi-link provider then checks current group and connection intent before admitting model input.
+A moved or explicitly disconnected native endpoint refuses without a model turn and preserves its saved completion.
+This does not change the separate manager-helper route or require full pi-link for helper-only workers.
+Older managers do not gain native waking until reloaded; no name fallback or offline mailbox is added.
 
 With the manager/child bridge installed, worker-authored questions retain worker attribution, and answers reach only that stable worker through its owner manager, not the parent model or siblings. Worker reply authority comes from actual child transcript admission, not a root inbox copy. Without the bridge, worker replies remain explicitly unsupported.
 
@@ -331,7 +351,8 @@ The receiver's `steeringMode` controls queue delivery:
 
 An idle receiver starts a turn.
 A submission receipt does not acknowledge that the receiving model has seen the message.
-There is no send mode that bypasses the receiver's reasoning, and no automatic model response.
+Ordinary delivery to a non-worker root does not bypass its reasoning or automatically return its model response.
+Completed-worker private follow-ups do return their final answer privately, as [documented above](#reply-to-a-delivered-author).
 
 ### `link_list`
 

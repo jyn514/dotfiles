@@ -14,6 +14,10 @@ export interface LinkDelivery {
   replyTo?: string;
   broadcast?: boolean;
   fromWorker?: LinkWorkerAddress & { ownerSessionId: string };
+  /** Optional lifecycle locator; the endpoint retains its own native session/name. */
+  fromManagedWorker?: LinkWorkerAddress & { ownerSessionId: string };
+  /** Internal response policy, never inferred from correlation. */
+  answer?: false;
 }
 export interface LinkResult {
   content: Array<{ type: "text"; text: string }>;
@@ -33,9 +37,10 @@ export interface LinkOutcome {
 export type LinkPeer = { name: string; sessionId?: string; messagingVersion?: number };
 export type LinkSource = { name: string; sessionId: string };
 /**
- * The owner manager, not pi-link, selects active workers and owns lifecycle policy.
- * It must not restart, resume, or enqueue work for inactive workers. These callbacks
- * bypass the parent model. They return transport outcomes, never model responses.
+ * The owner manager, not pi-link, owns lifecycle policy. Broadcasts select only
+ * active workers; admitted private follow-ups can reopen completed conversations.
+ * Paused/failed/interrupted/suspended workers stay inactive. Callbacks bypass the
+ * parent model and return transport outcomes, never model responses.
  * Outgoing worker replies require an in-process manager-authoritative reference.
  * The hub checks worker ownership against the registered source socket.
  */
@@ -44,10 +49,12 @@ export interface LinkWorkerAddress {
   workerId: string;
   taskName: string;
 }
+export interface LinkNativeWorkerAddress extends LinkWorkerAddress { nativeSessionId: string; nativeName: string }
 export interface LinkWorkerIntegration {
   broadcast(message: LinkDelivery): Promise<Array<LinkWorkerAddress & { status: LinkStatus; reason?: string }>>;
   /** Manager validates stable worker ID and ownership; name reuse must never redirect. */
   reply(worker: LinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }>;
+  replyNative?(worker: LinkNativeWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }>;
 }
 export interface LinkMessagingOptions {
   self: () => LinkSource | undefined;
@@ -57,13 +64,14 @@ export interface LinkMessagingOptions {
   sendHub: (frame: unknown) => boolean;
   sendPeer: (peer: LinkSource, frame: unknown) => boolean;
   deliverRoot: (message: LinkDelivery) => void;
+  managedWorker?: () => LinkDelivery["fromManagedWorker"];
   workers?: LinkWorkerIntegration | (() => LinkWorkerIntegration | undefined);
   /** Test-only override. Production uses the fixed five-second deadline. */
   testDeadlineMs?: number;
 }
 
-type Operation = "broadcast" | "reply";
-type Destination = LinkSource & ({ taskName?: never; workerId?: never } | LinkWorkerAddress);
+type Operation = "broadcast" | "reply" | "native_reply";
+type Destination = LinkSource & ({ taskName?: never; workerId?: never } | LinkWorkerAddress | LinkNativeWorkerAddress);
 export interface LinkRequest {
   type: "link_request";
   messagingVersion: typeof MESSAGING_VERSION;
@@ -74,6 +82,8 @@ export interface LinkRequest {
   includeSubagents?: boolean;
   destination?: Destination;
   fromWorker?: LinkWorkerAddress & { ownerSessionId: string };
+  fromManagedWorker?: LinkDelivery["fromManagedWorker"];
+  answer?: false;
 }
 export interface LinkReceipt {
   type: "link_receipt";
@@ -88,12 +98,14 @@ export interface LinkDeliveryFrame {
   message: LinkDelivery;
 }
 export interface LinkWorkersFrame {
-  type: "link_workers";
+  type: "link_workers" | "link_native_workers";
   messagingVersion: typeof MESSAGING_VERSION;
   requestId: string;
   message: LinkDelivery;
   taskName?: string;
   workerId?: string;
+  nativeSessionId?: string;
+  nativeName?: string;
 }
 export interface LinkWorkerReceipt {
   type: "link_worker_receipt";
@@ -103,7 +115,7 @@ export interface LinkWorkerReceipt {
 }
 
 type Pending = { finish: (value: LinkOutcome[], empty?: boolean) => void };
-const types = new Set(["link_request", "link_receipt", "link_delivery", "link_workers", "link_worker_receipt"]);
+const types = new Set(["link_request", "link_receipt", "link_delivery", "link_workers", "link_native_workers", "link_worker_receipt"]);
 const statuses = new Set(["submitted", "failed", "skipped", "unsupported", "unknown"]);
 function object(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -112,6 +124,9 @@ function text(value: unknown): value is string { return typeof value === "string
 function workerAddress(value: unknown): value is LinkWorkerAddress {
   return object(value) && text(value.workerId) && text(value.taskName);
 }
+function nativeAddress(value: unknown): value is LinkNativeWorkerAddress {
+  return workerAddress(value) && text((value as any).nativeSessionId) && text((value as any).nativeName);
+}
 function optionalWorkerAddress(value: Record<string, any>): boolean {
   return (value.workerId === undefined && value.taskName === undefined) || workerAddress(value);
 }
@@ -119,6 +134,8 @@ function delivery(value: unknown): value is LinkDelivery {
   return object(value) && text(value.from) && text(value.fromSessionId) && text(value.id)
     && typeof value.content === "string" && (value.replyTo === undefined || text(value.replyTo))
     && (value.broadcast === undefined || typeof value.broadcast === "boolean")
+    && (value.answer === undefined || value.answer === false)
+    && (value.fromManagedWorker === undefined || (workerAddress(value.fromManagedWorker) && text(value.fromManagedWorker.ownerSessionId)))
     && (value.fromWorker === undefined || (object(value.fromWorker)
       && value.fromWorker.ownerSessionId === value.fromSessionId && workerAddress(value.fromWorker)));
 }
@@ -230,17 +247,29 @@ export class LinkMessaging {
     if (!self || !workerAddress(worker) || !delivery(reference)) {
       return Promise.resolve(this.result(id, "reply", [this.routing("failed", "invalid_worker_reference")]));
     }
-    return this.replyToReference(reference, message, id, undefined, { ...worker, ownerSessionId: self.sessionId });
+    return this.replyToReference(reference, message, id, undefined, { ...worker, ownerSessionId: self.sessionId }, false);
   }
-  private replyToReference(ref: LinkDelivery, message: string, id: string, signal?: AbortSignal, fromWorker?: LinkRequest["fromWorker"]): Promise<LinkResult> {
-    const destination: Destination = ref.fromWorker
+  /** The existing child extension channel supplies a manager-authorized reference. */
+  replyFromEndpoint(reference: LinkDelivery, message: string): Promise<LinkResult> {
+    return this.replyToReference(reference, message, randomUUID(), undefined, undefined, false);
+  }
+  private replyToReference(ref: LinkDelivery, message: string, id: string, signal?: AbortSignal, fromWorker?: LinkRequest["fromWorker"], answer?: false): Promise<LinkResult> {
+    // Preserve ordinary connected endpoint replies, including old managers.
+    // Only an offline native author needs its stable lifecycle locator.
+    const nativeOwner = !ref.fromWorker && ref.fromManagedWorker && !this.options.peers().some(peer => peer.sessionId === ref.fromSessionId);
+    const destination: Destination = nativeOwner && ref.fromManagedWorker
+      ? { name: ref.from, sessionId: ref.fromManagedWorker.ownerSessionId, workerId: ref.fromManagedWorker.workerId,
+          taskName: ref.fromManagedWorker.taskName, nativeSessionId: ref.fromSessionId, nativeName: ref.from }
+      : ref.fromWorker
       ? { name: ref.from, sessionId: ref.fromSessionId, taskName: ref.fromWorker.taskName, workerId: ref.fromWorker.workerId }
       : { name: ref.from, sessionId: ref.fromSessionId };
-    return this.start({ type: "link_request", messagingVersion: MESSAGING_VERSION, id, operation: "reply", message, replyTo: ref.id,
-      destination, ...(fromWorker ? { fromWorker } : {}) }, signal);
+    return this.start({ type: "link_request", messagingVersion: MESSAGING_VERSION, id, operation: nativeOwner ? "native_reply" : "reply", message, replyTo: ref.id,
+      destination, ...(fromWorker ? { fromWorker } : {}), ...(answer === false ? { answer } : {}) }, signal);
   }
   private start(request: LinkRequest, signal?: AbortSignal): Promise<LinkResult> {
     this.syncSession();
+    const managed = this.options.managedWorker?.();
+    if (managed && !request.fromWorker) request = { ...request, fromManagedWorker: managed };
     const self = this.options.self();
     const fail = (status: LinkStatus, reason: string) => Promise.resolve(this.result(request.id, request.operation, [this.routing(status, reason)], false, request.destination));
     if (typeof request.message !== "string" || !request.message.trim()) return fail("failed", "invalid_message");
@@ -298,12 +327,13 @@ export class LinkMessaging {
       this.pending.get(frame.id)?.finish(frame.outcomes, frame.empty);
     } else if (frame.type === "link_delivery" && delivery(frame.message)) {
       try { this.options.deliverRoot(structuredClone(frame.message)); } catch { /* Transport acceptance is not model admission. */ }
-    } else if (frame.type === "link_workers" && text(frame.requestId) && delivery(frame.message)
-      && optionalWorkerAddress(frame)) {
+    } else if ((frame.type === "link_workers" || frame.type === "link_native_workers") && text(frame.requestId) && delivery(frame.message)
+      && optionalWorkerAddress(frame) && (frame.type !== "link_native_workers" || nativeAddress(frame))) {
       const self = this.options.self();
       if (self) {
         const epoch = this.epoch;
-        void this.localWorkers(self, frame.message, workerAddress(frame) ? { taskName: frame.taskName, workerId: frame.workerId } : undefined).then(values => {
+        void this.localWorkers(self, frame.message, workerAddress(frame) ? { taskName: frame.taskName, workerId: frame.workerId,
+          ...(frame.type === "link_native_workers" ? { nativeSessionId: frame.nativeSessionId, nativeName: frame.nativeName } : {}) } : undefined).then(values => {
           if (this.epoch === epoch) this.safeSend(() => this.options.sendHub({ type: "link_worker_receipt", messagingVersion: MESSAGING_VERSION, requestId: frame.requestId, outcomes: values } satisfies LinkWorkerReceipt));
         });
       }
@@ -314,14 +344,17 @@ export class LinkMessaging {
     return text(frame.id) && typeof frame.message === "string" && !!frame.message.trim()
       && (frame.replyTo === undefined || text(frame.replyTo))
       && ((frame.operation === "broadcast" && (frame.includeSubagents === undefined || typeof frame.includeSubagents === "boolean"))
-        || (frame.operation === "reply" && text(frame.replyTo) && object(frame.destination)
+        || ((frame.operation === "reply" || frame.operation === "native_reply") && text(frame.replyTo) && object(frame.destination)
           && text(frame.destination.name) && text(frame.destination.sessionId)
           && optionalWorkerAddress(frame.destination)
+          && (frame.operation !== "native_reply" || nativeAddress(frame.destination))
           && (frame.fromWorker === undefined || (workerAddress(frame.fromWorker) && text(frame.fromWorker.ownerSessionId)))))
-      && (frame.fromWorker === undefined || frame.operation === "reply");
+      && (frame.answer === undefined || frame.answer === false)
+      && (frame.fromManagedWorker === undefined || (workerAddress(frame.fromManagedWorker) && text(frame.fromManagedWorker.ownerSessionId)))
+      && (frame.fromWorker === undefined || frame.operation === "reply" || frame.operation === "native_reply");
   }
   private async route(request: LinkRequest, source: LinkSource): Promise<LinkReceipt> {
-    if (request.fromWorker && (request.operation !== "reply" || request.fromWorker.ownerSessionId !== source.sessionId)) {
+    if (request.fromWorker && ((request.operation !== "reply" && request.operation !== "native_reply") || request.fromWorker.ownerSessionId !== source.sessionId)) {
       return { type: "link_receipt", messagingVersion: MESSAGING_VERSION, id: request.id,
         outcomes: [this.routing("failed", "invalid_worker_owner")], empty: false };
     }
@@ -329,15 +362,19 @@ export class LinkMessaging {
     const snapshot = this.options.peers().map(p => ({ ...p }));
     const message: LinkDelivery = { from: source.name, fromSessionId: source.sessionId, content: request.message, id: request.id,
       ...(request.fromWorker ? { fromWorker: { ...request.fromWorker } } : {}),
+      ...(request.fromManagedWorker ? { fromManagedWorker: { ...request.fromManagedWorker } } : {}),
+      ...(request.answer === false ? { answer: false as const } : {}),
       ...(request.replyTo ? { replyTo: request.replyTo } : {}), ...(request.operation === "broadcast" ? { broadcast: true } : {}) };
     const values: LinkOutcome[] = [];
     const workerJobs: Promise<LinkOutcome[]>[] = [];
-    if (request.operation === "reply") {
+    if (request.operation === "reply" || request.operation === "native_reply") {
       const target = snapshot.find(p => p.sessionId === request.destination!.sessionId);
-      if (!target || groupOf(target.name) !== groupOf(source.name)) {
+      if (!target || (request.operation !== "native_reply" && groupOf(target.name) !== groupOf(source.name))) {
         values.push({ kind: request.destination!.taskName ? "worker" : "root", ...request.destination!, status: "failed", reason: target ? "outside_group" : "offline" });
       } else if (request.destination!.taskName) {
-        workerJobs.push(this.ownerWorkers(target, message, { taskName: request.destination!.taskName, workerId: request.destination!.workerId! }));
+        workerJobs.push(this.ownerWorkers(target, message, { taskName: request.destination!.taskName, workerId: request.destination!.workerId!,
+          ...(request.operation === "native_reply" ? { nativeSessionId: (request.destination as LinkNativeWorkerAddress).nativeSessionId,
+            nativeName: (request.destination as LinkNativeWorkerAddress).nativeName } : {}) }));
       } else values.push(this.root(target, message));
     } else {
       const selected = snapshot.filter(p => p.sessionId !== source.sessionId && groupOf(p.name) === groupOf(source.name));
@@ -367,7 +404,9 @@ export class LinkMessaging {
       const workers = typeof this.options.workers === "function" ? this.options.workers() : this.options.workers;
       if (!workers) return [{ ...base, status: "unsupported", reason: "worker_integration_unavailable" }];
       if (worker) {
-        const result = await workers.reply({ ...worker }, structuredClone(message));
+        const result = nativeAddress(worker)
+          ? await workers.replyNative?.({ ...worker }, structuredClone(message)) ?? { status: "unsupported" as const, reason: "native_worker_integration_unavailable" }
+          : await workers.reply({ ...worker }, structuredClone(message));
         return [{ ...base, ...result }];
       }
       const selected = await workers.broadcast(structuredClone(message));
@@ -393,9 +432,11 @@ export class LinkMessaging {
       this.workerPending.set(requestId, { source: owner.sessionId!, finish, cancel: () => finish([{ ...base, status: "unknown", reason: "disconnected" }]) });
       if (owner.sessionId === this.options.self()?.sessionId) {
         void this.localWorkers({ name: owner.name, sessionId: owner.sessionId! }, message, worker).then(finish);
-      } else if (!this.safeSend(() => this.options.sendPeer({ name: owner.name, sessionId: owner.sessionId! }, { type: "link_workers", messagingVersion: MESSAGING_VERSION, requestId, message, ...(worker ?? {}) } satisfies LinkWorkersFrame))) {
+      } else if (!this.safeSend(() => this.options.sendPeer({ name: owner.name, sessionId: owner.sessionId! }, { type: nativeAddress(worker) ? "link_native_workers" : "link_workers", messagingVersion: MESSAGING_VERSION, requestId, message, ...(worker ?? {}) } satisfies LinkWorkersFrame))) {
         finish([{ ...base, status: "failed", reason: "owner_send_failed" }]);
       }
     });
   }
 }
+
+export { delivery as isLinkDelivery };

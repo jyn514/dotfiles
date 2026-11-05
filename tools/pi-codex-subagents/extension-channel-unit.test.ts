@@ -24,7 +24,7 @@ function child(before?: (events: EventEmitter) => void) {
     pi, notifications, endpoint: endpoint!,
     start() { hooks.get("session_start")!({}, ctx); },
     close() { hooks.get("session_shutdown")!(); },
-    command(value: unknown) { return commands.get(EXTENSION_COMMAND).handler(JSON.stringify(value), ctx); },
+    command(value: unknown, commandContext = ctx) { return commands.get(EXTENSION_COMMAND).handler(JSON.stringify(value), commandContext); },
   };
 }
 
@@ -39,6 +39,24 @@ test("offer reaches an early consumer and discovery reaches a late consumer", as
   remove();
   await h.command({ version: 1, action: "request", requestId: "two", channel: "custom:data", payload: null });
   expect(parseChannelWire(h.notifications[1].slice(EXTENSION_NOTIFY.length))).toMatchObject({ result: { ok: false, code: "unavailable" } });
+});
+
+test("each child handler receives its own current command context without a shared context slot", async () => {
+  const h = child(); h.start();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  h.endpoint.register("context", async (payload, context) => {
+    if (payload === "first") await blocked;
+    return context!.sessionManager.getSessionId();
+  });
+  const context = (id: string) => ({ ui: { notify: (message: string) => h.notifications.push(message) }, sessionManager: { getSessionId: () => id } });
+  const first = h.command({ version: 1, action: "request", requestId: "first", channel: "context", payload: "first" }, context("first-context"));
+  await h.command({ version: 1, action: "request", requestId: "second", channel: "context", payload: "second" }, context("second-context"));
+  release(); await first;
+  expect(h.notifications.map(message => parseChannelWire(message.slice(EXTENSION_NOTIFY.length)))).toEqual([
+    { version: 1, action: "result", requestId: "second", result: { ok: true, value: "second-context" } },
+    { version: 1, action: "result", requestId: "first", result: { ok: true, value: "first-context" } },
+  ]);
 });
 
 test("child correlates out-of-order results and closes calls without retrying late receipts", async () => {

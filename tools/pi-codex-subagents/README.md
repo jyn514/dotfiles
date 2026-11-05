@@ -297,7 +297,7 @@ These addresses select workers owned by this manager, not temporary connected ch
 
 A peer message identifies its sender as a worker and explicitly preserves both workers' original user/parent scopes.
 It supplies information, not a new parent instruction or permission to expand an assignment.
-A completed worker reopens only for a manager-attributed peer message.
+A completed worker reopens for a manager-attributed peer message or an admitted author-targeted pi-link follow-up through its owning manager.
 Failed, interrupted, suspended and paused workers never restart automatically for peer delivery.
 Parent/group pause and native child pause both prevent delivery; rejection does not queue work for later replay.
 An `unknown` result with reason `worker_routing_deadline` means the helper received no matching routing result within five seconds.
@@ -328,7 +328,7 @@ Escalation requests attention, not authority; ordinary parent-assigned episodes 
 When the parent also loads a pi-link version with the worker bridge, `link_send` with `to: { broadcast: true }` and `includeSubagents: true` reaches active workers directly through their owning manager.
 This includes the sender's workers.
 The parent model does not forward those messages.
-Completed, interrupted, suspended, and paused workers are not restarted or resumed for delivery.
+Broadcast delivery never reopens completed, failed, interrupted, suspended, or paused workers.
 
 `link_send({ to: { authorOf: id }, message })` accepts a full received message ID and reply text.
 When pi-link is enabled, it owns that public tool and delegates admitted manager-delivery references to the helper; direct endpoint references stay with pi-link.
@@ -340,7 +340,16 @@ A queued message does not grant reply permission until it enters that child's na
 The manager validates the worker's stable ID and parent session before routing its reply.
 A root's answer returns only to that requesting worker, not its siblings or the owner's model context.
 Ordinary task completions still go to the parent.
-Manager-local peer references use the [peer episode rules](#peer-conversations), including completed-worker reopening, rather than the external bridge's active-only rule.
+An admitted author-targeted follow-up can reopen a completed worker under the [peer episode rules](#peer-conversations).
+Its final answer returns privately to the requester; a submitted explicit reply suppresses the automatic final answer.
+An automatic answer does not itself request another automatic answer, regardless of correlation fields.
+The original parent result and assignment authority remain unchanged.
+Failed, interrupted, suspended, and paused workers remain ineligible.
+Native endpoint references preserve the child’s independent group and connection intent: the manager checks exact saved native-session binding before preparation, and the current child pi-link provider checks availability before model input.
+Refused preparation restores completion and cleans the process without notifying the owner model.
+Manager-attributed helper references retain owner-mediated group semantics and need no child pi-link connection.
+Named sends remain connected-only.
+See [pi-link’s migration guidance](../pi-link/README.md#link_send) for every participant that must load native waking support and the limits of old references.
 When pi-link is enabled, it loads its ordinary tools and an independent connection in the child.
 Use `disabledExtensions` to opt out of that connection; a read-only explicit tool list still restricts the model's tools.
 
@@ -389,7 +398,9 @@ Payloads and handler results must be finite, acyclic JSON values, including `nul
 Handlers may return a JSON value or a promise of one.
 
 - **Child:** `endpoint.request(channel, payload)` calls the parent's registered handler.
-  Its local handlers receive only `payload`.
+  Its local handlers receive `(payload, commandContext?)`.
+  Updated helpers supply the current Pi command context so handlers can use command-only native admission APIs; older helpers supply only `payload`.
+  Check the optional context before using it, and never retain it beyond the handler.
 - **Parent:** `endpoint.request(workerId, channel, payload)` calls that exact managed worker's handler.
   Its local handlers receive `(payload, origin)`, where `origin` is `{ workerId, taskName, sessionId? }` from manager-owned state, never child-supplied identity.
   Use `workerId`, not a display/task name, for return routing.

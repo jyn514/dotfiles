@@ -15,7 +15,7 @@ import {
 import {
   LINK_COMMAND, LINK_CONTROL_ENTRY, LINK_REPLY_NOTIFY, LINK_TIMEOUT_MS, LINK_VERSION, PEER_NOTIFY, CHILD_LINK_TOOLS,
   admittedLink, isLinkDelivery, linkFailure, type LinkCommand, type LinkDelivery,
-  type LinkResult, type LinkStatus, type LinkWorkerAddress, type PeerRequest,
+  type LinkResult, type LinkStatus, type LinkWorkerAddress, type NativeLinkWorkerAddress, type PeerRequest,
 } from "./link.js";
 import {
   EXTENSION_COMMAND, EXTENSION_NOTIFY, EXTENSION_TIMEOUT_MS, ExtensionChannelError,
@@ -96,6 +96,11 @@ export interface ForkFrom {
   through_entry_id: string;
 }
 
+export type { NativeLinkWorkerAddress } from "./link.js";
+type PeerEpisodeRequest = { id: string; worker: LinkWorkerAddress }
+  | { id: string; reference: LinkDelivery; native?: NativeLinkWorkerAddress };
+const NATIVE_LINK_CHANNEL = "pi-link:native-followup:v1";
+
 export interface AgentInfo {
   id: string;
   taskName: string;
@@ -137,7 +142,7 @@ export interface AgentInfo {
   suspensionGeneration?: string;
   admission?: "started" | "queued" | "handled" | "rejected" | "unknown";
   /** Peer-only continuation ownership survives native pause/recreation. Parent waits retain their own result. */
-  peerEpisode?: { parentResult: AgentResponseEntry; requests: Array<{ id: string; worker: LinkWorkerAddress }>; escalation?: string };
+  peerEpisode?: { parentResult: AgentResponseEntry; requests: PeerEpisodeRequest[]; escalation?: string };
 }
 
 export interface AgentListEntry {
@@ -1766,9 +1771,60 @@ export class AgentManager {
   }
 
   async replyLink(parentId: string, worker: LinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }> {
-    const live = this.live.get(worker?.workerId);
-    if (!live || live.info.parentSessionId !== parentId) return { status: "skipped", reason: "worker_not_owned_or_inactive" };
-    return this.deliverLink(live, parentId, message);
+    if (!isLinkDelivery(message)) return { status: "failed", reason: "invalid_link_delivery" };
+    if (!readScopeInfos(parentId).some(info => info.id === worker?.workerId)) return { status: "skipped", reason: "worker_not_owned_or_inactive" };
+    try {
+      const result = await this.submit(parentId, undefined,
+        () => this.routePeer(parentId, worker.workerId, message, message.answer !== false));
+      return { status: result.details.status as LinkStatus, ...(result.details.reason ? { reason: String(result.details.reason) } : {}) };
+    } catch (error) { return { status: "skipped", reason: formatAgentError(error) }; }
+  }
+
+  /** The child provider owns fresh identity/group/connection checks. This manager
+   * binds the locator to its saved worker before preparing any RPC process. */
+  async replyNativeLink(parentId: string, worker: NativeLinkWorkerAddress, message: LinkDelivery): Promise<{ status: LinkStatus; reason?: string }> {
+    if (!isLinkDelivery(message)) return { status: "failed", reason: "invalid_link_delivery" };
+    let parentResult: AgentResponseEntry | undefined;
+    try {
+      const result = await this.requestExtension(parentId, worker.workerId, NATIVE_LINK_CHANNEL,
+        jsonValue({ action: "deliver", ownerSessionId: parentId, ...worker, message }), {
+          validate: info => {
+            if (info.sessionId !== worker.nativeSessionId) throw new ExtensionChannelError("binding_mismatch", "Native worker session does not match the original author.");
+            const live = this.live.get(info.id);
+            if (live && this.linkUnavailable(live, parentId) === "worker_paused") throw new ExtensionChannelError("inactive", "Worker is paused or held.");
+            if (info.status === "completed") parentResult = info.peerEpisode?.parentResult ?? this.agentResponse(info);
+          },
+          prepare: child => {
+            const request: PeerEpisodeRequest = { id: message.id, reference: { ...message, content: "" }, native: worker };
+            const answer = message.answer !== false;
+            if (parentResult) child.info.peerEpisode = { parentResult, requests: answer ? [request] : [] };
+            else if (child.info.peerEpisode && answer) child.info.peerEpisode.requests.push(request);
+            saveInfo(child.info);
+          },
+        }) as { status?: LinkStatus; reason?: string };
+      if (result?.status && !["submitted", "unknown"].includes(result.status)) {
+        const live = this.live.get(worker.workerId);
+        if (live?.info.peerEpisode) {
+          live.info.peerEpisode.requests = live.info.peerEpisode.requests.filter(request => request.id !== message.id);
+          saveInfo(live.info);
+        }
+      }
+      return result?.status ? { status: result.status, ...(result.reason ? { reason: result.reason } : {}) }
+        : { status: "unknown", reason: "native_link_receipt_missing" };
+    } catch (error) {
+      return { status: error instanceof ExtensionChannelError && ["binding_mismatch", "inactive", "unavailable"].includes(error.code) ? "skipped" : "unknown",
+        reason: formatAgentError(error) };
+    }
+  }
+
+  private async answerNativeLink(parentId: string, worker: NativeLinkWorkerAddress, reference: LinkDelivery, content: string): Promise<LinkResult> {
+    const result = await this.requestExtension(parentId, worker.workerId, NATIVE_LINK_CHANNEL,
+      jsonValue({ action: "answer", ownerSessionId: parentId, ...worker, message: reference, content }), {
+        validate: info => {
+          if (info.sessionId !== worker.nativeSessionId) throw new ExtensionChannelError("binding_mismatch", "Native author changed.");
+        },
+      }) as unknown as LinkResult | { status: LinkStatus; reason: string };
+    return "details" in result ? result : linkFailure(result.status, result.reason);
   }
 
   private async deliverLink(live: LiveAgent, parentId: string, message: LinkDelivery, peer = false): Promise<{ status: LinkStatus; reason?: string }> {
@@ -1819,7 +1875,8 @@ export class AgentManager {
   }
 
   /** Exact managed worker IDs only. Handlers own meaning and any actual user-input admission. */
-  async requestExtension(parentId: string, workerId: string, channel: string, payload: JsonValue): Promise<JsonValue> {
+  async requestExtension(parentId: string, workerId: string, channel: string, payload: JsonValue,
+    hooks?: { validate(info: AgentInfo): void; prepare?(child: LiveAgent): void }): Promise<JsonValue> {
     channelName(channel);
     payload = jsonValue(payload);
     return this.submit(parentId, undefined, async () => {
@@ -1827,6 +1884,7 @@ export class AgentManager {
       const operation = previous.catch(() => {}).then(async () => {
         let info = readScopeInfos(parentId).find(info => info.id === workerId);
         if (!info) throw new ExtensionChannelError("unavailable", "Worker is not owned by this parent session.");
+        hooks?.validate(info);
         const inactive = () => this.pauses.has(parentId) || info!.suspensionGeneration || this.ordinaryPausedChildren.has(workerId)
           || ["failed", "interrupted", "suspended"].includes(info!.status);
         if (inactive()) throw new ExtensionChannelError("inactive", "Worker is paused, interrupted, suspended, or failed.");
@@ -1859,6 +1917,7 @@ export class AgentManager {
           const state = await this.sendCommand(child, { type: "get_state" }, EXTENSION_TIMEOUT_MS);
           if (state?.pauseState !== "unpaused") throw new ExtensionChannelError("inactive", "Worker is paused or native pause state is unavailable.");
           if (this.linkUnavailable(child, parentId)) throw new ExtensionChannelError("inactive", "Worker became inactive or paused.");
+          hooks?.prepare?.(child);
           const reply = new Promise<ChannelReply>(resolve => {
             const finish = (result: ChannelReply) => {
               if (!child.extensionPending.delete(requestId)) return;
@@ -1945,6 +2004,9 @@ export class AgentManager {
     const info = readScopeInfos(parentId).find(info => info.id === target || info.canonicalName === canonicalAgentName(target));
     if (!info) return linkFailure("failed", "peer_not_found");
     if (info.id === message.fromWorker?.workerId) return linkFailure("failed", "self_target");
+    const request = (): PeerEpisodeRequest => message.fromWorker?.ownerSessionId === parentId
+      ? { id: message.id, worker: message.fromWorker }
+      : { id: message.id, reference: { ...message, content: "" } };
     // Serialize only deliveries to this worker: concurrent sends share one reopened process.
     const previous = this.peerDeliveries.get(info.id) ?? Promise.resolve();
     const operation = previous.catch(() => {}).then(async (): Promise<LinkResult> => {
@@ -1963,14 +2025,14 @@ export class AgentManager {
         if (!live && current.status !== "completed") return linkFailure("skipped", "worker_not_owned_or_inactive");
         if (!live) {
           const parentResult = current.peerEpisode?.parentResult ?? this.agentResponse(current);
-          current.peerEpisode = { parentResult, requests: answer ? [{ id: message.id, worker: message.fromWorker! }] : [] };
+          current.peerEpisode = { parentResult, requests: answer ? [request()] : [] };
           current.status = "starting";
           delete current.completedAt;
           saveInfo(current);
           this.notifyStatusChange(current);
           live = await this.startLiveAgent(current);
         } else if (live.info.peerEpisode && answer) {
-          live.info.peerEpisode.requests.push({ id: message.id, worker: message.fromWorker! });
+          live.info.peerEpisode.requests.push(request());
           saveInfo(live.info);
         }
         const result = await this.deliverLink(live, parentId, message, true);
@@ -2049,10 +2111,15 @@ export class AgentManager {
         fromWorker: { workerId: info.id, taskName: info.canonicalName, ownerSessionId: info.parentSessionId },
         replyTo: request.id, content: info.finalResponse ?? "" };
       let result: LinkResult;
-      try { result = await this.submit(info.parentSessionId, undefined,
-        () => this.routePeer(info.parentSessionId, request.worker.workerId, message, false)); }
-      catch (error) { result = linkFailure("skipped", formatAgentError(error)); }
-      if (result.details.status !== "submitted") {
+      try {
+        if ("worker" in request) result = await this.submit(info.parentSessionId, undefined,
+          () => this.routePeer(info.parentSessionId, request.worker.workerId, message, false));
+        else if (request.native) result = await this.answerNativeLink(info.parentSessionId, request.native, request.reference, info.finalResponse ?? "");
+        else result = await this.options.onLinkReply?.({ ownerSessionId: info.parentSessionId,
+          worker: { workerId: info.id, taskName: info.canonicalName }, reference: request.reference, message: info.finalResponse ?? "" })
+          ?? linkFailure("unsupported", "link_integration_unavailable");
+      } catch (error) { result = linkFailure("skipped", formatAgentError(error)); }
+      if ("worker" in request && result.details.status !== "submitted") {
         // A failed peer answer needs attention, unlike an ordinary peer completion.
         this.pushMailbox({ attention: true, id: randomUUID(), parentSessionId: info.parentSessionId, agentName: info.canonicalName,
           status: "failed", error: `Peer answer to ${request.worker.taskName} was not submitted: ${JSON.stringify(result.details)}`,
@@ -2083,19 +2150,27 @@ export class AgentManager {
         reason = this.linkUnavailable(live, parentId);
         const reference = data?.entries?.map((entry: any) => admittedLink(entry, parentId, live.info.id, state?.sessionId))
           .findLast((delivery: LinkDelivery | undefined) => delivery?.id === request.replyTo);
+        const nativeEntry = data?.entries?.findLast((entry: any) =>
+          admittedLink(entry, parentId, live.info.id, state?.sessionId)?.id === request.replyTo
+          && typeof entry.details?.nativeName === "string");
         if (reason) result = linkFailure("skipped", reason);
         else if (typeof state?.pauseState !== "string") result = linkFailure("unsupported", "native_pause_state_unavailable");
         else if (state.pauseState !== "unpaused") result = linkFailure("skipped", "worker_paused");
         else if (typeof state?.sessionId !== "string" || !reference) result = linkFailure("failed", "link_reference_not_admitted");
-        else if (reference.fromSessionId === parentId && reference.fromWorker?.ownerSessionId === parentId) {
+        else if (nativeEntry) {
+          result = await this.answerNativeLink(parentId, { workerId: live.info.id, taskName: live.info.canonicalName,
+            nativeSessionId: state.sessionId, nativeName: nativeEntry.details.nativeName }, reference, request.message);
+        } else if (reference.fromSessionId === parentId && reference.fromWorker?.ownerSessionId === parentId) {
           result = await this.sendPeer(live, reference.fromWorker.workerId, request.message, reference.id);
-          if (result.details.status === "submitted" && live.info.peerEpisode) {
-            live.info.peerEpisode.requests = live.info.peerEpisode.requests.filter(message => message.id !== reference.id);
-            saveInfo(live.info);
-          }
         } else result = await this.options.onLinkReply?.({ ownerSessionId: parentId,
           worker: { workerId: live.info.id, taskName: live.info.canonicalName }, reference, message: request.message })
           ?? linkFailure("unsupported", "link_integration_unavailable");
+        if (result.details.status === "submitted" || (Array.isArray(result.details.outcomes) && result.details.outcomes.some((outcome: any) => outcome.status === "submitted"))) {
+          if (live.info.peerEpisode) {
+            live.info.peerEpisode.requests = live.info.peerEpisode.requests.filter(item => item.id !== reference?.id);
+            saveInfo(live.info);
+          }
+        }
       }
     } catch (error) { result = linkFailure("unknown", formatAgentError(error)); }
     await this.returnLinkResult(live, request.requestId, result);

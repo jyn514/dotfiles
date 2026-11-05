@@ -244,6 +244,8 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
       broadcast: message => current() ? manager.broadcastLink(owner, message) : Promise.resolve([]),
       reply: (worker, message) => current() ? manager.replyLink(owner, worker, message)
         : Promise.resolve({ status: "skipped", reason: "parent_session_changed" }),
+      replyNative: (worker, message) => current() && !suspension?.isPaused(owner) ? manager.replyNativeLink(owner, worker, message)
+        : Promise.resolve({ status: "skipped", reason: "parent_session_changed_or_paused" }),
     });
   });
 

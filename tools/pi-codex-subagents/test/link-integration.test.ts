@@ -141,6 +141,29 @@ sourceTest("two real linked roots deliver to owned active children and return pr
       "private answer reaches the requesting worker");
     expect(workerLinks(sibling.info.sessionFile).some(entry => entry.details.delivery.content === "private-only-to-one")).toBe(false);
     expect(workerLinks(own.info.sessionFile).some(entry => entry.details.delivery.content === "private-only-to-one")).toBe(false);
+    await until(() => JSON.parse(readFileSync(first.info.infoFile, "utf8")).status === "completed", "helper-only requester finishes its parent assignment");
+    const original = JSON.parse(readFileSync(first.info.infoFile, "utf8"));
+    const prefix = readFileSync(first.info.sessionFile, "utf8");
+    const reopened = await tool(sender, "link_send", { to: { authorOf: question.id }, message: "completed-helper-only-followup" });
+    expect(reopened.details.outcomes).toContainEqual(expect.objectContaining({ workerId: first.info.id, status: "submitted" }));
+    let finalAnswer: any;
+    await until(async () => {
+      finalAnswer = rootLinks(await entries(sender)).find(entry => entry.content.includes(`Reply to ${reopened.details.messageId}`));
+      return !!finalAnswer;
+    }, "helper-only final answer returns automatically through the owner manager");
+    // Root history stores minimal routing references, not answer/correlation
+    // policy. The component bridge test checks answer:false on the wire.
+    expect(finalAnswer.details.deliveries).toContainEqual(expect.objectContaining({
+      fromWorker: expect.objectContaining({ workerId: first.info.id, ownerSessionId: ownerId }),
+    }));
+    await until(() => JSON.parse(readFileSync(first.info.infoFile, "utf8")).status === "completed", "helper-only followup completes");
+    expect(readFileSync(first.info.sessionFile, "utf8").startsWith(prefix)).toBe(true);
+    const after = JSON.parse(readFileSync(first.info.infoFile, "utf8"));
+    expect(after.sessionId).toBe(original.sessionId);
+    expect(after.peerEpisode.parentResult.finalResponse).toBe(original.finalResponse);
+    expect(rootLinks(await entries(sender)).filter(entry => entry.content.includes(`Reply to ${reopened.details.messageId}`))).toHaveLength(1);
+    expect(JSON.stringify(await entries(owner))).not.toContain("completed-helper-only-followup");
+    expect(workerLinks(sibling.info.sessionFile).some(entry => entry.details.delivery.content === "completed-helper-only-followup")).toBe(false);
     const roster = await tool(sender, "link_list", {});
     expect(Object.keys(roster.details.sessionIds)).toHaveLength(2); // No worker joined as a root.
   } finally {
@@ -315,5 +338,86 @@ sourceTest("parent-assigned task names become generated worker endpoints with in
     rmSync(templateFile, { force: true });
     rmSync(settingsFile, { force: true });
     rmSync(cwd, { recursive: true, force: true });
+  }
+}, 45000);
+
+
+for (const explicit of [false, true]) sourceTest(`native named author wakes the same completed child across independent owner groups with ${explicit ? "explicit" : "automatic"} private answer`, async () => {
+  const { SUBAGENT_DIR, getRunsDir } = await import("../core.ts");
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "native-wake-"));
+  const fixtureLink = await disposableLink(cwd);
+  const template = `native-wake-${randomUUID()}`;
+  const templateFile = join(SUBAGENT_DIR, "agents", `${template}.md`);
+  mkdirSync(dirname(templateFile), { recursive: true });
+  writeFileSync(templateFile, `---\nname: ${template}\nextensions: ${fixtureLink}, ${heldExtension}\n---\n`);
+  const peers: Peer[] = [];
+  const marker = join(cwd, "initial");
+  try {
+    const start = async (name: string) => {
+      const dir = join(cwd, name.split("@")[0]); mkdirSync(dir, { recursive: true });
+      const peer = sourceRpc(dir, join(dir, "session.jsonl"), false, [productionIndex, fixtureLink, heldExtension], { PI_LINK_NAME: name });
+      peers.push(peer); await peer.request({ type: "get_state" }); return peer;
+    };
+    const owner = await start("wake-owner@owners");
+    let requester = await start("wake-requester@workers");
+    const parentId = (await owner.request({ type: "get_state" })).sessionId;
+    await tool(owner, "spawn_agent", { task_name: "native-task", agent_type: template,
+      message: `native-followup-task:${JSON.stringify({ name: "native-task", group: "workers", to: "wake-requester@workers", path: marker, explicit })}` });
+    let info: any;
+    await until(() => {
+      info = (readdirSync(getRunsDir(), { recursive: true }) as string[]).filter(name => name.endsWith(".info.json"))
+        .map(name => JSON.parse(readFileSync(join(getRunsDir(), name), "utf8")))
+        .find(info => info.parentSessionId === parentId && info.taskName === "native-task");
+      return Boolean(info && existsSync(heldToolFiles(marker).started));
+    }, "native named sender connects while held");
+    await until(async () => (await tool(requester, "link_list", {})).details.sessionIds?.["native-task@workers"] === info.sessionId,
+      "native child joins requester group");
+    writeFileSync(heldToolFiles(marker).release, "release");
+    await until(() => JSON.parse(readFileSync(info.infoFile, "utf8")).status === "completed", "native sender completes");
+    const before = JSON.parse(readFileSync(info.infoFile, "utf8"));
+    const childPrefix = readFileSync(info.sessionFile, "utf8");
+    let ping: any;
+    await until(async () => {
+      ping = rootLinks(await entries(requester)).flatMap(entry => entry.details.deliveries)
+        .find(delivery => delivery.fromSessionId === info.sessionId);
+      return Boolean(ping);
+    }, "requester admits the original native ping");
+    expect(ping.fromManagedWorker).toMatchObject({ ownerSessionId: parentId, workerId: info.id });
+    if (!explicit) {
+      const requesterId = (await requester.request({ type: "get_state" })).sessionId;
+      await requester.close();
+      requester = await start("wake-requester@workers");
+      expect((await requester.request({ type: "get_state" })).sessionId).toBe(requesterId);
+      await until(async () => (await tool(requester, "link_list", {})).details.sessionIds?.["wake-requester@workers"] === requesterId,
+        "resumed requester reconnects with its durable admitted locator");
+    }
+    const ownerBefore = await entries(owner);
+    const named = await tool(requester, "link_send", { to: "native-task@workers", message: "must not wake by offline name" });
+    expect(named.details.error).toBeDefined();
+    const reply = await tool(requester, "link_send", { to: { authorOf: ping.id }, message: "private-native-followup" });
+    expect(reply.details.outcomes).toContainEqual(expect.objectContaining({ workerId: info.id, status: "submitted" }));
+    await until(async () => rootLinks(await entries(requester)).some(entry => entry.content.includes(explicit ? "native-explicit-answer" : "native-automatic-answer")),
+      "private final answer returns to requester");
+    await until(() => JSON.parse(readFileSync(info.infoFile, "utf8")).status === "completed", "followup completes");
+    const after = JSON.parse(readFileSync(info.infoFile, "utf8"));
+    const answers = rootLinks(await entries(requester)).filter(entry =>
+      entry.content.includes("native-explicit-answer") || entry.content.includes("native-automatic-answer"));
+    expect(answers).toHaveLength(1);
+    expect(answers[0].content).toContain(explicit ? "native-explicit-answer" : "native-automatic-answer");
+    expect(after.sessionId).toBe(before.sessionId);
+    expect(after.peerEpisode.parentResult.finalResponse).toBe("native-original-result");
+    expect(jsonl(info.sessionFile).filter(entry => entry.type === "session")).toHaveLength(1);
+    expect(readFileSync(info.sessionFile, "utf8").startsWith(childPrefix)).toBe(true);
+    expect(workerLinks(info.sessionFile).filter(entry => entry.details.delivery.content === "private-native-followup")).toHaveLength(1);
+    expect(JSON.stringify(await entries(owner))).not.toContain("private-native-followup");
+    expect((await entries(owner)).filter((entry: any) => entry.customType === "pi-codex-subagent-completion").length)
+      .toBe(ownerBefore.filter((entry: any) => entry.customType === "pi-codex-subagent-completion").length);
+    const result = await tool(owner, "wait_agent", { targets: ["native-task"] });
+    expect(JSON.stringify(result)).toContain("native-original-result");
+    expect(JSON.stringify(result)).not.toContain("native-automatic-answer");
+  } finally {
+    writeFileSync(heldToolFiles(marker).release, "release");
+    for (const peer of peers.reverse()) await peer.close();
+    rmSync(templateFile, { force: true }); rmSync(cwd, { recursive: true, force: true });
   }
 }, 45000);

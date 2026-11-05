@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 export const EXTENSION_DISCOVER = "subagents:extension-channel:v1";
 export const EXTENSION_COMMAND = "subagent-extension-channel";
@@ -10,13 +10,13 @@ export interface WorkerOrigin { workerId: string; taskName: string; sessionId?: 
 export class ExtensionChannelError extends Error {
   constructor(public readonly code: string, message: string) { super(message); this.name = "ExtensionChannelError"; }
 }
-export type ChannelHandler = (payload: JsonValue, origin: WorkerOrigin) => JsonValue | Promise<JsonValue>;
+export type ChannelHandler = (payload: JsonValue, origin: WorkerOrigin, context?: ExtensionCommandContext) => JsonValue | Promise<JsonValue>;
 export type ChannelReply = { ok: true; value: JsonValue } | { ok: false; code: string; message: string };
 export type ChannelWire = { version: 1; requestId: string } & (
   { action: "request"; channel: string; payload: JsonValue } | { action: "result"; result: ChannelReply });
 export interface ChildEndpoint {
   version: 1; role: "child";
-  register(channel: string, handler: (payload: JsonValue) => JsonValue | Promise<JsonValue>): () => void;
+  register(channel: string, handler: (payload: JsonValue, context?: ExtensionCommandContext) => JsonValue | Promise<JsonValue>): () => void;
   request(channel: string, payload: JsonValue): Promise<JsonValue>;
 }
 export interface ParentEndpoint {
@@ -73,11 +73,11 @@ export function channelRegistry() {
       handlers.set(channel, handler);
       return () => { if (handlers.get(channel) === handler) handlers.delete(channel); };
     },
-    async receive(channel: string, payload: JsonValue, origin: WorkerOrigin): Promise<ChannelReply> {
+    async receive(channel: string, payload: JsonValue, origin: WorkerOrigin, context?: ExtensionCommandContext): Promise<ChannelReply> {
       try {
         const handler = handlers.get(channel);
         if (!handler) throw new ExtensionChannelError("unavailable", `No handler for channel: ${channel}`);
-        return { ok: true, value: jsonValue(await handler(jsonValue(payload), origin)) };
+        return { ok: true, value: jsonValue(await handler(jsonValue(payload), origin, context)) };
       } catch (error) { return channelFailure(error); }
     },
   };
@@ -102,7 +102,7 @@ export function registerChildExtensionChannel(pi: ExtensionAPI): void {
   };
   const endpoint: ChildEndpoint = {
     version: 1, role: "child",
-    register(channel, handler) { return registry.register(channel, payload => handler(payload)); },
+    register(channel, handler) { return registry.register(channel, (payload, _origin, context) => handler(payload, context)); },
     async request(channel, payload) {
       channelName(channel); payload = jsonValue(payload);
       // The helper is loaded live, while its parent may retain older code.
@@ -133,7 +133,7 @@ export function registerChildExtensionChannel(pi: ExtensionAPI): void {
       if (request.action === "result") { pending.get(request.requestId)?.(request.result); return; }
       const result = typeof pi.getPauseState !== "function" || pi.getPauseState() !== "unpaused"
         ? { ok: false as const, code: "inactive", message: "Worker is paused." }
-        : await registry.receive(request.channel, request.payload, { workerId: process.env.PI_SUBAGENT_ID ?? "", taskName: process.env.PI_SUBAGENT_TASK_NAME ?? "", sessionId: ctx.sessionManager.getSessionId() });
+        : await registry.receive(request.channel, request.payload, { workerId: process.env.PI_SUBAGENT_ID ?? "", taskName: process.env.PI_SUBAGENT_TASK_NAME ?? "", sessionId: ctx.sessionManager.getSessionId() }, ctx);
       ctx.ui.notify(EXTENSION_NOTIFY + JSON.stringify({ version: 1, action: "result", requestId: request.requestId, result }), "info");
     },
   });

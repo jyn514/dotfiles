@@ -54,7 +54,10 @@ Its UUID is `messageId` in the result.
 
 Use `link_send({ to: { authorOf: "<full-received-message-id>" }, message: "..." })` to answer a delivered message's author privately.
 It resolves the author by session identity, not a remembered mutable name.
-Unknown references fail; an author offline or outside the permitted group is not replaced by a fallback recipient.
+Unknown references fail; an unavailable author is never replaced by a fallback recipient.
+Named sends remain connected-only.
+With the updated manager bridge, an admitted stable worker author can reopen its completed conversation; failed, interrupted, suspended, and paused workers cannot reopen.
+A native worker’s current group and connection intent still apply, independently of its owner’s group.
 Root delivery references survive reload and resume from admitted transcript messages, but old peers may lack sufficient attribution.
 Queued or cleared steering messages grant no reply permission.
 Do not supply `inReplyTo` or `includeSubagents` with `authorOf`; the tool supplies the reference and chooses one author.
@@ -112,7 +115,12 @@ Without full pi-link, the manager helper exposes only author-targeted `link_send
 Ask the delivered author only for clarification that can change the next action, or send an answer they requested.
 Send normal task completions through the parent channel.
 Private answers go only to the requesting worker, not siblings or the parent's model context.
-Unavailable, finished, or paused workers must not be restarted or resumed to receive them.
+An admitted author-targeted follow-up can reopen a completed worker through its owning manager without changing its assignment.
+The reopened episode’s final answer returns privately to its requester; a submitted explicit reply suppresses that automatic answer.
+Automatic answers do not themselves request another automatic answer.
+Parent waits retain the original assignment result, and the owner and siblings receive no routine completion.
+Failed, interrupted, suspended, and paused workers must not resume.
+Broadcasts remain active-only, and helper-only communication does not require an independent child pi-link connection.
 
 ### Use other tools only when configured
 

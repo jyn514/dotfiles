@@ -206,15 +206,21 @@ The owning extensions attach this attribution; the worker cannot claim another s
 Replies get their own UUIDs and retain the answered message's UUID as `replyTo`.
 A reply received by a root or worker can itself be answered, so the clarification exchange can continue.
 Never substitute a different session that later acquires the original sender's terminal name.
-Existing group restrictions still apply between owning roots; a reply does not bypass a subsequent group change.
+Manager-attributed helper references retain the existing group restrictions between owning roots.
+Native endpoint references retain the child’s independent group, rather than substituting the owner’s group.
+A subsequent group move or explicit disconnect can refuse native admission.
 
 The subagent bridge transports worker replies and incoming answers without asking the parent model to forward them.
 An answer to a worker's question goes only to that worker, not to its siblings or its parent's model context.
 Keep both directions visible in the owning session's worker transcript for inspection.
 This bridge is independent of any pi-link connection separately enabled in the worker.
 
-Worker answers use the same active-only lifecycle rules as broadcast delivery.
-If the destination worker finishes, pauses, or becomes unavailable, report that outcome instead of restarting, resuming, or queueing work.
+Broadcast delivery remains active-only.
+An author-targeted follow-up can reopen a completed worker’s saved conversation through its owning manager, using the existing serialized peer-follow-up lifecycle.
+Failed, interrupted, suspended, and paused workers remain ineligible.
+The original parent result remains available to parent waits; the reopened episode’s final answer goes privately to its requester, not the owner or siblings.
+A submitted explicit reply suppresses that request’s automatic final answer.
+An internal `answer: false` marks an answer rather than a new request; `replyTo` and public `inReplyTo` never determine that policy.
 If the original root is offline or outside the permitted group, report the routing failure without choosing a fallback recipient.
 Unavailable reply integration is reported as unsupported, not silently replaced by model-mediated forwarding.
 Root reply receipts identify the new message ID and the resolved destination with an honest routing outcome.
@@ -310,6 +316,14 @@ Root event discovery and worker-reply routing connect the structural manager bri
 Actual worker selection, steering, child tool exposure, private transcript records, and per-worker admission remain manager/helper responsibilities.
 Root routing and structural manager fixture tests alone do not prove the actual manager/helper integration.
 
+Native endpoint deliveries may additionally carry `fromManagedWorker`, an optional lifecycle locator separate from the native author’s session/name.
+Connected endpoint replies retain ordinary routing, including with an older manager.
+Only an offline native author uses the distinct `native_reply` request and `link_native_workers` control frame; old receivers cannot reinterpret these as ordinary worker delivery.
+The owner socket carries control only, not a general cross-group delivery exemption.
+The manager reuses the existing extension channel to prepare the owned RPC process, and pi-link’s handler checks current identity, group, and connection intent before command-context input admission.
+The same provider privately sends native final answers from the child’s actual endpoint.
+Helper-attributed references use their separate owner-mediated route without requiring native endpoint capabilities.
+
 Verify root behavior through native Pi sessions.
 Worker checks below additionally require the actual subagent manager/helper, not just structural callback fixtures:
 
@@ -323,7 +337,10 @@ Worker checks below additionally require the actual subagent manager/helper, not
 - A worker's clarification and the root's answer each reach one recipient without parent-model forwarding or sibling delivery.
 - Worker attribution and reply references survive the exchange; renaming or name reuse never redirects it to another session.
 - Unknown references, group changes, unsupported integration, and unavailable reply recipients produce explicit failures.
-- Finished and paused workers are not restarted or resumed, including a worker that finishes during delivery.
+- Broadcasts never reopen finished workers; failed, interrupted, suspended, and paused workers never reopen for link follow-ups.
+- Completed author-targeted follow-ups keep native identity/history, preserve parent results, return one private answer, and suppress explicit-answer duplicates.
+- Native locators bind exact owner/worker/original native session before preparation; current child group and connection intent determine admission.
+- Refused native preparation preserves completion, admits no model turn, and cleans its process; ordinary helper-only communication does not require that native provider.
 - Root and worker submission failures, unavailable integration, lost receipts, and unsupported peers remain distinguishable.
 - Late joiners and newly started workers receive no replay; partial failures do not duplicate successful copies.
 
