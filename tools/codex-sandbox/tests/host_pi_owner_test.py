@@ -361,11 +361,9 @@ class ProcessAndTmuxTest(unittest.TestCase):
         worker_pid = self.root / "worker"
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
-        (fake_bin / "pi").symlink_to(tool / "tests/restart_pi_cli_fixture.mjs")
+        (fake_bin / "pi").symlink_to(tool / "tests/restart_pi_state_fixture.mjs")
         receipts = self.root / "receipts"
         receipts.mkdir()
-        package = Path(os.environ["PI_PACKAGE_DIR"])
-        manifest = json.loads((package / "package.json").read_text())
 
         def tmux(*arguments):
             return subprocess.run(["tmux", "-L", self.server, *arguments],
@@ -374,7 +372,6 @@ class ProcessAndTmuxTest(unittest.TestCase):
         self.environment["PATH"] = str(fake_bin) + os.pathsep + os.environ["PATH"]
         tmux("set-environment", "-g", "PATH", self.environment["PATH"])
         tmux("set-option", "-g", "default-shell", "/bin/sh")
-        tmux("set-environment", "-g", "RESTART_PI_CLI", str(package / manifest["bin"]["pi"]))
         tmux("set-environment", "-g", "RESTART_PI_RECEIPT_DIR", str(receipts))
         tmux("set-option", "-p", "-t", self.pane, "remain-on-exit", "on")
         command = shlex.join(["env", f"FIXTURE_RESTART_LOCK={runtime / 'session.lock'}",
@@ -417,15 +414,13 @@ class ProcessAndTmuxTest(unittest.TestCase):
                 self.assertTrue(all(item["dead"] for item in retained))
                 self.assertEqual(0, launcher["restart_tmux_sessions"]())
             try:
-                until(lambda: len(list(receipts.iterdir())) == len(selected), timeout=65)
+                until(lambda: len(list(receipts.iterdir())) == len(selected))
             except AssertionError:
                 screens = {pane: tmux("capture-pane", "-p", "-S", "-200", "-t", pane).stdout for pane in selected}
                 self.fail(f"resumed Pi receipts missing: {list(receipts.iterdir())}; screens={screens!r}")
             for pane, session in selected.items():
-                response = json.loads((receipts / f"pane-{pane[1:]}.jsonl").read_text())
-                self.assertTrue(response["success"])
-                self.assertEqual(response["data"]["sessionFile"], str(session))
-                self.assertEqual(response["data"]["sessionId"], json.loads(session.read_text().splitlines()[0])["id"])
+                launch = json.loads((receipts / f"pane-{pane[1:]}.json").read_text())
+                self.assertEqual(launch, {"argv": ["--session", str(session)], "cwd": str(self.root)})
             self.assertEqual(len(attempts), 2)
         finally:
             # If an assertion fails before restart, release only this fixture's peers.
