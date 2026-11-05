@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+script_dir=$(dirname "$0") || exit
+root=$(CDPATH='' cd -- "$script_dir/.." && pwd) || exit
 if [ "${1:-}" = --test-environment-ready ]; then
 	shift
 else

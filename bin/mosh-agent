@@ -20,7 +20,10 @@ for tool in autossh mosh ssh ssh-add; do
 	}
 done
 config=$(ssh -G "$host") || exit
-agent=$(printf '%s\n' "$config" | awk '/^identityagent / {sub(/^identityagent /, ""); print; exit}')
+agent=$(awk '/^identityagent / {sub(/^identityagent /, ""); print; exit}' <<EOF
+$config
+EOF
+)
 case "$agent" in
 	none) printf '%s\n' 'mosh-agent: IdentityAgent is disabled for this host' >&2; exit 1 ;;
 	''|SSH_AUTH_SOCK) agent=${SSH_AUTH_SOCK:-} ;;
