@@ -352,6 +352,39 @@ class TestEnvironmentTest(unittest.TestCase):
         self.assertNotEqual(str(self.old_home), environment["HOME"])
         self.assertFalse(Path(environment["HOME"]).exists())
 
+    def test_python_mise_shim_resolves_before_home_isolation(self) -> None:
+        shims = self.root / "shims"
+        installed = self.root / "installed"
+        shims.mkdir()
+        installed.mkdir()
+        fake_mise = self.root / "python-mise/mise"
+        fake_mise.parent.mkdir()
+        fake_mise.write_text(
+            "#!/bin/sh\n"
+            '[ "$*" = "which python" ] || exit 2\n'
+            'printf "%s" "$HOME" > "$FIXTURE_MISE_CALL"\n'
+            'printf "%s\\n" "$FIXTURE_MISE_PATH"\n'
+        )
+        fake_mise.chmod(0o755)
+        (shims / "python3").symlink_to(fake_mise)
+        (installed / "python3").symlink_to(sys.executable)
+        values = {
+            "PATH": str(shims) + os.pathsep + self.inherited["PATH"],
+            "FIXTURE_MISE_CALL": str(self.root / "mise-home"),
+            "FIXTURE_MISE_PATH": str(installed / "python3"),
+        }
+
+        result = subprocess.run(
+            [sys.executable, WRAPPER, "env", "-0"], env=self.inherited | values,
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        environment = dict(entry.split("=", 1) for entry in result.stdout.rstrip("\0").split("\0"))
+
+        self.assertEqual(str(self.old_home), Path(values["FIXTURE_MISE_CALL"]).read_text())
+        self.assertEqual(str(installed / "python3"), environment["DOTFILES_TEST_PYTHON3_REAL"])
+        self.assertNotEqual(str(self.old_home), environment["HOME"])
+
     def test_mise_resolution_failure_prevents_child_start(self) -> None:
         values = self.mise_shim() | {"FIXTURE_MISE_FAIL": "1"}
         before = self.snapshot(self.old_home)

@@ -368,6 +368,7 @@ cmd_alias() { return 0; }
                 "tailscale": 'record forbidden-tailscale; exit 94\n',
                 "python3": '''case "$*" in
 libexec/setup/glide.py) record glide-policy;;
+tools/codex-sandbox/lima/install-autostart.py) record sandbox-autostart;;
 libexec/setup/setup_obsidian_sync.py) record obsidian;;
 libexec/setup/setup_dashboard.py)
     [ "$MISE_GLOBAL_CONFIG_FILE" = "$EXPECTED_MISE_CONFIG" ] || exit 92
@@ -408,7 +409,8 @@ esac
                     if system == "Linux":
                         expected += ["loginctl enable-linger test-user",
                                      "systemctl --user daemon-reload",
-                                     "systemctl --user enable tmux.service"]
+                                     "systemctl --user enable tmux.service",
+                                     "sandbox-autostart"]
                     expected += ["obsidian", "dashboard-policy"]
                     self.assertEqual(0, result.returncode, result.stderr)
                     # Exact effects retain tmux's existing reload/enable and rule
@@ -418,7 +420,7 @@ esac
     def test_services_preserves_each_failure_and_stops_before_later_effects(self):
         steps = ["dotfiles", "loginctl enable-linger test-user",
                  "systemctl --user daemon-reload", "systemctl --user enable tmux.service",
-                 "obsidian", "dashboard-policy"]
+                 "sandbox-autostart", "obsidian", "dashboard-policy"]
         for index, step in enumerate(steps):
             with self.subTest(failure=step):
                 result, effects = self.run_setup("services", fail_step=step)

@@ -40,6 +40,7 @@ def backend():
     runtime.host = Mock(state=Path('/owned'))
     runtime.record = {'client': sys.executable, 'socket': '/owned/docker.sock'}
     runtime.recovery = False
+    runtime._build_platform = 'linux/amd64'
     return runtime
 
 

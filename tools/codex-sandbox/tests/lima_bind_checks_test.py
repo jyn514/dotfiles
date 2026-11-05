@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from docker_runtime import Docker
+from docker_runtime import APIError, Docker
 from lima.host import Host
 from lima.docker_host import DockerHost
 from sandbox_runtime import VMRuntime
@@ -241,23 +241,29 @@ class AdmittedBindTests(unittest.TestCase):
     def test_strict_mount_runtime_failure_propagates_and_cleans_without_starting(self):
         runtime = object.__new__(Docker)
         runtime.recovery = False
-        runtime.client_argv = lambda args: ['disposable-docker', *args]
+        runtime.record = {'socket': '/owned/docker.sock'}
         runtime.terminate = Mock()
-        runtime.popen = Mock()
-        creation = Mock()
-        creation.wait.return_value = 125
+        transport = Mock()
+        response = Mock()
         mount = 'type=bind,src=/owned/source,dst=/work,bind-recursive=disabled'
-        with patch('sandbox_runtime.subprocess.Popen', return_value=creation) as spawn:
-            with self.assertRaises(subprocess.CalledProcessError) as error:
+        failure = APIError(500, ['docker', 'start', 'owned-container'], 'failed')
+        with patch('docker_runtime.docker_request', side_effect=[{'Id': 'container'}, failure]) as request, \
+                patch('docker_runtime.docker_hijack', return_value=(transport, response)):
+            with self.assertRaises(APIError) as error:
                 with runtime.workload(SimpleNamespace(config='owned-image'), 'owned-container',
                                       ['--mount', mount]):
                     self.fail('a failed mount must not start a workload')
-        self.assertEqual(125, error.exception.returncode)
-        argv = spawn.call_args.args[0]
-        self.assertEqual(mount, argv[argv.index('--mount') + 1])
-        self.assertNotIn('-v', argv)
-        runtime.popen.assert_not_called()
+        self.assertIs(failure, error.exception)
+        create, start = request.call_args_list
+        self.assertEqual('/containers/create?name=owned-container', create.args[2])
+        self.assertEqual([{
+            'Type': 'bind', 'Source': '/owned/source', 'Target': '/work',
+            'ReadOnly': False, 'BindOptions': {'NonRecursive': True},
+        }], create.kwargs['payload']['HostConfig']['Mounts'])
+        self.assertEqual('/containers/owned-container/start', start.args[2])
         runtime.terminate.assert_called_once_with('owned-container')
+        response.close.assert_called_once_with()
+        transport.close.assert_called_once_with()
 
     def test_native_runtime_keeps_standalone_host_admission(self):
         runtime = object.__new__(VMRuntime)

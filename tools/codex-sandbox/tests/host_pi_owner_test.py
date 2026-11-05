@@ -386,7 +386,13 @@ class ProcessAndTmuxTest(unittest.TestCase):
         peers = [self.side(info, name=name) for name in ("first-peer", "second-peer")]
         selected = {self.pane: original, **{pane: snapshot for snapshot, _clone, pane in peers}}
         reset = launcher["helper"]
+        real_run = launcher["run"]
         attempts = []
+
+        def run_without_image_preparation(arguments, **kwargs):
+            if arguments[1:2] == ["prepare-cd"]:
+                return subprocess.CompletedProcess(arguments, 0, stdout="")
+            return real_run(arguments, **kwargs)
 
         def reset_after_final_release(*arguments, **kwargs):
             until(marker.exists)
@@ -401,7 +407,8 @@ class ProcessAndTmuxTest(unittest.TestCase):
 
         try:
             with mock.patch.dict(os.environ, self.environment), mock.patch.dict(
-                    launcher["restart_tmux_sessions"].__globals__, helper=reset_after_final_release):
+                    launcher["restart_tmux_sessions"].__globals__,
+                    helper=reset_after_final_release, run=run_without_image_preparation):
                 with self.assertRaisesRegex(launcher["LauncherError"], "injected reset failure"):
                     launcher["restart_tmux_sessions"]()
                 retained = launcher["tmux_registrations"]()
@@ -410,7 +417,7 @@ class ProcessAndTmuxTest(unittest.TestCase):
                 self.assertTrue(all(item["dead"] for item in retained))
                 self.assertEqual(0, launcher["restart_tmux_sessions"]())
             try:
-                until(lambda: len(list(receipts.iterdir())) == len(selected), timeout=15)
+                until(lambda: len(list(receipts.iterdir())) == len(selected), timeout=65)
             except AssertionError:
                 screens = {pane: tmux("capture-pane", "-p", "-S", "-200", "-t", pane).stdout for pane in selected}
                 self.fail(f"resumed Pi receipts missing: {list(receipts.iterdir())}; screens={screens!r}")

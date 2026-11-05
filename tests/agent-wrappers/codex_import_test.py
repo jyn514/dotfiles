@@ -219,7 +219,8 @@ class CodexImportTests(unittest.TestCase):
                 events = [
                     {"type": "session_meta", "payload": {"id": sid, "timestamp": stamp,
                      "cwd": str(self.home), "originator": "codex_cli_rs", "cli_version": "0.162.1",
-                     "source": source, "model_provider": "different-provider"}},
+                     "source": source, "model_provider":
+                     "openai" if not archived and index == 0 else "different-provider"}},
                     {"type": "response_item", "payload": {"type": "message", "role": "user",
                      "content": [{"type": "input_text", "text": "synced session"}]}},
                     {"type": "event_msg", "payload": {"type": "user_message", "message": "synced session",

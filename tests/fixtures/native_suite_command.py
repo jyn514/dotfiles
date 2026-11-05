@@ -12,6 +12,9 @@ if role == "pytest":
     os.execv(os.environ["TEST_REAL_PYTHON"], [os.environ["TEST_REAL_PYTHON"], "-m", "pytest", *arguments])
 if role == "python3" and arguments and arguments[0].endswith("/dev/test-environment"):
     os.execv(os.environ["TEST_REAL_PYTHON"], [os.environ["TEST_REAL_PYTHON"], *arguments])
+if role == "node" and arguments[:2] == ["--input-type=module", "-e"]:
+    print(os.environ["TEST_TYPEBOX_ENTRY"])
+    raise SystemExit(0)
 
 
 def record(kind, **fields):

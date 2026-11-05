@@ -43,6 +43,7 @@ Keep this index current when adding, renaming, or removing a helper.
 - [`sandbox-proxy-route`](../bin/sandbox-proxy-route) dispatches configured sandbox proxy requests; use the [sandbox proxy contract](codex-sandbox/spec/proxy-design.typ) before changing routing.
 - [`jj-proxy`](jj-proxy/) exposes restricted Jujutsu operations to untrusted containers without writable repository metadata. Start with the [operator guide](jj-proxy/README.md); the [design](jj-proxy/design.typ) covers its policy and threat model.
 - [`pi-npm`](pi-npm/) pins npm dependencies installed in the sandboxed Pi image with `npm ci --ignore-scripts`. It has no user command.
+- [`tic-proxy`](tic-proxy/README.md) lets sandboxed Pi use the admitted TicGit commands while the native broker owns the host repository and ticket store.
 - [`zulip-proxy`](zulip-proxy/) provides bounded, read-only Zulip transcript and topic access through `bin/zulip`. It requires `~/.zuliprc`; exported private-channel content remains sensitive. See the [operator guide](zulip-proxy/README.md).
 
 ## Repository and package commands

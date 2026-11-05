@@ -91,11 +91,18 @@ while True: time.sleep(1)
 ''')
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        self.launcher = self.bin / "codex-sandbox"
+        self.checkout = self.root / "checkout"
+        (self.checkout / "bin").mkdir(parents=True)
+        (self.checkout / "libexec/tmux").mkdir(parents=True)
+        shutil.copy2(ROOT / "bin/pi", self.checkout / "bin/pi")
+        shutil.copy2(HELPER, self.checkout / "libexec/tmux/place-dashboard-pi.py")
+        self.pi = self.checkout / "bin/pi"
+        self.launcher = self.checkout / "bin/codex-sandbox"
         self.launcher.write_text("#!/usr/bin/env python3\nimport json, os, sys, time\n"
             "with open(sys.argv[1], 'w') as out: json.dump({'pid': os.getpid(), 'token': os.environ.get('PI_DASHBOARD_SPAWN_TOKEN')}, out)\n"
             "while True: time.sleep(1)\n")
         self.launcher.chmod(0o700)
+        (self.bin / "codex-sandbox").symlink_to(self.launcher)
 
     def tearDown(self):
         self.tmux("kill-server", check=False)
@@ -136,10 +143,10 @@ while True: time.sleep(1)
     def spawn(self, token="browser-token", browser=True, session="pi-dashboard"):
         record = self.root / (token + ".json")
         arguments = ["new-window", "-d", "-t", "=" + session, "-P", "-F", "#{pane_id}|#{window_id}"]
-        command = ["env", "PATH=" + str(self.bin) + ":" + os.environ["PATH"]]
+        command = ["exec", "env", "PATH=" + str(self.bin) + ":" + os.environ["PATH"]]
         if browser:
             command += ["PI_DASHBOARD_SPAWN_TOKEN=" + token]
-        command += [str(ROOT / "bin/pi"), str(record)]
+        command += [str(self.pi), str(record)]
         output = self.tmux(*arguments, shlex.join(command))
         self.assertIn("|", output, repr(output))
         pane, window = output.split("|")

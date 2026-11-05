@@ -22,6 +22,7 @@ class TestRunnerTests(unittest.TestCase):
                 shutil.copy2(ROOT / "dev" / name, destination)
             (root / "install").mkdir()
             shutil.copy2(ROOT / "install/test.txt", root / "install/test.txt")
+            shutil.copy2(ROOT / "install/python.txt", root / "install/python.txt")
             home = root / "host-home"
             home.mkdir()
             (home / ".pytest-ready").touch()
@@ -80,10 +81,13 @@ class TestRunnerTests(unittest.TestCase):
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertEqual(expected, actual[-len(expected):])
         requirements = (ROOT / 'install/test.txt').read_text().splitlines()
+        fallback = actual[:-len(expected)]
         self.assertEqual([
             '--from', requirements[0], '--with', requirements[1],
-            '--with', requirements[2], 'pytest',
-        ], actual[:-len(expected)])
+            '--with', requirements[2], '--with-requirements',
+        ], fallback[:7])
+        self.assertEqual('install/python.txt', '/'.join(Path(fallback[7]).parts[-2:]))
+        self.assertEqual('pytest', fallback[8])
 
     def test_focused_runner_explains_missing_fallback_after_isolation(self):
         result, actual, _ = self.run_focused(user_installed_pytest=True, uv_available=False)
@@ -103,6 +107,8 @@ class TestRunnerTests(unittest.TestCase):
             (root / "install").mkdir()
             subprocess.run(["cp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
             subprocess.run(["cmp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
+            subprocess.run(["cp", ROOT / "install/python.txt", root / "install/python.txt"], check=True)
+            subprocess.run(["cmp", ROOT / "install/python.txt", root / "install/python.txt"], check=True)
             bin_directory = root / "bin"
             bin_directory.mkdir()
             for command in ("cat", "dirname", "mktemp", "date", "grep", "rm"):
@@ -147,9 +153,11 @@ class TestRunnerTests(unittest.TestCase):
         requirements = (ROOT / "install/test.txt").read_text().splitlines()
         self.assertEqual(
             ["--from", requirements[0], "--with", requirements[1],
-             "--with", requirements[2], "pytest"],
+             "--with", requirements[2], "--with-requirements"],
             arguments[:7],
         )
+        self.assertEqual("install/python.txt", "/".join(Path(arguments[7]).parts[-2:]))
+        self.assertEqual("pytest", arguments[8])
         self.assertEqual("3", arguments[arguments.index("-n") + 1])
         self.assertIn("--force-sugar", arguments)
         self.assertNotIn("--instafail", arguments)
@@ -313,6 +321,7 @@ class TestRunnerTests(unittest.TestCase):
             }
             for tool in ("BB", "JAVA", "JJ", "RG"):
                 environment[f"DOTFILES_TEST_{tool}_REAL"] = str(binaries / tool.lower())
+            environment["DOTFILES_TEST_PYTHON3_REAL"] = str(binaries / "python3")
             result = subprocess.run(
                 [root / "dev/test", *(["--containers"] if containers else [])],
                 cwd=root, env=environment, text=True, capture_output=True, check=False,

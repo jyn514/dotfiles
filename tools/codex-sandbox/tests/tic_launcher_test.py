@@ -91,6 +91,12 @@ class FakeProvider:
     def build_platform(self):
         return self.platform
 
+    def argv(self, arguments, *, cwd=None):
+        return ['fake-runtime', *arguments]
+
+    def create_owned_volume(self, name, uid, gid, owner, domain=None, role=None):
+        pass
+
     def verify_builder_image(self, image):
         self.events.append(('image', image))
         return image
@@ -143,6 +149,7 @@ class TicLauncherTest(unittest.TestCase):
         common.mkdir(parents=True)
         self.state = SimpleNamespace(
             home=self.home, codex_auth_directory=self.home / '.codex',
+            uid=1000, gid=1000,
             repository=workspace, host_working_directory=workspace / 'nested',
             workspaces=[SimpleNamespace(host_root=workspace, common_dir=common)],
             capabilities={'tic'}, sidecar_image='sha256:helper', image='sha256:agent',

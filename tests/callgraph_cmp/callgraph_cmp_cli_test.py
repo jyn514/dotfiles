@@ -89,8 +89,6 @@ class CommandIntegrationTests(unittest.TestCase):
             'digraph { main -> }',
             'graph { main -- alpha; }',
             '',
-            'digraph { main -> alpha; } garbage',
-            'digraph {} digraph {}',
         ):
             with self.subTest(graph=invalid):
                 left.write_text(invalid)

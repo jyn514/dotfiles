@@ -662,7 +662,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIs(True, config["settings"]["cargo"]["binstall"])
         self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
         self.assertIs(True, config["settings"]["lockfile"])
-        self.assertIs(True, config["settings"]["locked"])
+        self.assertNotIn("locked", config["settings"])
         self.assertIs(True, config["settings"]["github"]["use_git_credentials"])
         self.assertEqual(
             "Iv23li0gR6P4iv8HXrsF", config["settings"]["github"]["oauth_client_id"]

@@ -14,7 +14,8 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TMUX = shutil.which("tmux")
+TMUX = shutil.which("tmux", path=os.pathsep.join(
+    entry for entry in os.get_exec_path() if Path(entry).resolve() != ROOT / "bin"))
 COMMAND = Path(os.environ.get("DOTFILES_TEST_TMUX_CSSH", ROOT / "bin/tmux-cssh"))
 HELPER = Path(__file__).with_name("fixtures") / "stay-alive.sh"
 

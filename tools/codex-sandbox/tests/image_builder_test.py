@@ -1,8 +1,8 @@
 """Existing image builders key copied inputs rather than local build output."""
 
+import importlib.util
 from pathlib import Path
 import shutil
-import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -14,14 +14,9 @@ class ImageBuilderTest(unittest.TestCase):
     def test_jj_key_changes_with_sources_but_not_local_build_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            builder = root / '.agents/sandbox/jj-proxy-image'
-            builder.parent.mkdir(parents=True)
-            shutil.copy2(ROOT / '.agents/sandbox/jj-proxy-image', builder)
-            helper = root / 'tools/codex-sandbox/sandbox-image'
-            helper.parent.mkdir(parents=True)
-            shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', helper.parent / 'owned_images.py')
-            shutil.copyfile(ROOT / 'tools/codex-sandbox/tests/fixtures/print-builder-arguments.sh', helper)
-            helper.chmod(0o755)
+            module_path = root / 'tools/codex-sandbox/owned_images.py'
+            module_path.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', module_path)
             for name in ('Cargo.toml', 'Cargo.lock', 'src/main.rs', 'jj.toml', 'policy.toml', 'agent-split-editor'):
                 path = root / 'tools/jj-proxy' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -39,15 +34,18 @@ class ImageBuilderTest(unittest.TestCase):
             )
             (root / 'config').mkdir()
             (root / 'config/gitignore').write_text('ignored\n')
-            subprocess.run(['cp', str(ROOT / 'config/mise.lock'), str(root / 'config/mise.lock')], check=True)
-            subprocess.run(['cmp', str(ROOT / 'config/mise.lock'), str(root / 'config/mise.lock')], check=True)
+            shutil.copyfile(ROOT / 'config/mise.lock', root / 'config/mise.lock')
             release = tomllib.loads((root / 'config/mise.lock').read_text())['tools']['aqua:jj-vcs/jj'][0]
             expected_url = release['platforms.linux-x64']['url']
+            spec = importlib.util.spec_from_file_location('fixture_owned_images', module_path)
+            assert spec is not None and spec.loader is not None
+            owned_images = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(owned_images)
+
             def key():
-                result = subprocess.run([str(builder)], capture_output=True, text=True, check=True)
-                arguments = result.stdout.splitlines()
-                self.assertIn('JJ_AMD64_URL=' + expected_url, arguments)
-                return arguments[arguments.index('--tag') + 1]
+                image = owned_images.declaration(['jj'], platform='linux/amd64')['target']['jj']
+                self.assertEqual(expected_url, image['args']['JJ_AMD64_URL'])
+                return image['tags'][0]
             first = key()
             artifact = root / 'tools/jj-proxy/target/debug/artifact'
             artifact.parent.mkdir(parents=True)

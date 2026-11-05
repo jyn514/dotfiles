@@ -85,7 +85,8 @@ pub struct MountPoint {
 /// Pin the server's mount destinations before restriction. Directory descriptors
 /// keep mount aliases visible to overlap checks even if an ancestor is renamed.
 pub fn mount_points() -> Result<Vec<MountPoint>> {
-    use std::os::unix::ffi::OsStringExt;
+    use nix::{fcntl::{open, OFlag}, sys::stat::Mode};
+    use std::os::{fd::FromRawFd, unix::ffi::OsStringExt};
     let table = fs::read_to_string("/proc/self/mountinfo")?;
     table.lines().map(|line| {
         let field = line.split_whitespace().nth(4).ok_or_else(|| color_eyre::eyre::eyre!("invalid mountinfo record"))?;
@@ -104,7 +105,10 @@ pub fn mount_points() -> Result<Vec<MountPoint>> {
         let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(bytes));
         let directory_mount = path.is_dir();
         let target = if directory_mount { path.as_path() } else { path.parent().ok_or_else(|| color_eyre::eyre::eyre!("invalid file mount"))? };
-        Ok(MountPoint { directory: fs::File::open(target)?.into(), parent_only: directory_mount, path })
+        let fd = open(target, OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC, Mode::empty())?;
+        // SAFETY: open returned an owned descriptor.
+        let directory = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
+        Ok(MountPoint { directory, parent_only: directory_mount, path })
     }).collect()
 }
 

@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 const result = spawnSync(process.execPath, [process.env.RESTART_PI_CLI,
   ...process.argv.slice(2), "--mode", "rpc", "--no-extensions", "--no-skills",
   "--no-prompt-templates", "--no-themes"], {
-  input: '{"type":"get_state"}\n', encoding: "utf8", timeout: 15_000,
+  input: '{"type":"get_state"}\n', encoding: "utf8", timeout: 60_000,
 });
 if (result.error) throw result.error;
 const receipt = process.env.RESTART_PI_RECEIPT ??

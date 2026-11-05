@@ -54,14 +54,20 @@ class CommandIntegrationTests(unittest.TestCase):
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                if "IssueByNumber" in body["query"]:
-                    data = {"repository": {"hasIssuesEnabled": True, "issue": issue}}
-                elif "CommentsForIssue" in body["query"]:
-                    data = {"node": {"comments": comments}}
+                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if "projectItems(" in request["query"]:
+                    data = {"repository": {"issue": {"projectItems": {
+                        "totalCount": 0,
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": ""},
+                    }}}}
                 else:
-                    self.send_error(400)
-                    return
+                    # gh has changed its GraphQL operation names between releases.
+                    # Extra response fields are ignored, so serve both issue shapes.
+                    data = {
+                        "repository": {"hasIssuesEnabled": True, "issue": issue},
+                        "node": {"comments": comments},
+                    }
                 encoded = json.dumps({"data": data}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

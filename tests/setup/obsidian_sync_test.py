@@ -33,8 +33,9 @@ class ObsidianSyncTests(unittest.TestCase):
         self.config.write_text('["sync", "daily-notes", "templates"]')
         self.record = {'id': 'vault-id', 'path': str(self.vault)}
         self.log = self.home / 'commands.jsonl'
-        self.env = {**os.environ, 'HOME': str(self.home),
-                    'PATH': str(self.bin) + ':' + os.environ['PATH']}
+        # Keep GUI discovery independent of applications installed on the host.
+        # Every command exercised by setup has an owned fixture in this directory.
+        self.env = {**os.environ, 'HOME': str(self.home), 'PATH': str(self.bin)}
         self.write_command('mise', '''
 import os
 import sys
@@ -368,7 +369,8 @@ else:
                                             self.home, '/usr/bin')
         setup.publish(path, contents)
         result = subprocess.run(['systemd-analyze', '--user', 'verify', str(path)],
-                                env=self.env, capture_output=True, text=True)
+                                env={**self.env, 'PATH': os.environ['PATH']},
+                                capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
 
 

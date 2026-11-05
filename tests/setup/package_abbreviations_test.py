@@ -17,6 +17,10 @@ class PackageAbbreviationTests(unittest.TestCase):
             binaries.mkdir()
             (home / ".profile").symlink_to(ROOT / "config/profile")
             (home / ".local/config").mkdir(parents=True)
+            cargo = home / ".local/bin/cargo"
+            cargo.parent.mkdir(parents=True)
+            cargo.write_text("#!/bin/sh\nprintf 'Installed Commands:\\n'\n")
+            cargo.chmod(0o755)
             executable = home / "package executable"
             executable.write_text("#!/bin/sh\n")
             executable.chmod(0o755)
@@ -24,7 +28,8 @@ class PackageAbbreviationTests(unittest.TestCase):
             data.touch()
             (binaries / "dpkg").symlink_to(ROOT / "tests/setup/fixtures/package_query.sh")
             environment = {
-                "HOME": str(home), "PATH": f"{binaries}:{ROOT / 'bin'}:/usr/bin:/bin",
+                "HOME": str(home),
+                "PATH": f"{binaries}:{ROOT / 'bin'}:{home / '.local/bin'}:/usr/bin:/bin",
                 "XDG_CONFIG_HOME": str(home / ".config"),
                 "XDG_DATA_HOME": str(home / ".local/share"),
                 "XDG_CACHE_HOME": str(home / ".cache"),

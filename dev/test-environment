@@ -127,8 +127,9 @@ def host_tool_path(tool: str, environment: dict[str, str]) -> str:
             return str(resolved)
         # Shims consult HOME for trust and tool selection. Resolve them before
         # changing HOME rather than letting a setup failure look like no matches.
+        mise_tool = "python" if tool == "python3" else tool
         result = subprocess.run(
-            [str(resolved), "which", tool], env=environment,
+            [str(resolved), "which", mise_tool], env=environment,
             text=True, capture_output=True, check=False,
         )
         if result.returncode:
@@ -166,7 +167,7 @@ def main(arguments: list[str]) -> int:
             environment.get(f"DOTFILES_TEST_{tool}_REAL") or environment.get(f"{tool}_REAL")
             or host_tool_path(tool.lower(), environment)
         )
-        for tool in ("BB", "JAVA", "JJ", "RG")
+        for tool in ("BB", "JAVA", "JJ", "PYTHON3", "RG")
     }
     environment.update({f"DOTFILES_TEST_{tool.upper()}_REAL": real for tool, real in real_tools.items()})
     key = "DOTFILES_TEST_SANDBOX_PROXY_DIR"

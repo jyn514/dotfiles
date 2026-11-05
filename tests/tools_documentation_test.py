@@ -26,7 +26,7 @@ class ToolsDocumentationTest(unittest.TestCase):
         missing = sorted(
             directory
             for directory in directories
-            if f"]({directory}/)" not in index
+            if f"]({directory}/" not in index
         )
         self.assertEqual([], missing, f"undocumented tool directories: {missing}")
 

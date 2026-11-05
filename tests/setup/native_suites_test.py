@@ -34,22 +34,36 @@ class NativeSuitesTests(unittest.TestCase):
         self.binaries = self.root / "bin"
         self.binaries.mkdir()
         fixture = self.root / "tests/fixtures/native_suite_command.sh"
-        for tool in ("pytest", "python3", "bb", "bb-override", "node", "bun", "cargo", "java", "jj", "rg"):
+        for tool in ("pytest", "python3", "bb", "bb-override", "node", "bun", "cargo", "npm",
+                     "java", "jj", "rg"):
             (self.binaries / tool).symlink_to(fixture)
         container = self.root / "dev/setup/container-test"
         container.parent.mkdir()
         container.symlink_to(fixture)
         self.host_home = self.root / "host-home"
         self.host_home.mkdir()
+        for source in ("tools/pi-codex-goal", "tools/pi-session-search"):
+            (self.root / source).mkdir(parents=True)
+        sdk = self.root / "installed-pi"
+        sdk.mkdir()
+        (sdk / "package.json").write_text('{"name":"@earendil-works/pi-coding-agent"}\n')
+        typebox = self.root / "installed-typebox"
+        typebox.mkdir()
+        (typebox / "package.json").write_text('{"name":"typebox"}\n')
+        typebox_entry = typebox / "index.js"
+        typebox_entry.touch()
         self.log = self.root / "commands.jsonl"
         self.environment = os.environ | {
             "HOME": str(self.host_home), "PATH": f"{self.binaries}:{os.environ['PATH']}",
             "TEST_REAL_PYTHON": sys.executable,
             "TEST_NATIVE_FIXTURE": str(self.root / "tests/fixtures/native_suite_command.py"),
             "TEST_NATIVE_LOG": str(self.log),
+            "TEST_TYPEBOX_ENTRY": str(typebox_entry),
+            "PI_PACKAGE_DIR": str(sdk),
             "DOTFILES_TEST_BB_REAL": str(self.binaries / "bb-override"),
             "DOTFILES_TEST_JJ_REAL": str(self.binaries / "jj"),
             "DOTFILES_TEST_JAVA_REAL": str(self.binaries / "java"),
+            "DOTFILES_TEST_PYTHON3_REAL": str(self.binaries / "python3"),
             "DOTFILES_TEST_RG_REAL": str(self.binaries / "rg"),
             "DOTFILES_TEST_CARGO_HOME": str(self.root / "cargo-home"),
             "JJ_REAL": "must-not-leak", "JJ_PROXY_TEST_JJ": "must-be-overridden",
@@ -78,25 +92,46 @@ class NativeSuitesTests(unittest.TestCase):
             ("bb", "-cp", "tools/package-plan/src", "tools/package-plan/tests/run.clj"),
             ("node", "tools/extract-chat-share/tests/extract_chat_share_test.js"),
             ("node", "tools/codex-archive-old/tests/codex_archive_old_test.js"),
-            ("node", "--test", "tools/codex-sandbox/tests/tool_worker_test.mjs"),
+            ("node", "--test", "tests/pi/native_commit_boundary.mjs"),
+            ("node", "--test", "tests/pi/native_dashboard_queue.mjs"),
             ("node", "--test", "tools/codex-sandbox/tests/guest_skill_context_test.mjs"),
             ("node", "--test", "tests/agent-wrappers/jj-conflict.test.mjs"),
-            ("node", "--test", "tests/pi/native_prompt_sections.mjs", "tests/pi/native_web_search.mjs",
+            ("node", "--test", "tests/pi/native_compact_session.mjs",
+             "tests/pi/native_prompt_sections.mjs", "tests/pi/native_web_search.mjs",
              "tests/pi/native_subscription_usage.mjs", "tests/pi/native_validate_skill.mjs",
-             "tests/pi/native_transport_diagnostics.mjs"),
+             "tests/pi/native_work_selection.mjs", "tests/pi/native_transport_diagnostics.mjs"),
             ("node", "--test", "tests/pi/native_footer.mjs"),
             ("node", "--test", "tests/pi/native_edit_suggestions.mjs"),
+            ("node", "--test", "tests/pi/native_host_bash.mjs"),
             ("node", "--test", "--test-isolation=none", "tests/pi/native_prompt_history.mjs"),
             ("node", "--test", "tests/pi/native_session_title.mjs", "tests/pi/native_session_reader_title.mjs"),
             ("node", "--test", "tools/pi-to-codex/tests/pi_to_codex_test.mjs"),
             ("bun", "test", "tests/pi"),
+            ("bun", "test", "tools/search-bsky-likes/tests"),
+            ("bun", "test", "tools/codex-sandbox/tests/commit_boundary_test.ts"),
             ("bun", "test", "tools/codex-sandbox/tests/guest_tools_test.ts"),
             ("bun", "test", "tools/codex-sandbox/tests/session_handoff_test.ts"),
             ("bun", "test", "tools/codex-sandbox/tests/session_side_test.ts"),
+            ("bun", "test", "tools/codex-sandbox/tests/tool_worker_test.mjs"),
+            ("bun", "tools/pi-codex-subagents/test/run-source-tests.ts"),
+            ("npm", "--prefix", "<package>", "ci", "--ignore-scripts", "--no-audit", "--no-fund"),
+            ("npm", "--prefix", "<package>", "run", "check"),
+            ("npm", "--prefix", "<package>", "test"),
             ("cargo", "test", "--manifest-path", "tools/jj-proxy/Cargo.toml",
              *([] if platform.system() == "Linux" else ["--lib", "--bins"])),
         ]
-        self.assertEqual(Counter(expected), Counter((event["tool"], *event["argv"]) for event in native))
+        def normalized(event):
+            argv = list(event["argv"])
+            if event["tool"] == "npm" and argv[:1] == ["--prefix"]:
+                argv[1] = "<package>"
+            return event["tool"], *argv
+
+        expected_commands = Counter(expected)
+        actual_commands = Counter(normalized(event) for event in native)
+        self.assertEqual(Counter(), expected_commands - actual_commands,
+                         f"missing native commands: {expected_commands - actual_commands}")
+        self.assertEqual(Counter(), actual_commands - expected_commands,
+                         f"unexpected native commands: {actual_commands - expected_commands}")
         self.assertEqual(len(expected), len({event["home"] for event in native}))
         self.assert_isolated(native)
         for event in native:
@@ -126,7 +161,7 @@ class NativeSuitesTests(unittest.TestCase):
         self.assert_native_commands()
         self.assertTrue(any(event["kind"] == "postcheck" and event["argv"] == ["dev/check-shell.py"]
                             for event in self.events()))
-        self.assertIn("19 passed", result.stdout)
+        self.assertIn("27 passed", result.stdout)
         self.assertIn("All checks passed", result.stdout)
 
     def test_native_failure_reports_output_and_blocks_repository_and_container_checks(self):
@@ -137,7 +172,8 @@ class NativeSuitesTests(unittest.TestCase):
         output = result.stdout + result.stderr
         self.assertIn("NATIVE_PI_STDOUT_SENTINEL", output)
         self.assertIn("NATIVE_PI_STDERR_SENTINEL", output)
-        self.assertIn("1 failed, 18 passed", output)
+        self.assertIn("26 passed", output)
+        self.assertIn("1 failed", output)
         downstream = [event for event in self.events() if event["kind"] in ("postcheck", "container")]
         self.assertEqual([{"kind": "postcheck", "argv": [str(self.root / "tools/codex-sandbox/owned_images.py")]}],
                          downstream)

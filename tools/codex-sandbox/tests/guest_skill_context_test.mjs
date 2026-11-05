@@ -71,7 +71,7 @@ test("guest context rewrites expanded skills in history without changing stored 
     const storedSystems = structuredClone(systems);
     const projected = await runner.emitContext(systems);
     assert.equal(projected[0].content, "Current working directory: /home/codex/src/repository");
-    assert.equal(projected[0].sections.cwd, "<cwd>\n/src/repository\n</cwd>");
+    assert.equal(projected[0].sections.cwd, "<cwd>\n/home/codex/src/repository\n</cwd>");
     assert.equal(projected[0].sections.skills, expected);
     assert.deepEqual(projected[0].toolsAdded, systems[0].toolsAdded);
     assert.equal(projected[1].content[0].text, expected);
@@ -403,12 +403,20 @@ test("editable sandbox prose follows the launch repository and replaces stale se
     const agents = join(directory, "config/agents");
     mkdirSync(extensions, { recursive: true });
     mkdirSync(agents, { recursive: true });
-    for (const name of ["guest-tools.ts", "guest-tools-core.ts", "pi-instruction-includes.ts"]) {
+    for (const name of [
+      "guest-tools.ts", "guest-tools-core.ts", "pi-instruction-includes.ts",
+      "commit-boundary.ts", "edit-suggestions.ts", "edit-suggestions-core.ts",
+    ]) {
       const source = join(root, "config/pi-agent/pi-extensions", name);
       const copy = join(extensions, name);
       copyFileSync(source, copy);
       assert.deepEqual(readFileSync(copy), readFileSync(source));
     }
+    mkdirSync(join(extensions, "commit-boundary"));
+    copyFileSync(
+      join(root, "config/pi-agent/pi-extensions/commit-boundary/operations.mjs"),
+      join(extensions, "commit-boundary/operations.mjs"),
+    );
     Object.assign(process.env, {
       CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
       CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/current/nested",
@@ -544,7 +552,7 @@ test("handoff notice survives real Codex request conversion with later directory
       "Codex receives the handoff at the end, not in its historical prompt");
     const rendered = [payload.instructions, ...payload.input.map((message) => JSON.stringify(message.content))].join("\n");
     assert.equal(rendered.split("Working directory switched from").length - 1, 1);
-    assert.match(rendered, /from \/home/codex/src\/origin to \/home/codex/src\/destination\/nested\./);
+    assert.match(rendered, /from \/home\/codex\/src\/origin to \/home\/codex\/src\/destination\/nested\./);
     assert.match(rendered, /authorizes work in the destination within that objective/);
     assert.match(rendered, /repository instructions and inspect working-copy state and change ownership/);
     assert.match(rendered, /Destination instructions/);
@@ -611,7 +619,7 @@ test("recorded handoffs preserve history and do not repeat on reload or ordinary
       assert.deepEqual(manager.getBranch().slice(0, prefix.length), prefix);
       if (example.expected) {
         assert.deepEqual(messages[0].options, { triggerTurn: false }, "a directory switch does not start new work");
-        assert.match(messages[0].message.content, /from \/home/codex/src\/origin to \/home/codex/src\/current\./);
+        assert.match(messages[0].message.content, /from \/home\/codex\/src\/origin to \/home\/codex\/src\/current\./);
         assert.ok(!messages[0].message.content.includes("/host/"));
       }
     }

@@ -19,6 +19,10 @@ class MkcdAbbreviationTests(unittest.TestCase):
                     home = Path(directory)
                     (home / ".profile").symlink_to(ROOT / "config/profile")
                     (home / ".local/config").mkdir(parents=True)
+                    cargo = home / ".local/bin/cargo"
+                    cargo.parent.mkdir(parents=True)
+                    cargo.write_text("#!/bin/sh\nprintf 'Installed Commands:\\n'\n")
+                    cargo.chmod(0o755)
                     paths = ["directory with space/child"]
                     if case == "multiple":
                         paths.append("another directory/child")
@@ -26,7 +30,8 @@ class MkcdAbbreviationTests(unittest.TestCase):
                         (home / "blocker").touch()
                         paths.append("blocker/child")
                     environment = {
-                        "HOME": str(home), "PATH": f"{ROOT / 'bin'}:/usr/bin:/bin",
+                        "HOME": str(home),
+                        "PATH": f"{ROOT / 'bin'}:{home / '.local/bin'}:/usr/bin:/bin",
                         "XDG_CONFIG_HOME": str(home / ".config"),
                         "XDG_DATA_HOME": str(home / ".local/share"),
                         "XDG_CACHE_HOME": str(home / ".cache"),

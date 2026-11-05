@@ -148,8 +148,8 @@ function callGuest(
     });
     child.on("close", (status) => {
       signal?.removeEventListener("abort", abort);
-      if (protocolError) reject(protocolError);
-      else if (signal?.aborted) reject(new Error("guest tool cancelled"));
+      if (signal?.aborted) reject(new Error("guest tool cancelled"));
+      else if (protocolError) reject(protocolError);
       else if (pending || !terminal) reject(new Error(errorText || `guest tool transport ended (${status})`));
       else {
         try {

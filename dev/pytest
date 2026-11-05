@@ -29,6 +29,7 @@ elif command -v uvx >/dev/null 2>&1; then
 	exec uvx --from "$pytest_requirement" \
 		--with "$xdist_requirement" \
 		--with "$sugar_requirement" \
+		--with-requirements "$root/install/python.txt" \
 		pytest "$@"
 else
 	echo "pytest with xdist and sugar is required; install uv to run the pinned requirements in install/test.txt" >&2

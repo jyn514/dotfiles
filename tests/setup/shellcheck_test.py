@@ -55,7 +55,7 @@ class ShellCheckTests(unittest.TestCase):
         self.script("bin/advisories.sh", fixture="shellcheck-advisory.txt")
         result = self.run_check()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        for code in (1007, 2034, 3013):
+        for code in (1007, 2016, 2034):
             self.assertIn(f"warning: SC{code}:", result.stdout)
         self.assertNotIn("error:", result.stdout)
 
@@ -67,13 +67,13 @@ class ShellCheckTests(unittest.TestCase):
         self.assertIn("warning: SC1007:", result.stdout)
         self.assertIn("error: SC2086:", result.stdout)
 
-    def test_requested_source_and_conditional_diagnostics_are_silent(self):
+    def test_requested_source_diagnostic_is_silent(self):
         script = self.script("bin/suppressed.sh", fixture="shellcheck-suppressed.txt")
         native = subprocess.run(
             ["shellcheck", "--format=json", script], text=True, capture_output=True, check=False,
         )
         self.assertEqual(1, native.returncode, native.stderr)
-        self.assertEqual({1091, 2015}, {row["code"] for row in json.loads(native.stdout)})
+        self.assertEqual({1091}, {row["code"] for row in json.loads(native.stdout)})
         result = self.run_check()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual("", result.stdout)

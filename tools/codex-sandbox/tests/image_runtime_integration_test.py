@@ -152,6 +152,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         failed = threading.Event()
         cleaned = threading.Event()
         finished = {role: threading.Event() for role in ('jj', 'pi-alpine', 'pi-debian')}
+        containers = {}
         errors = []
 
         def build(selected_revision, selected_tags):
@@ -164,12 +165,26 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 return f'{revision}\n{revision}\n'
             if command[1:3] == ('image', 'ls'):
                 return '\n'.join(aliases[1] for aliases in tags.values()) + '\n'
-            self.assertEqual('run', command[1])
-            tag = command[command.index('--entrypoint') + 2]
-            role = next(role for role, aliases in tags.items() if aliases[0] == tag)
+            if command[1] == 'run' and '--detach' in command:
+                tag = command[command.index('--entrypoint') + 2]
+                role = next(role for role, aliases in tags.items() if aliases[0] == tag)
+                containers[command[command.index('--name') + 1]] = role
+                return ''
+            if command[1] == 'exec':
+                role = containers[command[3]]
+            elif command[1] in ('stop', 'inspect'):
+                role = containers[command[-1]]
+                if command[1] == 'stop':
+                    return ''
+                finished[role].set()
+                return '0\n'
+            else:
+                self.assertEqual('run', command[1])
+                tag = command[command.index('--entrypoint') + 2]
+                role = next(role for role, aliases in tags.items() if aliases[0] == tag)
+            affected = failure is not None and failure.startswith(role.removeprefix('pi-'))
             try:
                 barrier.wait(timeout=3)
-                affected = failure is not None and failure.startswith(role.removeprefix('pi-'))
                 if affected:
                     failed.set()
                     if failure.endswith('command'):
@@ -185,9 +200,14 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 return '\n'.join([f'{binary}  /opt/agent-tools/libexec/jj', node, revision,
                                   'development-version', '1.3.14', 'bun-test-ok', marker]) + '\n'
             finally:
-                finished[role].set()
+                if role == 'jj' or failure is not None and failure.endswith('command') and affected:
+                    finished[role].set()
 
         def cleanup(command, **kwargs):
+            # Each guest probe removes its temporary container through
+            # subprocess.run before main removes the per-run image aliases.
+            if command[:4] != ['docker', 'image', 'rm', '-f']:
+                return
             cleaned.set()
             self.assertTrue(all(event.is_set() for event in finished.values()),
                             'cleanup must wait for every probe, including siblings of a failed probe')
@@ -266,7 +286,10 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                     self.assertNotIn('BASE_IMAGE', alpine['args'])
                     self.assertEqual('node:20-bookworm-slim', debian['args']['BASE_IMAGE'])
 
-                with mock.patch.dict(build.__globals__, {'jj_release_args': lambda: release}), \
+                with mock.patch.dict(build.__globals__, {
+                        'jj_release_args': lambda platform: release,
+                        'run': lambda *args: 'linux/amd64\n',
+                }), \
                         mock.patch('subprocess.run', side_effect=consume):
                     build(revision, tags)
                 self.assertEqual(1, len(captured))
@@ -285,7 +308,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             self.assertEqual('tools/jj-proxy/Dockerfile', target['dockerfile'])
             self.assertNotIn('PI_REVISION', target['args'])
 
-        with mock.patch('subprocess.run', side_effect=consume):
+        with mock.patch.dict(build.__globals__, {'run': lambda *args: 'linux/amd64\n'}), \
+                mock.patch('subprocess.run', side_effect=consume):
             build(None, tags)
 
     def test_jj_only_runs_without_pi_revision_and_cleans_only_its_own_alias(self):
@@ -355,7 +379,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
         tags = {role: (f'{role}:unique', f'{role}:cache') for role in ('jj', 'pi-alpine', 'pi-debian')}
         error = subprocess.CalledProcessError(17, ['docker', 'buildx', 'bake'])
-        with mock.patch('subprocess.run', side_effect=error) as run:
+        with mock.patch.dict(build.__globals__, {'run': lambda *args: 'linux/amd64\n'}), \
+                mock.patch('subprocess.run', side_effect=error) as run:
             with self.assertRaises(subprocess.CalledProcessError) as caught:
                 build('b' * 40, tags)
             command = run.call_args.args[0]

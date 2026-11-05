@@ -20,6 +20,10 @@ class StatusAbbreviationTests(unittest.TestCase):
         (self.home / ".profile").symlink_to(ROOT / "config/profile")
         (self.home / ".gitconfig").symlink_to(ROOT / "config/gitconfig")
         (self.home / ".local/config").mkdir(parents=True)
+        cargo = self.home / ".local/bin/cargo"
+        cargo.parent.mkdir(parents=True)
+        cargo.write_text("#!/bin/sh\nprintf 'Installed Commands:\\n'\n")
+        cargo.chmod(0o755)
         self.binaries = self.base / "bin"
         self.binaries.mkdir()
         self.case = self.base / "case"
@@ -27,7 +31,8 @@ class StatusAbbreviationTests(unittest.TestCase):
         (self.case / "directory-marker.txt").write_text("fixture only\n")
         (self.case / "subdirectory").mkdir()
         self.environment = {
-            "HOME": str(self.home), "PATH": f"{ROOT / 'bin'}:/usr/bin:/bin",
+            "HOME": str(self.home),
+            "PATH": f"{ROOT / 'bin'}:{self.home / '.local/bin'}:/usr/bin:/bin",
             "DOTFILES": str(ROOT),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
             "XDG_DATA_HOME": str(self.home / ".local/share"),

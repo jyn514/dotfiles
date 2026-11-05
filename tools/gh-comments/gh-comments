@@ -136,7 +136,6 @@ def produce_exports(url: str, json_path: Path, text_path: Path) -> tuple[int, in
         "gh",
         "issue",
         "view",
-        "-c",
         url,
         "--json",
         JSON_FIELDS,

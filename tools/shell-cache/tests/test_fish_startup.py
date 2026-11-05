@@ -113,7 +113,11 @@ class FishStartupTest(unittest.TestCase):
         try:
             with subprocess.Popen(
                 [FISH, "--no-config", "--interactive", "--init-command", initialization],
-                cwd=cwd, env=self.environment | {"GIT_TRACE": "1", "GIT_TRACE2_EVENT": str(trace)},
+                cwd=cwd, env=self.environment | {
+                    "GIT_TRACE": "1",
+                    "GIT_TRACE2_EVENT": str(trace),
+                    **({"TERM": "dumb"} if terminal_output else {}),
+                },
                 stdin=slave, stdout=slave if terminal_output else subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, preexec_fn=terminal,
             ) as process:
@@ -156,6 +160,7 @@ class FishStartupTest(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     stdout, stderr = process.communicate()
+                    stdout = prefix.decode() + (stdout or "")
                     self.fail(f"Fish did not execute the abbreviation:\n{stdout}\n{stderr}")
                 result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
         finally:
@@ -581,7 +586,10 @@ class FishStartupTest(unittest.TestCase):
         shadowing = self.directory / "earlier \\ ' $() ; #\r\n bin"
         shadowing.mkdir()
         earlier.rename(later / "atuin")
-        self.environment["PATH"] += ":" + str(shadowing) + ":" + str(later)
+        local_bin = str(self.home / ".local/bin")
+        self.environment["PATH"] = self.environment["PATH"].replace(
+            local_bin, local_bin + ":" + str(shadowing) + ":" + str(later), 1,
+        )
         first = self.startup(self.a, "printf '%s\\n' $TEST_ATUIN")
         self.assertEqual(0, first.returncode, first.stderr)
         self.assertEqual("loaded\n", first.stdout)

@@ -82,13 +82,15 @@ class TicBrokerTest(unittest.TestCase):
     def test_default_owner_is_accepted_by_docker_relay_validator_without_starting_services(self):
         launch = self.launch()
         runtime = Docker.__new__(Docker)
-        runtime.record = {}
-        runtime.run = mock.Mock()
-        with mock.patch("tic_broker.subprocess.Popen") as spawn:
+        runtime.record = {'socket': '/owned/docker.sock'}
+        with mock.patch("tic_broker.subprocess.Popen") as spawn, \
+                mock.patch("docker_runtime.docker_request", return_value={'Id': 'network'}) as request:
             runtime.create_relay_network("tic-owner-contract", internal=True, owner=launch.owner)
         spawn.assert_not_called()
-        runtime.run.assert_called_once()
-        self.assertIn("dev.codex.relay-owner=" + launch.owner, runtime.run.call_args.args[0])
+        self.assertEqual('/owned/docker.sock', request.call_args.args[0])
+        self.assertEqual(
+            {'dev.codex.relay-owner': launch.owner},
+            request.call_args.kwargs['payload']['Labels'])
         self.assertIsNone(launch.process)
         self.assertIsNone(launch.directory)
 

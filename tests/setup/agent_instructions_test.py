@@ -99,7 +99,9 @@ class AgentInstructionTests(unittest.TestCase):
         self.assertIn("@~/.agents/shared.md", claude)
         for entrypoint in (codex_developer, codex_agents, claude):
             self.assertNotIn("ROOT.md", entrypoint, "other harnesses must not depend on Pi's root instructions")
-        self.assertEqual("@../../.agents/shared.md\n", pi_agents)
+        self.assertTrue(pi_agents.startswith("@../../.agents/shared.md\n"))
+        self.assertIn("If you are a subagent", pi_agents)
+        self.assertIn("Subagent templates", pi_agents)
 
     def test_manifest_installs_shared_and_whole_skills_and_reference_route_resolves(self) -> None:
         self.install()
