@@ -68,9 +68,9 @@ export PYTHONDONTWRITEBYTECODE=1
 
 cd "$root"
 started=$(date +%s)
-pytest_args="-n $jobs --dist loadfile --quiet --no-header --force-sugar -p no:cacheprovider"
+pytest_args="-n $jobs --dist loadfile --quiet --no-header -p no:cacheprovider"
 if [ "$verbose" = 1 ]; then
-	pytest_args="-n $jobs --dist loadfile --verbose --force-sugar -p no:cacheprovider"
+	pytest_args="-n $jobs --dist loadfile --verbose -p no:cacheprovider"
 fi
 if [ "$run_native" = 0 ]; then
 	pytest_args="$pytest_args --ignore=tests/native"

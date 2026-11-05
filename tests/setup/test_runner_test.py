@@ -170,7 +170,7 @@ class TestRunnerTests(unittest.TestCase):
         )
         self.assertEqual("install/python.txt", "/".join(Path(arguments[7]).parts[-2:]))
         self.assertEqual("pytest", arguments[8])
-        self.assertIn("--force-sugar", arguments)
+        self.assertNotIn("--force-sugar", arguments)
         self.assertNotIn("--instafail", arguments)
 
     def test_required_plugins_count_each_test_once(self) -> None:

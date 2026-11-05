@@ -20,7 +20,7 @@ installed_pytest_works() {
 	done
 }
 
-# pytest-sugar renders compact progress and streams failures without pytest-instafail.
+# pytest-sugar renders compact terminal progress without pytest-instafail.
 if installed_pytest_works; then
 	exec pytest "$@"
 elif command -v uvx >/dev/null 2>&1; then

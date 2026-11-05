@@ -115,7 +115,8 @@ renamed integration file. Both broader modes remove the manifest exclusions, so
 the standard pytest discovery route remains the single authority for collection.
 The complete suite checks for Bun on PATH before dispatch and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically.
-The runner uses pytest-sugar for progress and immediate failure output, including noninteractive runs.
+The runner uses pytest-sugar for progress and immediate failure output in terminals.
+Noninteractive runs use pytest's standard reporter instead of forcing terminal rendering.
 Do not also enable pytest-instafail; it conflicts with sugar and inflates pass counts.
 See [pytest-sugar #222](https://github.com/Teemu/pytest-sugar/issues/222).
 The runner uses installed pytest only after a successful plugin check.
