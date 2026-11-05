@@ -154,8 +154,10 @@ python3 tools/codex-sandbox/lima/docker_host.py stop
 python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
-On Linux, `./setup services` installs login startup for each provisioned Docker VM.
-VMs without provisioning state are skipped; run it again after provisioning another VM.
+On Linux, `./setup sandbox` stops a newly provisioned VM and installs its login unit so systemd owns the restarted Lima processes instead of the invoking terminal scope.
+Rerunning setup for a ready VM leaves it running and refreshes the existing unit without disrupting sessions.
+`./setup services` installs login startup for every provisioned Docker VM.
+VMs without provisioning state are skipped; run it again after provisioning another VM outside its dedicated setup command.
 To run only the Docker autostart installer:
 
 ```sh

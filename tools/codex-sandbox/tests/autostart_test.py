@@ -53,6 +53,20 @@ class AutostartTests(unittest.TestCase):
                 self.assertEqual(set(expected), {path.name for path in
                                  (self.configuration / "systemd/user").iterdir()})
 
+    def test_selected_service_does_not_install_other_provisioned_vm(self):
+        self.provision(".local/state/codex-sandbox-docker/host.json")
+        self.provision(".local/state/agent-docker/vm.json")
+        with patch.object(autostart.shutil, "which", return_value="/usr/bin/limactl"), \
+                patch.object(autostart.subprocess, "run",
+                             return_value=subprocess.CompletedProcess([], 0, stdout="Lima\n")) as run:
+            autostart.main(["sandbox-host-docker.service"])
+        self.assertEqual(
+            ["systemctl", "--user", "enable", "--now", "sandbox-host-docker.service"],
+            run.call_args.args[0])
+        self.assertEqual(
+            {"sandbox-host-docker.service"},
+            {path.name for path in (self.configuration / "systemd/user").iterdir()})
+
     def test_failed_unit_validation_does_not_publish_or_enable_services(self):
         self.provision(".local/state/agent-docker/vm.json")
         with patch.object(autostart.shutil, "which", return_value="/usr/bin/limactl"), \

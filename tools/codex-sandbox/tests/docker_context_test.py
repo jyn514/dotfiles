@@ -88,10 +88,15 @@ class DockerContextTests(unittest.TestCase):
         function = source[source.index('setup_sandbox () {'):source.index('\nsetup_all () {')]
         script = self.directory / 'setup-fixture.sh'
         script.write_text(function + '\nexists() { return 0; }\n'
-                          'python3() { printf "%s\\n" "$@"; }\nsetup_sandbox\n')
+                          'python3() { printf "%s\\n" "$@"; }\n'
+                          'systemctl() { printf "%s\\n" "$@"; }\nsetup_sandbox\n')
         result = subprocess.run(['sh', str(script)], check=True, text=True, capture_output=True)
-        self.assertEqual(['tools/codex-sandbox/lima/docker_host.py', 'setup',
-                          '--default-context', 'lima'], result.stdout.splitlines()[1:])
+        self.assertEqual([
+            'tools/codex-sandbox/lima/docker_host.py', 'setup', '--default-context', 'lima',
+            '--stop-after-provisioning',
+            'tools/codex-sandbox/lima/install-autostart.py', 'sandbox-host-docker.service',
+            '--user', 'restart', 'sandbox-host-docker.service',
+        ], result.stdout.splitlines()[1:])
 
 
 if __name__ == '__main__':

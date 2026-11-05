@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install login services for the existing infrastructure and nested-build VMs."""
 
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -45,12 +46,16 @@ def units(root, python, search_path):
     }
 
 
-def main():
+def main(selected=None):
     if sys.platform != "linux":
         raise SystemExit("this installer requires Linux user systemd")
+    selected = set(selected or CONTROLLERS)
+    unknown = selected - CONTROLLERS.keys()
+    if unknown:
+        raise ValueError(f"unknown autostart service: {', '.join(sorted(unknown))}")
     provisioned = [name for name, (_, record) in CONTROLLERS.items()
-                   if (Path.home() / record).is_file()]
-    for name in CONTROLLERS.keys() - set(provisioned):
+                   if name in selected and (Path.home() / record).is_file()]
+    for name in selected - set(provisioned):
         print(f"skipping {name}: VM is not provisioned")
     if not provisioned:
         return
@@ -83,4 +88,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("service", nargs="*", choices=CONTROLLERS)
+    main(parser.parse_args().service)

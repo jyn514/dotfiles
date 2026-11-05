@@ -934,6 +934,21 @@ class DockerRuntimeTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'control directory'):
                     host.setup('sandbox-host-docker-test', write=[str(root)])
 
+    def test_ready_setup_does_not_stop_an_existing_vm_for_service_handoff(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            host = DockerHost(Path(temporary) / 'state')
+            record = {'instance': 'sandbox-host-docker', 'shares': [], 'phase': 'ready'}
+            host.record_path.parent.mkdir(parents=True, exist_ok=True)
+            host.record_path.write_text(json.dumps(record))
+            host.record = Mock(return_value=record)
+            host.start = Mock(return_value=record)
+            host.doctor = Mock()
+            host.stop = Mock()
+            with patch('lima.docker_host.shares', return_value=[]), \
+                    patch('lima.docker_host.current', return_value=Mock()):
+                self.assertIs(record, host.setup(stop_after_provisioning=True))
+            host.stop.assert_not_called()
+
 
 class FirewallTest(unittest.TestCase):
     def test_reference_cancellation_reaps_child_after_wrapper_exit(self):

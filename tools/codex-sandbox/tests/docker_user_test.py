@@ -31,6 +31,16 @@ class DockerUserSetupTest(unittest.TestCase):
                     docker_host.main()
                 self.assertEqual(output.getvalue(), f'Docker VM fixture: {operation} complete.\n')
 
+    def test_setup_forwards_the_post_provisioning_stop_request(self):
+        host = Mock()
+        host.locked.return_value = nullcontext()
+        host.setup.return_value = {'instance': 'fixture', 'files': {}}
+        with patch.object(docker_host, 'DockerHost', return_value=host), \
+                patch.object(sys, 'argv', ['docker_host.py', 'setup', '--stop-after-provisioning']), \
+                redirect_stdout(io.StringIO()):
+            docker_host.main()
+        host.setup.assert_called_once_with('sandbox-host-docker', None, None, None, True)
+
     def test_failed_setup_or_upgrade_does_not_print_a_completion_summary(self):
         for operation in ('setup', 'upgrade'):
             with self.subTest(operation=operation):

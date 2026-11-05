@@ -488,7 +488,14 @@ setup_sandbox () {
 		echo "sandbox setup requires python3; run setup option 7 or 9 first" >&2
 		return 1
 	fi
-	python3 tools/codex-sandbox/lima/docker_host.py setup --default-context lima
+	if [ "$(uname -s)" = Linux ]; then
+		python3 tools/codex-sandbox/lima/docker_host.py setup --default-context lima \
+			--stop-after-provisioning || return
+		python3 tools/codex-sandbox/lima/install-autostart.py sandbox-host-docker.service || return
+		systemctl --user restart sandbox-host-docker.service
+	else
+		python3 tools/codex-sandbox/lima/docker_host.py setup --default-context lima
+	fi
 }
 
 setup_all () {
