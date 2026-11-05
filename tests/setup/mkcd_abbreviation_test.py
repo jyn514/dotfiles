@@ -23,6 +23,17 @@ class MkcdAbbreviationTests(unittest.TestCase):
                     cargo.parent.mkdir(parents=True)
                     cargo.write_text("#!/bin/sh\nprintf 'Installed Commands:\\n'\n")
                     cargo.chmod(0o755)
+                    startup_outputs = {
+                        "bat": "bat 0.25.0",
+                        "atuin": "function _atuin_search; end",
+                        "zoxide": ("function __zoxide_z; builtin cd $argv; end; "
+                                   "function z; builtin cd $argv; end"),
+                        "direnv": "",
+                    }
+                    for name, output in startup_outputs.items():
+                        tool = home / ".local/bin" / name
+                        tool.write_text(f"#!/bin/sh\nprintf '%s\\n' '{output}'\n")
+                        tool.chmod(0o755)
                     paths = ["directory with space/child"]
                     if case == "multiple":
                         paths.append("another directory/child")
