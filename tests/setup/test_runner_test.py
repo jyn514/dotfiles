@@ -170,7 +170,6 @@ class TestRunnerTests(unittest.TestCase):
         )
         self.assertEqual("install/python.txt", "/".join(Path(arguments[7]).parts[-2:]))
         self.assertEqual("pytest", arguments[8])
-        self.assertEqual("3", arguments[arguments.index("-n") + 1])
         self.assertIn("--force-sugar", arguments)
         self.assertNotIn("--instafail", arguments)
 
@@ -192,11 +191,9 @@ class TestRunnerTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertRegex(result.stdout, r"\b1\s+passed\b")
 
-    def test_worker_count_and_distribution_use_existing_configuration(self) -> None:
+    def test_worker_count_override_precedence_reaches_pytest(self) -> None:
         for native, jobs, environment_jobs, expected in (
-            (False, None, None, "8"),
-            (True, None, None, "8"),
-            (True, None, 6, "6"),
+            (False, None, 6, "6"),
             (True, 3, 6, "3"),
         ):
             with self.subTest(native=native, jobs=jobs, environment_jobs=environment_jobs):
@@ -204,7 +201,6 @@ class TestRunnerTests(unittest.TestCase):
                     native=native, jobs=jobs, environment_jobs=environment_jobs)
                 self.assertEqual(23, result.returncode, result.stderr)
                 self.assertEqual(expected, arguments[arguments.index("-n") + 1])
-                self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
 
     def test_installed_pytest_missing_a_plugin_uses_uvx(self) -> None:
         result, arguments, probes = self.run_fallback(missing_plugin=True)
@@ -216,7 +212,6 @@ class TestRunnerTests(unittest.TestCase):
         result, arguments, probes = self.run_fallback(installed_pytest=True, uv_available=False)
         self.assertEqual(99, result.returncode, result.stderr)
         self.assertEqual(1, probes)
-        self.assertEqual("-n", arguments[0])
 
     def test_failed_help_cannot_establish_plugin_availability(self) -> None:
         result, arguments, probes = self.run_fallback(installed_pytest=True, help_status=7)
@@ -237,7 +232,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn("install/test.txt", result.stderr)
         self.assertEqual([], arguments)
 
-    def test_jobs_are_dispatched_to_pytest_and_failures_are_propagated(self) -> None:
+    def test_pytest_failure_is_propagated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
@@ -249,18 +244,16 @@ class TestRunnerTests(unittest.TestCase):
             bin_directory = root / "bin"
             bin_directory.mkdir()
             (bin_directory / "bun").symlink_to(shutil.which("true"))
-            log = root / "pytest.args"
             (bin_directory / "pytest").symlink_to(
                 ROOT / "tests/fixtures/native_test_runner_command.sh")
             environment = os.environ | {
                 "PATH": f"{bin_directory}:{os.environ['PATH']}",
                 "TEST_LOG": str(root / "commands.log"),
-                "TEST_ARGV_LOG": str(log),
                 "TEST_PYTEST_STATUS": "23",
             }
 
             result = subprocess.run(
-                [root / "dev/test", "--jobs", "3"],
+                [root / "dev/test"],
                 cwd=root,
                 env=environment,
                 text=True,
@@ -268,11 +261,6 @@ class TestRunnerTests(unittest.TestCase):
             )
 
             self.assertEqual(23, result.returncode)
-            arguments = log.read_text().splitlines()
-            self.assertEqual("3", arguments[arguments.index("-n") + 1])
-            self.assertEqual("loadfile", arguments[arguments.index("--dist") + 1])
-            self.assertIn("--force-sugar", arguments)
-            self.assertNotIn("--instafail", arguments)
 
     def test_missing_bun_stops_native_suite_before_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

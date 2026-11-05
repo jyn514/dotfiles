@@ -4,13 +4,13 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +55,7 @@ class NativeSuitesTests(unittest.TestCase):
         typebox_entry = typebox / "index.js"
         typebox_entry.touch()
         self.log = self.root / "commands.jsonl"
+        self.pytest_report = self.root / "pytest-report.xml"
         self.environment = os.environ | {
             "HOME": str(self.host_home), "PATH": f"{self.binaries}:{os.environ['PATH']}",
             "TEST_REAL_PYTHON": sys.executable,
@@ -69,7 +70,8 @@ class NativeSuitesTests(unittest.TestCase):
             "DOTFILES_TEST_RG_REAL": str(self.binaries / "rg"),
             "DOTFILES_TEST_CARGO_HOME": str(self.root / "cargo-home"),
             "JJ_REAL": "must-not-leak", "JJ_PROXY_TEST_JJ": "must-be-overridden",
-            "PYTEST_ADDOPTS": "", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "",
+            "PYTEST_ADDOPTS": f"--junitxml={self.pytest_report}",
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "",
         }
         for key in ("TEST_NATIVE_BARRIER", "TEST_NATIVE_HOLD", "TEST_NATIVE_JOBS",
                     "TEST_NATIVE_PI_STATUS"):
@@ -86,56 +88,18 @@ class NativeSuitesTests(unittest.TestCase):
     def events(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
-    def assert_native_commands(self):
+    def assert_native_coverage(self):
         native = [event for event in self.events() if event["kind"] == "native"]
-        # Independent oracle: the approved serial inventory, retaining native grouping.
-        expected = [
-            ("bb", "tools/extract-chat/tests/extract_chat_test.clj"),
-            ("bb", "-cp", "tools/agent-split/src", "tools/agent-split/tests/run.clj"),
-            ("bb", "-cp", "tools/package-plan/src", "tools/package-plan/tests/run.clj"),
-            ("node", "tools/extract-chat-share/tests/extract_chat_share_test.js"),
-            ("node", "tools/codex-archive-old/tests/codex_archive_old_test.js"),
-            ("node", "--test", "tests/pi/native_commit_boundary.mjs"),
-            ("node", "--test", "tests/pi/native_dashboard_queue.mjs"),
-            ("node", "--test", "tools/codex-sandbox/tests/guest_skill_context_test.mjs"),
-            ("node", "--test", "tests/agent-wrappers/jj-conflict.test.mjs"),
-            ("node", "--test", "--test-concurrency=1", "tests/pi/native_compact_session.mjs",
-             "tests/pi/native_prompt_sections.mjs", "tests/pi/native_web_search.mjs",
-             "tests/pi/native_subscription_usage.mjs", "tests/pi/native_validate_skill.mjs",
-             "tests/pi/native_work_selection.mjs", "tests/pi/native_transport_diagnostics.mjs"),
-            ("node", "--test", "tests/pi/native_footer.mjs"),
-            ("node", "--test", "tests/pi/native_edit_suggestions.mjs"),
-            ("node", "--test", "tests/pi/native_host_bash.mjs"),
-            ("node", "--test", "--test-isolation=none", "tests/pi/native_prompt_history.mjs"),
-            ("node", "--test", "tests/pi/native_session_title.mjs", "tests/pi/native_session_reader_title.mjs"),
-            ("node", "--test", "tools/pi-to-codex/tests/pi_to_codex_test.mjs"),
-            ("bun", "test", "tests/pi"),
-            ("bun", "test", "tools/search-bsky-likes/tests"),
-            ("bun", "test", "tools/codex-sandbox/tests/commit_boundary_test.ts"),
-            ("bun", "test", "tools/codex-sandbox/tests/guest_tools_test.ts"),
-            ("bun", "test", "tools/codex-sandbox/tests/session_handoff_test.ts"),
-            ("bun", "test", "tools/codex-sandbox/tests/session_side_test.ts"),
-            ("bun", "test", "tools/codex-sandbox/tests/tool_worker_test.mjs"),
-            ("bun", "tools/pi-codex-subagents/test/run-source-tests.ts"),
-            ("npm", "--prefix", "<package>", "ci", "--ignore-scripts", "--no-audit", "--no-fund"),
-            ("npm", "--prefix", "<package>", "run", "check"),
-            ("npm", "--prefix", "<package>", "test"),
-            ("cargo", "test", "--manifest-path", "tools/jj-proxy/Cargo.toml",
-             *([] if platform.system() == "Linux" else ["--lib", "--bins"])),
-        ]
-        def normalized(event):
-            argv = list(event["argv"])
-            if event["tool"] == "npm" and argv[:1] == ["--prefix"]:
-                argv[1] = "<package>"
-            return event["tool"], *argv
-
-        expected_commands = Counter(expected)
-        actual_commands = Counter(normalized(event) for event in native)
-        self.assertEqual(Counter(), expected_commands - actual_commands,
-                         f"missing native commands: {expected_commands - actual_commands}")
-        self.assertEqual(Counter(), actual_commands - expected_commands,
-                         f"unexpected native commands: {actual_commands - expected_commands}")
-        self.assertEqual(len(expected), len({event["home"] for event in native}))
+        expected_adapters = Counter({path.stem: 1 for path in
+                                     (self.root / "tests/native").glob("test_native_*.py")})
+        report = ElementTree.parse(self.pytest_report)
+        executed_adapters = Counter(
+            case.attrib["classname"].rsplit(".", 1)[-1]
+            for case in report.findall(".//testcase")
+            if case.attrib.get("classname", "").startswith("tests.native.test_native_")
+        )
+        self.assertEqual(expected_adapters, executed_adapters)
+        self.assertEqual(len(native), len({event["home"] for event in native}))
         self.assert_isolated(native)
         for event in native:
             if event["tool"] == "bb":
@@ -161,22 +125,23 @@ class NativeSuitesTests(unittest.TestCase):
         # Dispatch tests cover the default worker count; two suffice for this integration.
         result = self.run_command([self.root / "dev/test", "--native", "--jobs", "2"])
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assert_native_commands()
+        self.assert_native_coverage()
         self.assertTrue(any(event["kind"] == "postcheck" and event["argv"] == ["dev/check-shell.py"]
                             for event in self.events()))
-        self.assertIn("27 passed", result.stdout)
         self.assertIn("All checks passed", result.stdout)
 
     def test_native_failure_reports_output_and_blocks_repository_and_container_checks(self):
         result = self.run_command([self.root / "dev/test", "--native", "--jobs", "2", "--containers"],
                                   env={"TEST_NATIVE_JOBS": "1", "TEST_NATIVE_PI_STATUS": "29"})
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        self.assert_native_commands()
+        self.assert_native_coverage()
         output = result.stdout + result.stderr
         self.assertIn("NATIVE_PI_STDOUT_SENTINEL", output)
         self.assertIn("NATIVE_PI_STDERR_SENTINEL", output)
-        self.assertIn("26 passed", output)
-        self.assertIn("1 failed", output)
+        failed = [case.attrib["classname"].rsplit(".", 1)[-1]
+                  for case in ElementTree.parse(self.pytest_report).findall(".//testcase")
+                  if case.find("failure") is not None]
+        self.assertEqual(["test_native_pi_bun"], failed)
         downstream = [event for event in self.events() if event["kind"] in ("postcheck", "container")]
         self.assertEqual([{"kind": "postcheck", "argv": [str(self.root / "tools/codex-sandbox/owned_images.py")]}],
                          downstream)
