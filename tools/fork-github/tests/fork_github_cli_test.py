@@ -57,6 +57,13 @@ class CommandIntegrationTests(unittest.TestCase):
     def fish_fork(self, *arguments: str) -> subprocess.CompletedProcess:
         home = self.directory / "fish-home"
         home.mkdir(exist_ok=True)
+        local_bin = home / ".local/bin"
+        local_bin.mkdir(parents=True, exist_ok=True)
+        startup_fixture = ROOT / "tests/setup/fixtures/fish-startup-tool.sh"
+        for name in ("cargo", "bat", "atuin", "zoxide", "direnv"):
+            tool = local_bin / name
+            if not tool.exists():
+                tool.symlink_to(startup_fixture)
         profile = home / ".profile"
         if not profile.exists():
             profile.symlink_to(ROOT / "config/profile")
@@ -66,6 +73,7 @@ class CommandIntegrationTests(unittest.TestCase):
             "XDG_CACHE_HOME": str(home / ".cache"),
             "SSH_AUTH_SOCK": "present", "TERM": "dumb", "TMUX": "",
             "TMUX_PANE": "",
+            "PATH": os.pathsep.join((str(ROOT / "bin"), str(local_bin), self.environment["PATH"])),
             "PROFILE_FISH": str(ROOT / "config/config.fish"),
             "FORK_START_DIRECTORY": str(self.directory),
             "FORK_FISH_PROBE": str(Path(__file__).with_name("fixtures") / "fish_checkout.fish"),

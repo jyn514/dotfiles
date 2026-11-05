@@ -19,21 +19,12 @@ class MkcdAbbreviationTests(unittest.TestCase):
                     home = Path(directory)
                     (home / ".profile").symlink_to(ROOT / "config/profile")
                     (home / ".local/config").mkdir(parents=True)
-                    cargo = home / ".local/bin/cargo"
-                    cargo.parent.mkdir(parents=True)
-                    cargo.write_text("#!/bin/sh\nprintf 'Installed Commands:\\n'\n")
-                    cargo.chmod(0o755)
-                    startup_outputs = {
-                        "bat": "bat 0.25.0",
-                        "atuin": "function _atuin_search; end",
-                        "zoxide": ("function __zoxide_z; builtin cd $argv; end; "
-                                   "function z; builtin cd $argv; end"),
-                        "direnv": "",
-                    }
-                    for name, output in startup_outputs.items():
+                    local_bin = home / ".local/bin"
+                    local_bin.mkdir(parents=True)
+                    startup_fixture = ROOT / "tests/setup/fixtures/fish-startup-tool.sh"
+                    for name in ("cargo", "bat", "atuin", "zoxide", "direnv"):
                         tool = home / ".local/bin" / name
-                        tool.write_text(f"#!/bin/sh\nprintf '%s\\n' '{output}'\n")
-                        tool.chmod(0o755)
+                        tool.symlink_to(startup_fixture)
                     paths = ["directory with space/child"]
                     if case == "multiple":
                         paths.append("another directory/child")

@@ -68,25 +68,32 @@ class MoshAgentTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_stopped()
 
-    def test_configured_agent_is_checked_and_forwarded(self):
-        for selection in ('path', 'environment', 'SSH_AUTH_SOCK'):
-            with self.subTest(selection=selection):
-                agent = str(self.directory / f'{selection} agent.sock')
-                if selection == 'environment':
-                    self.environment['IDENTITY_AGENT'] = '$MOSH_TEST_AGENT'
-                    self.environment['MOSH_TEST_AGENT'] = agent
-                elif selection == 'SSH_AUTH_SOCK':
-                    self.environment['IDENTITY_AGENT'] = selection
-                    self.environment['SSH_AUTH_SOCK'] = agent
-                else:
-                    self.environment['IDENTITY_AGENT'] = agent
-                    self.environment.pop('SSH_AUTH_SOCK')
-                result = self.run_wrapper('devbox')
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual((self.directory / 'checked-agent').read_text(), agent)
-                arguments = [event[3] for event in self.events()
-                    if event[:2] == ['autossh', 'started']][-1]
-                self.assertEqual(arguments[arguments.index('-R') + 1].split(':', 1)[1], agent)
+    def assert_configured_agent_is_checked_and_forwarded(self, selection):
+        agent = str(self.directory / f'{selection} agent.sock')
+        if selection == 'environment':
+            self.environment['IDENTITY_AGENT'] = '$MOSH_TEST_AGENT'
+            self.environment['MOSH_TEST_AGENT'] = agent
+        elif selection == 'SSH_AUTH_SOCK':
+            self.environment['IDENTITY_AGENT'] = selection
+            self.environment['SSH_AUTH_SOCK'] = agent
+        else:
+            self.environment['IDENTITY_AGENT'] = agent
+            self.environment.pop('SSH_AUTH_SOCK')
+        result = self.run_wrapper('devbox')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.directory / 'checked-agent').read_text(), agent)
+        arguments = [event[3] for event in self.events()
+            if event[:2] == ['autossh', 'started']][-1]
+        self.assertEqual(arguments[arguments.index('-R') + 1].split(':', 1)[1], agent)
+
+    def test_configured_path_agent_is_checked_and_forwarded(self):
+        self.assert_configured_agent_is_checked_and_forwarded('path')
+
+    def test_configured_environment_agent_is_checked_and_forwarded(self):
+        self.assert_configured_agent_is_checked_and_forwarded('environment')
+
+    def test_configured_ssh_auth_sock_agent_is_checked_and_forwarded(self):
+        self.assert_configured_agent_is_checked_and_forwarded('SSH_AUTH_SOCK')
 
     @unittest.skipUnless(Path('/usr/bin/ssh').is_file(), 'native OpenSSH is required')
     def test_native_forward_parser_preserves_literal_socket_paths(self):
