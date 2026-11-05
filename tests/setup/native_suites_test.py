@@ -22,6 +22,7 @@ class NativeSuitesTests(unittest.TestCase):
         self.root = Path(temporary.name)
         sources = [
             ROOT / "dev/test", ROOT / "dev/pytest", ROOT / "dev/test-environment", ROOT / "dev/test-environment.clj",
+            ROOT / "dev/integration-tests.txt",
             ROOT / "pytest.ini", ROOT / "tests/fixtures/native_suite_command.sh",
             ROOT / "tests/fixtures/native_suite_command.py",
             *sorted((ROOT / "tests/native").glob("*.py")),

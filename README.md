@@ -65,7 +65,8 @@ and [Pi configuration](config/pi-agent/README.md) for agent settings and extensi
 
 ## Testing and probes
 
-Run `dev/test` for the fast suite and `dev/test --native` for the complete suite.
+Run `dev/test` for the fast suite, `dev/test --integration` for process and
+runtime integration tests, and `dev/test --native` for the complete suite.
 Use `dev/test-environment COMMAND [ARGS...]` for
 focused tests and ad-hoc Pi probes, including `--help` checks. The wrapper uses a
 private HOME and Pi/XDG state; it is not a filesystem sandbox and cannot prevent

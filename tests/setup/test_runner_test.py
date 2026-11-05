@@ -13,6 +13,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestRunnerTests(unittest.TestCase):
+    def install_integration_manifest(self, root: Path) -> None:
+        manifest = root / "dev/integration-tests.txt"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "dev/integration-tests.txt", manifest)
+        for relative in manifest.read_text().splitlines():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch(exist_ok=True)
+
     def run_focused(self, *, user_installed_pytest=False, uv_available=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -104,6 +113,7 @@ class TestRunnerTests(unittest.TestCase):
                 path = root / "dev" / name
                 subprocess.run(["cp", ROOT / "dev" / name, path], check=True)
                 subprocess.run(["cmp", ROOT / "dev" / name, path], check=True)
+            self.install_integration_manifest(root)
             (root / "install").mkdir()
             subprocess.run(["cp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
             subprocess.run(["cmp", ROOT / "install/test.txt", root / "install/test.txt"], check=True)
@@ -227,6 +237,7 @@ class TestRunnerTests(unittest.TestCase):
                 subprocess.run(["cp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
                 subprocess.run(["cmp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
                 (root / f"dev/{name}").chmod(0o755)
+            self.install_integration_manifest(root)
             bin_directory = root / "bin"
             bin_directory.mkdir()
             (bin_directory / "bun").symlink_to(shutil.which("true"))
@@ -279,7 +290,8 @@ class TestRunnerTests(unittest.TestCase):
             self.assertIn("dev/README.md#testing-and-probes", result.stderr)
             self.assertFalse(log.exists(), "a test suite ran before the prerequisite check")
 
-    def run_native_containers(self, *, metadata=None, containers=True, native=False,
+    def run_native_containers(self, *, metadata=None, containers=True, integration=False,
+                              native=False,
                               pytest_status=0,
                               probe_status=0, shellcheck_status=0):
         with tempfile.TemporaryDirectory() as directory:
@@ -293,6 +305,7 @@ class TestRunnerTests(unittest.TestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 subprocess.run(["cp", ROOT / relative, destination], check=True)
                 subprocess.run(["cmp", ROOT / relative, destination], check=True)
+            self.install_integration_manifest(root)
             home = root / "host-home"
             home.mkdir()
             if metadata is not None:
@@ -322,7 +335,8 @@ class TestRunnerTests(unittest.TestCase):
                 environment[f"DOTFILES_TEST_{tool}_REAL"] = str(binaries / tool.lower())
             environment["DOTFILES_TEST_PYTHON3_REAL"] = str(binaries / "python3")
             result = subprocess.run(
-                [root / "dev/test", *(["--native"] if native else []),
+                [root / "dev/test", *(["--integration"] if integration else []),
+                 *(["--native"] if native else []),
                  *(["--containers"] if containers else [])],
                 cwd=root, env=environment, text=True, capture_output=True, check=False,
             )
@@ -402,15 +416,25 @@ class TestRunnerTests(unittest.TestCase):
         self.assertFalse(any("dev/check-shell.py" in line for line in commands))
         self.assertNotIn("All checks passed", result.stdout)
 
-    def test_native_suite_is_explicit(self) -> None:
+    def test_integration_and_native_suites_are_explicit(self) -> None:
         default, default_commands, _ = self.run_native_containers(containers=False)
+        integration, integration_commands, _ = self.run_native_containers(
+            containers=False, integration=True)
         native, native_commands, _ = self.run_native_containers(containers=False, native=True)
 
         self.assertEqual(0, default.returncode, default.stderr)
+        self.assertEqual(0, integration.returncode, integration.stderr)
         self.assertEqual(0, native.returncode, native.stderr)
         default_pytest = next(line for line in default_commands if line.startswith("pytest "))
+        integration_pytest = next(
+            line for line in integration_commands if line.startswith("pytest "))
         native_pytest = next(line for line in native_commands if line.startswith("pytest "))
         self.assertIn("<--ignore=tests/native>", default_pytest)
+        for path in (ROOT / "dev/integration-tests.txt").read_text().splitlines():
+            self.assertIn(f"<--ignore={path}>", default_pytest)
+            self.assertNotIn(f"<--ignore={path}>", integration_pytest)
+            self.assertNotIn(f"<--ignore={path}>", native_pytest)
+        self.assertIn("<--ignore=tests/native>", integration_pytest)
         self.assertNotIn("<--ignore=tests/native>", native_pytest)
 
     def test_native_containers_preserve_test_and_probe_failure_status(self) -> None:

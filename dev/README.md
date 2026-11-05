@@ -104,9 +104,15 @@ Installed-Pi tests need that build's APIs, not the older locked unit-test SDK in
 
 ### Run the full suite
 
-Run `dev/test` for the fast suite. It excludes the native adapters in `tests/native/`,
-which launch separate language runtimes and integration suites.
-Run `dev/test --native` for the complete suite, including those adapters.
+Run `dev/test` for the fast suite. It excludes the process, socket, tmux, and
+runtime integration files listed in `dev/integration-tests.txt`, plus the native
+adapters in `tests/native/`.
+Run `dev/test --integration` for the fast and non-native integration suites.
+Run `dev/test --native` for the complete suite, including native adapters.
+Container and Lima modes include the non-native integration suite automatically.
+Every manifest path must exist; the runner fails instead of silently dropping a
+renamed integration file. Both broader modes remove the manifest exclusions, so
+the standard pytest discovery route remains the single authority for collection.
 The complete suite checks for Bun on PATH before dispatch and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically.
 The runner uses pytest-sugar for progress and immediate failure output, including noninteractive runs.
