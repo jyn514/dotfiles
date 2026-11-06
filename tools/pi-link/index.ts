@@ -149,12 +149,11 @@ type LinkMessage =
   | CompactResponseMsg;
 
 /**
- * True when Pi is at or above MIN_PI_VERSION. Stable releases only: a version
- * carrying a prerelease or build suffix is refused, not guessed at, which leaves an
- * ordered compare of three numbers as the whole rule.
+ * True when Pi is at or above MIN_PI_VERSION. Stable releases may carry build
+ * metadata; prereleases remain unsupported. Compare only the three release numbers.
  */
 function piVersionSupported(version: string): boolean {
-  const parsed = /^(\d+)\.(\d+)\.(\d+)$/.exec(version.trim());
+  const parsed = /^(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(version.trim());
   if (!parsed) return false;
   for (let i = 0; i < 3; i++) {
     const part = Number(parsed[i + 1]);
@@ -214,7 +213,7 @@ export default function (pi: ExtensionAPI) {
   // extension load error naming this message, and keeps running without pi-link.
   if (!piVersionSupported(PI_VERSION)) {
     throw new Error(
-      `pi-link requires Pi >=${MIN_PI_VERSION.join(".")} in x.y.z format, without suffixes ` +
+      `pi-link requires Pi >=${MIN_PI_VERSION.join(".")} in x.y.z format with optional build metadata, without prereleases ` +
         `(detected ${PI_VERSION || "unknown"}); pi-link 0.2.x supports Pi 0.74–0.84.1.`,
     );
   }

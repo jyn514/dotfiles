@@ -40,7 +40,7 @@ Questions, ideas? There's a [pi-link thread](https://discord.com/channels/145680
 
 ## Prerequisites
 
-- [Pi coding agent](https://github.com/badlogic/pi-mono), version **0.84.2 or later** (for pi-link 0.3+), stable releases only, reported as `x.y.z` without a prerelease or build suffix. On Pi 0.74–0.84.1, pin `pi-link@0.2.x`; on Pi ≤0.73, pin `pi-link@0.1.14`.
+- [Pi coding agent](https://github.com/badlogic/pi-mono), version **0.84.2 or later** (for pi-link 0.3+), stable releases only, reported as `x.y.z` with optional build metadata such as `1.5.0+abe12d3b`. Build metadata does not affect the minimum-version check; prereleases remain unsupported. On Pi 0.74–0.84.1, pin `pi-link@0.2.x`; on Pi ≤0.73, pin `pi-link@0.1.14`.
 - Node.js (LTS recommended)
 
 Pi's package installation does not check the host version, so `pi install` succeeds on an older Pi. pi-link then refuses to initialize instead of half-running: it throws before registering anything, and Pi reports it under **[Extension issues]** with the required minimum and the version it detected.

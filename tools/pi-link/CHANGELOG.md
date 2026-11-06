@@ -31,6 +31,7 @@ This changelog is based on the git history from `2026-03-21` (initial commit) th
 
 ### Fixed
 
+- Pi versions with build metadata, such as `1.5.0+abe12d3b`, load without changing the minimum supported release or accepting prereleases.
 - Repeating an unchanged identity preference keeps collision-suffixed clients connected and preserves their assigned names.
 - Broadcasts treat empty `replyTo` correlation as omitted for both hub and client callers instead of silently dropping client requests.
 
