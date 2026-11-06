@@ -155,6 +155,9 @@ Setup preserves paired devices, credentials, unrelated preferences, and other to
 The downstream patch fixes Dashboard to a web-interface-only profile.
 It keeps explicit browser chat, session, question, abort, model, thinking, editor, terminal, and Git controls while disabling Dashboard-owned agent policy, automatic inference, trust decisions, credential delivery, provider and role management, plugins, automation, and OpenSpec hooks.
 Stored preferences cannot re-enable automatic session naming or automatic worktree creation.
+Info-level extension notifications appear as three-second toasts, not chat rows, and do not replay when you reopen a session.
+Success, warning, and error notifications remain in chat; questions are unchanged.
+The global **Extension notifications** setting and per-session overrides apply to info toasts too.
 
 The mise pin selects the root release, not a fully locked transitive dependency graph.
 Setup checks that every patched Dashboard component matches that release and records the resolved component and Pi SDK versions in its installation receipt.

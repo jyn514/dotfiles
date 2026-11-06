@@ -43,6 +43,15 @@
  const PairingApprovalHost = lazy(() =>
    import("./components/pairing-approval/PairingApprovalHost.js").then((m) => ({ default: m.PairingApprovalHost })),
  );
+@@ -1220,7 +1216,7 @@
+ 
+   const handleMessage = useMessageHandler(
+     { setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setFolderGitMap, setOpenspecGroupsMap, setModelsMap, setModelRefreshErrorsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setCollapsedFolders, setExpandedFolders, setCardSections, setGroupByPrefs, setFavoriteModels, setWorkspaces, setTerminals, setDiscoveredServers, setSpawnErrors, setResumeErrors, setDisplayPrefs, setLoadingHistory, setReplayInFlight, setCanvasMap, setHistoryGaps, setHistorySpliceRev, setEndedTotalsMap, setArchivedCountMap, setPagedCount, setPageReplyGen, setPageExhausted, setSnapshotGeneration, setLookupOnlyIds },
+-    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, onSpawnFailed, cwdVisibilityInputsRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister: replayPersisterRef.current, showToast, sessionsRef, openspecGetInflightRef, endedTotalsMap, markHistoryLoadFailed, clearHistoryLoadFailed },
++    { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, onSpawnFailed, cwdVisibilityInputsRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister: replayPersisterRef.current, showToast, displayPrefs, sessionsRef, openspecGetInflightRef, endedTotalsMap, markHistoryLoadFailed, clearHistoryLoadFailed },
+   );
+ 
+   // D7: rendered cwds the OpenSpec reconciliation may pull for — non-ended
 @@ -1509,11 +1505,7 @@
      navigate,
    });
@@ -283,6 +292,21 @@
            <OptionRow title={i18nT("common.cancel", undefined, "Cancel")} cancel onClick={onCancel} />
          )}
        </div>
+--- a/packages/client/src/components/primitives/Toast.tsx
++++ b/packages/client/src/components/primitives/Toast.tsx
+@@ -142,9 +142,10 @@
+     ]);
+   };
+ 
+-  const dismissToast = (id: number) => {
++  // Keep ToastItem's expiry timer intact when its parent rerenders (e.g. streaming).
++  const dismissToast = useCallback((id: number) => {
+     setMessages((prev) => prev.filter((m) => m.id !== id));
+-  };
++  }, []);
+ 
+   /** Withdraw a keyed toast (e.g. when the thing it announced has settled). */
+   const dismissToastByKey = (key: string) => {
 --- a/packages/client/src/components/questions/QuestionDialog.tsx
 +++ b/packages/client/src/components/questions/QuestionDialog.tsx
 @@ -202,6 +202,7 @@
@@ -342,6 +366,111 @@
            {/* Slot-pill grid: the plugin slot sections (Automations / Goals /
                KB) + OpenSpec render as single-concern pills in a 2-col grid that
                collapses to 1-col at mobile width. A section that renders null
+--- a/packages/client/src/components/settings/SettingsPanel.tsx
++++ b/packages/client/src/components/settings/SettingsPanel.tsx
+@@ -3171,7 +3171,7 @@
+           { value: "errors", label: t("settings.notifyMinLevel.errors", undefined, "Failures only") },
+         ]}
+         onChange={(v) => patch({ notifyMinLevel: v as DisplayPrefs["notifyMinLevel"] })}
+-        hint={i18nT("settings.hint.notifyMinLevel", undefined, "Minimum level of extension notification shown in chat. Errors are never hidden, and questions that need an answer always appear.")}
++        hint={i18nT("settings.hint.notifyMinLevel", undefined, "Minimum level of extension notification shown. Info appears briefly as a toast; outcomes and problems stay in chat. Errors and questions are never hidden.")}
+       />
+       {/* One toggle per configured custom event group (including the
+           catch-all `other`), in configured order, replacing the removed
+--- a/packages/client/src/hooks/__tests__/useMessageHandler.history-gap.test.tsx
++++ b/packages/client/src/hooks/__tests__/useMessageHandler.history-gap.test.tsx
+@@ -936,7 +936,7 @@
+       remainingGapCount: 100,
+     } as ServerToBrowserMessage);
+   const notify = (h: ReturnType<typeof mount>, id: string, ts: number) =>
+-    h.fire({ type: "notify", sessionId: SID, notifyId: id, message: id, ts } as ServerToBrowserMessage);
++    h.fire({ type: "notify", sessionId: SID, notifyId: id, message: id, level: "warning", ts } as ServerToBrowserMessage);
+ 
+   it("a notify older than the backfilled rows moves between them", () => {
+     const h = primedTailOnly();
+--- /dev/null
++++ b/packages/client/src/hooks/__tests__/useMessageHandler.notify-toast.test.tsx
+@@ -0,0 +1,80 @@
++import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
++import { act, render, renderHook, screen } from "@testing-library/react";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { Toast, useToast } from "../../components/primitives/Toast.js";
++import { useMessageHandler } from "../useMessageHandler.js";
++
++function setup(globalFloor = "all", sessionFloor?: string) {
++  const showToast = vi.fn();
++  let states = new Map();
++  const setSessionStates = vi.fn((update) => { states = update(states); });
++  const setters: any = { setSessionStates };
++  const deps: any = {
++    send: vi.fn(), navigate: vi.fn(), clearSpawningCwd: vi.fn(),
++    spawningCwdsRef: { current: new Set() }, subscribedRef: { current: new Set(["s1"]) },
++    pendingTerminalCwdRef: { current: null }, lastCreatedTerminalIdRef: { current: null },
++    maxSeqMapRef: { current: new Map() }, selectedSessionIdRef: { current: "s1" },
++    pendingSpawnsRef: { current: new Map() }, loadingHistoryTimersRef: { current: new Map() },
++    displayPrefs: { notifyMinLevel: globalFloor },
++    sessionsRef: { current: new Map([["s1", { displayPrefsOverride: { notifyMinLevel: sessionFloor } }]]) },
++    showToast,
++  };
++  const { result } = renderHook(() => useMessageHandler(setters, deps));
++  return {
++    dispatch: (level?: string) => result.current({ type: "notify", sessionId: "s1", notifyId: "n1", message: "peer joined", level } as ServerToBrowserMessage),
++    showToast, setSessionStates, states: () => states,
++  };
++}
++
++afterEach(() => vi.useRealTimers());
++
++describe("info notifications are transient", () => {
++  it.each(["info", undefined, "unknown"])("toasts normalized info (%s) without adding a chat row", (level) => {
++    const rig = setup();
++    rig.dispatch(level);
++    expect(rig.showToast).toHaveBeenCalledExactlyOnceWith("peer joined", "info");
++    expect(rig.setSessionStates).not.toHaveBeenCalled();
++  });
++
++  it.each(["success", "warning", "error"])("keeps %s notifications in chat", (level) => {
++    const rig = setup();
++    rig.dispatch(level);
++    expect(rig.showToast).not.toHaveBeenCalled();
++    expect(rig.states().get("s1").messages).toHaveLength(1);
++    expect(rig.states().get("s1").messages[0].args.params.level).toBe(level);
++  });
++
++  it.each(["success", "warnings", "errors"])("respects the %s notification floor", (floor) => {
++    const rig = setup(floor);
++    rig.dispatch("info");
++    expect(rig.showToast).not.toHaveBeenCalled();
++    expect(rig.setSessionStates).not.toHaveBeenCalled();
++  });
++
++  it("respects a per-session override of the global floor", () => {
++    const rig = setup("errors", "all");
++    rig.dispatch("info");
++    expect(rig.showToast).toHaveBeenCalledOnce();
++    const hidden = setup("all", "warnings");
++    hidden.dispatch("info");
++    expect(hidden.showToast).not.toHaveBeenCalled();
++  });
++
++  it.each([false, true])("expires the toast, with repeated parent renders: %s", (rerender) => {
++    vi.useFakeTimers();
++    function Harness() {
++      const toast = useToast();
++      return <><button onClick={() => toast.showToast("peer joined", "info")}>Notify</button><Toast messages={toast.messages} onDismiss={toast.dismissToast} /></>;
++    }
++    const view = render(<Harness />);
++    act(() => screen.getByText("Notify").click());
++    expect(screen.getByText("peer joined")).toBeTruthy();
++    for (let second = 0; second < 3; second++) {
++      act(() => vi.advanceTimersByTime(1000));
++      if (rerender) view.rerender(<Harness />);
++    }
++    act(() => vi.advanceTimersByTime(300));
++    expect(screen.queryByText("peer joined")).toBeNull();
++    view.unmount();
++  });
++});
 --- a/packages/client/src/hooks/__tests__/useMessageHandler.plugin-meta.test.tsx
 +++ b/packages/client/src/hooks/__tests__/useMessageHandler.plugin-meta.test.tsx
 @@ -89,6 +89,11 @@
@@ -493,7 +622,35 @@
    it("prompt_request copies metadata.allowOther === true into params (test-plan #E16)", () => {
 --- a/packages/client/src/hooks/useMessageHandler.ts
 +++ b/packages/client/src/hooks/useMessageHandler.ts
-@@ -1581,6 +1581,10 @@
+@@ -9,7 +9,8 @@
+   SpawnFailureCode,
+ } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { CardSectionPrefs } from "@blackbelt-technology/pi-dashboard-shared/card-sections.js";
+-import type { DisplayPrefs } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
++import { isNotifyRowVisible, type DisplayPrefs } from "@blackbelt-technology/pi-dashboard-shared/display-prefs.js";
++import { normalizeNotifyLevel } from "@blackbelt-technology/pi-dashboard-shared/notify.js";
+ import type { ProviderRefreshError } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
+ import type { TerminalSession } from "@blackbelt-technology/pi-dashboard-shared/terminal-types.js";
+ import type { CommandInfo, DashboardSession, FileEntry, ModelInfo, OpenSpecData, OpenSpecGroup, RoleInfo } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+@@ -298,6 +299,8 @@
+    * See change: add-auto-session-naming.
+    */
+   showToast?: (text: string, variant?: ToastVariant) => void;
++  /** Global notification floor; a session override takes precedence for info toasts. */
++  displayPrefs?: DisplayPrefs;
+   /**
+    * Live mirror of the `sessions` map. `sessions_reordered` filtering and the
+    * live `endedTotals` transitions read it synchronously (setState updaters
+@@ -335,7 +338,7 @@
+     setEndedTotalsMap, setArchivedCountMap, setPagedCount, setSnapshotGeneration,
+     setPageReplyGen, setPageExhausted, setLookupOnlyIds,
+   } = setters;
+-  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, onSpawnFailed, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, showToast, sessionsRef, openspecGetInflightRef, endedTotalsMap, markHistoryLoadFailed, clearHistoryLoadFailed } = deps;
++  const { send, navigate, clearSpawningCwd, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, lastCreatedTerminalIdRef, maxSeqMapRef, selectedSessionIdRef, pendingSpawnsRef, onSpawnFailed, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, showToast, displayPrefs, sessionsRef, openspecGetInflightRef, endedTotalsMap, markHistoryLoadFailed, clearHistoryLoadFailed } = deps;
+   // One-shot per session: suppress a repeat auto-name toast for the same
+   // session id. See change: add-auto-session-naming.
+   const autoNameToastedRef = useRef<Set<string>>(new Set());
+@@ -1581,6 +1584,10 @@
          // production builds (per AGENTS.md ServerToBrowserMessage invariant).
          // See change: spawn-failure-diagnostics for new code/reasons/stderr fields.
          clearSpawningCwd(msg.cwd);
@@ -504,7 +661,7 @@
          setSpawnErrors((prev) => {
            const next = new Map(prev);
            next.set(msg.cwd, {
-@@ -1603,7 +1607,7 @@
+@@ -1603,7 +1610,7 @@
              cwd: msg.cwd,
              code: msg.code ?? "SPAWN_ERROR",
              message: msg.message,
@@ -513,7 +670,28 @@
            });
          }
          break;
-@@ -1879,6 +1883,7 @@
+@@ -1843,10 +1850,17 @@
+         });
+         break;
+ 
+-      // Notify: a render-only chat row. NEVER `addInteractiveRequest` — that
+-      // would recreate the phantom "user is blocked" state.
+-      // See change: split-notify-from-prompt-request.
++      // Info is transient, like Pi's TUI. Outcomes/problems remain chat rows;
++      // neither path creates an interactive request or blocks the session.
+       case "notify":
++        if (normalizeNotifyLevel(msg.level) === "info") {
++          const floor = sessionsRef?.current.get(msg.sessionId)?.displayPrefsOverride?.notifyMinLevel
++            ?? displayPrefs?.notifyMinLevel;
++          if (isNotifyRowVisible({ content: "notify", method: "notify", level: msg.level }, floor)) {
++            showToast?.(msg.message, "info");
++          }
++          break;
++        }
+         setSessionStates((prev) => {
+           const next = new Map(prev);
+           const current = next.get(msg.sessionId) ?? createInitialState();
+@@ -1879,6 +1893,7 @@
                title: msg.prompt?.question,
                message: msg.prompt?.metadata?.message as string | undefined,
                options: msg.prompt?.options,
@@ -521,6 +699,13 @@
                defaultValue: msg.prompt?.defaultValue,
                // For method "batch": sub-questions travel in metadata.questions.
                // See change: redesign-ask-user-question-cards.
+@@ -2118,5 +2133,5 @@
+         break;
+       }
+     }
+-  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setModelRefreshErrorsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setCollapsedFolders, setExpandedFolders, setCardSections, setGroupByPrefs, setFavoriteModels, setWorkspaces, setTerminals, setDiscoveredServers, setLoadingHistory, setReplayInFlight, setCanvasMap, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, flushLiveEvents, scheduleLiveFlush, publishGap, setHistorySpliceRev, setEndedTotalsMap, setPagedCount, setSnapshotGeneration, setPageReplyGen, setPageExhausted, sessionsRef, openspecGetInflightRef, markHistoryLoadFailed, clearHistoryLoadFailed, onSpawnFailed]);
++  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setModelRefreshErrorsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setCollapsedFolders, setExpandedFolders, setCardSections, setGroupByPrefs, setFavoriteModels, setWorkspaces, setTerminals, setDiscoveredServers, setLoadingHistory, setReplayInFlight, setCanvasMap, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, showToast, displayPrefs, flushLiveEvents, scheduleLiveFlush, publishGap, setHistorySpliceRev, setEndedTotalsMap, setPagedCount, setSnapshotGeneration, setPageReplyGen, setPageExhausted, sessionsRef, openspecGetInflightRef, markHistoryLoadFailed, clearHistoryLoadFailed, onSpawnFailed]);
+ }
 --- a/packages/client/src/hooks/usePluginEnabledSet.ts
 +++ b/packages/client/src/hooks/usePluginEnabledSet.ts
 @@ -58,27 +58,11 @@
@@ -2661,6 +2846,17 @@
        const controller = new AbortController();
        activeControllers.set(prompt.id, controller);
  
+--- a/packages/server/src/__tests__/browser-gateway-critical-frames.test.ts
++++ b/packages/server/src/__tests__/browser-gateway-critical-frames.test.ts
+@@ -214,7 +214,7 @@
+   it("E6: the notify-log replay is NOT exempt — 3 retained rows all dropped as transcript", async () => {
+     const rig = setupRig();
+     for (let i = 0; i < 3; i++) {
+-      rig.gateway.appendNotify(rig.sessionId, { notifyId: `n${i}`, message: `m${i}` });
++      rig.gateway.appendNotify(rig.sessionId, { notifyId: `n${i}`, message: `m${i}`, level: "warning" });
+     }
+     // Control: saturated subscribe with the notify log already populated but no
+     // prompts — everything the subscribe itself replays is transcript-class.
 --- a/packages/server/src/__tests__/cli-parse.test.ts
 +++ b/packages/server/src/__tests__/cli-parse.test.ts
 @@ -160,6 +160,12 @@
@@ -2910,6 +3106,58 @@
 +    }
 +  });
 +});
+--- /dev/null
++++ b/packages/server/src/__tests__/notify-transience.test.ts
+@@ -0,0 +1,49 @@
++import { describe, expect, it, vi } from "vitest";
++import { createMemoryEventStore } from "../persistence/memory-event-store.js";
++import { createDrainingWs } from "./helpers/draining-ws.js";
++import { buildLoadGatewayEx, flushAsync, seedReplayEvents, seedSessions } from "./helpers/load-fixtures.js";
++
++function setup() {
++  const seed = seedSessions({ focusedCwd: "/repo/a", idleCwds: [] });
++  const sessionId = seed.focusedSessionId;
++  const store = createMemoryEventStore(() => false);
++  seedReplayEvents(store, sessionId, 1, 16);
++  const { gateway } = buildLoadGatewayEx(seed.manager, { eventStore: store });
++  const ws = createDrainingWs({ drainRateBytesPerMs: 1 });
++  const send = vi.spyOn(ws, "send");
++  gateway.wss.emit("connection", ws, {});
++  ws.drainFully();
++  return {
++    gateway, sessionId, manager: seed.manager,
++    async subscribe() {
++      const from = send.mock.calls.length;
++      ws.emit("message", Buffer.from(JSON.stringify({ type: "subscribe", sessionId, lastSeq: 1 })));
++      await flushAsync(20);
++      return send.mock.calls.slice(from).map(([frame]) => JSON.parse(frame.toString())).filter((frame) => frame.type === "notify");
++    },
++  };
++}
++
++describe("notification retention", () => {
++  it.each(["info", undefined])("does not persist or replay info (%s)", async (level) => {
++    const rig = setup();
++    rig.gateway.appendNotify(rig.sessionId, { notifyId: "info", message: "peer joined", level: level as "info" | undefined });
++    expect(rig.manager.get(rig.sessionId)?.notifyLog ?? []).toEqual([]);
++    expect(await rig.subscribe()).toEqual([]);
++  });
++
++  it("does not replay old persisted info, but preserves outcomes and problems", async () => {
++    const rig = setup();
++    rig.manager.update(rig.sessionId, { notifyLog: [
++      { notifyId: "old-info", message: "old peer joined", level: "info" },
++      { notifyId: "old-omitted", message: "old default notification" },
++      { notifyId: "success", message: "finished", level: "success" },
++      { notifyId: "warning", message: "careful", level: "warning" },
++      { notifyId: "error", message: "failed", level: "error" },
++    ] });
++    expect((await rig.subscribe()).map((frame) => frame.notifyId)).toEqual(["success", "warning", "error"]);
++    rig.gateway.appendNotify(rig.sessionId, { notifyId: "new-warning", message: "careful again", level: "warning" });
++    expect(rig.manager.get(rig.sessionId)?.notifyLog?.map((entry) => entry.notifyId)).toEqual(["success", "warning", "error", "new-warning"]);
++    expect((await rig.subscribe()).map((frame) => frame.notifyId)).toEqual(["success", "warning", "error", "new-warning"]);
++  });
++});
 --- a/packages/server/src/__tests__/process-manager-keeper-spawn.test.ts
 +++ b/packages/server/src/__tests__/process-manager-keeper-spawn.test.ts
 @@ -427,3 +427,13 @@
@@ -3086,6 +3334,106 @@
    it("#E12 a flow-raised prompt with no ask_user tool call sets currentTool", async () => {
      await boot();
      const bridge = await openBridge();
+@@ -561,6 +588,21 @@
+   const notifies = (messages: any[], sessionId: string) =>
+     messages.filter((m) => m.type === "notify" && m.sessionId === sessionId);
+ 
++  it.each([notify, legacyNotify])("delivers info live without retaining or replaying it (%#)", async (emit) => {
++    await boot();
++    const bridge = await openBridge();
++    const { messages } = await connectBrowser("s1");
++    await registerLive(bridge, "s1");
++    fwd(bridge, "s1", "agent_start");
++    emit(bridge, "s1", "transient", "peer joined", "info");
++    await waitFor(() => notifies(messages, "s1").length === 1);
++    expect(notifies(messages, "s1")[0]).toMatchObject({ message: "peer joined", level: "info" });
++    expect(server.sessionManager.get("s1")?.notifyLog ?? []).toEqual([]);
++    const reconnected = await connectBrowser("s1");
++    await waitFor(() => reconnected.messages.some((msg) => msg.type === "event_replay" && msg.isLast));
++    expect(notifies(reconnected.messages, "s1")).toEqual([]);
++  });
++
+   it("#X3 no re-arm after a turn — new notify shape", async () => {
+     await boot();
+     const bridge = await openBridge();
+@@ -646,7 +688,7 @@
+     await boot();
+     const bridge = await openBridge();
+     await registerLive(bridge, "s1");
+-    notify(bridge, "s1", "n1");
++    notify(bridge, "s1", "n1", "retained problem", "warning");
+     await wait(150);
+ 
+     server.sessionManager.unregister("s1");
+@@ -742,7 +784,7 @@
+     fwd(bridge, "s1", "agent_start");
+     await wait(80);
+ 
+-    for (let i = 1; i <= 50; i++) notify(bridge, "s1", `n${i}`, `m${i}`);
++    for (let i = 1; i <= 50; i++) notify(bridge, "s1", `n${i}`, `m${i}`, "warning");
+     await wait(300);
+     const atCap = await connectBrowser("s1");
+     await wait(200);
+@@ -750,7 +792,7 @@
+     expect(first).toHaveLength(50);
+     expect(first[0].notifyId).toBe("n1");
+ 
+-    notify(bridge, "s1", "n51", "m51");
++    notify(bridge, "s1", "n51", "m51", "warning");
+     await wait(200);
+     const pastCap = await connectBrowser("s1");
+     await wait(250);
+@@ -770,10 +812,10 @@
+     // rows while the gateway's in-memory log is still empty (cold hydration
+     // happens lazily). The first append MUST NOT clobber the restored history.
+     server.sessionManager.update("s1", {
+-      notifyLog: [{ notifyId: "restored", message: "from disk", level: "info" }],
++      notifyLog: [{ notifyId: "restored", message: "from disk", level: "warning" }],
+     });
+ 
+-    notify(bridge, "s1", "n1", "live");
++    notify(bridge, "s1", "n1", "live", "warning");
+     await wait(200);
+ 
+     const log = server.sessionManager.get("s1")!.notifyLog!;
+@@ -788,7 +830,7 @@
+ 
+   /** Send one notify frame with a raw (possibly hostile) `ts`. */
+   function notifyWithTs(ws: WebSocket, sessionId: string, notifyId: string, ts: unknown) {
+-    send(ws, { type: "notify", sessionId, notifyId, message: `m-${notifyId}`, ...(ts === ABSENT ? {} : { ts }) });
++    send(ws, { type: "notify", sessionId, notifyId, message: `m-${notifyId}`, level: "warning", ...(ts === ABSENT ? {} : { ts }) });
+   }
+   const ABSENT = Symbol("absent");
+ 
+@@ -857,7 +899,7 @@
+     const before = Date.now();
+     // Infinity cannot survive JSON; send the raw overflow literal so the server
+     // parses `1e999` → Infinity itself.
+-    bridge.send('{"type":"notify","sessionId":"s1","notifyId":"inf","message":"m","ts":1e999}');
++    bridge.send('{"type":"notify","sessionId":"s1","notifyId":"inf","message":"m","level":"warning","ts":1e999}');
+     notifyWithTs(bridge, "s1", "str", "1758650000000");
+     notifyWithTs(bridge, "s1", "obj", {});
+     await waitFor(() => notifies(messages, "s1").length === 3);
+@@ -884,8 +926,8 @@
+     // the gateway's in-memory log is cold and hydrates on first replay.
+     server.sessionManager.update("s1", {
+       notifyLog: [
+-        { notifyId: "timed", message: "has ts", level: "info", ts: 111 },
+-        { notifyId: "legacy", message: "no ts", level: "info" },
++        { notifyId: "timed", message: "has ts", level: "warning", ts: 111 },
++        { notifyId: "legacy", message: "no ts", level: "warning" },
+       ],
+     });
+ 
+@@ -902,7 +944,7 @@
+     const bridge = await openBridge();
+     await registerLive(bridge, "s1");
+ 
+-    for (let i = 0; i < 10_000; i++) notify(bridge, "s1", `n${i}`, "spam");
++    for (let i = 0; i < 10_000; i++) notify(bridge, "s1", `n${i}`, "spam", "warning");
+     await waitFor(() => (server.sessionManager.get("s1")?.notifyLog?.length ?? 0) > 0, 15000);
+     await wait(500);
+     expect(server.sessionManager.get("s1")!.notifyLog!.length).toBeLessThanOrEqual(50);
 --- a/packages/server/src/__tests__/session-action-handler-spawn.test.ts
 +++ b/packages/server/src/__tests__/session-action-handler-spawn.test.ts
 @@ -28,6 +28,7 @@
@@ -3614,7 +3962,19 @@
    /**
     * Re-derive `awaitingFileAccess` from the pending-prompt registry (live,
     * replayed and resynced prompts all land there) and broadcast only on change.
-@@ -917,7 +918,7 @@
+@@ -845,9 +846,8 @@
+   }
+ 
+   /**
+-   * Deliver one notification: append to the bounded per-session notify log
+-   * (transcript durability across a browser refresh / server restart) and send
+-   * it to subscribers. Writes NO session state — no `currentTool`, no unread
++   * Deliver one notification: retain outcomes/problems in the bounded notify
++   * log and send all levels to live subscribers. Info is transient. Writes NO session state — no `currentTool`, no unread
+    * stamp, no reorder, no `session_updated` broadcast.
+    * See change: split-notify-from-prompt-request.
+    */
+@@ -917,7 +917,7 @@
      browserGateway.reconcilePromptRequests(sessionId, [...(collected ?? [])]);
      // File-access prompts are excluded from the fold: they must never overwrite the
      // in-flight tool (`awaitingFileAccess` carries them). See change: ask-agent-file-access-in-chat.
@@ -3623,7 +3983,7 @@
        sessionManager.update(sessionId, { currentTool: "ask_user" });
      }
      // Re-derive from the reconciled registry (flag only; `currentTool` keeps its
-@@ -1276,7 +1277,7 @@
+@@ -1276,7 +1276,7 @@
        // See change: restore-ask-user-tool-state-on-reconnect (D1/D4).
        const hasPendingPrompt =
          !replayed &&
@@ -3632,7 +3992,7 @@
        const updates = extractSessionUpdates(msg.event, hasPendingPrompt);
        if (updates) {
          sessionManager.update(sessionId, updates as Partial<DashboardSession>);
-@@ -1564,7 +1565,7 @@
+@@ -1564,7 +1564,7 @@
              // the same gate `extractSessionUpdates` applies via
              // `hasPendingPrompt` (design D10).
              const applied =
@@ -3641,7 +4001,7 @@
                  ? { status: updates.status }
                  : updates;
              // `streaming`/`idle` disagreements mean a run-boundary event was
-@@ -2515,7 +2516,7 @@
+@@ -2515,7 +2515,7 @@
          // is folded to "ask_user".
          const promptKind = (msg as any).prompt?.metadata?.kind;
          const isFileAccessPrompt = typeof promptKind === "string" && (FILE_ACCESS_KINDS as readonly string[]).includes(promptKind);
@@ -3650,7 +4010,7 @@
            sessionManager.update(sessionId, { currentTool: "ask_user" });
            browserGateway.broadcastSessionUpdated(sessionId, { currentTool: "ask_user" });
          }
-@@ -2579,7 +2580,7 @@
+@@ -2579,7 +2579,7 @@
        // derived value — a real tool that started meanwhile must not be stomped.
        if (
          !replayingSessions.has(sessionId) &&
@@ -3661,15 +4021,27 @@
          sessionManager.update(sessionId, { currentTool: null });
 --- a/packages/server/src/pairing/browser-gateway.ts
 +++ b/packages/server/src/pairing/browser-gateway.ts
-@@ -9,6 +9,7 @@
+@@ -9,6 +9,8 @@
    ServerToBrowserMessage,
  } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
  import type { NotifyLogEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
++import { normalizeNotifyLevel } from "@blackbelt-technology/pi-dashboard-shared/notify.js";
 +import { isWebOnlyDisabledCommand, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
  import { WebSocket, WebSocketServer } from "ws";
  import { getLastBindReachability } from "../auth/bind-reachability-service.js";
  import { type DirectoryService, hasOpenSpecDir, hasOpenSpecRoot } from "../directory-service.js";
-@@ -661,6 +662,8 @@
+@@ -455,8 +457,8 @@
+   /** Clear a pending interactive UI request (resolved or cancelled) */
+   clearUiRequest(sessionId: string, requestId: string): void;
+   /**
+-   * Append one notification to the session's bounded notify log (cap 50,
+-   * oldest evicted) and persist it on the session record. Transcript history
++   * Retain non-info notifications in the bounded log (cap 50, oldest evicted)
++   * and persist them on the session record. Info is live-only. Transcript history
+    * only — it never feeds `hasPendingPromptRequests` / `hasPendingAsk` / the
+    * `currentTool` fold. See change: split-notify-from-prompt-request.
+    */
+@@ -661,6 +663,8 @@
     *  `wireEvents`. Absent → subscribe never waits on a bridge replay.
     *  See change: fix-large-session-resume-replay. */
    replayState?: ReplayState,
@@ -3678,7 +4050,28 @@
  ): BrowserGateway {
    const wss = new WebSocketServer({ noServer: true });
  
-@@ -2043,6 +2046,7 @@
+@@ -848,7 +852,10 @@
+   function hydrateNotifyLog(sessionId: string): void {
+     if (!notifyLog.isEmpty(sessionId)) return;
+     const persisted = sessionManager.get(sessionId)?.notifyLog;
+-    if (persisted && persisted.length > 0) notifyLog.hydrate(sessionId, persisted);
++    // Older servers retained info too. Do not replay stale notices as fresh toasts.
++    if (persisted && persisted.length > 0) {
++      notifyLog.hydrate(sessionId, persisted.filter((entry) => normalizeNotifyLevel(entry.level) !== "info"));
++    }
+   }
+ 
+   function replayNotifyLog(ws: WebSocket, sessionId: string) {
+@@ -868,6 +875,8 @@
+   }
+ 
+   function appendNotify(sessionId: string, entry: NotifyLogEntry): void {
++    // Info still reaches live subscribers, but never enters retained history.
++    if (normalizeNotifyLevel(entry.level) === "info") return;
+     hydrateNotifyLog(sessionId);
+     const list = notifyLog.append(sessionId, entry);
+     // Mirror onto the session record so the debounced `.meta.json` save carries
+@@ -2043,6 +2052,7 @@
                }),
            },
            headlessPidRegistry, pendingResumeRegistry, pendingDashboardSpawns,
@@ -3686,7 +4079,7 @@
            pendingAttachRegistry,
            pendingInitialPromptRegistry,
            pendingResumeIntents,
-@@ -2154,6 +2158,17 @@
+@@ -2154,6 +2164,17 @@
            if (!allowed) return;
          }
  

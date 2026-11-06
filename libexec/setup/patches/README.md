@@ -147,8 +147,8 @@ reconstruction or browser revision uses the full build procedure above.
 The comparison base must be the **published archive's** `package/dist`, not a
 second local build. The successful reviewed build used a 4-GiB Node heap; the
 2-GiB attempt exhausted its heap. Review the generated source diff and all native
-build deltas. The reviewed result contains 138 changed/new uncompressed browser
-files; that count is evidence for this build, not a rule for future revisions.
+build deltas. The initial reviewed result contains 138 changed/new uncompressed browser
+files; that count is evidence for that build, not a rule for future revisions.
 
 ## Validate before installing
 
@@ -185,7 +185,11 @@ The initial queue patch passed TypeScript checking, 20 focused files / 466 tests
 the native build, exact forward/reverse patch application, and deterministic
 regeneration. The split-registration revision passed 4 registration files / 52
 tests. The loopback revision passed TypeScript checking and 5 affected/config,
-TLS, and credential files / 276 tests. The web-interface-only revision passed
+TLS, and credential files / 276 tests. The transient-info revision passed TypeScript checking,
+a native browser build, and 34 focused files / 386 tests, including live bridge delivery,
+reconnect replay, persisted-log filtering, notification floors, and toast expiry during parent rerenders.
+Its runtime and source patches apply and reverse exactly, and unchanged regeneration is deterministic.
+The web-interface-only revision passed
 TypeScript checking and focused shared, extension, preference, and real-server
 boundary tests; these counts overlap and are not additive. The exploratory full suite recorded failures outside this patch's
 scope and was stopped; it did not establish full-suite acceptance. These local
