@@ -4,6 +4,30 @@ These examples distinguish requested behavior from added guarantees, inspect the
 and separate required distinctions from their existing representation.
 They illustrate the skill's requirement-to-mechanism comparison, not permission to drop user requirements or a separate exercise for every design.
 
+## Remove the intermediary only where its capability is already supplied
+
+**Request:** Simplify a sandbox's connection to a host command broker.
+A gateway limits the guest's access to selected services.
+The current path is guest → gateway → host TCP bridge → broker listening on host loopback.
+
+**Tempting replacement:** Adopt a networking library to replace the bridge's handwritten forwarding loop.
+That may simplify buffering and half-close handling, but assumes the bridge is necessary.
+
+**Concrete comparison:** Trace the gateway's destination and the broker's listener through each supported backend.
+In this case, the VM backend already forwards its host address to host-loopback listeners.
+The gateway can address the broker directly without changing the broker's listener or session-token authentication.
+A generic container backend's host address does not establish the same forwarding capability.
+
+**Decision:** Bypass the host bridge on the backend that supplies its connectivity, and retain the bridge on backends that still need it.
+The bypass removes a listener, a forwarding loop, and their lifecycle tracking without introducing a library.
+Keep the gateway: it still supplies restricted connectivity rather than general host-network access.
+Check that admission, disconnect propagation, and cleanup survive the shorter path; endpoint reachability alone does not establish those behaviors.
+Source inspection and component fixtures support the candidate, but do not establish acceptance on an untested deployed backend.
+
+**Transfer:** Compare replacing the intermediary, bypassing it, and retaining it against the same required capabilities.
+Ask what the intermediary supplies that the adjacent endpoints cannot already do, then use the smallest check that can settle that question.
+Fewer hops are not a sufficient reason to remove a boundary that still supplies required isolation, authorization, or lifecycle behavior.
+
 ## Start with the existing operation
 
 **Request:** Restart running sessions without losing the work their existing pause operation can save.

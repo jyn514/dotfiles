@@ -131,6 +131,9 @@ Before proposing a new runtime resource or lifecycle owner, apply the shared [ru
 Consult API inventories, generated contracts, issues, and prepared work only when they can change the proposed boundary or prevent duplicate work.
 For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 For adapters and proxies, inspect the native interface and any existing analogous adapter before deciding what to forward, restrict, or replace.
+Before choosing a replacement for an existing intermediary, compare the current path with a direct producer-to-consumer path.
+Identify what capability would disappear if the intermediary were omitted, and where that capability is required.
+Use the [forwarding example](references/simplicity-examples.md#remove-the-intermediary-only-where-its-capability-is-already-supplied) when that comparison is unclear.
 When a repeated operation constructs a client, runtime, or adapter, trace its constructors and factories through to external effects.
 Identify repeated resource selection and admission checks, including configuration reads, process launches, and network requests.
 Check whether an existing owner has already selected or admitted that resource before proposing another discovery path.
