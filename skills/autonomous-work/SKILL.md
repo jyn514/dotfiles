@@ -131,6 +131,7 @@ Record corrections, constraints and their sources, failed approaches, and decisi
 Keep governing requirements distinct from revisable agent choices in saved state; summaries must not promote the latter into user instructions.
 Record user decisions before dependent delegation and reconcile superseded holds, questions, and worker instructions without dropping constraints that still apply.
 Do not rely on compaction to retain everything needed to resume.
+When assigning archivist source recovery, select the `archivist` template on Pi; on other harnesses, assign an equivalent bounded source-recovery role.
 
 ### When compaction risks losing track
 

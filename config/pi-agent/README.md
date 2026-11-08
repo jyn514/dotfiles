@@ -60,6 +60,7 @@ The specialized templates are:
 - [`designer`](pi-codex-subagents/agents/designer.md), when useful: sustained ownership of an unsettled human interaction and learning model across commands, screens, terminology, examples, and docs.
 - [`qa`](pi-codex-subagents/agents/qa.md): verification and failure investigation, questioning which bugs matter or are likely.
 - [`builder`](pi-codex-subagents/agents/builder.md): creation and integration, questioning unnecessary implementation assumptions and restrictions.
+- [`archivist`](pi-codex-subagents/agents/archivist.md): sourced reconciliation of current instructions, decisions, ownership, status, and evidence; not policy selection or technical acceptance.
 
 Use the [self-contained assignment procedure](../../skills/delegation/references/executive.md#give-a-self-contained-assignment) for common packet requirements; each advertised role hint names its specific inputs.
 The templates supply stable procedures.

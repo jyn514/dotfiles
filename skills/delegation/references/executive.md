@@ -11,6 +11,7 @@ A bounded helper can supply a useful output while you remain the direct owner wh
 Assign additional responsibilities only when their independent output, evidence, or useful parallelism earns the handoff cost, or jyn requires the independence.
 Keep coupled creation and integration coherent; establish the format of a separately useful output early enough for its preparation to overlap consumption.
 Use advertised role templates when they fit the assigned responsibility, supplying task-specific outcomes, evidence, effects, and limits.
+When assigning archivist coverage, select the `archivist` template on Pi; on other harnesses, assign an equivalent bounded source-recovery role.
 Once a responsibility has an owner, retain that boundary rather than take over its question; a dedicated executive organizes that workstream instead of becoming its technical owner.
 
 For example, a bounded CLI repair accepted through ordinary consumer checks can stay with its direct owner or one builder; no separate QA or strategist is needed.
