@@ -1,3 +1,5 @@
+#[path = "../../../libexec/bounded-process.rs"]
+mod bounded_process;
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use jj_proxy::{execution_policy, policy, workspaces::{self, Workspace}, SOURCE_ROOT};
 #[allow(deprecated)]
@@ -5,9 +7,13 @@ use nix::fcntl::{flock, FlockArg};
 use serde::{Deserialize, Serialize};
 use nix::fcntl::{openat, OFlag};
 use nix::sys::resource::{setrlimit, Resource};
-use nix::sys::signal::{kill, Signal};
+use nix::sys::signal::Signal;
+#[cfg(test)]
+use nix::sys::signal::kill;
 use nix::sys::stat::Mode;
-use nix::unistd::{dup, fchdir, setsid, Pid};
+use nix::unistd::{dup, fchdir, setsid};
+#[cfg(test)]
+use nix::unistd::Pid;
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -236,14 +242,6 @@ fn command_environment<'a>(
     environment
 }
 
-fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    file.take((MAX_OUTPUT + 1) as u64).read_to_end(&mut bytes)?;
-    Ok(bytes)
-}
-
-fn kill_group(pid: u32) { let _ = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL); }
-
 /// Request framing requires shutdown(Write), so read EOF/RDHUP is normal.
 /// Only a full Unix-stream disconnect or socket error cancels a queued request.
 fn check_peer(peer: Option<&UnixStream>) -> Result<()> {
@@ -299,37 +297,16 @@ fn acquire_lock_checked(path: &Path, deadline: Instant, mut check_cancellation: 
 /// The caller gives every child its own session. No child may outlive ownership
 /// of the request lock, even when the leader exits while descendants hold pipes.
 fn run_bounded(command: &mut Command, deadline: Instant) -> Result<(i32, Vec<u8>, Vec<u8>)> {
-    #[cfg(target_os = "linux")]
-    nix::sys::prctl::set_child_subreaper(true).wrap_err("cannot adopt command descendants")?;
-    if Instant::now() >= deadline { bail!("request deadline exceeded before starting jj"); }
-    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
-    let pid = child.id();
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let out_thread = thread::spawn(move || collect(stdout));
-    let err_thread = thread::spawn(move || collect(stderr));
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Ok(status.code().unwrap_or(128)),
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
-            Ok(None) => { kill_group(pid); let _ = child.wait(); break Ok(124); }
-            Err(error) => { kill_group(pid); let _ = child.wait(); break Err(error); }
-        }
-    };
-    kill_group(pid);
-    // Adopted descendants remain in the child's process group. Wait until all
-    // are dead and reaped before the caller can drop its request lock.
-    #[cfg(target_os = "linux")]
-    loop {
-        match nix::sys::wait::waitpid(Pid::from_raw(-(pid as i32)), None) {
-            Ok(_) | Err(nix::errno::Errno::EINTR) => continue,
-            Err(nix::errno::Errno::ECHILD) => break,
-            Err(error) => return Err(error).wrap_err("cannot reap command descendants"),
-        }
-    }
-    let stdout = out_thread.join().ok().and_then(Result::ok).unwrap_or_default();
-    let stderr = err_thread.join().ok().and_then(Result::ok).unwrap_or_default();
-    Ok((status?, stdout, stderr))
+    use bounded_process::{Deadline, Limits, OutputLimit, Ownership};
+    let output = bounded_process::run(command, None, Limits {
+        ownership: Ownership::Session,
+        deadline: Deadline::Absolute(deadline),
+        stdout: OutputLimit::Capture(MAX_OUTPUT),
+        stderr: OutputLimit::Capture(MAX_OUTPUT),
+        tick: Duration::from_millis(10),
+    }, || Ok(()))?;
+    let status = if output.timed_out { 124 } else { output.status.unwrap().code().unwrap_or(128) };
+    Ok((status, output.stdout, output.stderr))
 }
 
 fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {

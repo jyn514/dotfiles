@@ -1,22 +1,24 @@
 FROM lukemathwalker/cargo-chef:0.1.78-rust-1.98.1-alpine3.24 AS chef
 RUN apk add --no-cache musl-dev
-WORKDIR /build
+WORKDIR /build/tools/jj-proxy
 
 FROM chef AS planner
 COPY tools/jj-proxy/Cargo.toml ./
 COPY tools/jj-proxy/Cargo.lock ./
 COPY tools/jj-proxy/src ./src
+COPY libexec/bounded-process.rs /build/libexec/bounded-process.rs
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
-COPY --from=planner /build/recipe.json recipe.json
-RUN --mount=type=cache,target=/build/target \
+COPY --from=planner /build/tools/jj-proxy/recipe.json recipe.json
+RUN --mount=type=cache,target=/build/tools/jj-proxy/target \
     cargo chef cook --release --all-targets --locked --recipe-path recipe.json
 COPY tools/jj-proxy/Cargo.toml ./
 COPY tools/jj-proxy/Cargo.lock ./
 COPY tools/jj-proxy/src ./src
+COPY libexec/bounded-process.rs /build/libexec/bounded-process.rs
 COPY tools/jj-proxy/tests/fixtures ./tests/fixtures
-RUN --mount=type=cache,target=/build/target \
+RUN --mount=type=cache,target=/build/tools/jj-proxy/target \
     cargo build --release --locked \
     && cp target/release/jj-proxy /jj-proxy
 
@@ -51,7 +53,7 @@ COPY --from=jj /jj-bin /jj-bin
 COPY tools/jj-proxy/jj.toml ./
 COPY tools/jj-proxy/policy.toml ./policy.toml
 COPY tools/jj-proxy/agent-split-editor ./agent-split-editor
-RUN --mount=type=cache,target=/build/target \
+RUN --mount=type=cache,target=/build/tools/jj-proxy/target \
     JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked
 
 FROM alpine:3.22 AS editor

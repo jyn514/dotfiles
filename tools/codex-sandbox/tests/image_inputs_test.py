@@ -161,6 +161,29 @@ class ImageInputsTest(unittest.TestCase):
                 output.write('\n// changed diagnostic policy\n')
             self.assertNotEqual(before, key())
 
+    def test_shared_executor_is_captured_and_invalidates_jj_image(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        source = Path('libexec/bounded-process.rs')
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            root = temporary / 'repository'
+            paths = owned['source_paths'](['jj'])['jj']
+            _capture(ROOT, ROOT, root, hashlib.sha256(), paths)
+            with patch.dict(owned['declaration'].__globals__, ROOT=root):
+                before = owned['declaration'](['jj'], platform='linux/amd64')['target']['jj']
+                selected = owned['source_paths'](['jj'])['jj']
+                captured = temporary / 'captured'
+                _capture(root, root, captured, hashlib.sha256(), selected)
+                self.assertEqual((ROOT / source).read_bytes(), (captured / source).read_bytes())
+                self.assertEqual(before, owned['declaration'](['jj'], platform='linux/amd64')['target']['jj'])
+                with (root / source).open('a') as output:
+                    output.write('\n// shared executor change\n')
+                after = owned['declaration'](['jj'], platform='linux/amd64')['target']['jj']
+                self.assertNotEqual(before['tags'], after['tags'])
+                self.assertEqual(before['args'], after['args'])
+                _capture(root, root, temporary / 'changed', hashlib.sha256(), selected)
+                self.assertEqual((root / source).read_bytes(), (temporary / 'changed' / source).read_bytes())
+
     def test_host_lock_selects_proxy_artifacts_and_cache_identity(self):
         owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
         with tempfile.TemporaryDirectory() as directory:

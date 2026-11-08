@@ -1,19 +1,19 @@
 //! Host-native broker: fixed authority, bounded streams, and live child ownership.
 //! Native stdout/stderr are pipes, stdin is closed at the end of request bytes;
 //! broker stdout is reserved exclusively for one bounded readiness JSON line.
+#[path = "../../../libexec/bounded-process.rs"]
+mod bounded_process;
 use crate::{policy, protocol::*, repository};
 use anyhow::{bail, Context, Result};
 use nix::fcntl::{fcntl, FcntlArg, FdFlag, OFlag};
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{FromRawFd, RawFd};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -241,48 +241,6 @@ fn peer_cancelled(stream: &TcpStream) -> bool {
         _ => true,
     }
 }
-struct OwnedChild(Child);
-impl OwnedChild {
-    fn terminate(&mut self) {
-        if self.0.try_wait().ok().flatten().is_some() {
-            return;
-        }
-        // Signal only the currently owned child, never a recorded or adopted PID.
-        let _ = kill(Pid::from_raw(self.0.id() as i32), Signal::SIGTERM);
-        let until = Instant::now() + TERMINATION_TIMEOUT;
-        while Instant::now() < until {
-            if self.0.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            thread::sleep(TICK);
-        }
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-impl Drop for OwnedChild {
-    fn drop(&mut self) {
-        self.terminate();
-    }
-}
-fn drain(reader: &mut impl Read, output: &mut Vec<u8>, limit: usize) -> Result<bool> {
-    let mut buf = [0; 16 * 1024];
-    // Bound per-tick work too: a continuous writer must not starve cancellation.
-    for _ in 0..16 {
-        match reader.read(&mut buf) {
-            Ok(0) => return Ok(true),
-            Ok(n) => {
-                if output.len() + n > limit {
-                    bail!("native output limit exceeded");
-                }
-                output.extend_from_slice(&buf[..n]);
-            }
-            Err(e) if transient(&e) => return Ok(false),
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(false)
-}
 fn execute(
     config: &Config,
     request: &Request,
@@ -314,77 +272,37 @@ fn execute(
         .env("GIT_CONFIG_KEY_1", "user.email")
         .env("GIT_CONFIG_VALUE_1", &config.user_email)
         .env("GIT_CONFIG_KEY_2", "meta.namespace")
-        .env("GIT_CONFIG_VALUE_2", &config.namespace)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("GIT_CONFIG_VALUE_2", &config.namespace);
     if cancelled(stop, admission_deadline) || peer_cancelled(stream) {
         bail!("cancelled before spawn");
     }
-    let mut child = OwnedChild(command.spawn().context("native spawn failed")?);
-    let deadline = Instant::now() + EXECUTION_TIMEOUT;
-    let mut input = child.0.stdin.take();
-    let mut output = child.0.stdout.take().unwrap();
-    let mut error = child.0.stderr.take().unwrap();
-    nonblocking(input.as_ref().unwrap().as_raw_fd())?;
-    nonblocking(output.as_raw_fd())?;
-    nonblocking(error.as_raw_fd())?;
-    let mut written = 0;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut output_done = false;
-    let mut error_done = false;
-    let status;
-    loop {
+    use bounded_process::{Deadline, Limits, OutputLimit, Ownership};
+    let output = bounded_process::run(&mut command, Some(request.stdin.as_bytes()), Limits {
+        ownership: Ownership::Child { grace: TERMINATION_TIMEOUT },
+        deadline: Deadline::AfterSpawn(EXECUTION_TIMEOUT),
+        stdout: OutputLimit::Reject(MAX_STDOUT),
+        stderr: OutputLimit::Reject(MAX_STDERR),
+        tick: TICK,
+    }, || {
         if stop.load(Ordering::Acquire) || peer_cancelled(stream) {
-            bail!("request cancelled; native outcome may be unknown");
-        }
-        if Instant::now() >= deadline {
-            child.terminate();
-            return Ok(Response::error(
-                124,
-                "native execution deadline exceeded; inspect results before retrying",
-            ));
-        }
-        if let Some(pipe) = &mut input {
-            if written == request.stdin.len() {
-                input.take();
-            } else {
-                match pipe.write(&request.stdin.as_bytes()[written..]) {
-                    Ok(0) => {
-                        input.take();
-                    }
-                    Ok(n) => written += n,
-                    Err(e) if transient(&e) => {}
-                    Err(e) if e.kind() == io::ErrorKind::BrokenPipe => {
-                        input.take();
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
-        }
-        if !output_done {
-            output_done = drain(&mut output, &mut stdout, MAX_STDOUT)?;
-        }
-        if !error_done {
-            error_done = drain(&mut error, &mut stderr, MAX_STDERR)?;
-        }
-        if let Some(exit) = child.0.try_wait()? {
-            if output_done && error_done {
-                status = exit;
-                break;
-            }
-        }
-        thread::sleep(TICK);
+            Err(io::Error::other("request cancelled; native outcome may be unknown"))
+        } else { Ok(()) }
+    }).context("native execution failed")?;
+    if output.timed_out {
+        return Ok(Response::error(
+            124,
+            "native execution deadline exceeded; inspect results before retrying",
+        ));
     }
+    let status = output.status.unwrap();
     use std::os::unix::process::ExitStatusExt;
     Ok(Response {
         version: WIRE_VERSION,
         exit: status
             .code()
             .unwrap_or_else(|| 128 + status.signal().unwrap_or(0)),
-        stdout: String::from_utf8(stdout).context("native stdout is not UTF-8")?,
-        stderr: String::from_utf8(stderr).context("native stderr is not UTF-8")?,
+        stdout: String::from_utf8(output.stdout).context("native stdout is not UTF-8")?,
+        stderr: String::from_utf8(output.stderr).context("native stderr is not UTF-8")?,
     })
 }
 fn serve(mut stream: TcpStream, config: &Config, stop: &AtomicBool, accepted: Instant) {

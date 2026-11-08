@@ -255,7 +255,8 @@ def stage_cache(bundle, prefix, guest_writable_roots=(), *, expected=None):
 def source_identity(root=ROOT):
     """Hash the bounded build inputs, not mtimes or checkout location."""
     paths = [Path(name) for name in ('Cargo.toml', 'Cargo.lock', 'native-revision',
-                                    'build-local', 'bundle.py')]
+                                    'build-local', 'bundle.py',
+                                    '../../libexec/bounded-process.rs')]
     paths += [path.relative_to(root) for path in (root / 'src').rglob('*.rs')]
     identity = hashlib.sha256()
     for path in sorted(paths):

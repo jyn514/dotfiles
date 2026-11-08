@@ -190,13 +190,21 @@ class BuildRecipeTest(unittest.TestCase):
         self.assertEqual(1, len([p for p in self.prefix.iterdir() if p.name != '.resolve.lock']))
 
     def test_identity_hashes_source_bytes_and_paths_not_mtime_or_checkout(self):
-        copied = self.root / 'proxy-source'
+        copied = self.root / 'tools/tic-proxy'
         shutil.copytree(ROOT, copied, ignore=shutil.ignore_patterns('target', 'tests', '__pycache__'))
+        shared = self.root / 'libexec/bounded-process.rs'
+        shared.parent.mkdir()
+        shutil.copyfile(ROOT.parents[1] / 'libexec/bounded-process.rs', shared)
         original = bundles.source_identity(copied)
+        self.assertEqual(bundles.source_identity(), original)
         source = copied / 'src/protocol.rs'
         os.utime(source, (1, 1))
         self.assertEqual(original, bundles.source_identity(copied))
         source.write_bytes(source.read_bytes() + b'\n// owned test change\n')
+        self.assertNotEqual(original, bundles.source_identity(copied))
+        source.write_bytes((ROOT / 'src/protocol.rs').read_bytes())
+        self.assertEqual(original, bundles.source_identity(copied))
+        shared.write_bytes(shared.read_bytes() + b'\n// shared executor change\n')
         self.assertNotEqual(original, bundles.source_identity(copied))
 
     def test_old_wire_bundle_and_wrong_native_policy_platform_source_are_rejected(self):
