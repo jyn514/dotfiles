@@ -230,7 +230,14 @@ Existing workers retain their selected model on continuation and recreation, eve
 
 `directSkillRoutes` delegates exact `/skill:<name>` invocations to an agent template before the parent model runs. Each route requires `agentType`; `proposalOnly: true` adds the existing parent session identity and instructs the child to return proposals without mutation. This is a prompt-level instruction, not a security boundary: use a read-only template when the child must be mechanically unable to apply changes.
 
-Direct routes apply only to idle, text-only interactive or RPC input. Images, extension-authored input, and queued input follow Pi's normal skill handling. The child message keeps `/skill:<name>` first so Pi expands the skill, then appends the agent template prompt. Template frontmatter still configures the child model, thinking, tools, skills, and extensions.
+Direct routes apply only to idle, text-only interactive or RPC input. Images, extension-authored input, and queued input follow Pi's normal skill handling. The child message keeps `/skill:<name>` first so Pi expands the skill, then appends the agent template prompt.
+The producer names that worker `direct/<name>/<unique-id>`; it owns that skill locally rather than routing it again, including on continuation.
+Other skills still follow their configured routes in that worker, and ordinary workers retain direct routing and explicit helper spawning.
+A newly named fork uses its own task identity, not the source worker's routing ownership.
+At the root, routing consumes the input and delivers the helper completion asynchronously.
+Inside a managed worker, routing transforms the input into a normal model turn: the worker receives the helper identity, original request, and proposal-only constraints, then waits for and integrates the helper result.
+This keeps the caller's assigned integration responsibility in its ordinary tool loop; it does not extend process lifetime after an input with no native run.
+Template frontmatter still configures the child model, thinking, tools, skills, and extensions.
 
 Missing routes use normal parent execution. A missing template, unavailable proposal session, or missing parent identity also falls back before child startup, with a warning. Once child startup is attempted, any failure is reported without rerunning the skill on the parent because the child may already have produced effects. Child completion uses the normal parent-continuation delivery path.
 

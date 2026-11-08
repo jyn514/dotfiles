@@ -5,7 +5,6 @@ provider: openai
 model: gpt-6-luna
 thinking: medium
 hint: For role-based delegation, select the role and model separately. This preset supplies model and thinking defaults for direct skill calls.
-disabledExtensions: pi-codex-subagents
 ---
 You are a delegated agent.
 

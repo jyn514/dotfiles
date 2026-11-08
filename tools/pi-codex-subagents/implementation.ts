@@ -413,6 +413,9 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
 
     const route = loadSubagentConfig().directSkillRoutes?.[invocation.skill.name];
     if (!route) return;
+    // The direct-route producer assigns this namespace before forwarding the raw skill command.
+    // Its worker owns that skill locally, including later invocations; other skills still route normally.
+    if (process.env.PI_SUBAGENT_TASK_NAME?.startsWith(`direct/${invocation.skill.name}/`)) return;
     if (suspension.isPaused(parentSessionId(ctx))) {
       ctx.ui?.notify?.("Direct skill delegation is blocked while the subagent group is paused.", "warning");
       return; // No effect occurred; native admission must reject, not acknowledge consumption.
@@ -442,6 +445,16 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
         templatePromptPosition: "after",
       });
       ctx.ui?.notify?.(`Delegated /skill:${invocation.skill.name} to ${result.task_name}`, "info");
+      if (process.env.PI_SUBAGENT_ID) {
+        // A managed caller needs a native turn: "handled" ends an input with no run.
+        // Ordinary helper waiting/integration keeps the caller alive without a new lifecycle protocol.
+        return { action: "transform" as const, text: [
+          `The /skill:${invocation.skill.name} request is delegated to subagent ${result.task_name}.`,
+          `Use wait_agent with targets [${JSON.stringify(result.task_name)}], then integrate its returned result into your response.`,
+          "Do not execute the skill again locally or spawn a duplicate.",
+          "", "Original request and constraints:", directSkillMessage(event.text, route, ctx),
+        ].join("\n") };
+      }
     } catch (error) {
       ctx.ui?.notify?.(`Direct skill delegation failed: ${error instanceof Error ? error.message : String(error)}`, "error");
     }

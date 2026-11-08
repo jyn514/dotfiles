@@ -68,7 +68,7 @@ sourceTest("setup alias loads the tracked package into a native provider without
     const extensions = await resolveChildExtensionPaths({
       cwd, projectTrusted: false, disabledExtensions: definition.disabledExtensions,
     });
-    expect(extensions).not.toContain(realpathSync(join(alias, "index.ts")));
+    expect(extensions).toContain(realpathSync(join(alias, "index.ts")));
   }
   const sessionFile = join(cwd, "installed.jsonl");
   const peer = sourceRpc(cwd, sessionFile, false, executiveExtensions);

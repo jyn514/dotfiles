@@ -12,7 +12,7 @@ import { providerCallsFile } from "./held-tool-extension.ts";
 const sourceTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG);
 const root = resolve(import.meta.dir, "../../..");
 const read = (path: string) => readFileSync(path, "utf8");
-const roles = ["executive", "strategist", "builder", "qa", "designer", "parent", "luna"];
+const roles = ["executive", "strategist", "builder", "qa", "designer", "parent", "luna", "archivist"];
 const copy = (source: string, destination: string) => {
   copyFileSync(source, destination);
   expect(read(destination)).toBe(read(source));
@@ -144,7 +144,7 @@ sourceTest("roots keep direct-task context; every child has a shared read route 
       expect(call.text).toBe([definition?.prompt, "Inspect the assigned outcome."].filter(Boolean).join("\n\n"));
       expect(call.text.includes(roleMarker)).toBe(selection === "executive");
       expect(call.text).not.toContain(procedureMarker);
-      expect(call.tools.includes("spawn_agent")).toBe(selection === "executive" || selection === undefined);
+      expect(call.tools).toContain("spawn_agent");
       expect(read(roleFile)).toBe(userRole);
       expect(read(join(cwd, "AGENTS.md"))).toBe("USER_PROJECT_CONTEXT\n");
       expect(info.thinking).toBe(definition?.thinking ?? "medium");

@@ -188,6 +188,28 @@ const respond: FauxResponseFactory = (context, options, _state, model) => {
     }
     return fauxAssistantMessage("faux:link-worker-complete");
   }
+  const routedTask = text.match(/^The \/skill:[^ ]+ request is delegated to subagent (\/?direct\/[^\s]+)\.$/m);
+  if (routedTask) {
+    const lastUserIndex = context.messages.findLastIndex(message => message.role === "user");
+    const result = context.messages.slice(lastUserIndex + 1)
+      .find(message => message.role === "toolResult" && message.toolName === "wait_agent");
+    return result ? fauxAssistantMessage("worker-integrated:" + messageText(result))
+      : fauxAssistantMessage(fauxToolCall("wait_agent", { targets: [routedTask[1]] }), { stopReason: "toolUse" });
+  }
+  const helperTask = context.messages.filter(message => message.role === "user").map(messageText)
+    .some(text => /^role-helper-task$/m.test(text));
+  if (helperTask) {
+    const results = context.messages.filter(message => message.role === "toolResult");
+    if (!results.some(message => message.toolName === "spawn_agent")) return fauxAssistantMessage(fauxToolCall("spawn_agent", {
+      task_name: "bounded-luna-helper", agent_type: "luna", message: "bounded-luna-result",
+    }), { stopReason: "toolUse" });
+    if (!results.some(message => message.toolName === "wait_agent")) return fauxAssistantMessage(fauxToolCall("wait_agent", {
+      targets: ["bounded-luna-helper"],
+    }), { stopReason: "toolUse" });
+    const result = results.find(message => message.toolName === "wait_agent");
+    // Echo the native returned content, not a fixture-generated substitute for the helper result.
+    return fauxAssistantMessage("builder-integrated:" + messageText(result));
+  }
   const parentTask = context.messages.filter(message => message.role === "user")
     .map(messageText).map(text => text.match(/^parent-(nested-|blocked-)?held-task:(.+)$/m)).find(Boolean);
   if (parentTask) {

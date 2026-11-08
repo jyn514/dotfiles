@@ -111,7 +111,16 @@ production options or fixture-only APIs.
 ## Coverage and limits
 
 `model-selection.test.ts` copies the tracked model configuration and templates into private state, then drives the production `spawn_agent` through a real parent's model-issued tool call.
-It checks caller-visible guidance and choices, role prompts on independently selected models, unchanged delegation permissions, model/thinking precedence, both configured direct skill routes, and proposal-only prompt delivery.
+It checks caller-visible guidance and choices, role prompts on independently selected models, all eight templates' native subagent-management tool delivery, model/thinking precedence, both configured direct skill routes, and proposal-only prompt delivery.
+Delegation permission has an independent expected-allow oracle rather than deriving the expectation from template exclusions.
+A builder's faux model issues a real `spawn_agent` to the tracked Luna preset, waits through `wait_agent`, and includes the returned helper content in its final answer.
+The test checks that answer, both successful native tool results, the helper's model selection, and the exact instructions delivered to the helper.
+Both configured direct routes run their selected skill natively without recursively spawning the same route; same-skill continuation keeps that ownership.
+A different skill in a routed worker, a skill in an ordinary builder, and a newly named native fork still route to children.
+These cases use the producer-assigned task identity, persisted native sessions, and real model-issued continuation tools.
+Worker routing also checks a successful native `wait_agent` result and its actual returned content in the caller's final response; the transformed input retains the original request and proposal-only constraints.
+Root routing remains consumed/asynchronous.
+The faux model demonstrates this supported tool/result path, not reliable compliance by a live model.
 Strategist cases cover normal inheritance, conflicting caller and template settings, a changed parent model, native forks, and direct skill routing.
 Only provider responses and model catalogs are faux; no live-provider request or behavioral-quality claim is made.
 

@@ -78,8 +78,10 @@ Thinking remains independent and follows caller, template, then parent precedenc
 Executive replaces the former coordinator template; callers must select `executive`.
 Strategist replaces the former detective template; callers must select `strategist`.
 Historical detective reports and the detective-only commit retain their original names.
-Executive can manage subagents within its assignment's authority and resource limits.
-Other role templates keep subagent management disabled.
+All templates, including `parent`, `luna`, and `archivist`, allow bounded supporting helpers within the assignment's authority and resource limits.
+Delegation's [shared procedure](../../skills/delegation/SKILL.md#before-assigning-a-worker) governs helper selection and coordination.
+The caller retains its assigned judgment, integration, and acceptance; helper permission neither selects the executive role nor requires helpers.
+For example, a builder can give Luna a caller inventory while keeping implementation and consumer checks.
 Root status alone does not imply executive responsibility; explicit autonomous-root authority does.
 `ROOT.md` supplies the conditional delegation route, not executive or common-skill body includes.
 Selected executive workers receive their role template; a root taking executive responsibility reads that same installed role body through delegation's conditional route.
@@ -335,7 +337,8 @@ Check that:
 
 - The loader discovers the template and advertises its caller hint.
 - Model and thinking settings inherit from the parent unless the template intentionally overrides them.
-- The launched tool allowlist matches the template, excluding mutation and delegation tools for read-only agents.
+- The launched tool allowlist matches the template; all advertised templates expose subagent management without expanding assignment authority.
+- A native builder or QA model-issued spawn reaches a Luna helper and returns its result to that caller.
 - The child receives the template instructions and minimal caller input without executive restatement.
 - Changing the template reaches the child without a matching caller edit.
 
