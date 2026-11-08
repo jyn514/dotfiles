@@ -1,6 +1,6 @@
 ---
 name: jj-conflict-resolution
-description: Resolve Jujutsu conflicts semantically by composing snapshots and diffs, never with ours/theirs or union heuristics. Use for jj rebase, merge, restack, or conflict-resolution tasks; route history design and general provenance work to jj-workflow.
+description: Resolve Jujutsu conflicts semantically by composing snapshots and diffs, never with ours/theirs or union heuristics. Use when interpreting or resolving actual or expected file conflicts, including conflicts from rebase, merge, or restack. Use jj-workflow for history operations and their mandatory pre-operation isolation; a conflict-free operation alone does not need this skill.
 ---
 
 # Jujutsu conflict resolution
@@ -13,17 +13,11 @@ This skill owns semantic resolution and validation. It does not choose rebase ta
 
 Treat existing working-copy changes as protected until ownership is established. If a dirty file contains unrelated work, stop and ask before overwriting it.
 
-## Isolate the operation
+## Isolate resolution
 
-Perform the rebase, merge, or restack and its resolution in a disposable workspace, or entirely in the repository database without updating the live checkout.
-Isolation starts before the operation that can introduce conflicts, not after conflicts appear.
-Follow `jj-workflow`'s temporary-workspace procedure.
-A separate workspace shares history: construct candidate revisions without rewriting the live checkout's revision while the result is unresolved or unvalidated.
-Check the chosen command's working-copy effects before using a database-only approach.
-
-Record the live checkout's revision and parents before starting.
-Keep that checkout usable throughout resolution and validation, even when no other agent is editing it.
-If it already contains conflicts, preserve its authored changes and continue resolution in isolation.
+Follow [history-operation isolation](../jj-workflow/SKILL.md#isolate-the-operation) before resolution.
+If the live checkout already contains conflicts, preserve its authored changes and continue in isolation.
+Keep it usable until the complete candidate is validated; a separate workspace shares history and does not by itself protect its revision.
 
 ## Inspect first
 

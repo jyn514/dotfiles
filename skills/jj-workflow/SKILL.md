@@ -5,7 +5,9 @@ description: "Use when a task involves inspecting file or revision history, esta
 
 # jj Workflow
 
-Use this skill for nontrivial Jujutsu history work: inspect or interpret path history, annotations, revision ancestry, provenance, or change ownership; compare revisions; or shape history. Prefer `jj` over Git history-editing commands, keep changes coherent, and do not rewrite shared history unless asked. For semantic file conflict composition, use `jj-conflict-resolution`; this skill owns provenance, revision selection, and history shaping.
+Use this skill for nontrivial Jujutsu history work: inspect or interpret path history, annotations, revision ancestry, provenance, or change ownership; compare revisions; or shape history. Prefer `jj` over Git history-editing commands, keep changes coherent, and do not rewrite shared history unless asked. Before a conflict-capable rebase, merge, or restack, follow [operation isolation](#isolate-the-operation), even when no conflict is expected.
+For interpreting or resolving actual or expected file conflicts, use `jj-conflict-resolution`; a clean history operation needs no semantic-resolution workflow.
+This skill owns provenance, revision selection, and history shaping.
 
 ## Inspect and protect work
 
@@ -113,6 +115,18 @@ Follow its recovery instructions if the split or verification fails.
 
 After any split, inspect selected and remaining changes with `jj status` and focused `jj diff -r CHANGE_ID` / `jj diff -r @`.
 
+## Isolate the operation
+
+Perform the rebase, merge, or restack and its resolution in a disposable workspace, or entirely in the repository database without updating the live checkout.
+Isolation starts before the operation that can introduce conflicts, not after conflicts appear.
+Use the [temporary-workspace procedure](#temporary-revision-workspaces).
+A separate workspace shares history: construct candidate revisions without rewriting the live checkout's revision while the result is unresolved or unvalidated.
+Check the chosen command's working-copy effects before using a database-only approach.
+
+Record the live checkout's revision and parents before starting.
+Keep that checkout usable throughout resolution and validation, even when no other agent is editing it.
+If it already contains conflicts, preserve its authored changes and continue resolution in isolation.
+
 ## Rebase and abandon
 
 ### Select the affected history
@@ -147,6 +161,9 @@ Do not abandon while an unexpected difference remains unexplained.
 
 ## Conflicts and stacked fixes
 
+When an actual conflict appears, or inspecting an expected conflict requires semantic composition, load `jj-conflict-resolution` before editing the resolution.
+Do not use whole-side selection, union, or concatenation shortcuts.
+
 Resolve conflicts through Jujutsu, not the Git index. Inspect `jj status`, the conflicted revision, and destination code. Preserve upstream refactors and relocate intended changes when code moved; do not restore obsolete blocks merely because they existed before the rebase.
 
 List conflicts in `@` with:
@@ -165,6 +182,15 @@ jj squash --from @ --into CHANGE_ID path/to/owned-file
 After each squash, let descendants restack, then inspect the remaining conflicts and affected revision. Audit possibly obsolete changes with `jj show CHANGE_ID --stat` and focused `jj diff -r CHANGE_ID`; abandon them rather than preserving empty or harmful effects.
 
 If a mutating command is interrupted or partly fails, inspect `jj status` and `jj log` before retrying; history may already have changed.
+
+## Validate and integrate a history candidate
+
+Validate the complete candidate before updating the live checkout, including files Jujutsu merged without conflicts.
+Inspect its resulting tree and run the relevant checks; use native parsers for affected configuration because a clean text merge can still produce duplicate TOML keys or other invalid input.
+Recheck the live checkout for edits made during the work and preserve them when integrating.
+If they change the validated result, compose and validate that result in isolation first.
+Update the live checkout only to the validated result, then verify its revision, conflict status, and affected configuration.
+Do not expose intermediate conflicts or invalid configuration through a rebase, squash, or stale-workspace update.
 
 ## Temporary revision workspaces
 
