@@ -79,7 +79,7 @@ jj commit src/flower/petal.clj -m "Fix markdown code fence handling"
 jj show -r CHANGE_ID --summary --no-pager
 ```
 
-Use [commit-quality](../commit-quality/SKILL.md) for message content and atomic boundaries.
+Use [commit-quality](../commit-quality/SKILL.md) for atomic boundaries, selected-candidate acceptance, and message content.
 Add a body when the diff and subject leave a reason, constraint, or durable verification fact unexplained, not merely because the change is non-mechanical.
 
 In concurrent worktrees, do not use `jj describe` followed by `jj new`: it mutates the shared working-copy change. Use `jj new` only after committing and when a fresh working change cannot disturb concurrent work.

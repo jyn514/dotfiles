@@ -28,6 +28,16 @@ Do not confuse atomic with small. Keep inseparable behavior, tests, generated ar
 
 For files with pre-existing edits, use [jj-workflow's split procedure](../jj-workflow/SKILL.md#split-or-restore) to commit only your changes.
 
+For commits that exclude other edits, settle the intended parent and selected changes before final acceptance.
+Resolve required owned prerequisites in that candidate before requesting independent acceptance review.
+An ownership diff against a dirty baseline is not necessarily a patch against that parent.
+When excluded edits could affect a check, run it in disposable state containing only the intended parent plus selected changes.
+Verify that the committed content matches the tested candidate.
+Exploratory and component checks may run earlier.
+Reuse applicable evidence; selecting the candidate alone does not justify another full-suite run.
+Earlier candidate preparation replaces late reconstruction and retesting.
+Ordinary whole-path commits without excluded dependencies need no extra candidate-building stage.
+
 Order commits so every intermediate revision is valid under the repository's required checks. Preparatory refactors must be useful and behavior-preserving on their own, not incomplete pieces whose only justification appears in a later commit.
 
 ## Paragraph breaks
