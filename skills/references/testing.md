@@ -1,7 +1,19 @@
 # Testing with evidence
 
-Consult when adding or materially changing tests, or resolving test-strategy or oracle uncertainty.
+Consult when reviewing a system and its tests, adding or materially changing tests, or resolving test-strategy or oracle uncertainty.
 Use the surrounding tests for an established pattern; do not start a design or completion audit merely to choose a test.
+For review-only work, begin below and consult the later sections for the test properties under review.
+
+## Review a system and its tests
+
+Check both directions: required behavior without a test, and tested behavior without a corresponding requirement.
+Apply this to code, APIs, policies, prompts, workflows, and specifications.
+Identify the governing expectations, inspected coverage, and evidence for each finding.
+Assess applicable oracle, isolation, registration, consumer-boundary, and failure-path obligations in the sections below.
+Review does not itself authorize changing authoritative test artifacts or blessing snapshots.
+Run focused existing tests or probes within the task's execution authority and the [shared isolation rules](~/.agents/shared.md#before-running-tests).
+Authoring instructions such as adding cases, registering suites, or demonstrating a new regression apply when creating or changing tests; during review, assess the existing evidence and report gaps.
+Use [review evidence standards](review-evidence.md) to state what the inspected checks establish.
 
 
 ## Choose the test shape
@@ -120,14 +132,12 @@ Use `architecture-design` if test partitioning exposes an unsettled production o
   For replacement or debounce semantics, run a superseded callback after scheduling its replacement, including successful and failed cancellation.
   Check that obsolete work neither publishes effects nor clears the current work's ownership.
 - For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
-- After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-the-user-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
+- After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-jyn-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
 - When claiming that a change fixes an observed failure, compare baseline and candidate from the same pre-failure state.
   Verify that the baseline reproduces the failure and judge improvement by observable behavior.
   Identify other differences that could explain the result, including test setup, dependencies, model versions, and randomness.
 
 ## Review and workflow routes
-
-When reviewing a system and its tests, check both directions: required behavior without a test, and tested behavior without a corresponding requirement. Apply this to code, APIs, policies, prompts, workflows, and specifications.
 
 Use [ratchet](../ratchet/SKILL.md) for unresolved enforcement-policy decisions about existing violations, baseline updates, bounded exceptions, or replacing guarantees. A new regression test or a better oracle alone does not need that workflow.
 

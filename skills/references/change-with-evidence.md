@@ -195,6 +195,7 @@ During review, check the precedence requirement even when those tests pass.
 
 ## Test strategy
 
-When adding or materially changing tests, or resolving an uncertain test strategy or oracle, consult [Testing with evidence](testing.md).
+When reviewing a system and its tests, adding or materially changing tests, or resolving an uncertain test strategy or oracle, consult [Testing with evidence](testing.md).
+For review-only work, begin with its [review obligations](testing.md#review-a-system-and-its-tests); do not turn the review into test authoring or a completion audit.
 Routine edits with an established shape need no separate design workflow.
 When creating or modifying a test, run it and iterate until it passes.
