@@ -154,7 +154,7 @@ def configure_native_source(home: Path, repository: Path, *, replace=False):
 
 
 def build_bundle(native_repository: Path, expected):
-    """Use the ordinary pinned builder on a cold cache, not a test starter."""
+    """Return pinned builder output; resolve_bundle publishes it before use."""
     result = subprocess.run([sys.executable, str(ROOT / 'build-local'),
                              '--guest-platform', expected['guest_platform'],
                              str(native_repository), 'build', '--bins'],
@@ -163,9 +163,7 @@ def build_bundle(native_repository: Path, expected):
              if line.startswith('staged bundle: ')]
     if len(paths) != 1:
         raise ValueError('TicGit builder did not return one staged bundle')
-    bundle = Path(paths[0])
-    validate_bundle(bundle, expected)
-    return bundle
+    return Path(paths[0])
 
 
 def resolve_bundle(cache: Path, guest_platform: str, writable_roots, provision, *, local_bundle=None):
@@ -224,7 +222,8 @@ def _resolve_locked(cache, key, expected, writable_roots, provision, local_bundl
         return bundle / 'manifest.json'
     # Provision before creating a cache key: failed builds leave no accepted state.
     bundle = Path(local_bundle) if local_bundle is not None else Path(provision(expected))
-    validate_bundle(bundle.resolve(strict=True), expected)
+    # stage_cache owns incoming and copied-content validation, and returns a
+    # protected manifest ready for use. Do not revalidate its input here.
     # Publish the whole populated source key, never an empty key or in-flight
     # .tic-cache-* copy that another normal launch could mistake for authored
     # partial state. TemporaryDirectory owns cleanup only for this private key.

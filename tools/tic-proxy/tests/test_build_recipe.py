@@ -108,6 +108,67 @@ class BuildRecipeTest(unittest.TestCase):
             self.assertEqual(0o555 if relative in bundles.ARTIFACTS.values() else 0o444,
                              stat.S_IMODE(path.stat().st_mode))
 
+    def test_publication_checks_each_incoming_and_copied_artifact_once(self):
+        # Build, explicit override, and standalone install share publication.
+        # The bound excludes repeated complete validations, not trust checks:
+        # every incoming artifact and its actual protected copy must be read.
+        loader = importlib.machinery.SourceFileLoader('tic_install_bundle', str(ROOT / 'install-bundle'))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        installer = importlib.util.module_from_spec(spec)
+        loader.exec_module(installer)
+        for mode in ('build', 'override', 'install'):
+            with self.subTest(mode=mode):
+                case = self.root / mode
+                case.mkdir()
+                source = self.bundle(case)
+                self.prefix = case / 'cache'
+                expected = bundles.build_identity(bundles.host_platform(), 'linux/amd64')
+                completed = mock.Mock(stdout='staged bundle: ' + str(source) + '\n')
+                with mock.patch.object(bundles, 'sha256', wraps=bundles.sha256) as digest:
+                    if mode == 'build':
+                        with mock.patch.object(tic_artifact.subprocess, 'run', return_value=completed):
+                            manifest = self.resolve(lambda identity: tic_artifact.build_bundle(case, identity))
+                    elif mode == 'override':
+                        manifest = self.resolve(None, local_bundle=source)
+                    else:
+                        with mock.patch.object(sys, 'argv', ['install-bundle', str(source), '--prefix', str(self.prefix)]), mock.patch('builtins.print') as printed:
+                            installer.main()
+                        manifest = printed.call_args.args[0]
+                    InstalledTicBuild.load(manifest).verify()
+                checked = [Path(call.args[0]) for call in digest.call_args_list]
+                incoming = [source / relative for relative in bundles.ARTIFACTS.values()]
+                self.assertEqual(6, len(checked), checked)
+                for path in incoming:
+                    self.assertEqual(1, checked.count(path))
+                copied = [path for path in checked if path not in incoming]
+                self.assertEqual(sorted(path.name for path in incoming), sorted(path.name for path in copied))
+                self.assertTrue(all(path.is_relative_to(self.prefix) for path in copied))
+                bundles.protected_bundle(Path(manifest).parent, expected)
+
+    def test_reusing_a_stage_destination_checks_input_and_existing_content_once(self):
+        source = self.bundle()
+        first = bundles.stage_cache(source, self.prefix)
+        with mock.patch.object(bundles, 'sha256', wraps=bundles.sha256) as digest:
+            self.assertEqual(first, bundles.stage_cache(source, self.prefix))
+        self.assertEqual(6, digest.call_count)
+        artifact = first.parent / 'host/tic-broker'
+        artifact.chmod(0o755)
+        artifact.write_bytes(b'trusted host changed a publication destination')
+        artifact.chmod(0o555)
+        with self.assertRaisesRegex(ValueError, 'protected artifact hash'):
+            bundles.stage_cache(source, self.prefix)
+
+    def test_publication_rechecks_protected_metadata_after_rename(self):
+        source = self.bundle()
+        original = bundles.os.rename
+        def rename(src, dst):
+            original(src, dst)
+            if Path(src).name.startswith('.tic-cache-'):
+                (Path(dst) / 'guest/ti-proxy').chmod(0o755)
+        with mock.patch.object(bundles.os, 'rename', side_effect=rename):
+            with self.assertRaisesRegex(ValueError, 'ownership/mode/link'):
+                bundles.stage_cache(source, self.prefix)
+
     def test_warm_cache_never_requires_source_or_rewrites_artifacts(self):
         manifest = self.resolve(mock.Mock(return_value=self.bundle()))
         before = [(p.stat().st_ino, p.stat().st_mtime_ns, p.read_bytes())

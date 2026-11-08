@@ -6,7 +6,7 @@ No current-build record is written. Ordinary launches resolve their source key.
 import argparse
 from pathlib import Path
 import sys
-from bundle import validate_bundle
+from bundle import read_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'codex-sandbox'))
 from tic_artifact import resolve_bundle
@@ -19,7 +19,9 @@ def main():
     parser.add_argument('--guest-writable-root', type=Path, action='append', default=[])
     args = parser.parse_args()
     bundle = args.bundle.resolve(strict=True)
-    _, manifest, _ = validate_bundle(bundle)
+    # Read only the requested platform here. The resolver's publication owner
+    # validates the complete manifest, input bytes and actual protected copy.
+    _, manifest = read_json(bundle / 'manifest.json')
     print(resolve_bundle(args.prefix, manifest['client']['platform'], args.guest_writable_root,
                          None, local_bundle=bundle))
 

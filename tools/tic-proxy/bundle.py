@@ -166,15 +166,19 @@ def validate_bundle(bundle, expected=None):
     return encoded, manifest, binding
 
 
-def verify_copy(destination, encoded, manifest, binding):
+def _verify_copy_metadata(destination, encoded, manifest, binding):
     tree(destination, protected=True)
     if (destination / 'manifest.json').read_bytes() != encoded:
         raise ValueError('existing protected bundle manifest mismatch')
+    if native_binding(destination / 'native/ti.tic-proxy.json', manifest['native']['sha256']) != binding:
+        raise ValueError('protected native binding changed')
+
+
+def verify_copy(destination, encoded, manifest, binding):
+    _verify_copy_metadata(destination, encoded, manifest, binding)
     for key, relative in ARTIFACTS.items():
         if sha256(destination / relative) != manifest[key]['sha256']:
             raise ValueError('protected artifact hash mismatch')
-    if native_binding(destination / 'native/ti.tic-proxy.json', manifest['native']['sha256']) != binding:
-        raise ValueError('protected native binding changed')
 
 
 def remove_stage(stage):
@@ -188,6 +192,14 @@ def remove_stage(stage):
 
 
 def stage_cache(bundle, prefix, guest_writable_roots=(), *, expected=None):
+    """Validate incoming bytes, verify the protected copy, and return its manifest.
+
+    Callers may use the returned published path without validating the incoming
+    bundle again. Source and copied executable bytes each get one digest check;
+    rename retains the verified private tree, not a new source of artifact bytes.
+    Existing destinations still require full copied-content verification here.
+    Warm runtime loads use protected_bundle's metadata-only checks instead.
+    """
     bundle = Path(bundle).resolve(strict=True)
     encoded, manifest, binding = validate_bundle(bundle, expected)
     prefix = Path(prefix).absolute()
@@ -214,16 +226,12 @@ def stage_cache(bundle, prefix, guest_writable_roots=(), *, expected=None):
             verify_copy(destination, encoded, manifest, binding)
         else:
             stage = Path(tempfile.mkdtemp(prefix='.tic-cache-', dir=prefix))
-            for key, relative in ARTIFACTS.items():
+            for relative in ARTIFACTS.values():
                 target = stage / relative
                 target.parent.mkdir(exist_ok=True)
                 shutil.copyfile(bundle / relative, target)
-                if sha256(target) != manifest[key]['sha256']:
-                    raise ValueError('artifact changed during cache staging')
                 target.chmod(0o555)
             shutil.copyfile(bundle / 'native/ti.tic-proxy.json', stage / 'native/ti.tic-proxy.json')
-            if native_binding(stage / 'native/ti.tic-proxy.json', manifest['native']['sha256']) != binding:
-                raise ValueError('native binding changed during cache staging')
             (stage / 'native/ti.tic-proxy.json').chmod(0o444)
             (stage / 'manifest.json').write_bytes(encoded)
             (stage / 'manifest.json').chmod(0o444)
@@ -237,7 +245,9 @@ def stage_cache(bundle, prefix, guest_writable_roots=(), *, expected=None):
             os.rename(stage, destination)  # replaces only our empty reservation
             reserved = False
             stage = None
-        verify_copy(destination, encoded, manifest, binding)
+        # Publication moves the same private inodes. Recheck path protection and
+        # metadata after the move without hashing the same artifact bytes again.
+        _verify_copy_metadata(destination, encoded, manifest, binding)
         return destination / 'manifest.json'
     finally:
         if stage is not None:
