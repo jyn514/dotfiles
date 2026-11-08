@@ -41,122 +41,13 @@ Use subagents instead of attempting to share work across sessions; refuse to com
   Group changes can remove your ability to contact collaborators; the tools do not discover other groups.
   Groups limit attention, not authenticated access.
 
-## Send, reply, or clarify
+## Select another operation
 
-### Send a direct message
+- Before sending, replying, broadcasting, or arranging a callback, read [messaging](references/messaging.md).
+- For manager-delivered worker messages, worker callbacks, or configured worker tool access, also read [worker integration](references/workers.md).
+- Before listing terminals to identify a target, interpreting status or context usage, or requesting remote compaction, read [inspection and compaction](references/inspect-and-compact.md).
 
-Use `link_send({ to: "<terminal-name>", message: "..." })` for a direct message.
-A typo, offline name, or target outside your group fails the same local check; self-targeting fails too.
-Direct-send success on a client means handed to the hub, not confirmed receiver delivery.
-Its UUID is `messageId` in the result.
-
-### Reply to a delivered message
-
-Use `link_send({ to: { authorOf: "<full-received-message-id>" }, message: "..." })` to answer a delivered message's author privately.
-It resolves the author by session identity, not a remembered mutable name.
-Unknown references fail; an unavailable author is never replaced by a fallback recipient.
-Named sends remain connected-only.
-With the updated manager bridge, an admitted stable worker author can reopen its completed conversation; failed, interrupted, suspended, and paused workers cannot reopen.
-A native worker’s current group and connection intent still apply, independently of its owner’s group.
-Root delivery references survive reload and resume from admitted transcript messages, but old peers may lack sufficient attribution.
-Queued or cleared steering messages grant no reply permission.
-Do not supply `inReplyTo` or `includeSubagents` with `authorOf`; the tool supplies the reference and chooses one author.
-`link_send.inReplyTo` remains unchecked correlation only; it does not select the recipient.
-
-### Broadcast a group clarification
-
-Roots broadcast general clarifications to the current group:
-
-  ```typescript
-  link_send({ to: { broadcast: true }, message: "<general clarification>", includeSubagents: true });
-  ```
-
-The hub selects connected roots once, excluding your root context, and preserves one UUID plus a broadcast marker.
-An ungrouped broadcast can interrupt unrelated sessions; agree on a named group first.
-Late joiners receive no replay.
-
-**Worker delivery requires the supported manager/child bridge:** it selects active own workers; without it, worker inclusion reports unsupported.
-Do not claim workers received a root broadcast or invent an automatic parent-forwarding rule.
-
-### Keep replies private
-
-Keep task-specific answers private through `link_send` with `to: { authorOf: messageId }` to the received message.
-A reply to a broadcast reaches its author only, not its audience.
-Do not automatically forward or rebroadcast received messages.
-
-### Interpret routing results
-
-Broadcast and `link_send` with `to: { authorOf: messageId }` wait at most five seconds for routing, not a model response.
-Inspect `details.outcomes`: `submitted`, `failed`, `skipped`, `unsupported`, and `unknown` can coexist.
-`details.messageId` is the new message UUID; `empty` identifies an empty selection.
-Submission is transport acceptance, not model reading or completion.
-Do not automatically resend unknown copies; partial failure does not undo submitted copies.
-Old hubs and peers can be unsupported for these operations.
-
-### Understand incoming delivery and callbacks
-
-Incoming messages are batched in arrival order with full IDs, reply references, and broadcast markers when available.
-Delivery steers a running receiver after current tool calls finish, or starts a turn if idle.
-Manual compaction can hold the inbox; a routing receipt does not prove model admission.
-
-If a result or confirmation is needed, request it explicitly.
-An ordinary reply is not sent to a peer: use a link tool.
-Continue independent work or end your turn while awaiting a callback; do not sleep or poll merely to keep a run alive.
-A callback does not prove its sender is idle or has completed other work.
-
-## Worker conventions with manager integration
-
-These rules apply only when a supported manager/child bridge exposes `link_send` with `to: { authorOf: messageId }` and delivers attributed messages to workers.
-The installed `pi-codex-subagents` manager/child bridge supplies this capability; without it, worker delivery is unsupported.
-
-### Reply to a manager-delivered worker message
-
-Without full pi-link, the manager helper exposes only author-targeted `link_send`, which addresses the author of a message actually delivered to that worker.
-Ask the delivered author only for clarification that can change the next action, or send an answer they requested.
-Send normal task completions through the parent channel.
-Private answers go only to the requesting worker, not siblings or the parent's model context.
-An admitted author-targeted follow-up can reopen a completed worker through its owning manager without changing its assignment.
-The reopened episode’s final answer returns privately to its requester; a submitted explicit reply suppresses that automatic answer.
-Automatic answers do not themselves request another automatic answer.
-Parent waits retain the original assignment result, and the owner and siblings receive no routine completion.
-Failed, interrupted, suspended, and paused workers must not resume.
-Broadcasts remain active-only, and helper-only communication does not require an independent child pi-link connection.
-
-### Use other tools only when configured
-
-Other link tools and an independent connection are available when pi-link is enabled and the template's tool list permits them.
-Follow the configured tool surface; do not infer a reply-only restriction from worker status.
-
-### Independent worker questions
-
-Several workers may independently ask the same question.
-Do not add semantic deduplication, a suppression registry, or a wait period.
-
-## Inspect or compact a root
-
-### Identify the target
-
-`link_list` returns connected terminals in your group, with roles, full Pi session IDs, status, cwd, and available context usage.
-`details.sessionIds` maps names to reported IDs; a missing ID is unknown.
-Match a known parent session ID, not names or cwd, when identifying a parent terminal.
-
-### Interpret its status
-
-Your own entry is marked `(you)` and cannot be a direct-send or compaction target.
-Your status is read at listing time; peer values are their latest snapshots, not reservations.
-Missing status is unknown, not idle; `?` context is unknown, including briefly after compaction.
-`tool:<name>` identifies one active tool call.
-`thinking` includes unsettled retries, automatic compaction, and queued continuations.
-`compacting` means manual compaction holds inbox delivery; automatic compaction instead remains `thinking`.
-Join/leave UI notices do not enter model context; use `link_list` only when current membership changes a decision.
-
-### Request compaction
-
-`link_compact({ to: "<terminal-name>", instructions?: "..." })` waits up to five minutes for a compaction result.
-Only a Pi-idle target with no compaction hold accepts; busy targets decline without interruption or queued work.
-Optional instructions guide the summary but do not guarantee what survives.
-Compaction can lose unreported detail.
-Timeout or caller cancellation stops your wait, not a compaction already dispatched to the target.
+Identity-only work ends after inspecting the identity result; it needs none of these operation-specific procedures.
 
 The link is localhost-only, with no offline backlog or replay and no authentication.
 See [the operator reference](../../README.md#llm-tools) for tool fields and failure semantics.
