@@ -214,242 +214,34 @@ class GatewayTransportTest(unittest.TestCase):
 
 
 
-class GatewayLifecycleTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / "codex-sandbox"))
-
+class GatewayLauncherCleanupTest(unittest.TestCase):
     def setUp(self):
-        patcher = patch.dict(self.launcher["prepare_gateway"].__globals__,
-                            FixedTcpBridge=Mock(return_value=Mock(port=4321)))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / "codex-sandbox"))
 
     def state(self):
-        return SimpleNamespace(
-            capabilities=frozenset({"nested-containers"}),
-            agent_docker={"AGENT_DOCKER_SSH_USER": "worker",
-                          "AGENT_DOCKER_SSHKEY": "/key", "AGENT_DOCKER_SSH_PORT": "2222"},
-            gateway_link_network="gateway-link", gateway_egress_network="gateway-egress",
-            gateway_container="gateway", sidecar_image="helper@sha256:" + "0" * 64,
-            agent_docker_key=Path("/key"),
-            agent_docker_known_hosts=Path("/known"), container_known_hosts="/container-known",
-            gateway_handle=None, resource_owner="legacy-owner",
+        return SimpleNamespace(gateway_handle=None, suffix="test")
+
+    def test_stopped_build_is_unpublished_even_when_later_network_creation_fails(self):
+        import host_gateway
+        state = SimpleNamespace(
+            capabilities=frozenset({'nested-containers', 'tic'}), gateway_handle=None,
+            gateway_link_network='link', gateway_egress_network='egress', gateway_container='gateway',
+            agent_docker={'AGENT_DOCKER_SSH_USER': 'worker', 'AGENT_DOCKER_SSH_PORT': '12345',
+                          'AGENT_DOCKER_SSHKEY': '/guest-key'},
+            agent_docker_key=Path('/key'), agent_docker_known_hosts=Path('/known'),
+            container_known_hosts='/guest-known',
         )
-
-    def test_partial_network_startup_is_owned_and_cleaned(self):
-        state = self.state(); events = []
-        create = Mock(side_effect=[events.append("create-link"), OSError("egress failed")])
-        def runtime(command, **_kwargs):
-            if command[:2] == ["network", "ls"]:
-                return SimpleNamespace(returncode=0, stdout="gateway-link\n")
-            if command[:2] == ["network", "inspect"]:
-                return SimpleNamespace(returncode=0, stdout=state.gateway_handle.owner + "\n")
-            events.append("remove-" + command[-1])
-            return SimpleNamespace(returncode=0, stdout="")
-        run = Mock(side_effect=runtime)
-        prepare = self.launcher["prepare_gateway"]
-        with patch.dict(prepare.__globals__, create_relay_network=create), \
-                patch.object(prepare.__globals__["OUTER_RUNTIME"], "run", run):
-            with self.assertRaisesRegex(OSError, "egress failed"):
-                prepare(state)
-            self.assertRegex(state.gateway_handle.owner, r"\A[0-9a-f]{32}\Z")
-            result = state.gateway_handle.cleanup(19)
-        self.assertEqual(19, result.primary_status)
-        self.assertFalse(result.remaining)
-        self.assertTrue(any(call.args[0][:2] == ["network", "rm"]
-                            for call in run.call_args_list))
-
-    def test_gateway_requires_both_nested_capability_and_build_service(self):
-        prepare = self.launcher["prepare_gateway"]
-        for capabilities, service in ((frozenset(), self.state().agent_docker),
-                                      (frozenset({"nested-containers"}), None)):
-            with self.subTest(capabilities=capabilities, service=service):
-                state = self.state()
-                state.capabilities = capabilities
-                state.agent_docker = service
-                bridge = Mock()
-                create = Mock()
-                with patch.dict(prepare.__globals__, FixedTcpBridge=bridge,
-                                create_relay_network=create):
-                    self.assertEqual([], prepare(state))
-                bridge.assert_not_called()
-                create.assert_not_called()
-                self.assertIsNone(state.gateway_handle)
-
-    def test_tic_only_gateway_prepares_shared_networks_without_build_bridge(self):
-        state = self.state()
-        state.capabilities = frozenset({'tic'})
-        state.agent_docker = None
-        create = Mock()
-        prepare = self.launcher['prepare_gateway']
-        with patch.dict(prepare.__globals__, create_relay_network=create,
-                        FixedTcpBridge=Mock()):
-            self.assertEqual([], prepare(state))
-        self.assertIsNotNone(state.gateway_handle)
-        self.assertIsNone(state.gateway_handle.build_bridge)
-        self.assertEqual(2, create.call_count)
-
-    def test_build_gateway_uses_selected_service_port_and_bridge(self):
-        state = self.state()
-        state.agent_docker["AGENT_DOCKER_SSH_PORT"] = "2345"
-        commands = []
-
-        def run(command, **_kwargs):
-            commands.append(command)
-            if command[1:2] == ["inspect"]:
-                return SimpleNamespace(returncode=0, stdout="10.0.0.2\n")
-            return SimpleNamespace(returncode=0, stdout="")
-
-        bridge = Mock(port=3456)
-        factory = Mock(return_value=bridge)
-        prepare = self.launcher["prepare_gateway"]
-        start = self.launcher["start_gateway"]
-        with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
-                        FixedTcpBridge=factory), patch.object(
-                start.__globals__["OUTER_RUNTIME"], "network_addresses",
-                return_value={"gateway-link": "10.0.0.2", "gateway-egress": "10.0.0.3"}):
-            arguments = prepare(state)
-            start(state)
-        factory.assert_called_once_with(("127.0.0.1", 2345))
-        self.assertIn("DOCKER_HOST=ssh://worker@gateway:2222", arguments)
-        gateway_run = commands[0]
-        self.assertEqual("3456", gateway_run[gateway_run.index("--build-port") + 1])
-        bridge.allow_peers.assert_called_once_with({"10.0.0.2", "10.0.0.3", "127.0.0.1"})
-
-    def test_direct_host_loopback_endpoint_preserves_guest_ssh_projection_and_cleanup(self):
-        from sandbox_runtime import ContainerRuntime, Lima
-        from docker_runtime import Docker
-        # Only the two inspected providers claim host-loopback forwarding.
-        self.assertFalse(ContainerRuntime.host_loopback_access)
-        self.assertTrue(Lima.host_loopback_access)
-        self.assertTrue(Docker.host_loopback_access)
-        for tic in (False, True):
-            with self.subTest(tic=tic), socket.socket() as listener:
-                listener.bind(('127.0.0.1', 0))
-                listener.listen()
-                state = self.state()
-                state.agent_docker['AGENT_DOCKER_SSH_PORT'] = str(listener.getsockname()[1])
-                state.capabilities = frozenset({'nested-containers', 'tic'} if tic else {'nested-containers'})
-                prepare = self.launcher['prepare_gateway']
-                runtime = Mock(host_loopback_access=True, host_address='host.lima.internal')
-                runtime.network_addresses.return_value = {
-                    'gateway-link': '10.0.0.2', 'gateway-egress': '10.0.0.3'}
-                factory = Mock(side_effect=AssertionError('direct route created a bridge'))
-                removed = []
-                with patch.dict(prepare.__globals__, OUTER_RUNTIME=runtime, FixedTcpBridge=factory,
-                                proxy_flags=lambda: [], create_relay_networks=Mock(),
-                                remove_owned_resource=lambda runtime, kind, name, owner, **kw: removed.append(name)):
-                    arguments = prepare(state)
-                    probe, _ = listener.accept()
-                    probe.close()
-                    self.launcher['start_gateway'](state, tic_port=4567 if tic else None)
-                    handle = state.gateway_handle
-                    self.assertIsNone(handle.build_bridge)
-                    self.assertEqual(listener.getsockname()[1], handle.build_port)
-                    self.assertEqual(1, arguments.count('--network'))
-                    self.assertIn('DOCKER_HOST=ssh://worker@gateway:2222', arguments)
-                    self.assertIn('AGENT_DOCKER_SSHKEY=/key', arguments)
-                    self.assertIn('AGENT_DOCKER_KNOWN_HOSTS=/container-known', arguments)
-                    self.assertIn('type=bind,src=/known,dst=/container-known,readonly', arguments)
-                    command = runtime.start_detached.call_args.args[3]
-                    self.assertEqual(str(listener.getsockname()[1]), command[command.index('--build-port') + 1])
-                    self.assertEqual(tic, '--tic-port' in command)
-                    self.assertEqual('host.lima.internal', command[command.index('--host') + 1])
-                    self.assertFalse(handle.cleanup(0).remaining)
-                    self.assertEqual('gateway', removed[0])
-                    self.assertEqual({'gateway', 'gateway-link', 'gateway-egress'}, set(removed))
-                    self.assertFalse(any(identity.startswith('bridge:') for identity in handle.registry.identities))
-                factory.assert_not_called()
-
-    def test_direct_stopped_service_warns_but_keeps_tic_only_gateway_when_selected(self):
-        for tic in (False, True):
-            with self.subTest(tic=tic):
-                state = self.state()
-                state.capabilities = frozenset({'nested-containers', 'tic'} if tic else {'nested-containers'})
-                prepare = self.launcher['prepare_gateway']
-                create = Mock()
-                runtime = Mock(host_loopback_access=True)
-                with patch.dict(prepare.__globals__, OUTER_RUNTIME=runtime, create_relay_networks=create), \
-                        patch('socket.create_connection', side_effect=ConnectionRefusedError('refused')), \
-                        patch('sys.stderr', new_callable=io.StringIO) as stderr:
-                    self.assertEqual([], prepare(state))
-                self.assertIsNone(state.agent_docker)
-                self.assertIn('tools/agent-docker/vm.py start', stderr.getvalue())
-                self.assertEqual(tic, state.gateway_handle is not None)
-                self.assertEqual(tic, create.called)
-                if tic:
-                    self.assertIsNone(state.gateway_handle.build_port)
-                    self.assertIsNone(state.gateway_handle.build_bridge)
-
-    def test_stopped_build_service_warns_and_creates_no_gateway(self):
-        state = self.state()
-        prepare = self.launcher["prepare_gateway"]
-        bridge = Mock()
-        bridge.start.side_effect = ConnectionRefusedError(111, "refused")
-        create = Mock()
-        with patch.dict(prepare.__globals__, FixedTcpBridge=Mock(return_value=bridge),
-                        create_relay_network=create), \
-                patch("sys.stderr", new_callable=io.StringIO) as stderr:
-            self.assertEqual([], prepare(state))
-        self.assertIsNone(state.gateway_handle)
+        runtime = Mock(host_loopback_access=True)
+        with patch.dict(self.launcher['prepare_gateway'].__globals__, OUTER_RUNTIME=runtime), patch(
+                'socket.create_connection', side_effect=ConnectionRefusedError('stopped')), patch.object(
+                host_gateway, 'create_relay_networks', side_effect=OSError('network failed')), patch(
+                'sys.stderr', new_callable=io.StringIO):
+            with self.assertRaisesRegex(OSError, 'network failed'):
+                self.launcher['prepare_gateway'](state)
         self.assertIsNone(state.agent_docker)
-        create.assert_not_called()
-        self.assertIn("tools/agent-docker/vm.py start", stderr.getvalue())
-
-    def test_cleanup_closes_registry_before_background_start_can_create(self):
-        state = self.state()
-        prepare = self.launcher["prepare_gateway"]
-        with patch.dict(prepare.__globals__, create_relay_network=Mock()):
-            prepare(state)
-        state.gateway_handle.cleanup(0)
-        with self.assertRaisesRegex(ValueError, "cleanup has started"):
-            self.launcher["start_gateway"](state)
-
-    def test_recovery_retains_foreign_resources_then_retries_in_dependency_order(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state)
-            state.gateway_handle = handle
-            remaining = ("container:gateway", "network:gateway-link", "network:gateway-egress")
-            path = self.launcher["persist_relay_recovery"](
-                state, handle.resources, handle.owner, remaining,
-            )
-            self.assertIsNotNone(path)
-            recover = self.launcher["recover_relays"]
-
-            def foreign(command, **_kwargs):
-                if command[:2] == ["network", "ls"]:
-                    return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
-                if command[:2] == ["network", "inspect"]:
-                    return SimpleNamespace(returncode=0, stdout="foreign\n")
-                if command[:3] == ["container", "ls", "--all"]:
-                    return SimpleNamespace(returncode=0, stdout="gateway\n")
-                return SimpleNamespace(returncode=0, stdout="foreign\n")
-
-            with patch.object(recover.__globals__["OUTER_RUNTIME"], "run", side_effect=foreign), \
-                    patch("sys.stderr", new_callable=io.StringIO):
-                recover(state)
-            self.assertTrue(path.exists(), "foreign resources must retain recovery authority")
-
-            removed = []
-            def owned(command, **_kwargs):
-                if command[:2] == ["network", "ls"]:
-                    return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
-                if command[:2] == ["network", "inspect"]:
-                    return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
-                if command[:3] == ["container", "ls", "--all"]:
-                    return SimpleNamespace(returncode=0, stdout="gateway\n")
-                if command[:2] == ["container", "inspect"]:
-                    return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
-                if "rm" in command:
-                    removed.append(command[-1])
-                return SimpleNamespace(returncode=0, stdout="")
-            with patch.object(recover.__globals__["OUTER_RUNTIME"], "run", side_effect=owned):
-                recover(state)
-            self.assertFalse(path.exists())
-            self.assertEqual("gateway", removed[0])
-            self.assertCountEqual(["gateway-link", "gateway-egress"], removed[1:])
+        self.assertIsNotNone(state.gateway_handle)
+        self.assertTrue(state.gateway_handle.build_unavailable)
+        self.assertEqual({'network:link', 'network:egress'}, set(state.gateway_handle.registry.identities))
 
     def test_insecure_recovery_directory_warning_does_not_replace_primary_status(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -459,7 +251,9 @@ class GatewayLifecycleTest(unittest.TestCase):
             state.command_session = None
             
             state.tmux_registration = None
-            handle = self.launcher["GatewayHandle"](state)
+            handle = self.launcher["GatewayHandle"](
+                self.launcher["OUTER_RUNTIME"],
+                self.launcher["RelayResourcePlan"]("gateway-link", "gateway-egress", "gateway"))
             state.gateway_handle = handle
             resource_type = self.launcher["OwnedResource"]
             presence = self.launcher["ResourcePresence"]
@@ -473,84 +267,6 @@ class GatewayLifecycleTest(unittest.TestCase):
                 cleanup(state)
             self.assertIn("could not be persisted", output.getvalue())
             self.assertTrue(state.cleaned)
-
-    def test_malformed_and_symlink_recovery_records_are_retained_with_warnings(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state = self.state(); state.home = Path(directory)
-            recovery = state.home / ".local/state/codex-sandbox/gateway-recovery"
-            recovery.mkdir(parents=True, mode=0o700)
-            malformed = recovery / "malformed.json"
-            malformed.write_text(json.dumps({"version": True, "runtime": "x", "owner": "owner",
-                "resources": []}), encoding="utf-8")
-            malformed.chmod(0o600)
-            target = recovery / "target"; target.write_text("{}", encoding="utf-8")
-            symlink = recovery / "symlink.json"; symlink.symlink_to(target)
-            recover = self.launcher["recover_relays"]
-            with patch("sys.stderr", new_callable=io.StringIO) as output:
-                recover(state)
-            self.assertTrue(malformed.exists())
-            self.assertTrue(symlink.is_symlink())
-            self.assertGreaterEqual(output.getvalue().count("retained"), 2)
-
-    def test_duplicate_recovery_identity_is_rejected_before_resource_inspection(self):
-        parse = self.launcher["_parse_relay_recovery"]
-        resource = {"kind": "network", "name": "same", "owner": "owner",
-                    "dependencies": []}
-        payload = {"version": 1, "runtime": parse.__globals__["runtime_identity"](
-            parse.__globals__["OUTER_RUNTIME"]), "owner": "owner",
-            "resources": [resource, resource]}
-        with self.assertRaisesRegex(Exception, "duplicate"):
-            parse(json.dumps(payload).encode())
-
-    def test_existing_network_owner_is_adopted_only_for_same_owner(self):
-        presence = self.launcher["_gateway_network_presence"]
-        for actual, expected in (("owner", "owned"), ("other", "mismatched")):
-            run = Mock(return_value=SimpleNamespace(returncode=0, stdout=actual + "\n"))
-            with self.subTest(owner=actual), patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
-                self.assertEqual(expected, presence("network", "owner").value)
-            run.assert_called_once()
-            self.assertEqual(["network", "inspect"], run.call_args.args[0][:2])
-
-    def test_network_listing_or_inspection_failure_is_not_absence(self):
-        presence = self.launcher["_gateway_network_presence"]
-        failed = SimpleNamespace(returncode=125, stdout="")
-        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", return_value=failed) as run:
-            with self.assertRaisesRegex(Exception, "listing failed"):
-                presence("network", "owner")
-        self.assertEqual([["network", "inspect"], ["network", "ls"]],
-                         [call.args[0][:2] for call in run.call_args_list])
-        # Failed inspect is not absence when a successful list still finds it.
-        run = Mock(side_effect=[failed, SimpleNamespace(returncode=0, stdout="network\n")])
-        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
-            with self.assertRaisesRegex(Exception, "inspection failed"):
-                presence("network", "owner")
-        self.assertEqual([["network", "inspect"], ["network", "ls"]],
-                         [call.args[0][:2] for call in run.call_args_list])
-        run = Mock(side_effect=[failed, SimpleNamespace(returncode=0, stdout="")])
-        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
-            self.assertEqual("absent", presence("network", "owner").value)
-        lima = Mock(spec=presence.__globals__["VMRuntime"])
-        lima.relay_owner_label.return_value = "dev.codex.relay-owner"
-        lima.run.side_effect = OSError("VM unavailable")
-        with patch.dict(presence.__globals__, OUTER_RUNTIME=lima):
-            with self.assertRaisesRegex(OSError, "VM unavailable"):
-                presence("network", "owner")
-
-    def test_recovery_retains_record_when_runtime_listing_is_unavailable(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state)
-            state.gateway_handle = handle
-            path = self.launcher["persist_relay_recovery"](
-                state, handle.resources, handle.owner, ("network:gateway-link",),
-            )
-            unavailable = Mock(return_value=SimpleNamespace(returncode=125, stdout=""))
-            with patch.object(
-                    self.launcher["recover_relays"].__globals__["OUTER_RUNTIME"],
-                    "run", unavailable,
-            ), patch("sys.stderr", new_callable=io.StringIO):
-                self.launcher["recover_relays"](state)
-            self.assertTrue(path.exists())
 
 
 class GatewayTest(unittest.TestCase):

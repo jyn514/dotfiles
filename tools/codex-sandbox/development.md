@@ -5,6 +5,16 @@ Before running tests or probes, follow the repository
 [testing and isolation rules](../../dev/README.md#testing-and-probes).
 The startup benchmark below uses the host's real configuration.
 
+## Lifecycle ownership
+
+`host_gateway.py` owns one launch's host-side gateway resources, transport selection, peer admission and recovery records.
+It accepts the admitted runtime, resource names and upstream projections; it does not import the launcher or retain launcher state.
+Retain its handle before preparation, join startup workers before cleanup, and persist remaining resources before removing scratch state.
+The launcher keeps service ordering and concurrency, while `TicBrokerLaunch` keeps broker token, lifetime and optional bridge-process ownership.
+`gateway.py` is the separate in-container socat supervisor, not the host lifecycle owner.
+Import the host owner from the sandbox tool directory; it has no standalone CLI.
+Owner-specific tests live in `tests/host_gateway_test.py`; launcher composition and real-stream tests remain in their existing integration suites.
+
 ## Nested Docker acceptance
 
 The nested Docker wrapper owns one foreground SSH master per Docker invocation.

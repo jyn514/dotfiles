@@ -33,6 +33,8 @@ from sandbox_runtime import ContainerRuntime, VMRuntime
 NATIVE_REVISION = (TOOL.parent / 'tic-proxy/native-revision').read_text().strip()
 from trusted_services import LifecycleError, LifecycleState, ResourcePresence
 from gateway_fixture import LocalGateway
+import host_gateway
+from relay_lifecycle import RelayResourcePlan
 
 
 class FakeProvider:
@@ -81,6 +83,10 @@ class FakeProvider:
         yield ['--env-file', '/private/disposable-env']
 
     def run(self, argv, **kwargs):
+        if argv[0] == 'run':
+            self.events.append(('container', ['docker', *argv]))
+            self.present.add(argv[argv.index('--name') + 1])
+            return SimpleNamespace(returncode=0)
         if argv[0] == 'logs':
             self.events.append(('logs', argv))
             return SimpleNamespace(
@@ -187,9 +193,9 @@ class TicLauncherTest(unittest.TestCase):
             runtime.present.discard(name)
         patches = {'OUTER_RUNTIME': runtime, 'create_relay_network': create, 'run': run,
                    'proxy_flags': lambda: [], 'remove_owned_resource': remove,
-                   '_gateway_network_presence': lambda name, owner: (
+                   'gateway_network_presence': lambda runtime, name, owner: (
                        ResourcePresence.OWNED if name in runtime.present else ResourcePresence.ABSENT),
-                   '_gateway_container_presence': lambda name, owner: (
+                   'gateway_container_presence': lambda runtime, name, owner: (
                        ResourcePresence.OWNED if name in runtime.present else ResourcePresence.ABSENT)}
         if context:
             patches['inspect_tic_context'] = mock.Mock(return_value=self.context)
@@ -197,7 +203,11 @@ class TicLauncherTest(unittest.TestCase):
         def start_bridge(handle, peers):
             runtime.host_bridge = original_bridge(handle, peers)
             return runtime.host_bridge
-        with mock.patch.dict(self.globals, patches), mock.patch.object(
+        owner_patches = {key: patches[key] for key in (
+            'create_relay_network', 'remove_owned_resource',
+            'gateway_network_presence', 'gateway_container_presence')}
+        with mock.patch.dict(self.globals, patches), mock.patch.multiple(
+                host_gateway, **owner_patches), mock.patch.object(
                 self.globals['TicBrokerLaunch'], 'start_bridge', start_bridge):
             try:
                 self.launcher['prepare_gateway'](self.state)
@@ -1252,7 +1262,12 @@ class TicLauncherTest(unittest.TestCase):
                 subprocess.CompletedProcess(argv, 0, stdout='tic-relay-ready-v1\n')
                 if argv[0] == 'logs' else client(argv[-1:], runtime.probe_environment))
             runtime.network_address = lambda container, network: '127.0.0.1'
-            with mock.patch.dict(self.globals, {'run': launch_relay, 'remove_owned_resource': remove}):
+            def start_detached(image, name, arguments, command):
+                return launch_relay(['docker', 'run', '--detach', '--name', name,
+                                     *arguments, image, *command])
+            with mock.patch.dict(self.globals, {'run': launch_relay, 'remove_owned_resource': remove}), \
+                    mock.patch.object(host_gateway, 'remove_owned_resource', remove), \
+                    mock.patch.object(runtime, 'start_detached', start_detached, create=True):
                 try:
                     self.launcher['start_tic'](self.state)
                     self.assertFalse(database.exists(), 'inspection/readiness/help must not open SQLite')
@@ -1450,7 +1465,8 @@ class TicLauncherTest(unittest.TestCase):
             self.state.suffix = 'second'
             runtime = self.globals['OUTER_RUNTIME']
             runtime.present.discard(self.state.gateway_container)
-            self.state.gateway_handle = self.launcher['GatewayHandle'](self.state)
+            self.state.gateway_handle = host_gateway.GatewayHandle(runtime, RelayResourcePlan(
+                self.state.gateway_link_network, self.state.gateway_egress_network, self.state.gateway_container))
             for name in (self.state.gateway_link_network, self.state.gateway_egress_network):
                 identity = f'network:{name}'
                 self.state.gateway_handle.registry.register(self.launcher['OwnedResource'](

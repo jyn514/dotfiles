@@ -38,13 +38,17 @@ from sandbox_runtime import (
 from sandbox_credentials import boot_credential
 from command_proxy_session import CommandProxySession, SessionError, runtime_directory as proxy_runtime_directory
 from relay_lifecycle import RelayResourcePlan
+from host_gateway import (
+    GatewayHandle, GatewayError, BuildSshProjection, create_relay_network,
+    gateway_network_presence, gateway_container_presence,
+    persist_relay_recovery, recover_relays,
+)
 from source_view import check_mount_destinations, source_mounts
 from workspace_layout import (
     WorkspaceLayout, WorkspaceError, discover_repository_metadata, discover_workspace,
     ensure_request_lock, workspace_guest_root, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY,
 )
 from keychain_bridge import HostKeychainBridge
-from host_tcp_bridge import FixedTcpBridge
 from tic_broker import POLICY_VERSION as TIC_POLICY_VERSION, InstalledTicBuild, TicBrokerLaunch
 from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, check_agent_pi_revision, resolve_agent
@@ -234,26 +238,6 @@ def proxy_flags() -> list[str]:
         network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
         return ["--dns", network["dns"]]
     return ["--http-proxy=false"]
-
-
-def create_relay_network(state: State, name: str, *, internal: bool,
-                         owner: str | None = None) -> None:
-    owner = owner or state.resource_owner
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        OUTER_RUNTIME.create_relay_network(name, internal=internal, owner=owner)
-    else:
-        run(["docker", "network", "create", *(["--internal"] if internal else []),
-             "--label", f"dev.codex.service-owner={owner}",
-             "--opt", "isolate=true", name], discard_stdout=True)
-
-
-def create_relay_networks(state: State, networks: tuple[tuple[str, bool], ...],
-                          *, owner: str) -> None:
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        OUTER_RUNTIME.create_relay_networks(networks, owner=owner)
-    else:
-        for name, internal in networks:
-            create_relay_network(state, name, internal=internal, owner=owner)
 
 
 def parse_connection(path: Path) -> dict[str, str]:
@@ -713,263 +697,29 @@ def attach_proxies(state: State, images: dict[str, str] | None = None) -> list[s
     return result
 
 
-class GatewayHandle:
-    """Sole owner of one launch's staged, best-effort gateway resources."""
-
-    def __init__(self, state: State) -> None:
-        self.state = state
-        self.owner = uuid.uuid4().hex
-        self.registry = ResourceRegistry(self.owner)
-        self.resources = RelayResourcePlan(
-            state.gateway_link_network, state.gateway_egress_network, state.gateway_container,
-        )
-        self.cancelled = threading.Event()
-        self.build_bridge: FixedTcpBridge | None = None
-        # Selected reachable SSH endpoint, independent of optional bridge ownership.
-        self.build_port: int | None = None
-        self.addresses: dict[str, str] = {}
-        self.started = False
-        self._logical: set[str] = set()
-        self.created: set[str] = set()
-
-    def presence(self, identity: str, inspect: Callable[[], ResourcePresence]) -> ResourcePresence:
-        return ResourcePresence.OWNED if identity in self.created else inspect()
-
-    def _register_logical(self, identity: str, *, depends_on: tuple[str, ...] = (),
-                          remove: Callable[[], None] = lambda: None) -> None:
-        self._logical.add(identity)
-        self.registry.register(OwnedResource(
-            identity, self.owner,
-            lambda identity=identity: (ResourcePresence.OWNED if identity in self._logical
-                                       else ResourcePresence.ABSENT),
-            lambda identity=identity, remove=remove: (remove(), self._logical.discard(identity)),
-            depends_on,
-        ))
-
-    def cleanup(self, primary_status: int = 0):
-        self.cancelled.set()
-        return self.registry.cleanup(primary_status)
-
-
-def _gateway_network_presence(name: str, owner: str) -> ResourcePresence:
-    return resource_presence(
-        OUTER_RUNTIME, ResourceKind.NETWORK, name, owner,
-        authority=ResourceOwnerAuthority.RELAY,
-    )
-
-
-def _gateway_container_presence(name: str, owner: str) -> ResourcePresence:
-    return resource_presence(OUTER_RUNTIME, ResourceKind.CONTAINER, name, owner)
-
-
-def _relay_recovery_directory(state: State) -> Path:
-    return state.home / ".local/state/codex-sandbox/gateway-recovery"
-
-
-def _relay_recovery_dirfd(state: State, *, create: bool) -> int | None:
-    """Open the private recovery directory without following any path component."""
-    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(state.home, flags)
-    try:
-        for component in (".local", "state", "codex-sandbox", "gateway-recovery"):
-            try:
-                child = os.open(component, flags, dir_fd=fd)
-            except FileNotFoundError:
-                if not create:
-                    return None
-                os.mkdir(component, 0o700, dir_fd=fd)
-                child = os.open(component, flags, dir_fd=fd)
-            status = os.fstat(child)
-            if (not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid()
-                    or (component == "gateway-recovery"
-                        and stat.S_IMODE(status.st_mode) != 0o700)):
-                os.close(child)
-                raise LauncherError("gateway recovery path is not a private directory")
-            os.close(fd)
-            fd = child
-        result, fd = fd, -1
-        return result
-    finally:
-        if fd >= 0:
-            os.close(fd)
-
-
-def persist_relay_recovery(state: State, plan: RelayResourcePlan, owner: str,
-                           remaining: tuple[str, ...]) -> Path | None:
-    resources = plan.recovery_resources(remaining, owner)
-    if not resources:
-        return None
-    directory = _relay_recovery_directory(state)
-    dirfd = _relay_recovery_dirfd(state, create=True)
-    assert dirfd is not None
-    name = f"{owner}.json"
-    temporary = f".{owner}.{secrets.token_hex(8)}.tmp"
-    payload = {"version": 1, "runtime": runtime_identity(OUTER_RUNTIME),
-               "owner": owner, "resources": resources}
-    try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                             | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=dirfd)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            json.dump(payload, output, sort_keys=True)
-            output.flush()
-            os.fsync(output.fileno())
-        os.rename(temporary, name, src_dir_fd=dirfd, dst_dir_fd=dirfd)
-        os.fsync(dirfd)
-    finally:
-        try:
-            os.unlink(temporary, dir_fd=dirfd)
-        except FileNotFoundError:
-            pass
-        os.close(dirfd)
-    return directory / name
-
-
-def _parse_relay_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
-    value = json.loads(data)
-    if (not isinstance(value, dict) or set(value) != {"version", "runtime", "owner", "resources"}
-            or isinstance(value.get("version"), bool) or value.get("version") != 1
-            or value.get("runtime") != runtime_identity(OUTER_RUNTIME)
-            or not isinstance(value.get("owner"), str)
-            or not isinstance(value.get("resources"), list) or len(value["resources"]) > 4):
-        raise LauncherError("invalid gateway recovery record")
-    owner = value["owner"]
-    parsed: list[dict[str, object]] = []
-    identities: set[tuple[str, str]] = set()
-    for item in value["resources"]:
-        if (not isinstance(item, dict) or set(item) != {"kind", "name", "owner", "dependencies"}
-                or item.get("owner") != owner or item.get("kind") not in {"network", "container"}
-                or not isinstance(item.get("name"), str) or not item["name"]
-                or not isinstance(item.get("dependencies"), list)
-                or any(not isinstance(dependency, str) or not dependency
-                       for dependency in item["dependencies"])
-                or len(set(item["dependencies"])) != len(item["dependencies"])):
-            raise LauncherError("invalid gateway recovery resource")
-        identity = (item["kind"], item["name"])
-        if identity in identities:
-            raise LauncherError("duplicate gateway recovery resource")
-        identities.add(identity)
-        parsed.append(item)
-    for item in parsed:
-        if item["kind"] == "network" and item["dependencies"]:
-            raise LauncherError("network recovery resource has dependencies")
-        if any(("network", dependency) not in identities for dependency in item["dependencies"]):
-            raise LauncherError("missing gateway recovery dependency")
-    return owner, parsed
-
-
-def recover_relays(state: State) -> None:
-    if not hasattr(state, "home"):
-        return
-    try:
-        dirfd = _relay_recovery_dirfd(state, create=False)
-    except (OSError, LauncherError) as error:
-        print(f"warning: gateway recovery directory retained: {error}", file=sys.stderr)
-        return
-    if dirfd is None:
-        return
-    try:
-        names = sorted(name for name in os.listdir(dirfd) if name.endswith(".json"))[:64]
-        for name in names:
-            try:
-                descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=dirfd)
-                with os.fdopen(descriptor, "rb") as source:
-                    status = os.fstat(source.fileno())
-                    if (not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid()
-                            or stat.S_IMODE(status.st_mode) != 0o600 or status.st_size > 16384):
-                        raise LauncherError("gateway recovery record is not a private regular file")
-                    owner, resources = _parse_relay_recovery(source.read(16385))
-                registry = ResourceRegistry(owner)
-                for item in sorted(resources, key=lambda item: item["kind"] == "container"):
-                    name_value = item["name"]
-                    dependencies = tuple(f"network:{dependency}" for dependency in item["dependencies"])
-                    if item["kind"] == "network":
-                        registry.register(OwnedResource(
-                            f"network:{name_value}", owner,
-                            lambda name_value=name_value: _gateway_network_presence(name_value, owner),
-                            lambda name_value=name_value: remove_owned_resource(
-                                OUTER_RUNTIME, ResourceKind.NETWORK, name_value, owner,
-                                authority=ResourceOwnerAuthority.RELAY)))
-                    else:
-                        registry.register(OwnedResource(
-                            f"container:{name_value}", owner,
-                            lambda name_value=name_value: _gateway_container_presence(name_value, owner),
-                            lambda name_value=name_value: remove_owned_resource(
-                                OUTER_RUNTIME, ResourceKind.CONTAINER, name_value, owner), dependencies))
-                if registry.cleanup(0).remaining:
-                    raise LauncherError("gateway resources retained")
-            except (OSError, TypeError, ValueError, json.JSONDecodeError,
-                    LifecycleError, LauncherError) as error:
-                print(f"warning: gateway recovery retained {name}: {error}", file=sys.stderr)
-            else:
-                os.unlink(name, dir_fd=dirfd)
-                os.fsync(dirfd)
-    finally:
-        os.close(dirfd)
-
-
 def prepare_gateway(state: State) -> list[str]:
-    capabilities = getattr(state, "capabilities", frozenset({"nested-containers"}))
-    nested = "nested-containers" in capabilities and state.agent_docker is not None
-    tic = "tic" in capabilities
-    if not nested and not tic:
-        return []
-    handle = GatewayHandle(state)
+    handle = GatewayHandle(OUTER_RUNTIME, RelayResourcePlan(
+        state.gateway_link_network, state.gateway_egress_network, state.gateway_container,
+    ))
+    # Publish ownership before network creation so partial startup is cleanable.
     state.gateway_handle = handle
-    if nested:
-        target = ("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"]))
-        if not OUTER_RUNTIME.host_loopback_access:
-            handle.build_bridge = FixedTcpBridge(target)
-            handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
-        try:
-            if handle.build_bridge is None:
-                # Keep the stopped-service check performed by bridge.start(),
-                # without creating another listener on loopback-capable providers.
-                with socket.create_connection(target, timeout=1):
-                    pass
-                handle.build_port = target[1]
-            else:
-                handle.build_bridge.start()
-                handle.build_port = handle.build_bridge.port
-        except OSError as error:
-            if handle.build_bridge is not None:
-                handle.build_bridge.stop()
-            print(f"warning: nested Docker relay unavailable: {error}; "
-                  "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
-                  file=sys.stderr)
-            handle.build_bridge = None
-            state.agent_docker = None
-            handle._logical.discard("bridge:build")
-            if not tic:
-                handle.cleanup()
-                state.gateway_handle = None
-                return []
-    networks = ((state.gateway_link_network, True),
-                (state.gateway_egress_network, False))
-    for name, _internal in networks:
-        identity = f"network:{name}"
-        handle.registry.register(OwnedResource(
-            identity, handle.owner,
-            lambda name=name, identity=identity: handle.presence(
-                identity, lambda: _gateway_network_presence(name, handle.owner)),
-            lambda name=name: remove_owned_resource(
-                OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
-                authority=ResourceOwnerAuthority.RELAY),
-        ))
-    if handle.cancelled.is_set():
-        raise LauncherError("gateway startup cancelled")
-    create_relay_networks(state, networks, owner=handle.owner)
-    handle.created.update(f"network:{name}" for name, _internal in networks)
-    if handle.build_port is None:
-        return []
     values = state.agent_docker
-    return [
-        "--network", state.gateway_link_network,
-        "--env", f"DOCKER_HOST=ssh://{values['AGENT_DOCKER_SSH_USER']}@{state.gateway_container}:2222",
-        "--env", f"AGENT_DOCKER_SSHKEY={values['AGENT_DOCKER_SSHKEY']}",
-        "--env", f"AGENT_DOCKER_KNOWN_HOSTS={state.container_known_hosts}",
-        "--mount", f"type=bind,src={state.agent_docker_key},dst={values['AGENT_DOCKER_SSHKEY']},readonly",
-        "--mount", f"type=bind,src={state.agent_docker_known_hosts},dst={state.container_known_hosts},readonly",
-    ]
+    capabilities = getattr(state, "capabilities", frozenset({"nested-containers"}))
+    build = (BuildSshProjection(
+        user=values["AGENT_DOCKER_SSH_USER"], port=int(values["AGENT_DOCKER_SSH_PORT"]),
+        key=state.agent_docker_key, known_hosts=state.agent_docker_known_hosts,
+        guest_key=values["AGENT_DOCKER_SSHKEY"], guest_known_hosts=state.container_known_hosts,
+    ) if values is not None and "nested-containers" in capabilities else None)
+    try:
+        result = handle.prepare(capabilities, build)
+    except GatewayError as error:
+        raise LauncherError(str(error)) from error
+    finally:
+        if handle.build_unavailable:
+            state.agent_docker = None
+    if not result.selected:
+        state.gateway_handle = None
+    return list(result.arguments)
 
 
 def start_gateway(state: State, tic_port: int | None = None, image: str | None = None,
@@ -977,65 +727,11 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
     handle = state.gateway_handle
     if handle is None:
         raise LauncherError("gateway was not prepared")
-    if handle.started:
-        raise LauncherError("gateway already started")
-    build_port = str(handle.build_port) if handle.build_port is not None else None
-    if build_port is None and tic_port is None:
-        raise LauncherError("gateway requires a listener")
-    container_resource = f"container:{state.gateway_container}"
-    handle.registry.register(OwnedResource(
-        container_resource, handle.owner,
-        lambda: handle.presence(container_resource, lambda: _gateway_container_presence(
-            state.gateway_container, handle.owner)),
-        lambda: remove_owned_resource(
-            OUTER_RUNTIME, ResourceKind.CONTAINER, state.gateway_container, handle.owner),
-        handle.resources.bound_topology()[container_resource],
-    ))
-    if handle.cancelled.is_set():
-        raise LauncherError("gateway startup cancelled")
-    arguments = [
-        "--label", f"dev.codex.service-owner={handle.owner}",
-        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--network", state.gateway_egress_network,
-        "--network", state.gateway_link_network, *proxy_flags(),
-        *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
-        *(["--mount", f"type=bind,src={tic_client},dst=/opt/agent-tools/bin/ti,readonly"]
-          if tic_client is not None else []),
-        "--entrypoint", "/trusted/bin/sandbox-gateway",
-    ]
-    command = [
-        "--host", OUTER_RUNTIME.host_address,
-        *(["--build-port", build_port] if build_port is not None else []),
-        *(["--tic-port", str(tic_port)] if tic_port is not None else []),
-    ]
-    if hasattr(OUTER_RUNTIME, 'start_detached'):
-        OUTER_RUNTIME.start_detached(image or state.sidecar_image, state.gateway_container,
-                                     arguments, command)
-    else:
-        run(["docker", "run", "--detach", "--name", state.gateway_container,
-             *arguments, image or state.sidecar_image, *command], discard_stdout=True)
-    handle.created.add(container_resource)
-    handle.started = True
-    addresses = OUTER_RUNTIME.network_addresses(
-        state.gateway_container, (state.gateway_link_network, state.gateway_egress_network))
-    relay_ip = addresses[state.gateway_link_network]
-    egress_ip = addresses[state.gateway_egress_network]
-    if not relay_ip or not egress_ip:
-        raise LauncherError("gateway has incomplete network addresses")
-    handle.addresses = {state.gateway_link_network: relay_ip,
-                        state.gateway_egress_network: egress_ip}
-    address_resources = []
-    for kind, value in (("relay", relay_ip), ("egress", egress_ip)):
-        identity = f"address:{kind}-{value.replace('.', '-').replace(':', '-')}"
-        handle._register_logical(identity, depends_on=(container_resource,))
-        address_resources.append(identity)
-    if handle.cancelled.is_set():
-        raise LauncherError("gateway startup cancelled")
-    if handle.build_bridge is not None:
-        handle._register_logical("allowlist:build",
-            depends_on=("bridge:build", *address_resources))
-        handle.build_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
-        # Until this allowlist is installed, the bridge rejects every connection.
+    try:
+        handle.start(image=image or state.sidecar_image, network_flags=proxy_flags(),
+                     tic_port=tic_port, tic_client=tic_client)
+    except GatewayError as error:
+        raise LauncherError(str(error)) from error
 
 
 class KeychainHandle:
@@ -1069,13 +765,13 @@ def start_keychain(state: State) -> list[str]:
             identity = f"network:{name}"
             handle.registry.register(OwnedResource(
                 identity, handle.owner,
-                lambda name=name: _gateway_network_presence(name, handle.owner),
+                lambda name=name: gateway_network_presence(OUTER_RUNTIME, name, handle.owner),
                 lambda name=name: remove_owned_resource(
                     OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
                     authority=ResourceOwnerAuthority.RELAY)))
             if handle.cancelled.is_set():
                 raise LauncherError('Keychain relay startup cancelled')
-            create_relay_network(state, name, internal=internal, owner=handle.owner)
+            create_relay_network(OUTER_RUNTIME, name, internal=internal, owner=handle.owner)
 
         # Register in each worker before creation and join both workers on every exit.
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -1086,7 +782,7 @@ def start_keychain(state: State) -> list[str]:
         container_resource = f'container:{container}'
         handle.registry.register(OwnedResource(
             container_resource, handle.owner,
-            lambda: _gateway_container_presence(container, handle.owner),
+            lambda: gateway_container_presence(OUTER_RUNTIME, container, handle.owner),
             lambda: remove_owned_resource(
                 OUTER_RUNTIME, ResourceKind.CONTAINER, container, handle.owner),
             handle.resources.bound_topology()[container_resource]))
@@ -1328,30 +1024,6 @@ def check_tic_cancelled(state: State) -> None:
         raise LauncherError('TicGit startup cancelled')
 
 
-def wait_tic_gateway_ready(container: str) -> None:
-    from gateway import TIC_READY_MESSAGE
-    if hasattr(OUTER_RUNTIME, 'wait_for_log'):
-        try:
-            OUTER_RUNTIME.wait_for_log(container, TIC_READY_MESSAGE, 7)
-        except subprocess.TimeoutExpired as error:
-            raise LauncherError('TicGit gateway readiness publication timed out; no fallback') from error
-        return
-    deadline = time.monotonic() + 7
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise LauncherError('TicGit gateway readiness publication timed out; no fallback')
-        result = OUTER_RUNTIME.run(
-            ['logs', '--tail', '20', container], capture_output=True,
-            timeout=min(2, remaining), check=False,
-        )
-        if result.returncode != 0:
-            raise LauncherError('TicGit gateway readiness log is unavailable; no fallback')
-        if TIC_READY_MESSAGE in result.stdout.splitlines():
-            return
-        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
-
-
 def start_tic(state: State) -> list[str]:
     state.tic_environment = {}
     if 'tic' not in getattr(state, 'capabilities', ()):
@@ -1426,16 +1098,7 @@ def _start_tic(state: State) -> list[str]:
         with service_timing("tic", "broker-start-ready"):
             handle.start()
         check_tic_cancelled(state)
-        # Lima forwards host.lima.internal to host loopback. Other providers
-        # still need the peer-filtered bridge; their host address alone does
-        # not imply that a loopback-only broker is reachable.
-        bridge = None
-        if OUTER_RUNTIME.host_loopback_access:
-            upstream_port = int(handle.address.rsplit(":", 1)[1])
-        else:
-            with service_timing("tic", "host-bridge"):
-                bridge = handle.start_bridge(set())
-            upstream_port = bridge.port
+        upstream_port = gateway.select_tic_upstream(handle)
         mount = f'type=bind,src={client},dst=/opt/agent-tools/bin/ti,readonly'
         check_tic_cancelled(state)
         with service_timing('tic', 'gateway-start'):
@@ -1443,11 +1106,10 @@ def _start_tic(state: State) -> list[str]:
         addresses = gateway.addresses
         if not all(addresses.values()):
             raise LauncherError('TicGit gateway has incomplete network addresses')
-        if bridge is not None:
-            bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
+        gateway.admit_tic_upstream()
         check_tic_cancelled(state)
         with service_timing('tic', 'gateway-readiness-log'):
-            wait_tic_gateway_ready(resources.container)
+            gateway.wait_tic_ready()
         # One authenticated help verifies the complete guest path, including
         # relay listener readiness. Never replay it after transport failure.
         # Help never opens SQLite.
@@ -2253,7 +1915,8 @@ def execute(state: State) -> int:
             "cached resources are reused when valid; builds run only when needed.")
         manifest = command_session(state).policy
         phase("policy binding", lambda: bind_repository_policy(state))
-    phase("relay recovery", lambda: recover_relays(state))
+    phase("relay recovery", lambda: recover_relays(OUTER_RUNTIME, state.home)
+          if hasattr(state, "home") else None)
     phase("skill staging", lambda: stage_skills(state))
     if hasattr(state, "home"):
         phase("host Pi resources", lambda: prepare_host_pi_resources(state))
@@ -2445,12 +2108,12 @@ def cleanup(state: State) -> bool:
             if keychain_result.remaining:
                 try:
                     path = persist_relay_recovery(
-                        state, keychain_handle.resources, keychain_handle.owner,
+                        OUTER_RUNTIME, state.home, keychain_handle.resources, keychain_handle.owner,
                         keychain_result.remaining,
                     )
                     if path is not None:
                         print(f"warning: Keychain recovery state retained at {path}", file=sys.stderr)
-                except (OSError, LauncherError) as error:
+                except (OSError, LauncherError, GatewayError) as error:
                     print(f"warning: Keychain recovery state could not be persisted: {error}",
                           file=sys.stderr)
         gateway_result = (state.gateway_handle.cleanup(0)
@@ -2462,12 +2125,12 @@ def cleanup(state: State) -> bool:
             if gateway_result.remaining:
                 try:
                     path = persist_relay_recovery(
-                        state, state.gateway_handle.resources, state.gateway_handle.owner,
+                        OUTER_RUNTIME, state.home, state.gateway_handle.resources, state.gateway_handle.owner,
                         gateway_result.remaining,
                     )
                     if path is not None:
                         print(f"warning: gateway recovery state retained at {path}", file=sys.stderr)
-                except (OSError, LauncherError) as error:
+                except (OSError, LauncherError, GatewayError) as error:
                     print(f"warning: gateway recovery state could not be persisted: {error}", file=sys.stderr)
         timing("gateway")
         proxy_cleanup_succeeded = True
@@ -2486,8 +2149,8 @@ def cleanup(state: State) -> bool:
                   file=sys.stderr)
         if tic_result.remaining and state.tic_resources is not None:
             try:
-                persist_relay_recovery(state, state.tic_resources, tic_handle.owner, tic_result.remaining)
-            except (OSError, LauncherError) as error:
+                persist_relay_recovery(OUTER_RUNTIME, state.home, state.tic_resources, tic_handle.owner, tic_result.remaining)
+            except (OSError, LauncherError, GatewayError) as error:
                 print(f'warning: TicGit relay recovery state could not be persisted: {error}',
                       file=sys.stderr)
     keep_scratch = (not proxy_cleanup_succeeded

@@ -45,7 +45,7 @@ def startup_replacements(launcher, state):
 
 
 def cleanup_state(root):
-    return SimpleNamespace(cleaned=False, cleanup_succeeded=False,
+    return SimpleNamespace(home=root, cleaned=False, cleanup_succeeded=False,
                            codex_container_created=False, gateway_handle=None,
                            tic_handle=None, tic_environment={'SANDBOX_TIC_TOKEN': 'old'},
                            tic_resources=None, command_session=None,
@@ -208,7 +208,8 @@ class CleanupOverlapTest(unittest.TestCase):
             self.assertTrue(state.recovery_record.exists())
             self.assertTrue(session.recovery_path.exists())
             session.discard_staging.assert_not_called()
-            persist.assert_called_once_with(state, state.tic_resources, 'tic-owner', ('container:owned-tic',))
+            persist.assert_called_once_with(mock.ANY, root, state.tic_resources,
+                                           'tic-owner', ('container:owned-tic',))
             self.assertIn('Shared proxy cleanup failed', stderr.getvalue())
             self.assertIn('container:owned-tic', stderr.getvalue())
 
