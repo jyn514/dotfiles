@@ -20,9 +20,11 @@ Check the practical purpose of the request as well as its literal wording, witho
 State the minimum observable outcome before considering state, tracking, acknowledgment, or coordination mechanisms.
 For each proposed mechanism, identify the requirement or pre-existing constraint that needs it; apply the shared decision-authority rule when classifying proposed guarantees.
 Before designing interfaces or configuration, list each dimension the request requires to vary and its authoritative source; keep unspecified policy fixed and record deliberately fixed behavior.
-Identify the current storage boundary before choosing persistence: who owns the data, where and in what form it persists, its lifetime, who can read it, and who can rotate or recover it.
-A change of principal or medium changes behavior and requires authority; changing persistence, protection, or lifetime is not a routine implementation choice.
-If the request does not settle a consequential storage-boundary change, ask before designing the dependent mechanism and continue independent analysis while that decision is unresolved.
+Before choosing persistence, identify who owns the data, where and in what form it persists, its lifetime, who can read it, and who can rotate or recover it.
+Changing the principal or medium changes behavior and requires authority.
+Changing persistence, protection, or lifetime is not a routine implementation choice.
+If the request does not settle a consequential storage-boundary change, ask before designing the dependent mechanism.
+Continue independent analysis while that decision is unresolved.
 Compare the smallest existing-primitive solution first.
 Use the [contrasting examples](references/simplicity-examples.md) when a proposed mechanism, guarantee, or intermediary obscures that comparison.
 
@@ -50,12 +52,15 @@ For greenfield work, trace the closest existing primitive or integration caller;
 Inspect adjacent systems, runtime/deployment boundaries, and integration callers only when that can resolve a choice or establish candidate sufficiency.
 Identify the result the caller needs and compare what the path already provides with the governing outcome.
 Check ownership, authorization, compatibility, storage, and supported-interface constraints that could change whether the direct path suffices.
-Use further implementation and resource inspection below only when it can resolve a remaining choice or establish a candidate's sufficiency; if the direct route meets the outcome, stop without investigating unnecessary proposal-specific machinery.
+If sufficiency is uncertain, use the cheapest check that can decide it.
+If the direct route meets the outcome, recommend it as complete and stop before proposal-specific inspection.
+
+**If a choice remains,** use further implementation and resource inspection only when it can resolve that choice or establish a candidate's sufficiency.
 Consult API inventories, generated contracts, issues, and prepared work only when they could change the boundary or prevent duplicate work.
 For adapters and proxies, inspect the native interface and an existing analogous adapter before deciding what to forward, restrict, or replace.
 Before replacing an intermediary, compare the current route with a direct producer-to-consumer route and identify the capability lost by omitting it and where that capability is required.
-When repeated operations construct a client, runtime, or adapter, trace constructors and factories through to external effects; check whether an existing owner already selected or admitted the resource before proposing another discovery path.
-Identify repeated resource selection and admission checks, including configuration reads, process launches, and network requests; check whether an existing owner has already selected or admitted the resource before adding another discovery path.
+For repeated client, runtime, or adapter construction, trace constructors and factories through to external effects.
+Identify repeated resource selection and admission checks, including configuration reads, process launches, and network requests; determine whether an existing owner already selected or admitted the resource before adding another discovery path.
 Before proposing a new runtime resource or lifecycle owner, use the shared runtime-resource reuse check in `change-with-evidence` to inventory existing owners and justify the new resource.
 For a proposed resource binding, identify its owner, lifetime, and replacement event; include executable code as well as configuration, since a fixed path does not bind later-loaded contents.
 Check actual producer and consumer deployment lifetimes rather than assuming a shared checkout makes updates atomic.
@@ -80,7 +85,8 @@ Consult only the guidance needed for a concrete unresolved question:
 - Read [alternatives](references/alternatives.md) when tracing leaves a genuine architectural choice.
 - Use [deliberation](references/deliberation.md) only when that choice needs independent elaboration and critique; do not make multi-agent work the default.
 - Use `implementation-plan` only when a repository plan is requested, carrying forward the boundary contract.
-- When proceeding to boundary choices, read [design-risk applicability](references/design-risks.md#applicability) for relevant shared state/effects, async work, resource constraints, trust crossings, independent deployments/persisted formats, or diagnosis/recovery; reapply risk checks only to risks introduced or changed by the boundary.
+- If a boundary choice remains, use [design-risk applicability](references/design-risks.md#applicability) to select checks for the observed subsystem.
+- After selecting a boundary, revisit only risks that boundary introduces or changes.
 - Read [boundary contracts](references/boundary-contracts.md) only for unresolved or changed ownership, representations, effects, identity, lifecycle, or recovery guarantees.
 - Use [complexity justification](../references/complexity-justification.md) when a mechanism's necessity, consumers, or required variability remains unclear.
 - Use `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md) for a concrete question about whether a contract narrows governing requirements.
@@ -89,7 +95,11 @@ Consult only the guidance needed for a concrete unresolved question:
 ## Choose a coherent boundary when needed
 
 Continue only if a genuine architectural choice remains.
+
+### Define the target contract
+
 State the target contract: responsibilities moving and remaining, allowed dependencies and forbidden reverse edges, API treatment, and any facade's justification and removal condition.
+
 Classify responsibilities by reason to change, then identify their data, effect owners, dynamic state, and dependency direction before naming destination components.
 A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests.
 For existing systems, require a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit.
