@@ -71,6 +71,20 @@ worktree creation disabled. Authentication, pairing, session projection,
 explicit user controls, and the dotfiles PromptBus question projection remain
 active.
 
+### Unreleased upstream network-denial fix
+
+The patch backports upstream PR #1098 (`2996d4cab1095d3cda97abcb248343bac8c9c98b`),
+which fixes issue #1082 without moving off the published 0.11.0 dependency graph.
+An unpaired remote browser now receives its own `networkAccess` denial verdict in
+`GET /api/health` and shows **Network not allowed** with **Request access** instead
+of **Offline**.
+Health uses the same admission predicate as guarded routes without recording denial
+events or admission counters; local-proof responses retain priority.
+The backport includes the server, shared signal, browser hook, and upstream package-level tests.
+It does not include upstream CI/Docker changes, the variant-harness Playwright test,
+or upstream agent documentation.
+Remove the backported changes when adopting a release that contains #1098.
+
 ### Optional additional loopback HTTP listener
 
 `listenOnLoopback: true` in Dashboard's native config adds fixed
@@ -130,7 +144,7 @@ npm pack --ignore-scripts --pack-destination "$stage/published-web" @blackbelt-t
 tar -xzf "$stage/published-web/blackbelt-technology-pi-dashboard-web-0.11.0.tgz" -C "$stage/published-web"
 
 cd "$stage/source"
-pnpm install --frozen-lockfile
+NODE_OPTIONS=--max-old-space-size=4096 pnpm install --frozen-lockfile
 patch --batch --fuzz=0 -p1 < "$repo/libexec/setup/patches/pi-dashboard-0.11.0-source.patch"
 "$repo/dev/test-environment" env NODE_OPTIONS=--max-old-space-size=4096 npm run build
 python3 "$repo/libexec/setup/patches/regenerate_pi_dashboard_patch.py" \

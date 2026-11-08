@@ -170,6 +170,7 @@ Stored preferences cannot re-enable automatic session naming or automatic worktr
 Info-level extension notifications appear as three-second toasts, not chat rows, and do not replay when you reopen a session.
 Success, warning, and error notifications remain in chat; questions are unchanged.
 The global **Extension notifications** setting and per-session overrides apply to info toasts too.
+The patch also backports upstream #1098: an unpaired remote browser shows **Network not allowed** with **Request access** instead of **Offline**.
 
 The mise pin selects the root release, not a fully locked transitive dependency graph.
 Setup checks that every patched Dashboard component matches that release and records the resolved component and Pi SDK versions in its installation receipt.

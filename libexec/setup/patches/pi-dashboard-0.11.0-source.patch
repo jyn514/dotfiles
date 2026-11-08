@@ -541,6 +541,55 @@
    it("F9/X7: session_added with the spawnRequestId navigates exactly once (App owns navigation)", () => {
      const { dispatch, navigate, onSpawnFailed } = setup({ R: { cwd: "/p", kind: "spawn" } });
      dispatch({
+--- a/packages/client/src/hooks/__tests__/useNetworkDenied.test.ts
++++ b/packages/client/src/hooks/__tests__/useNetworkDenied.test.ts
+@@ -127,3 +127,46 @@
+     expect(connecting).not.toHaveBeenCalled();
+   });
+ });
++
++// See change: surface-network-denial-on-health (test-plan #F1–#F4, #X7).
++describe("useNetworkDenied — 200 networkAccess verdict", () => {
++  const verdict = { error: "network_not_allowed", hint: "H" };
++  const run = async (body: unknown, status = 200) => {
++    const fetchImpl = vi.fn(() => json(status, body));
++    const r = renderHook(() => useNetworkDenied("offline", "", { fetchImpl: fetchImpl as never }));
++    await act(async () => {});
++    return r.result.current;
++  };
++
++  it("F1 a 200 verdict is a denial with the hint", async () => {
++    expect(await run({ ok: true, networkAccess: verdict })).toEqual({ hint: "H" });
++  });
++
++  it("F2 local-proof wins over the verdict", async () => {
++    expect((await run({ localProof: "required", networkAccess: verdict }))?.reason).toBe("local_proof_required");
++  });
++
++  it("F3 malformed verdicts", async () => {
++    expect(await run({ networkAccess: { error: "other" } })).toBeNull();
++    expect(await run({ networkAccess: { error: "network_not_allowed", hint: 42 } })).toEqual({});
++    expect(await run({ networkAccess: "x" })).toBeNull();
++  });
++
++  it("F4 the verdict clears once the server admits the caller", async () => {
++    const fetchImpl = vi
++      .fn()
++      .mockImplementationOnce(() => json(200, { ok: true, networkAccess: verdict }))
++      .mockImplementation(() => json(200, { ok: true }));
++    const { result } = renderHook(() => useNetworkDenied("offline", "", { fetchImpl: fetchImpl as never, intervalMs: 1000 }));
++    await act(async () => {});
++    expect(result.current).toEqual({ hint: "H" });
++    await act(async () => {
++      await vi.advanceTimersByTimeAsync(1000);
++    });
++    expect(result.current).toBeNull();
++  });
++
++  it("X7 an expired presented bearer answers 401 → not a denial, no throw", async () => {
++    expect(await run({ error: "bearer_expired" }, 401)).toBeNull();
++  });
++});
 --- a/packages/client/src/hooks/__tests__/usePluginEnabledSet.test.tsx
 +++ b/packages/client/src/hooks/__tests__/usePluginEnabledSet.test.tsx
 @@ -89,7 +89,7 @@
@@ -706,6 +755,48 @@
 -  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setModelRefreshErrorsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setCollapsedFolders, setExpandedFolders, setCardSections, setGroupByPrefs, setFavoriteModels, setWorkspaces, setTerminals, setDiscoveredServers, setLoadingHistory, setReplayInFlight, setCanvasMap, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, flushLiveEvents, scheduleLiveFlush, publishGap, setHistorySpliceRev, setEndedTotalsMap, setPagedCount, setSnapshotGeneration, setPageReplyGen, setPageExhausted, sessionsRef, openspecGetInflightRef, markHistoryLoadFailed, clearHistoryLoadFailed, onSpawnFailed]);
 +  }, [send, clearSpawningCwd, navigate, setSessions, setSessionStates, setSessionCommands, setFileResults, setChangedOnDisk, setOpenspecMap, setModelsMap, setModelRefreshErrorsMap, setRolesMap, setSpawnResult, setSessionOrderMap, setPinnedDirectories, setCollapsedFolders, setExpandedFolders, setCardSections, setGroupByPrefs, setFavoriteModels, setWorkspaces, setTerminals, setDiscoveredServers, setLoadingHistory, setReplayInFlight, setCanvasMap, spawningCwdsRef, subscribedRef, pendingTerminalCwdRef, maxSeqMapRef, selectedSessionIdRef, loadingHistoryTimersRef, replayInFlightTimersRef, replayPersister, showToast, displayPrefs, flushLiveEvents, scheduleLiveFlush, publishGap, setHistorySpliceRev, setEndedTotalsMap, setPagedCount, setSnapshotGeneration, setPageReplyGen, setPageExhausted, sessionsRef, openspecGetInflightRef, markHistoryLoadFailed, clearHistoryLoadFailed, onSpawnFailed]);
  }
+--- a/packages/client/src/hooks/useNetworkDenied.ts
++++ b/packages/client/src/hooks/useNetworkDenied.ts
+@@ -8,9 +8,11 @@
+  * `intervalMs` until it connects; any other answer clears the denial. A transport
+  * failure is NOT a denial. A 200 carrying `localProof: "required"` is the strict-default
+  * "this tab needs proof" state. See changes: distinguish-offline-from-network-denied,
+- * add-lan-knock-pairing (design D10), close-container-loopback-impersonation (D3).
++ * add-lan-knock-pairing (design D10), close-container-loopback-impersonation (D3),
++ * surface-network-denial-on-health (a 200 `networkAccess` verdict is a denial too).
+  */
+ import { LOCAL_PROOF_REQUIRED } from "@blackbelt-technology/pi-dashboard-shared/local-proof-signal.js";
++import { NETWORK_NOT_ALLOWED } from "@blackbelt-technology/pi-dashboard-shared/network-denial-signal.js";
+ import { useEffect, useState } from "react";
+ import type { ConnectionStatus } from "./useWebSocket.js";
+ 
+@@ -35,14 +37,21 @@
+     const res = await fetchImpl(`${apiBase}/api/health`, { signal: AbortSignal.timeout(3000) });
+     // Strict default: `/api/health` answers 200 to a bare-loopback tab but says it needs proof.
+     if (res.status === 200) {
+-      const ok = (await res.json().catch(() => null)) as { localProof?: unknown } | null;
+-      return ok?.localProof === LOCAL_PROOF_REQUIRED
+-        ? { reason: "local_proof_required", hint: `Run \`${LOCAL_PROOF_COMMAND}\` on this machine to authorize this browser.` }
+-        : null;
++      const ok = (await res.json().catch(() => null)) as { localProof?: unknown; networkAccess?: { error?: unknown; hint?: unknown } | null } | null;
++      if (ok?.localProof === LOCAL_PROOF_REQUIRED) {
++        return { reason: "local_proof_required", hint: `Run \`${LOCAL_PROOF_COMMAND}\` on this machine to authorize this browser.` };
++      }
++      // The server's verdict for THIS caller: its network guard would refuse the request.
++      // See change: surface-network-denial-on-health (D6).
++      const na = ok?.networkAccess;
++      if (na && typeof na === "object" && na.error === NETWORK_NOT_ALLOWED) {
++        return typeof na.hint === "string" ? { hint: na.hint } : {};
++      }
++      return null;
+     }
+     if (res.status !== 403) return null;
+     const body = (await res.json().catch(() => null)) as { error?: unknown; hint?: unknown; reason?: unknown } | null;
+-    if (body?.error !== "network_not_allowed") return null;
++    if (body?.error !== NETWORK_NOT_ALLOWED) return null;
+     return {
+       ...(typeof body.hint === "string" ? { hint: body.hint } : {}),
+       ...(body.reason === "local_proof_required" ? { reason: "local_proof_required" as const } : {}),
 --- a/packages/client/src/hooks/usePluginEnabledSet.ts
 +++ b/packages/client/src/hooks/usePluginEnabledSet.ts
 @@ -58,27 +58,11 @@
@@ -780,6 +871,50 @@
        // Upsert: a terminal status (completed/error) for the same command
        // transitions the most recent matching started row in place, instead of
        // appending a duplicate. Keeps chat clean for started → terminal pairs.
+--- a/packages/client/src/lib/pairing/__tests__/device-auth-bearer.test.ts
++++ b/packages/client/src/lib/pairing/__tests__/device-auth-bearer.test.ts
+@@ -1,7 +1,9 @@
+ import { readFileSync } from "node:fs";
+ import { resolve } from "node:path";
+ import { clearAccessToken, setAccessToken } from "@blackbelt-technology/pi-dashboard-client-utils/identity/token-store";
++import { act, renderHook } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { useNetworkDenied } from "../../../hooks/useNetworkDenied.js";
+ import { setGlobalApiBase } from "../../api/api-context.js";
+ import {
+   clearDeviceBearer,
+@@ -452,3 +454,31 @@
+     });
+   });
+ });
++
++describe("surface-network-denial-on-health F5: the health probe is judged as itself, origin-scoped", () => {
++  beforeEach(() => {
++    resetDeviceAuthRuntimeForTests();
++    clearAccessToken();
++    localStorage.clear();
++    setGlobalApiBase("");
++  });
++  afterEach(() => {
++    vi.restoreAllMocks();
++    clearAccessToken();
++    localStorage.clear();
++  });
++
++  it("carries the probed origin's slot bearer, never the page-origin identity token", async () => {
++    const SLOT_B = "http://b.example:8000";
++    setAccessToken("ID", 300); // page-origin identity token
++    putSlot(SLOT_B, "SLOT");
++    const { spy } = installOver(() => json(200, { ok: true }));
++    const { result } = renderHook(() => useNetworkDenied("offline", SLOT_B));
++    await act(async () => {});
++    const probe = spy.mock.calls.find((c) => urlOf(c) === `${SLOT_B}/api/health`);
++    expect(probe).toBeDefined();
++    expect(authOf(probe as unknown[])).toBe("Bearer SLOT");
++    expect(spy.mock.calls.some((c) => authOf(c) === "Bearer ID")).toBe(false);
++    expect(result.current).toBeNull();
++  });
++});
 --- a/packages/client/src/lib/plugins/__tests__/plugin-availability.test.ts
 +++ b/packages/client/src/lib/plugins/__tests__/plugin-availability.test.ts
 @@ -25,9 +25,9 @@
@@ -2962,6 +3097,39 @@
    });
  
    it("should not crash when settings directory does not exist", () => {
+--- a/packages/server/src/__tests__/health-compatibility.test.ts
++++ b/packages/server/src/__tests__/health-compatibility.test.ts
+@@ -90,3 +90,30 @@
+     expect(mockReadCurrent).toHaveBeenCalledTimes(1);
+   });
+ });
++
++describe("GET /api/health — networkAccess verdict resilience", () => {
++  // See change: surface-network-denial-on-health (test-plan #X1, #X2).
++  const health = async (extra: Record<string, unknown>) => {
++    const app = Fastify({ logger: false });
++    registerSystemRoutes(app, { ...makeHealthDeps(), ...extra } as never);
++    await app.ready();
++    const res = await app.inject({ method: "GET", url: "/api/health", remoteAddress: "192.168.16.31" });
++    await app.close();
++    expect(res.statusCode).toBe(200);
++    return JSON.parse(res.body);
++  };
++
++  it("X1 a throwing verdict omits the field", async () => {
++    const body = await health({ readNetworkVerdict: () => { throw new Error("boom"); } });
++    expect(body.ok).toBe(true);
++    expect(body.networkAccess).toBeUndefined();
++  });
++
++  it("X2 an absent dep omits the field", async () => {
++    expect((await health({})).networkAccess).toBeUndefined();
++  });
++
++  it("a refusing verdict adds the field", async () => {
++    expect((await health({ readNetworkVerdict: () => true })).networkAccess?.error).toBe("network_not_allowed");
++  });
++});
 --- /dev/null
 +++ b/packages/server/src/__tests__/http-loopback-listener.test.ts
 @@ -0,0 +1,141 @@
@@ -3104,6 +3272,221 @@
 +    } finally {
 +      await new Promise<void>(resolve => blocker.close(() => resolve()));
 +    }
++  });
++});
+--- /dev/null
++++ b/packages/server/src/__tests__/network-access-health.test.ts
+@@ -0,0 +1,212 @@
++/**
++ * `GET /api/health` reports the caller's own network-guard verdict (`networkAccess`) with
++ * no admission side effects, bounded config I/O and exact-path session tagging.
++ *
++ * See change: surface-network-denial-on-health (test-plan #E1–#E13, #X3–#X5, #P1–#P3).
++ */
++import fs from "node:fs";
++import path from "node:path";
++import {
++  GENERIC_NETWORK_DENIED_HINT,
++  NETWORK_NOT_ALLOWED,
++} from "@blackbelt-technology/pi-dashboard-shared/network-denial-signal.js";
++import type { AuthConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { signToken } from "../auth/auth.js";
++import { evaluateNetworkPass, setNetworkDenialObserver } from "../auth/localhost-guard.js";
++import { networkOnlySnapshot } from "../auth/network-trust-telemetry.js";
++import { createLocalTrustContext } from "../auth/local-proof.js";
++import { proofFetch } from "../test-support/local-credential-stamp.js";
++import { createTestServer, type TestServerHandle } from "../test-support/test-server.js";
++import { type TrustModeHome, useTrustModeHome } from "../test-support/trust-mode-home.js";
++import { blockEvents } from "../tunnel/tunnel-block-events.js";
++
++const SECRET = "test-secret-32-chars-long-abcdef";
++const github = { github: { clientId: "cid", clientSecret: "cs" } };
++const REMOTE = "192.168.16.31";
++const sessionCookie = () => `pi_dash_token=${signToken({ sub: "a@x", name: "A", username: "a", provider: "github" }, SECRET)}`;
++const FIELD = { error: NETWORK_NOT_ALLOWED, hint: GENERIC_NETWORK_DENIED_HINT };
++
++let th: TrustModeHome;
++let handle: TestServerHandle | undefined;
++
++beforeEach(() => {
++  th = useTrustModeHome();
++  blockEvents.clear();
++});
++afterEach(async () => {
++  setNetworkDenialObserver(null);
++  vi.restoreAllMocks();
++  vi.useRealTimers();
++  await handle?.stop();
++  handle = undefined;
++  th.restore();
++});
++
++async function boot(
++  cfg: Parameters<TrustModeHome["setTrustConfig"]>[0],
++  extra: Partial<Parameters<typeof createTestServer>[0]> = {},
++): Promise<TestServerHandle> {
++  th.setTrustConfig(cfg);
++  handle = await createTestServer(extra);
++  return handle;
++}
++const oauth = { authConfig: { secret: SECRET, providers: github, allowedUsers: ["*@x"] } as AuthConfig };
++
++async function get(url: string, headers: Record<string, string> = {}, remoteAddress = REMOTE) {
++  const res = await handle!.server.inject({ method: "GET", url, remoteAddress, headers });
++  let body: Record<string, unknown> = {};
++  try { body = res.json(); } catch { /* non-JSON */ }
++  return { status: res.statusCode, body };
++}
++
++describe("health verdict (real wired server)", () => {
++  it("E1/E2 unpaired remote: health field present, guarded route 403 with the same hint", async () => {
++    await boot({ trustMode: "pair" });
++    const h = await get("/api/health");
++    expect(h.status).toBe(200);
++    expect(h.body.networkAccess).toEqual(FIELD);
++    expect(h.body.localProof).toBeUndefined();
++    const g = await get("/api/paired-devices");
++    expect(g.status).toBe(403);
++    expect(g.body.error).toBe(FIELD.error);
++    expect(g.body.hint).toBe(FIELD.hint);
++  }, 60_000);
++
++  it("E3 OAuth-seeded: field present, guarded route 401", async () => {
++    await boot({ trustMode: "pair" }, oauth);
++    expect((await get("/api/health")).body.networkAccess).toEqual(FIELD);
++    expect((await get("/api/paired-devices")).status).toBe(401);
++  }, 60_000);
++
++  it("E4 passkeys-only: field present", async () => {
++    await boot({ trustMode: "pair", extra: { auth: { passkeys: { enabled: true } } } });
++    expect((await get("/api/health")).body.networkAccess).toEqual(FIELD);
++  }, 60_000);
++
++  it("E5/E7/E13 admitted callers see no field; exact-path tagging", async () => {
++    await boot({ trustMode: "pair" }, oauth);
++    const mint = await proofFetch(`http://127.0.0.1:${handle!.httpPort}/api/paired-devices`, {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({ label: "e5" }),
++    });
++    const token = ((await mint.json()) as { data: { token: string } }).data.token;
++    expect((await get("/api/health", { authorization: `Bearer ${token}` })).body.networkAccess).toBeUndefined();
++    expect((await get("/api/health", { cookie: sessionCookie() })).body.networkAccess).toBeUndefined();
++    expect((await get("/api/health?x=1", { cookie: sessionCookie() })).body.networkAccess).toBeUndefined();
++    expect((await get("/api/health?probe=1", { cookie: sessionCookie() })).body.networkAccess).toBeUndefined();
++    // Not prefix-matched: /api/healthcheck is not the health exemption.
++    const hc = await get("/api/healthcheck", { cookie: sessionCookie() });
++    expect(hc.body.networkAccess).toBeUndefined();
++    expect(hc.status).not.toBe(200);
++    // loopback + proof
++    const proofed = await proofFetch(`http://127.0.0.1:${handle!.httpPort}/api/health`);
++    expect(((await proofed.json()) as Record<string, unknown>).networkAccess).toBeUndefined();
++  }, 60_000);
++
++  it("E5f/E9 legacy covering list admits; presence tracks own admission", async () => {
++    await boot({ trustMode: "legacy", trustedNetworks: ["192.168.16.0/24"] });
++    expect((await get("/api/health")).body.networkAccess).toBeUndefined();
++    expect((await get("/api/paired-devices")).body.error).not.toBe(NETWORK_NOT_ALLOWED);
++    await handle!.stop();
++    handle = undefined;
++    await boot({ trustMode: "pair" });
++    expect((await get("/api/health")).body.networkAccess).toEqual(FIELD);
++    expect((await get("/api/paired-devices")).status).toBe(403);
++  }, 60_000);
++
++  it("E6/E10 bare loopback under strict: localProof only", async () => {
++    await boot({});
++    const res = await fetch(`http://127.0.0.1:${handle!.httpPort}/api/health`);
++    const body = (await res.json()) as Record<string, unknown>;
++    expect(body.localProof).toBe("required");
++    expect(body.networkAccess).toBeUndefined();
++  }, 60_000);
++
++  it("E8 value carries no posture, identical across modes", async () => {
++    await boot({ trustMode: "pair" });
++    const a = await get("/api/health");
++    await handle!.stop();
++    handle = undefined;
++    await boot({ trustMode: "legacy", trustedNetworks: ["10.0.0.0/8"] });
++    const b = await get("/api/health");
++    expect(a.body.networkAccess).toEqual(b.body.networkAccess);
++    const blob = JSON.stringify(b.body.networkAccess);
++    for (const leak of ["192.168", "10.0.0.0", "pair", "legacy"]) expect(blob).not.toContain(leak);
++    expect(b.body.accessGrants).toBeFalsy();
++    expect(b.body.trustPosture).toBeFalsy();
++  }, 60_000);
++
++  it("X3/X4 health polling has no denial or network-only side effects", async () => {
++    await boot({ trustMode: "pair" });
++    const observer = vi.fn();
++    setNetworkDenialObserver(observer);
++    for (let i = 0; i < 20; i++) await get("/api/health");
++    expect(observer).not.toHaveBeenCalled();
++    expect(blockEvents.list().length).toBe(0);
++    await get("/api/paired-devices");
++    expect(observer).toHaveBeenCalledTimes(1);
++    await handle!.stop();
++    handle = undefined;
++
++    await boot({ trustMode: "legacy", trustedNetworks: ["192.168.16.0/24"] });
++    const before = networkOnlySnapshot();
++    for (let i = 0; i < 20; i++) await get("/api/health");
++    expect(networkOnlySnapshot().admissions).toBe(before.admissions);
++    await get("/api/paired-devices");
++    expect(networkOnlySnapshot().admissions).toBe(before.admissions + 1);
++  }, 60_000);
++});
++
++describe("verdict I/O bound and staleness (real wired server)", () => {
++  /** Config `statSync` calls attributable to the verdict (stack passes through `memoAdmissionList`). */
++  let attributed = 0;
++  const spyStats = () => {
++    attributed = 0;
++    const orig = fs.statSync;
++    return vi.spyOn(fs, "statSync").mockImplementation(((...args: Parameters<typeof fs.statSync>) => {
++      if (String(args[0]).endsWith(path.join(".pi", "dashboard", "config.json")) && /memoAdmissionList/.test(new Error().stack ?? "")) attributed++;
++      return (orig as (...a: unknown[]) => unknown)(...args);
++    }) as never);
++  };
++
++  it("P1 ≤1 config statSync per TTL window; P3 refresh count; X5 staleness bound", async () => {
++    vi.useFakeTimers({ toFake: ["Date"] });
++    await boot({ trustMode: "pair" });
++    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
++    await get("/api/health"); // prime
++    spyStats();
++    for (let i = 0; i < 100; i++) await get("/api/health");
++    expect(attributed).toBeLessThanOrEqual(1);
++    attributed = 0;
++    vi.setSystemTime(new Date("2030-01-01T00:00:00.500Z"));
++    await get("/api/health");
++    vi.setSystemTime(new Date("2030-01-01T00:00:01.100Z"));
++    await get("/api/health");
++    expect(attributed).toBe(1); // t=0 refresh was in the priming request; only t=1.1 s refreshes
++
++    // X5: switch to a covering legacy list; ≥1 s later the verdict follows.
++    th.setTrustConfig({ trustMode: "legacy", trustedNetworks: ["192.168.16.0/24"] });
++    vi.setSystemTime(new Date("2030-01-01T00:00:02.500Z"));
++    expect((await get("/api/health")).body.networkAccess).toBeUndefined();
++  }, 60_000);
++});
++
++describe("evaluateNetworkPass (pure core)", () => {
++  const req = (over: Record<string, unknown> = {}) =>
++    ({ ip: REMOTE, headers: {}, url: "/api/health", routeOptions: { url: "/api/health" }, ...over }) as never;
++
++  it("E12 arms, and the admission list is read only when no earlier arm admits", () => {
++    const readTrusted = vi.fn(() => ["192.168.16.0/24"]);
++    const strict = createLocalTrustContext("t".repeat(32), () => true);
++    const o = { readTrusted, localToken: undefined, localTrust: strict };
++    expect(evaluateNetworkPass(req({ isAuthenticated: true }), o).passed).toBe("auth");
++    expect(readTrusted).not.toHaveBeenCalled();
++    const t = evaluateNetworkPass(req(), o);
++    expect(t).toEqual({ passed: "trusted", trustedList: ["192.168.16.0/24"] });
++    const none = evaluateNetworkPass(req({ ip: "203.0.113.9" }), o);
++    expect(none.passed).toBeNull();
++    expect(none.trustedList).toBeDefined();
 +  });
 +});
 --- /dev/null
@@ -3820,6 +4203,112 @@
 +    }
 +  });
 +});
+--- a/packages/server/src/auth/auth-plugin.ts
++++ b/packages/server/src/auth/auth-plugin.ts
+@@ -550,7 +550,7 @@
+     // Skip health endpoint (public) — but still tag a valid session cookie, so the
+     // health disclosure predicate (`canDiscloseAccessPosture`) sees a signed-in
+     // off-box browser. Tagging only: health never refuses. See change: add-acme-dns01-certs.
+-    if (request.url === "/api/health") {
++    if (request.url.split("?", 1)[0] === "/api/health") {
+       tagSessionCookie(request);
+       return;
+     }
+--- a/packages/server/src/auth/localhost-guard.ts
++++ b/packages/server/src/auth/localhost-guard.ts
+@@ -5,6 +5,7 @@
+ 
+ import { isIPv4, isIPv6 } from "node:net";
+ import os from "node:os";
++import { GENERIC_NETWORK_DENIED_HINT, NETWORK_NOT_ALLOWED } from "@blackbelt-technology/pi-dashboard-shared/network-denial-signal.js";
+ import { routeTier } from "@blackbelt-technology/pi-dashboard-shared/route-tiers.js";
+ import type { FastifyReply, FastifyRequest } from "fastify";
+ import { redactCapability } from "../live-server/capability-redact.js";
+@@ -407,11 +408,11 @@
+   // distinguish-offline-from-network-denied.
+   reply.code(403).send({
+     success: false,
+-    error: "network_not_allowed",
++    error: NETWORK_NOT_ALLOWED,
+     // Identical in every trust mode: this body goes to credential-less callers
+     // and must not disclose the mode or point at a trusted list.
+     reason: "Source IP is not loopback and the request is not authenticated.",
+-    hint: "Pair this device (Request access) or sign in.",
++    hint: GENERIC_NETWORK_DENIED_HINT,
+   });
+ }
+ 
+@@ -433,36 +434,50 @@
+   request: FastifyRequest,
+   opts: { readTrusted: () => string[]; localToken?: string; localTrust?: LocalTrustContext },
+ ): boolean {
++  const { passed, trustedList } = evaluateNetworkPass(request, opts);
++  // Telemetry stays on the guard paths: refusals included, so the loopback-entry
++  // warning keeps firing.
++  if (trustedList) noteTrustedList(trustedList);
++  // Admitted by the network match alone — counted once per request (the
++  // per-route guard and the universal hook both evaluate it).
++  if (passed === "trusted") noteNetworkOnlyAdmission(request as unknown as NetworkOnlySource);
++  return passed !== null;
++}
++
++/** Which arm of the network pass predicate admitted a request (`null` = refused). */
++export type NetworkPassArm = "local" | "strict-exception" | "token" | "auth" | "trusted";
++
++/**
++ * PURE network-pass core: same ordered arms as the guards, but no telemetry and
++ * no request mutation. `trustedList` is set iff the core read the admission list.
++ * Shared by the guards (via `hasNetworkPassCondition`) and `GET /api/health`'s
++ * `networkAccess` verdict so the two cannot drift.
++ * See change: surface-network-denial-on-health (D2).
++ */
++export function evaluateNetworkPass(
++  request: FastifyRequest,
++  opts: { readTrusted: () => string[]; localToken?: string; localTrust?: LocalTrustContext },
++): { passed: NetworkPassArm | null; trustedList?: string[] } {
+   const headers = request.headers as Record<string, unknown>;
+-  // Genuine same-host origin (loopback AND no proxy-forwarding header). A tunnel
+-  // presenting as 127.0.0.1 injects a forwarding header and is NOT exempted here
+-  // (D10, narrowed). Under `requireLocalProof` it additionally needs proof.
+-  if (isLocallyTrusted({ ip: request.ip, headers }, opts.localTrust)) return true;
++  // Genuine same-origin (loopback AND no proxy-forwarding header). Under `requireLocalProof` it additionally needs proof.
++  if (isLocallyTrusted({ ip: request.ip, headers }, opts.localTrust)) return { passed: "local" };
+   // Strict exceptions for a bare local caller: READ observe-tier REST routes, and
+-  // the `/v1/*` model proxy (local pi processes call it with no proof; admission is
+-  // unchanged by design — a documented trade-off).
++  // the `/v1/*` model proxy (admission unchanged by design — a documented trade-off).
+   if (
+     opts.localTrust?.strict() &&
+     isGenuinelyLocal(request.ip, headers) &&
+     (isObserveApiRequest(request) || isModelProxyRequest(request))
+   ) {
+-    return true;
++    return { passed: "strict-exception" };
+   }
+   // Affirmative local-IPC token.
+-  if (opts.localToken && hasLocalCredential(headers)) return true;
++  if (opts.localToken && hasLocalCredential(headers)) return { passed: "token" };
+   // Credentials BEFORE the network match, so a request that holds one is never
+-  // classified (or counted) as network-only. Admission outcomes are unchanged:
+-  // both are "allow". See change: retire-trusted-networks-bypass (D3).
+-  if ((request as any).isAuthenticated) return true;
+-  const trusted = opts.readTrusted();
+-  noteTrustedList(trusted);
+-  if (isTrustedSource(request.ip, headers, trusted, opts.localTrust)) {
+-    // Admitted by the network match alone — counted once per request (the
+-    // per-route guard and the universal hook both evaluate it).
+-    noteNetworkOnlyAdmission(request as unknown as NetworkOnlySource);
+-    return true;
+-  }
+-  return false;
++  // classified as network-only. See change: retire-trusted-networks-bypass (D3).
++  if ((request as any).isAuthenticated) return { passed: "auth" };
++  const trustedList = opts.readTrusted();
++  if (isTrustedSource(request.ip, headers, trustedList, opts.localTrust)) return { passed: "trusted", trustedList };
++  return { passed: null, trustedList };
+ }
+ 
+ /**
 --- a/packages/server/src/browser-handlers/handler-context.ts
 +++ b/packages/server/src/browser-handlers/handler-context.ts
 @@ -3,6 +3,7 @@
@@ -4237,7 +4726,24 @@
  
 --- a/packages/server/src/routes/system-routes.ts
 +++ b/packages/server/src/routes/system-routes.ts
-@@ -155,17 +155,9 @@
+@@ -14,6 +14,7 @@
+ import type { BridgeLoadSource, PluginStatus } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/plugin-status.js";
+ import { parseLaunchSource } from "@blackbelt-technology/pi-dashboard-shared/dashboard-starter.js";
+ import { ELECTRON_RESTART_EXIT_CODE, restartsViaElectron } from "@blackbelt-technology/pi-dashboard-shared/electron-restart.js";
++import { GENERIC_NETWORK_DENIED_HINT, type HealthNetworkAccessField, NETWORK_NOT_ALLOWED } from "@blackbelt-technology/pi-dashboard-shared/network-denial-signal.js";
+ import { LOCAL_PROOF_REQUIRED } from "@blackbelt-technology/pi-dashboard-shared/local-proof-signal.js";
+ import { ToolResolver, whichSync } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+ import { getGitSourceReadout } from "@blackbelt-technology/pi-dashboard-shared/platform/git-source.js";
+@@ -22,7 +23,7 @@
+ import { RESTART_QUIESCE_MS, SHUTDOWN_QUIESCE_MS } from "@blackbelt-technology/pi-dashboard-shared/recovery-timing.js";
+ import type { NetworkInterface, PiMirrorResult, ReservedNameResult } from "@blackbelt-technology/pi-dashboard-shared/rest-api.js";
+ import type { ApiResponse } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+-import type { FastifyInstance } from "fastify";
++import type { FastifyInstance, FastifyRequest } from "fastify";
+ import type { AccessGrantHealth } from "../access/access-health.js";
+ import {
+   computeBindReachability,
+@@ -155,17 +156,9 @@
      if (!result.success) return { ok: false as const, error: result.error };
      const config = await import("@blackbelt-technology/pi-dashboard-shared/config.js");
      const reloaded = config.loadConfig();
@@ -4258,6 +4764,48 @@
      return { ok: true as const, result, reloaded, piMirror };
    };
    return runOnConfigSaveChain(run);
+@@ -235,6 +228,8 @@
+     networkGuard: NetworkGuard;
+     /** Strict-proof context: `/api/health` adds `localProof: "required"` for a bare-loopback caller that lacks proof. See change: close-container-loopback-impersonation (D3). */
+     localTrust?: LocalTrustContext;
++    /** True when the caller's request would be refused by the REST network guard (pure, no side effects). Absent → no `networkAccess` field. See change: surface-network-denial-on-health (D2). */
++    readNetworkVerdict?: (request: FastifyRequest) => boolean;
+     version?: string;
+     directoryService?: DirectoryService;
+     /** Called after a `PUT /api/config` that touched `vault`, so delivery switches apply live. See change: add-credential-vault. */
+@@ -329,7 +324,7 @@
+     clientBuild?: ClientBuildSnapshot;
+   },
+ ) {
+-  const { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version, directoryService, piGateway, browserGateway, hydrationMetrics, readEventLoopDelay, eventLoopSpikes, eventStore, toolResultStats, embedLifecycle, keeperLogStats, clientDir, readAccessGrants, readPiTrustLive, readCspReports, readTrustedNetworks, readPushErrors } = deps;
++  const { sessionManager, preferencesStore, metaPersistence, config, networkGuard, version, directoryService, piGateway, browserGateway, hydrationMetrics, readEventLoopDelay, eventLoopSpikes, eventStore, toolResultStats, embedLifecycle, keeperLogStats, clientDir, readAccessGrants, readPiTrustLive, readCspReports, readTrustedNetworks, readPushErrors, readNetworkVerdict } = deps;
+ 
+   // Served-artifact coherence snapshot (design D4): a startup snapshot, never a
+   // per-request filesystem read (P1).
+@@ -1219,6 +1214,14 @@
+         };
+       } catch { /* keep null */ }
+     }
++    // Caller's own network-guard verdict (omitted on throw / absent dep).
++    // See change: surface-network-denial-on-health (D3).
++    const networkAccessField = (req: FastifyRequest): HealthNetworkAccessField => {
++      try {
++        if (readNetworkVerdict?.(req)) return { networkAccess: { error: NETWORK_NOT_ALLOWED, hint: GENERIC_NETWORK_DENIED_HINT } };
++      } catch { /* omit */ }
++      return {};
++    };
+     // Push errors name local config (file paths, missing keys): same
+     // disclosure gate. Absent key when undisclosable or push is disabled.
+     // See change: add-server-push-notifications.
+@@ -1252,7 +1255,7 @@
+       // A bare-loopback caller the strict default refuses for want of proof is told so (the
+       // remedy is `pi-dashboard open`). Absent for every other caller. See change:
+       // close-container-loopback-impersonation (D3).
+-      ...(needsLocalProof(request, deps.localTrust) ? { localProof: LOCAL_PROOF_REQUIRED } : {}),
++      ...(needsLocalProof(request, deps.localTrust) ? { localProof: LOCAL_PROOF_REQUIRED } : networkAccessField(request)),
+       ...(tlsStatus ? { tls: tlsStatus } : {}),
+       // Loopback-trusted-entry posture (additive; null unless disclosable).
+       // See change: fix-trusted-network-tunnel-bypass (D3).
 --- a/packages/server/src/server.ts
 +++ b/packages/server/src/server.ts
 @@ -2,20 +2,23 @@
@@ -4301,7 +4849,24 @@
  import {
    deriveEffectiveSource,
    deriveLocalIdentity,
-@@ -422,6 +421,8 @@
+@@ -51,7 +50,7 @@
+ import cors from "@fastify/cors";
+ import rateLimit from "@fastify/rate-limit";
+ import fastifyStatic from "@fastify/static";
+-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
++import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+ import { listGrants as listAccessGrants, setGrantsChangedListener, setSessionGrantsChangedListener } from "./access/access-grants.js";
+ import { snapshotAccessGrantHealth } from "./access/access-health.js";
+ import { AccessPlaneRegistry, isGrantPromptKilled } from "./access/access-plane.js";
+@@ -116,6 +115,7 @@
+ import {
+   createLanInterfaceProvider,
+   createNetworkGuard,
++  evaluateNetworkPass,
+   createNetworkGuardHook,
+   isLocallyTrusted,
+   isPluginScopePeerLocal,
+@@ -422,6 +422,8 @@
     * port stays loopback. See change: configurable-bind-host.
     */
    host: string;
@@ -4310,7 +4875,16 @@
    /**
     * The raw `--host` flag, or `null`. Retained so `pendingBindHost` can
     * re-resolve the full chain against the current config — a flag wins on the
-@@ -614,21 +615,6 @@
+@@ -552,6 +554,8 @@
+   browserGateway: BrowserGateway;
+   /** Resolved HTTP port after start() (useful for port:0 in tests). Returns null if not listening. */
+   httpPort(): number | null;
++  /** @internal Tests only: `fastify.inject` on the wired app, so a test can present a non-loopback peer (`remoteAddress`). See change: surface-network-denial-on-health. */
++  inject: FastifyInstance["inject"];
+   /** The optional TLS listener (off by default). See change: add-tailscale-cert-tls. */
+   readonly tls: TlsListener;
+   /** Resolved pi gateway port after start(). Returns null if not listening. */
+@@ -614,21 +618,6 @@
   * (filesystem → persisted grant; cwd → pin). Best-effort — the grant itself already
   * stands. See change: mirror-dashboard-trust-to-pi.
   */
@@ -4332,7 +4906,7 @@
  export async function createServer(config: ServerConfig): Promise<DashboardServer> {
    // Decide the network trust mode ONCE, before any hook is installed and before
    // the server listens (so no operator write can race it). Never re-derived
-@@ -669,10 +655,15 @@
+@@ -669,10 +658,15 @@
    const extPath = activeExtension?.dir ?? findBundledExtension(path.resolve(__serverDir, "..", "..", ".."));
    if (extPath) {
      registerBridgeExtension(extPath);
@@ -4350,7 +4924,7 @@
        `Manually add the extension path to ~/.pi/agent/settings.json packages[] as a workaround.`);
    }
  
-@@ -778,6 +769,24 @@
+@@ -778,6 +772,24 @@
    let httpBoundAt = 0;
    // Same contract for the optional TLS listener (its own bind, its own floor). See change: add-tailscale-cert-tls.
    let tlsBoundAt = 0;
@@ -4375,7 +4949,7 @@
    // Strict local-proof context (`requireLocalProof`, live config read). Threaded to
    // every genuinely-local admission site. See change: harden-trust-and-credential-boundaries (D2).
    // The proof cookie is bound to the listener's port; `0` until `listen` runs (inject() in tests).
-@@ -1453,7 +1462,7 @@
+@@ -1453,7 +1465,7 @@
    const browseRoots = () => (confineRemoteBrowse ? resolveBrowseRoots(browseRootSources) : Promise.resolve(null));
  
    const replayState = createReplayState(config.replayTimings);
@@ -4384,7 +4958,7 @@
    // Transition-only feed behind `GET /api/events/stream` (registry frames + question changes).
    // See change: add-agent-event-stream.
    const agentEventHub = createAgentEventHub({
-@@ -1699,31 +1708,9 @@
+@@ -1699,31 +1711,9 @@
      listPersistedGrants: () => listAccessGrants().filter((g) => g.scope === "project"),
      live: piTrustLive,
    });
@@ -4419,7 +4993,7 @@
    const hostProjectTrust = await loadHostProjectTrustService();
    pluginServiceRegistry.set("host.isProjectTrusted", hostProjectTrust.isProjectTrusted);
    pluginServiceRegistry.set("host.projectTrustSource", hostProjectTrust.projectTrustSource);
-@@ -2001,6 +1988,12 @@
+@@ -2001,6 +1991,12 @@
      maxParamLength: 1024,
    });
  
@@ -4432,7 +5006,7 @@
    // Optional native TLS listener (off by default): a second `https.Server` that
    // dispatches into THIS Fastify instance — one route table, one gate chain, one
    // upgrade switch, two transports. Reconciled after `listen`; failure-isolated.
-@@ -2040,7 +2033,7 @@
+@@ -2040,7 +2036,7 @@
    fastify.addHook("onRequest", async (request) => {
      localCredential.stamp(request.raw, {
        kind: "http",
@@ -4441,7 +5015,7 @@
      });
    });
  
-@@ -2210,7 +2203,6 @@
+@@ -2210,7 +2206,6 @@
      isRefused,
    });
    yoloForLiveTrust = yolo;
@@ -4449,7 +5023,7 @@
    const yoloBoot = yolo.activateFromEnv(process.env[YOLO_ENV]);
    if (yoloBoot.ok) {
      const s = yoloBoot.session;
-@@ -2237,7 +2229,6 @@
+@@ -2237,7 +2232,6 @@
    browserGateway.registerHandler("grant_response", (msg) => {
      grantCoordinator
        .onResponse(msg)
@@ -4457,7 +5031,7 @@
        .catch((err: unknown) => {
          console.error(`[access-grant] grant_response failed: ${(err as Error)?.message ?? err}`);
        });
-@@ -2249,13 +2240,7 @@
+@@ -2249,13 +2243,7 @@
      deps: {
        now: Date.now,
        grants: createDefaultProvisioningGrantStore(),
@@ -4472,7 +5046,46 @@
        ladder: {
          killSwitch: () => isGrantPromptKilled(),
          promptEnabled: () => loadConfig().accessGrants?.promptEnabled === true,
-@@ -3902,6 +3887,7 @@
+@@ -2643,6 +2631,21 @@
+     { localToken, localTrust },
+   );
+ 
++  // `/api/health` `networkAccess` verdict: the REST pass predicate evaluated purely
++  // (no telemetry / block events). The admission list goes through a 1 s TTL memo so
++  // attacker-paced health requests cost at most one config `statSync` per second.
++  // See change: surface-network-denial-on-health (D2).
++  let verdictList: { at: number; list: string[] } | undefined;
++  const memoAdmissionList = (): string[] => {
++    const now = Date.now();
++    if (!verdictList || now - verdictList.at >= 1000 || now < verdictList.at) {
++      verdictList = { at: now, list: admissionList() };
++    }
++    return verdictList.list;
++  };
++  const readNetworkVerdict = (request: FastifyRequest): boolean =>
++    evaluateNetworkPass(request, { readTrusted: memoAdmissionList, localToken, localTrust }).passed === null;
++
+   // Session control REST API (wraps WebSocket-only operations)
+   registerSessionApi(fastify, {
+     sessionManager,
+@@ -3061,7 +3064,7 @@
+     live: () => piTrustMirror.live,
+     readSnapshot: () => piTrustMirror.readSnapshot(),
+   });
+-  registerSystemRoutes(fastify, { onVaultConfigChanged: () => void vaultDelivery.pushNow(), onTlsBridgeSwitchChanged: () => onTlsBridgeSwitchChanged({ acceptBridges: tlsBridgesLive, push: () => void vaultDelivery.pushNow(), gateway: piGateway }), exposureWritePending: () => pairedDeviceRegistry.exposurePending(), tls: tlsListener, sessionManager, preferencesStore, metaPersistence, config, networkGuard, localTrust, version: pkgVersion, directoryService, piGateway, browserGateway, hydrationMetrics, readEventLoopDelay, eventLoopSpikes, eventStore, toolResultStats, embedLifecycle, clientDir, clientBuild, readTrustedNetworks: () => liveTrustedNetworks(config.resolvedTrustedNetworks ?? []), readPiTrustLive: piTrustQuery.counters, readCspReports: () => cspReportStore.snapshot(), readAccessGrants: () => snapshotAccessGrantHealth({ coordinator: grantCoordinator, yolo, refusalCount: () => listRefusals().length, promptEnabled: () => loadConfig().accessGrants?.promptEnabled === true, killSwitch: () => isGrantPromptKilled(), hostGateMode: () => resolveHostGateMode(process.env.PI_DASHBOARD_HOST_GATE, liveHostGateMode()).mode, operatorChannels: () => promptChannelCount(), provisioning: () => provisioning.registry.stats() }), keeperLogStats: { get: () => getKeeperManager().getKeeperLogStats() }, readPushErrors: pushService ? () => pushService?.errors ?? [] : pushInitError ? () => [pushInitError as string] : undefined });
++  registerSystemRoutes(fastify, { readNetworkVerdict, onVaultConfigChanged: () => void vaultDelivery.pushNow(), onTlsBridgeSwitchChanged: () => onTlsBridgeSwitchChanged({ acceptBridges: tlsBridgesLive, push: () => void vaultDelivery.pushNow(), gateway: piGateway }), exposureWritePending: () => pairedDeviceRegistry.exposurePending(), tls: tlsListener, sessionManager, preferencesStore, metaPersistence, config, networkGuard, localTrust, version: pkgVersion, directoryService, piGateway, browserGateway, hydrationMetrics, readEventLoopDelay, eventLoopSpikes, eventStore, toolResultStats, embedLifecycle, clientDir, clientBuild, readTrustedNetworks: () => liveTrustedNetworks(config.resolvedTrustedNetworks ?? []), readPiTrustLive: piTrustQuery.counters, readCspReports: () => cspReportStore.snapshot(), readAccessGrants: () => snapshotAccessGrantHealth({ coordinator: grantCoordinator, yolo, refusalCount: () => listRefusals().length, promptEnabled: () => loadConfig().accessGrants?.promptEnabled === true, killSwitch: () => isGrantPromptKilled(), hostGateMode: () => resolveHostGateMode(process.env.PI_DASHBOARD_HOST_GATE, liveHostGateMode()).mode, operatorChannels: () => promptChannelCount(), provisioning: () => provisioning.registry.stats() }), keeperLogStats: { get: () => getKeeperManager().getKeeperLogStats() }, readPushErrors: pushService ? () => pushService?.errors ?? [] : pushInitError ? () => [pushInitError as string] : undefined });
+   registerHostGateRoutes(fastify, { getCtx: getHostGateCtx, state: hostGateState, networkGuard });
+   // GET /api/doctor — see change: doctor-rich-output (task 4.2). Auth-gated identically to /api/config.
+   // Assigned by the runtime-overlay block below; read lazily per request.
+@@ -3852,6 +3855,7 @@
+   }
+ 
+   const server: DashboardServer = {
++    inject: fastify.inject.bind(fastify) as FastifyInstance["inject"],
+     sessionManager,
+     eventStore,
+     browserGateway,
+@@ -3902,6 +3906,7 @@
              try { await secondFastify.close(); } catch { /* ignore */ }
              secondFastify = null;
            }
@@ -4480,7 +5093,7 @@
            try { await tlsListener.stop(); } catch { /* ignore */ }
            try { await fastify.close(); } catch { /* ignore */ }
          },
-@@ -4680,15 +4666,7 @@
+@@ -4680,15 +4685,7 @@
              },
            )),
          };
@@ -4497,7 +5110,7 @@
        } catch (err) {
          console.error('[plugin-loader] Unexpected error during pre-listen load:', err);
        } finally {
-@@ -4696,18 +4674,16 @@
+@@ -4696,18 +4693,16 @@
          routeOwners.end();
        }
  
@@ -4520,7 +5133,7 @@
          });
          // Ephemeral single-use ticket (D11) bound to the requested WS route
          // scope. The one cheap read BEFORE the first gate — the host-admission
-@@ -5070,6 +5046,31 @@
+@@ -5070,6 +5065,31 @@
        await listenWithProofFloor(fastify, (at) => (httpBoundAt = at), { port: config.port, host: config.host });
        const bound = fastify.server.address();
        if (bound && typeof bound === "object") httpListenPort = bound.port;
@@ -4552,7 +5165,7 @@
        writePid(process.pid);
        console.log(`Dashboard server running at http://${config.host}:${config.port}`);
        // Optional TLS listener: only after Fastify is ready and the main listen resolved.
-@@ -5263,72 +5264,7 @@
+@@ -5263,72 +5283,7 @@
            },
          );
  
@@ -4626,7 +5239,7 @@
  
        // Log-only health scan of settings.json packages[] (never mutates, never
        // throws). Not awaited: cold listConfiguredPackages can take seconds on
-@@ -5566,6 +5502,7 @@
+@@ -5566,6 +5521,7 @@
          try { await secondFastify.close(); } catch { /* ignore */ }
          secondFastify = null;
        }
@@ -5732,6 +6345,24 @@
    } catch {
      return defaults;
    }
+--- /dev/null
++++ b/packages/shared/src/network-denial-signal.ts
+@@ -0,0 +1,15 @@
++/**
++ * `network_not_allowed` denial signal shared by the server's generic 403 body and
++ * the additive `GET /api/health` `networkAccess` field.
++ *
++ * Own dependency-free module (not `rest-api.ts`) because the browser client value-imports it.
++ *
++ * See change: surface-network-denial-on-health (D4).
++ */
++export const NETWORK_NOT_ALLOWED = "network_not_allowed" as const;
++export const GENERIC_NETWORK_DENIED_HINT = "Pair this device (Request access) or sign in.";
++
++/** The additive `/api/health` field: present iff the caller's own request would be refused by the network guard. */
++export interface HealthNetworkAccessField {
++  networkAccess?: { error: typeof NETWORK_NOT_ALLOWED; hint: string };
++}
 --- a/packages/shared/src/prompt-answer.ts
 +++ b/packages/shared/src/prompt-answer.ts
 @@ -53,6 +53,7 @@
