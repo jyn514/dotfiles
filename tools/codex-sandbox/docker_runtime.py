@@ -258,6 +258,7 @@ def stop_build(process):
 class Docker(VMRuntime):
     provider = 'lima-docker'
     host_address = 'host.lima.internal'
+    host_loopback_access = True
     nonrecursive_bind = 'bind-recursive=disabled'
 
     def __init__(self, state, *, recovery=False):

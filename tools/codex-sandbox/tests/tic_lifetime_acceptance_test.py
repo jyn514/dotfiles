@@ -27,6 +27,7 @@ sys.path.insert(0, str(SANDBOX))
 sys.path.insert(0, str(SANDBOX.parent / 'tic-proxy'))
 from bundle import build_identity, host_platform, validate_bundle
 from tic_broker import InstalledTicBuild, TicBrokerLaunch
+from gateway_fixture import LocalGateway
 
 
 def until(predicate, description, timeout=5):
@@ -280,6 +281,42 @@ while True: time.sleep(1)
                               elapsed=time.monotonic()-start, private_removed=True)), flush=True)
         self.set_mode('exit')
         self.assertEqual(17, self.response(self.request(launch.address, launch.token))['exit'])
+
+    def test_direct_gateway_authentication_disconnect_lifetime_and_cleanup(self):
+        # Production socat gateway -> real broker; only the provider's
+        # host-loopback forwarding is replaced with this owned local address.
+        launch = self.launch()
+        gateway = LocalGateway(int(launch.address.rsplit(':', 1)[1]))
+        self.addCleanup(gateway.stop)
+        address = f'127.0.0.1:{gateway.port}'
+        denied = self.response(self.request(address, 'wrong-token'))
+        self.assertNotEqual(0, denied['exit'])
+        self.assertEqual([], self.events())
+        connection = self.request(address, launch.token)
+        event = until(lambda: self.events(), 'native did not start through gateway')[0]
+        connection.shutdown(socket.SHUT_WR)
+        # Cancellation ends the exchange; a cancelling peer is not promised
+        # a response frame. Socat may close before broker termination finishes.
+        while connection.recv(65536):
+            pass
+        until(lambda: not alive(event['pid']), 'gateway disconnect did not reap native')
+        self.assertFalse(Path(event['private']).exists())
+        self.set_mode('exit')
+        self.assertEqual(17, self.response(self.request(address, launch.token))['exit'])
+        self.set_mode('block')
+        self.request(address, launch.token)
+        event = until(lambda: len(self.events()) == 3 and self.events()[-1],
+                      'second native did not start through gateway')
+        directory = launch.directory
+        launch.close_lifetime()
+        until(lambda: launch.process.poll() is not None, 'broker ignored lifetime EOF')
+        until(lambda: not alive(event['pid']), 'lifetime EOF did not reap gateway native')
+        self.assertFalse(Path(event['private']).exists())
+        self.assertFalse(launch.stop().remaining)
+        self.assertFalse(directory.exists())
+        gateway.stop()
+        with self.assertRaises(OSError):
+            socket.create_connection(('127.0.0.1', gateway.port), timeout=.5)
 
     def test_bridge_partial_start_failure_is_registered_and_owned_cleanup_releases_it(self):
         launch = self.launch()

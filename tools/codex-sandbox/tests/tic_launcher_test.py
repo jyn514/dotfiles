@@ -30,50 +30,11 @@ sys.path.insert(0, str(TOOL))
 from sandbox_runtime import ContainerRuntime, VMRuntime
 NATIVE_REVISION = (TOOL.parent / 'tic-proxy/native-revision').read_text().strip()
 from trusted_services import LifecycleError, LifecycleState, ResourcePresence
-
-
-class LocalPythonRelay:
-    """Run the staged wrapper natively; replace only its provider container."""
-
-    def __init__(self, script, target):
-        from tic_relay import PORT
-        self.port = PORT
-        # The production CLI has a fixed private-container port. This opt-in
-        # local substitute requires that port to be free and never adopts an
-        # existing listener or changes the wrapper's public CLI for the test.
-        with socket.socket() as reservation:
-            reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            reservation.bind(('127.0.0.1', PORT))
-        self.script = script
-        self.environment = {'PYTHONDONTWRITEBYTECODE': '1'}
-        self.process = subprocess.Popen(
-            [sys.executable, str(script), '--target-host', '127.0.0.1', '--target-port', str(target)],
-            env=self.environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE, text=True, start_new_session=True)
-        try:
-            result = self.probe()
-            if result.returncode or self.process.poll() is not None:
-                raise RuntimeError('owned Python relay failed local listener readiness')
-        except BaseException:
-            self.stop()
-            raise
-
-    def probe(self):
-        return subprocess.run([sys.executable, str(self.script), '--probe'],
-                              env=self.environment, capture_output=True, text=True, timeout=7)
-
-    def stop(self):
-        if self.process.poll() is None:
-            os.killpg(self.process.pid, signal.SIGTERM)
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                self.process.wait(timeout=3)
-        self.process.stderr.close()
+from gateway_fixture import LocalGateway
 
 
 class FakeProvider:
+    host_loopback_access = False
     provider = 'podman'
     host_address = 'host.docker.internal'
 
@@ -129,6 +90,7 @@ class FakeProvider:
 
 
 class FakeMacProvider(FakeProvider, VMRuntime):
+    host_loopback_access = True
     provider = 'lima-docker'
     host_address = 'host.lima.internal'
 
@@ -558,6 +520,14 @@ class TicLauncherTest(unittest.TestCase):
                     container = next(item[1] for item in runtime.events if item[0] == 'container')
                     self.assertIn('/trusted/bin/sandbox-gateway', container)
                     self.assertIn('--tic-port', container)
+                    target_port = int(container[container.index('--tic-port') + 1])
+                    if mac:
+                        self.assertFalse(hasattr(runtime, 'host_bridge'))
+                        self.assertFalse(hasattr(handle, 'bridge_resource'))
+                        self.assertEqual(int(handle.address.rsplit(':', 1)[1]), target_port)
+                    else:
+                        self.assertEqual(runtime.host_bridge.port, target_port)
+                        self.assertIsNotNone(handle.bridge_resource)
                     self.assertNotIn('--build-port', container)
                     self.assertIn(self.state.sidecar_image, container)
                     self.assertEqual(['--help'],
@@ -568,9 +538,8 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertEqual({self.state.gateway_container}, runtime.present)
                     self.assertFalse(staged.exists())
 
-    def test_fake_vm_host_forwarder_loopback_peer_reaches_only_authenticated_launch_route(self):
-        self.write_build('linux/arm64')
-        with self.provider(mac=True) as runtime:
+    def test_generic_host_bridge_admits_only_inspected_peers_and_host_forwarder(self):
+        with self.provider() as runtime:
             expected = {'10.23.0.2', '10.24.0.2', '127.0.0.1'}
             original_run = runtime.run
             def probe(argv, **kwargs):
@@ -591,6 +560,7 @@ class TicLauncherTest(unittest.TestCase):
         with self.provider() as runtime:
             build_bridge = mock.Mock(port=4321)
             self.state.gateway_handle.build_bridge = build_bridge
+            self.state.gateway_handle.build_port = build_bridge.port
             self.state.gateway_handle._register_logical('bridge:build')
             arguments = self.launcher['start_tic'](self.state)
             self.assertNotIn('--network', arguments)
@@ -599,6 +569,29 @@ class TicLauncherTest(unittest.TestCase):
             self.assertIn('--build-port', container)
             self.assertIn('--tic-port', container)
             build_bridge.allow_peers.assert_called_once()
+
+    def test_direct_agent_docker_and_tic_share_gateway_without_network_duplication(self):
+        self.write_build('linux/arm64')
+        self.state.capabilities = {'tic', 'nested-containers'}
+        self.state.agent_docker = {'AGENT_DOCKER_SSH_USER': 'worker',
+                                   'AGENT_DOCKER_SSHKEY': '/key', 'AGENT_DOCKER_SSH_PORT': '2345'}
+        self.state.agent_docker_key = self.root / 'key'
+        self.state.agent_docker_known_hosts = self.root / 'known'
+        self.state.container_known_hosts = '/known'
+        with mock.patch('socket.create_connection') as connect, self.provider(mac=True) as runtime:
+            # prepare_gateway consumed only the stopped-service probe above.
+            connect.assert_called_once_with(('127.0.0.1', 2345), timeout=1)
+            connect.reset_mock()
+            arguments = self.launcher['start_tic'](self.state)
+            self.assertTrue(arguments)
+            self.assertNotIn('--network', arguments)
+            self.assertFalse(hasattr(runtime, 'host_bridge'))
+            self.assertIsNone(self.state.gateway_handle.build_bridge)
+            container = next(event[1] for event in runtime.events if event[0] == 'container')
+            self.assertEqual(1, container.count('--name'))
+            self.assertEqual('2345', container[container.index('--build-port') + 1])
+            self.assertEqual(str(self.state.tic_handle.address.rsplit(':', 1)[1]),
+                             container[container.index('--tic-port') + 1])
 
     def test_selected_tic_inspection_failure_warns_without_resources_or_fallback(self):
         with self.provider(context=False) as runtime:
@@ -1146,6 +1139,14 @@ class TicLauncherTest(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
                          'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
     def test_installed_native_client_broker_roundtrip_with_local_fake_provider_transport(self):
+        self.installed_roundtrip(direct=False)
+
+    @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
+                         'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
+    def test_installed_direct_gateway_native_roundtrip(self):
+        self.installed_roundtrip(direct=True)
+
+    def installed_roundtrip(self, *, direct):
         # Real installed inspection, broker, staged client/wrapper and native;
         # only provider effects are replaced with owned local TCP transport.
         environment = self.install_test_bundle(provision=bool(os.environ.get('TIC_LAUNCHER_TEST_NATIVE_REPOSITORY')))
@@ -1171,6 +1172,7 @@ class TicLauncherTest(unittest.TestCase):
         self.assertFalse(database.exists())
         relay = None
         with mock.patch.dict(os.environ, environment, clear=True), self.provider(context=False) as runtime:
+            runtime.host_loopback_access = direct
             original_run = self.globals['run']
             original_remove = self.globals['remove_owned_resource']
             def launch_relay(argv, **kwargs):
@@ -1179,9 +1181,14 @@ class TicLauncherTest(unittest.TestCase):
                 mounts = [argv[index + 1] for index, value in enumerate(argv) if value == '--mount']
                 client_mount = next(value for value in mounts if 'dst=/opt/agent-tools/bin/ti,' in value)
                 runtime.client = Path(client_mount.split('src=')[1].split(',')[0])
-                script = TOOL / 'tic_relay.py'
-                self.assert_delayed_python_response(runtime.client, script)
-                relay = LocalPythonRelay(script, int(argv[argv.index('--target-port') + 1]))
+                self.assert_delayed_gateway_response(runtime.client)
+                target_port = int(argv[argv.index('--tic-port') + 1])
+                if direct:
+                    self.assertFalse(hasattr(runtime, 'host_bridge'))
+                    self.assertEqual(int(self.state.tic_handle.address.rsplit(':', 1)[1]), target_port)
+                else:
+                    self.assertEqual(runtime.host_bridge.port, target_port)
+                relay = LocalGateway(target_port)
                 return result
             def remove(runtime_arg, kind, name, owner, **kwargs):
                 if name == self.state.tic_resources.container and relay is not None:
@@ -1293,6 +1300,7 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertTrue(database.is_file())
                     self.state.tic_handle.stop()
                     self.assertTrue(database.is_file(), 'launch cleanup must retain tickets')
+                    self.state.gateway_handle.cleanup()
                     self.assertFalse(runtime.present)
                     # Exercise literal values through this same real installed
                     # route, not just the inspection dictionary. Remove earlier
@@ -1310,6 +1318,7 @@ class TicLauncherTest(unittest.TestCase):
                                 + json.dumps(literal['user_email']) + '\n[meta]\nnamespace = '
                                 + json.dumps(literal['namespace']) + '\n')
                             self.state.suffix = 'literal-' + label
+                            self.launcher['prepare_gateway'](self.state)
                             self.launcher['start_tic'](self.state)
                             self.assertEqual(literal, {key: self.state.tic_handle.config[key] for key in literal})
                             global_config.write_text(
@@ -1325,16 +1334,17 @@ class TicLauncherTest(unittest.TestCase):
                             self.assertTrue(entries)
                             self.assertTrue(all(entry['email'] == literal['user_email'] for entry in entries))
                             self.state.tic_handle.stop()
+                            self.state.gateway_handle.cleanup()
                             self.assertFalse(runtime.present)
                             self.assertTrue(database.is_file())
                 finally:
                     if relay is not None:
                         relay.stop()
 
-    def assert_delayed_python_response(self, client, script):
+    def assert_delayed_gateway_response(self, client):
         # Wire 2 admits the complete length-delimited request while the client
         # write side remains open. Preserve a >1s delayed framed response and its
-        # normal EOF through the unchanged staged Python TCP transport.
+        # normal EOF through the production gateway's socat transport.
         errors = []
         with socket.socket() as server:
             server.bind(('127.0.0.1', 0))
@@ -1369,7 +1379,7 @@ class TicLauncherTest(unittest.TestCase):
             worker.start()
             delayed = None
             try:
-                delayed = LocalPythonRelay(script, server.getsockname()[1])
+                delayed = LocalGateway(server.getsockname()[1])
                 started = time.monotonic()
                 result = subprocess.run([str(client), '--help'], env={
                     'SANDBOX_TIC_ENDPOINT': f'127.0.0.1:{delayed.port}',

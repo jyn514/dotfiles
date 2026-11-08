@@ -165,6 +165,8 @@ Keep transport credentials, host credential agents, and reusable upstream creden
 Reuse the per-launch sandbox gateway for provider transport and session authentication; reject unauthenticated access and never expose generic host execution.
 When Agent Docker is also selected, its fixed SSH listener and the fixed TicGit listener share the gateway container and its internal-link and egress networks.
 TicGit must not create a second provider relay container.
+Providers with explicit host-loopback forwarding connect that gateway directly to the loopback-only broker.
+Other providers retain the peer-filtered host bridge; neither route changes fresh session-token authentication.
 The broker invokes the fixed native program directly, without a shell, and owns bounded output collection, cancellation, termination, and reaping.
 Trusted native code may invoke implementation-internal helpers; that does not authorize guest-selected host commands, executable paths, or unsafe environment/argument overrides.
 Do not carry forward Linux pidfd identity or waitid/WNOWAIT requirements merely because the archived implementation used them.

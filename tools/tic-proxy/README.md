@@ -117,6 +117,10 @@ Git supplies its normal configuration precedence, includes, and worktree handlin
 The launcher freezes those values; native requests clear inherited configuration and receive only the accepted values, so later host setting changes do not alter an active launch.
 
 The broker publishes one bounded JSON readiness line on stdout and listens on an ephemeral loopback port only after its checks pass, without opening SQLite.
+The guest reaches it through the per-launch gateway's fixed TicGit listener.
+On Lima and Lima-Docker, the gateway connects directly to the broker through `host.lima.internal` host-loopback forwarding.
+Other container backends retain the peer-filtered host TCP bridge; a host-gateway address alone does not imply loopback access.
+Neither route changes the loopback-only broker listener or fresh session-token authentication.
 The owning launcher holds the lifetime pipe's write end.
 EOF stops admission, cancels and reaps owned native children, and removes private request resources; it leaves ticket data and other launches alone.
 If the broker dies during a request, its outcome is unknown, not permission to replay it.

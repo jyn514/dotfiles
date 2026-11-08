@@ -785,6 +785,8 @@ class GatewayHandle:
         )
         self.cancelled = threading.Event()
         self.build_bridge: FixedTcpBridge | None = None
+        # Selected reachable SSH endpoint, independent of optional bridge ownership.
+        self.build_port: int | None = None
         self.addresses: dict[str, str] = {}
         self.started = False
         self._logical: set[str] = set()
@@ -974,12 +976,23 @@ def prepare_gateway(state: State) -> list[str]:
     handle = GatewayHandle(state)
     state.gateway_handle = handle
     if nested:
-        handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
-        handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
+        target = ("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"]))
+        if not OUTER_RUNTIME.host_loopback_access:
+            handle.build_bridge = FixedTcpBridge(target)
+            handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
         try:
-            handle.build_bridge.start()
+            if handle.build_bridge is None:
+                # Keep the stopped-service check performed by bridge.start(),
+                # without creating another listener on loopback-capable providers.
+                with socket.create_connection(target, timeout=1):
+                    pass
+                handle.build_port = target[1]
+            else:
+                handle.build_bridge.start()
+                handle.build_port = handle.build_bridge.port
         except OSError as error:
-            handle.build_bridge.stop()
+            if handle.build_bridge is not None:
+                handle.build_bridge.stop()
             print(f"warning: nested Docker relay unavailable: {error}; "
                   "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
                   file=sys.stderr)
@@ -1006,7 +1019,7 @@ def prepare_gateway(state: State) -> list[str]:
         raise LauncherError("gateway startup cancelled")
     create_relay_networks(state, networks, owner=handle.owner)
     handle.created.update(f"network:{name}" for name, _internal in networks)
-    if not nested or handle.build_bridge is None:
+    if handle.build_port is None:
         return []
     values = state.agent_docker
     return [
@@ -1026,7 +1039,7 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
         raise LauncherError("gateway was not prepared")
     if handle.started:
         raise LauncherError("gateway already started")
-    build_port = (str(handle.build_bridge.port) if handle.build_bridge is not None else None)
+    build_port = str(handle.build_port) if handle.build_port is not None else None
     if build_port is None and tic_port is None:
         raise LauncherError("gateway requires a listener")
     container_resource = f"container:{state.gateway_container}"
@@ -1082,7 +1095,7 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
         handle._register_logical("allowlist:build",
             depends_on=("bridge:build", *address_resources))
         handle.build_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
-    # Until this allowlist is installed, the listener rejects every connection.
+        # Until this allowlist is installed, the bridge rejects every connection.
 
 
 class KeychainHandle:
@@ -1473,20 +1486,25 @@ def _start_tic(state: State) -> list[str]:
         with service_timing("tic", "broker-start-ready"):
             handle.start()
         check_tic_cancelled(state)
-        with service_timing("tic", "host-bridge"):
-            bridge = handle.start_bridge(set())
+        # Lima forwards host.lima.internal to host loopback. Other providers
+        # still need the peer-filtered bridge; their host address alone does
+        # not imply that a loopback-only broker is reachable.
+        bridge = None
+        if OUTER_RUNTIME.host_loopback_access:
+            upstream_port = int(handle.address.rsplit(":", 1)[1])
+        else:
+            with service_timing("tic", "host-bridge"):
+                bridge = handle.start_bridge(set())
+            upstream_port = bridge.port
         mount = f'type=bind,src={client},dst=/opt/agent-tools/bin/ti,readonly'
         check_tic_cancelled(state)
         with service_timing('tic', 'gateway-start'):
-            start_gateway(state, tic_port=bridge.port, image=sidecar_image, tic_client=client)
+            start_gateway(state, tic_port=upstream_port, image=sidecar_image, tic_client=client)
         addresses = gateway.addresses
         if not all(addresses.values()):
             raise LauncherError('TicGit gateway has incomplete network addresses')
-        # Lima's host.lima.internal forwarding reaches host loopback listeners
-        # (the network fixture serves one there); it need not preserve a relay's
-        # container-namespace source IP. Admit that trusted host-forwarder peer
-        # as well as inspected relay IPs. Fresh broker authentication still applies.
-        bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
+        if bridge is not None:
+            bridge.allow_peers(set(addresses.values()) | {'127.0.0.1'})
         check_tic_cancelled(state)
         with service_timing('tic', 'gateway-readiness-log'):
             wait_tic_gateway_ready(resources.container)
@@ -1505,7 +1523,7 @@ def _start_tic(state: State) -> list[str]:
         check_tic_cancelled(state)
         state.tic_environment = handle.environment(f'{addresses[resources.link_network]}:{tic_port}')
         handle.attach()
-        network = [] if gateway.build_bridge is not None else ['--network', resources.link_network]
+        network = [] if gateway.build_port is not None else ['--network', resources.link_network]
         return [*network, '--mount', mount]
     except BaseException:
         state.tic_environment = {}
@@ -2386,7 +2404,7 @@ def execute(state: State) -> int:
         tic_arguments = tic_future.result()
         gateway_handle = getattr(state, "gateway_handle", None)
         if (gateway_handle is not None and not gateway_handle.started
-                and gateway_handle.build_bridge is not None):
+                and gateway_handle.build_port is not None):
             executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         agent_command = list(TOOL_WORKER_COMMAND)
         arguments = [*gateway_arguments, *keychain_arguments, *tic_arguments, state.image,

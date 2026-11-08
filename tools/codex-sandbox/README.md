@@ -464,6 +464,9 @@ Guest tools have no host editor bridge. The launcher does not override Pi's
 
 A sandbox creates one gateway when Agent Docker or TicGit is selected.
 When both are selected, their fixed listeners share that container and its two networks.
+On Lima and Lima-Docker, the gateway reaches the loopback-only TicGit broker and Agent Docker SSH port directly through `host.lima.internal`.
+Other container backends retain peer-filtered host TCP bridges; the provider's host address alone does not imply host-loopback forwarding.
+Agent Docker keeps its SSH user, private key, and pinned host key on both routes.
 It starts in the background after its private link and egress networks are created.
 Clients retry only connection establishment within a bounded interval and never
 replay a possibly accepted request.

@@ -181,6 +181,9 @@ class ContainerRuntime:
 
     provider = "container"
     host_address = "host.docker.internal"
+    # Whether host_address forwards to listeners bound only to host loopback.
+    # A host-gateway address alone does not establish this capability.
+    host_loopback_access = False
     nonrecursive_bind = 'bind-nonrecursive=true'
     environment_file_in_guest = False
 
@@ -500,6 +503,7 @@ class Lima(VMRuntime):
     # nerdctl reads the file in the guest; Docker and Podman read it on the host.
     environment_file_in_guest = True
     host_address = "host.lima.internal"
+    host_loopback_access = True
 
     def builder_environment(self):
         return {**super().builder_environment(),

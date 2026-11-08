@@ -317,6 +317,71 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertEqual("3456", gateway_run[gateway_run.index("--build-port") + 1])
         bridge.allow_peers.assert_called_once_with({"10.0.0.2", "10.0.0.3", "127.0.0.1"})
 
+    def test_direct_host_loopback_endpoint_preserves_guest_ssh_projection_and_cleanup(self):
+        from sandbox_runtime import ContainerRuntime, Lima
+        from docker_runtime import Docker
+        # Only the two inspected providers claim host-loopback forwarding.
+        self.assertFalse(ContainerRuntime.host_loopback_access)
+        self.assertTrue(Lima.host_loopback_access)
+        self.assertTrue(Docker.host_loopback_access)
+        for tic in (False, True):
+            with self.subTest(tic=tic), socket.socket() as listener:
+                listener.bind(('127.0.0.1', 0))
+                listener.listen()
+                state = self.state()
+                state.agent_docker['AGENT_DOCKER_SSH_PORT'] = str(listener.getsockname()[1])
+                state.capabilities = frozenset({'nested-containers', 'tic'} if tic else {'nested-containers'})
+                prepare = self.launcher['prepare_gateway']
+                runtime = Mock(host_loopback_access=True, host_address='host.lima.internal')
+                runtime.network_addresses.return_value = {
+                    'gateway-link': '10.0.0.2', 'gateway-egress': '10.0.0.3'}
+                factory = Mock(side_effect=AssertionError('direct route created a bridge'))
+                removed = []
+                with patch.dict(prepare.__globals__, OUTER_RUNTIME=runtime, FixedTcpBridge=factory,
+                                proxy_flags=lambda: [], create_relay_networks=Mock(),
+                                remove_owned_resource=lambda runtime, kind, name, owner, **kw: removed.append(name)):
+                    arguments = prepare(state)
+                    probe, _ = listener.accept()
+                    probe.close()
+                    self.launcher['start_gateway'](state, tic_port=4567 if tic else None)
+                    handle = state.gateway_handle
+                    self.assertIsNone(handle.build_bridge)
+                    self.assertEqual(listener.getsockname()[1], handle.build_port)
+                    self.assertEqual(1, arguments.count('--network'))
+                    self.assertIn('DOCKER_HOST=ssh://worker@gateway:2222', arguments)
+                    self.assertIn('AGENT_DOCKER_SSHKEY=/key', arguments)
+                    self.assertIn('AGENT_DOCKER_KNOWN_HOSTS=/container-known', arguments)
+                    self.assertIn('type=bind,src=/known,dst=/container-known,readonly', arguments)
+                    command = runtime.start_detached.call_args.args[3]
+                    self.assertEqual(str(listener.getsockname()[1]), command[command.index('--build-port') + 1])
+                    self.assertEqual(tic, '--tic-port' in command)
+                    self.assertEqual('host.lima.internal', command[command.index('--host') + 1])
+                    self.assertFalse(handle.cleanup(0).remaining)
+                    self.assertEqual('gateway', removed[0])
+                    self.assertEqual({'gateway', 'gateway-link', 'gateway-egress'}, set(removed))
+                    self.assertFalse(any(identity.startswith('bridge:') for identity in handle.registry.identities))
+                factory.assert_not_called()
+
+    def test_direct_stopped_service_warns_but_keeps_tic_only_gateway_when_selected(self):
+        for tic in (False, True):
+            with self.subTest(tic=tic):
+                state = self.state()
+                state.capabilities = frozenset({'nested-containers', 'tic'} if tic else {'nested-containers'})
+                prepare = self.launcher['prepare_gateway']
+                create = Mock()
+                runtime = Mock(host_loopback_access=True)
+                with patch.dict(prepare.__globals__, OUTER_RUNTIME=runtime, create_relay_networks=create), \
+                        patch('socket.create_connection', side_effect=ConnectionRefusedError('refused')), \
+                        patch('sys.stderr', new_callable=io.StringIO) as stderr:
+                    self.assertEqual([], prepare(state))
+                self.assertIsNone(state.agent_docker)
+                self.assertIn('tools/agent-docker/vm.py start', stderr.getvalue())
+                self.assertEqual(tic, state.gateway_handle is not None)
+                self.assertEqual(tic, create.called)
+                if tic:
+                    self.assertIsNone(state.gateway_handle.build_port)
+                    self.assertIsNone(state.gateway_handle.build_bridge)
+
     def test_stopped_build_service_warns_and_creates_no_gateway(self):
         state = self.state()
         prepare = self.launcher["prepare_gateway"]
@@ -489,6 +554,56 @@ class GatewayLifecycleTest(unittest.TestCase):
 
 
 class GatewayTest(unittest.TestCase):
+    def test_real_build_only_and_shared_gateway_keep_stream_targets_distinct(self):
+        from gateway_fixture import LocalGateway
+        for tic in (False, True):
+            with self.subTest(tic=tic), socket.socket() as build, socket.socket() as ticket:
+                for listener in (build, ticket):
+                    listener.bind(('127.0.0.1', 0))
+                    listener.listen()
+                    listener.settimeout(5)
+                relay = LocalGateway(ticket.getsockname()[1] if tic else None, build.getsockname()[1])
+                workers, errors = [], []
+                def respond(listener, marker):
+                    try:
+                        while True:
+                            connection, _ = listener.accept()
+                            with connection:
+                                data = bytearray()
+                                while chunk := connection.recv(65536):
+                                    data.extend(chunk)
+                                if not data:  # Gateway listener readiness probes.
+                                    continue
+                                connection.sendall(marker + bytes(data))
+                                return
+                    except BaseException as error:
+                        errors.append(error)
+                try:
+                    cases = [(build, 2222, b'build:')]
+                    if tic:
+                        cases.append((ticket, gateway.TIC_PORT, b'tic:'))
+                    for listener, port, marker in cases:
+                        worker = threading.Thread(target=respond, args=(listener, marker))
+                        workers.append(worker)
+                        worker.start()
+                        with socket.create_connection(('127.0.0.1', port), timeout=3) as client:
+                            client.sendall(b'owned request')
+                            client.shutdown(socket.SHUT_WR)
+                            data = bytearray()
+                            while chunk := client.recv(65536):
+                                data.extend(chunk)
+                            self.assertEqual(marker + b'owned request', data)
+                finally:
+                    relay.stop()
+                    for worker in workers:
+                        worker.join(timeout=6)
+                        self.assertFalse(worker.is_alive())
+                if errors:
+                    raise errors[0]
+                for port in ([2222, gateway.TIC_PORT] if tic else [2222]):
+                    with self.assertRaises(OSError):
+                        socket.create_connection(('127.0.0.1', port), timeout=.2)
+
     def test_nested_listener_runs_without_other_capabilities(self):
         child = Mock(pid=12, returncode=None)
         with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
