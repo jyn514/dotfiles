@@ -53,6 +53,35 @@ REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
 JJ_STARTUP_TIMEOUT_SECONDS = 120
 
 
+class SessionRequest:
+    """One attachment's inputs; state is a recovery journal, not API transport.
+
+    The caller owns coordination and lifetime locks through attachment/publication.
+    A private module instance binds its runtime and repository metadata before any
+    startup threads run; neither binding may change while those threads exist.
+    """
+    def __init__(self, repo: Path, container_repo: str, *,
+                 uid: int | None = None, gid: int | None = None,
+                 workspaces: list[dict[str, str]] | None = None,
+                 state: Path | None = None, prefix: str = "", shared: bool = False,
+                 helper_image: str | None = None, network: str = "",
+                 agent_image: str | None = None, source_present: bool = False,
+                 zuliprc: Path | None = None) -> None:
+        self.repo = repo
+        self.container_repo = container_repo
+        self.uid = uid
+        self.gid = gid
+        self.workspaces = workspaces
+        self.state = state
+        self.prefix = prefix
+        self.shared = shared
+        self.helper_image = helper_image
+        self.network = network
+        self.agent_image = agent_image
+        self.source_present = source_present
+        self.zuliprc = zuliprc
+
+
 class ConfigError(Exception):
     pass
 
@@ -556,7 +585,13 @@ def recorded_proxy_volumes(state: dict[str, Any]) -> set[str]:
 
 
 def reset_main(args: argparse.Namespace, *, wait: bool = False) -> int:
-    runtime = runtime_directory(Path(args.repo))
+    reset_repository(Path(args.repo), wait=wait)
+    return 0
+
+
+def reset_repository(repo: Path, *, wait: bool = False) -> None:
+    """Acquire exclusive locks and recover services; optionally await owners."""
+    runtime = runtime_directory(repo)
     coordination_path = runtime / "coordination.lock"
     session_path = runtime / "session.lock"
     with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
@@ -579,11 +614,10 @@ def reset_main(args: argparse.Namespace, *, wait: bool = False) -> int:
                             "close any attached side panes or non-tmux sessions"
                         ) from error
                     if not announced:
-                        print(f"Waiting for sandbox cleanup: {args.repo}", file=sys.stderr, flush=True)
+                        print(f"Waiting for sandbox cleanup: {repo}", file=sys.stderr, flush=True)
                         announced = True
                     time.sleep(0.1)
         reset_session(runtime)
-    return 0
 
 
 def idle_cleanup_main(args: argparse.Namespace) -> int:
@@ -682,7 +716,8 @@ def requested_workspaces(args: argparse.Namespace) -> list[dict[str, str]] | Non
     if source is None:
         return None
     try:
-        records = workspace_records(json.loads(Path(source).read_text(encoding="utf-8")))
+        records = workspace_records(source if isinstance(source, list) else
+                                    json.loads(Path(source).read_text(encoding="utf-8")))
     except (OSError, ValueError) as error:
         raise ConfigError(f"cannot read workspace authority: {error}") from error
     first = records[0]
@@ -704,13 +739,21 @@ def workspace_environment(records: list[dict[str, str]]) -> str:
 
 def publish_main(args: argparse.Namespace) -> int:
     """Publish one complete, strictly parsed schema-4 authority."""
-    runtime = runtime_directory(Path(args.repo))
-    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    publish_session(Path(args.repo), args.container_repo,
+                    json.loads(Path(args.state).read_text(encoding="utf-8")),
+                    load_accepted_manifest(Path(args.manifest)))
+    return 0
+
+
+def publish_session(repo: Path, container_repo: str, state: dict[str, Any],
+                    manifest: dict[str, Any]) -> None:
+    """Validate and atomically publish under the caller's coordination lock."""
+    runtime = runtime_directory(repo)
+    manifest = load_accepted_manifest(data=manifest)
     owner = runtime_identity(OUTER_RUNTIME)
     if state.get("runtime") != owner:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
-    manifest = load_accepted_manifest(Path(args.manifest))
     launch = state.get("accepted")
     if not isinstance(launch, dict) or set(launch) not in (
             {"source-present", "agent-image", "helper-image", "parameters", "proxy-images"},
@@ -728,14 +771,14 @@ def publish_main(args: argparse.Namespace) -> int:
     zulip = next((proxy for proxy in proxies if proxy.get("name") == "zulip"), None)
     if zulip is not None and zulip.get("helper-image") != launch["helper-image"]:
         raise ConfigError("published Zulip helper differs from accepted owned image")
-    validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(Path(args.repo)),
+    validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo),
                           commands=manifest["commands"], uid=parameters.get("uid"), gid=parameters.get("gid"))
     services = {p["name"]: _service_record(p["name"], p, owner) for p in proxies}
     if state.get("auth") is not None:
         raise ConfigError("retired Codex broker state is cleanup-only; cannot publish")
     payload = {
-        "version": 4, "repository": repository_identity(Path(args.repo)),
-        "container_repository": str(container_repository(args.container_repo)),
+        "version": 4, "repository": repository_identity(repo),
+        "container_repository": str(container_repository(container_repo)),
         "runtime-owner": owner,
         "accepted": {"policy": serializable_manifest(manifest),
                      "source-present": launch["source-present"],
@@ -751,7 +794,7 @@ def publish_main(args: argparse.Namespace) -> int:
     _accepted_schema4(payload, expected_parameters=parameters)
     write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
     os.chmod(runtime / "session.json", 0o600)
-    return 0
+
 
 def session_state(metadata):
     """Return recovery state for all historical schemas and the schema-4 service set."""
@@ -1020,7 +1063,8 @@ def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
     return parsed, accepted
 
 
-def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def accepted_session(args: SessionRequest, repo: Path, metadata: Any, *,
+                     check_images: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
     # Active schema 1-3 is recovery-only. In particular, never consult current
     # repository policy or resolvers while deciding whether it may be joined.
     if not isinstance(metadata, dict) or metadata.get("version") != 4:
@@ -1065,8 +1109,8 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
             ) or not all(isinstance(value, str) and value for value in images["proxies"].values()) or
             parameters != {"uid": args.uid, "gid": args.gid}):
         raise ConfigError("active session has invalid accepted images or image-bound parameters")
-    if (getattr(args, "agent_image", images["agent"]) != images["agent"] or
-            getattr(args, "helper_image", images["helper"]) != images["helper"]):
+    if check_images and (getattr(args, "agent_image", images["agent"]) != images["agent"] or
+                         getattr(args, "helper_image", images["helper"]) != images["helper"]):
         raise ConfigError("active session image selection changed before attachment")
     proxies = state.get("proxies")
     if not isinstance(proxies, list) or {
@@ -1136,10 +1180,7 @@ def _read_session(path: Path) -> Any:
 
 
 def join_main(args: argparse.Namespace) -> int:
-    repo = Path(args.repo).resolve()
-    path = runtime_directory(repo) / "session.json"
-    metadata = _read_session(path)
-    state, accepted = accepted_session(args, repo, metadata)
+    state, accepted = join_session(args)
     write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
     write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
     write_atomic(Path(args.images), json.dumps(accepted["images"]["proxies"], sort_keys=True))
@@ -1151,7 +1192,37 @@ def join_main(args: argparse.Namespace) -> int:
     return 0
 
 
+def join_session(request: SessionRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate accepted authority without consulting current policy or rebuilding.
+
+    The caller holds the session lifetime lock. Results remain in memory; the
+    persistent session record remains the authority for routing and recovery.
+    """
+    repo = Path(request.repo).resolve()
+    return accepted_session(request, repo, _read_session(runtime_directory(repo) / "session.json"),
+                            check_images=False)
+
+
 def attach_main(args: argparse.Namespace) -> int:
+    manifest = None if args.shared else load_accepted_manifest(Path(args.manifest))
+    source = getattr(args, "images", None)
+    images = Path(source) if source and not args.shared else None
+    state, manifest, reused = attach_session(args, manifest, images)
+    write_atomic(Path(args.manifest), json.dumps(manifest, sort_keys=True))
+    if reused and getattr(args, "reused", None):
+        write_atomic(Path(args.reused), "idle")
+    return 0
+
+
+def attach_session(args: SessionRequest, manifest: dict[str, Any],
+                   images: dict[str, str] | None = None
+                   ) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Attach or start services, returning state, accepted policy and idle reuse.
+
+    The recovery journal is updated before/after effects even on failure. The
+    caller must publish before releasing coordination, except for shared or idle
+    reuse which must leave the accepted publication unchanged.
+    """
     repo = Path(args.repo).resolve()
     runtime = runtime_directory(repo)
     shared = args.shared
@@ -1169,15 +1240,15 @@ def attach_main(args: argparse.Namespace) -> int:
         with service_timing("proxies", "shared-reuse-validation"):
             state, accepted = accepted_session(args, repo, metadata)
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
-        write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
-        return 0
+        return state, accepted["manifest"], False
+    manifest = load_accepted_manifest(data=manifest)
     if (isinstance(metadata, dict) and metadata.get("version") == 4
-            and hasattr(args, "uid") and hasattr(args, "gid") and getattr(args, "images", None)):
+            and hasattr(args, "uid") and hasattr(args, "gid") and images is not None):
         try:
             with service_timing("proxies", "idle-reuse-validation"):
                 state, accepted = accepted_session(args, repo, metadata)
-                current_manifest = load_accepted_manifest(Path(args.manifest))
-                current_images = resolve_images(repo, current_manifest, Path(args.images))
+                current_manifest = manifest
+                current_images = resolve_images(repo, current_manifest, images)
                 if (serializable_manifest(current_manifest) !=
                         serializable_manifest(accepted["manifest"]) or
                         getattr(args, "source_present", False) != accepted["source-present"] or
@@ -1187,16 +1258,13 @@ def attach_main(args: argparse.Namespace) -> int:
             pass
         else:
             write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
-            reused = getattr(args, "reused", None)
-            if reused is not None:
-                write_atomic(Path(reused), "idle")
-            return 0
-    current_manifest = load_accepted_manifest(Path(args.manifest))
+            return state, manifest, True
+    current_manifest = manifest
     with service_timing("proxies", "cache-reuse-validation"):
         state = cached_session_state(args, repo, metadata, current_manifest)
     if state is not None:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
-        return 0
+        return state, manifest, False
     previous = recoverable_session_state(metadata)
     if previous is not None:
         old_owner = previous.get("runtime")
@@ -1217,13 +1285,13 @@ def attach_main(args: argparse.Namespace) -> int:
             stop_state(previous)
     metadata_path.unlink(missing_ok=True)
     with service_timing("proxies", "command-start"):
-        start_main(args)
-    return 0
+        state = start_session(args, manifest, images)
+    return state, manifest, False
 
 
 def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[str, str]:
     if prepared is not None:
-        images = json.loads(Path(prepared).read_text())
+        images = prepared if isinstance(prepared, dict) else json.loads(Path(prepared).read_text())
         if (not isinstance(images, dict) or set(images) != set(manifest['commands']) or
                 not all(isinstance(image, str) for image in images.values())):
             raise ConfigError('prepared images do not match the proxy manifest')
@@ -1775,12 +1843,20 @@ def start_one_proxy(
 
 
 def start_main(args: argparse.Namespace) -> int:
+    source = getattr(args, "images", None)
+    start_session(args, load_accepted_manifest(Path(args.manifest)),
+                  Path(source) if source else None)
+    return 0
+
+
+def start_session(args: SessionRequest, manifest: dict[str, Any],
+                  images: dict[str, str] | None = None) -> dict[str, Any]:
     repo = Path(args.repo).resolve()
-    manifest = load_accepted_manifest(Path(args.manifest))
+    manifest = load_accepted_manifest(data=manifest)
     args._workspace_records = requested_workspaces(args)
     if args._workspace_records is not None and "jj" not in manifest["commands"]:
         raise ConfigError("workspace authority requires the trusted JJ service")
-    images = resolve_images(repo, manifest, getattr(args, 'images', None))
+    images = resolve_images(repo, manifest, images)
     state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
     if getattr(args, "agent_image", None) is not None:
         state["accepted"] = {
@@ -1810,7 +1886,7 @@ def start_main(args: argparse.Namespace) -> int:
     try:
         for future in as_completed(futures):
             future.result()
-        return 0
+        return state
     except BaseException as startup_error:
         cancelled.set()
         for future in futures:
@@ -2684,15 +2760,24 @@ def finalize_main(args: argparse.Namespace) -> int:
 
 
 def agent_args_main(args: argparse.Namespace) -> int:
-    repo = Path(args.repo).resolve()
-    container_repo = container_repository(args.container_repo)
-    manifest = load_accepted_manifest(Path(args.manifest))
-    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    lines = agent_arguments(Path(args.repo), args.container_repo,
+                            load_accepted_manifest(Path(args.manifest)),
+                            json.loads(Path(args.state).read_text(encoding="utf-8")))
+    # Legacy standalone transport; the Python launcher consumes the list directly.
+    Path(args.output).write_text("".join(line + "\n" for line in reversed(lines)), encoding="utf-8")
+    return 0
+
+
+def agent_arguments(repo: Path, container_repo: str, manifest: dict[str, Any],
+                    state: dict[str, Any]) -> list[str]:
+    """Return engine arguments in their consumption order, without publication."""
+    repo = repo.resolve()
+    container_repo = container_repository(container_repo)
+    manifest = load_accepted_manifest(data=manifest)
     volumes = {
         proxy["name"]: proxy["volume"]
         for proxy in state.get("proxies", [])
     }
-    output = Path(args.output)
     lines = [
         "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
         "--env", f"JJ_PROXY_REPO={container_repo}",
@@ -2725,9 +2810,7 @@ def agent_args_main(args: argparse.Namespace) -> int:
                 lines += ["--mount", f"type=bind,src={repo / mount['source']},dst={target}{suffix}"]
     if any("\n" in line for line in lines):
         raise ConfigError("generated container argument contains a newline")
-    # The POSIX launcher prepends each argument to its existing argument list.
-    output.write_text("".join(line + "\n" for line in reversed(lines)), encoding="utf-8")
-    return 0
+    return lines
 
 
 def inspect_main(args: argparse.Namespace) -> int:
@@ -2737,7 +2820,18 @@ def inspect_main(args: argparse.Namespace) -> int:
 
 
 def snapshot_main(args: argparse.Namespace) -> int:
-    manifest = load_optional_manifest(Path(args.repo))
+    manifest = snapshot_policy(Path(args.repo), jj_image_command=args.jj_image_command,
+                               zulip_image_command=getattr(args, "zulip_image_command", None),
+                               zuliprc=getattr(args, "zuliprc", None))
+    write_atomic(Path(args.output), json.dumps(manifest, sort_keys=True))
+    return 0
+
+
+def snapshot_policy(repo: Path, *, jj_image_command: Path | None = None,
+                    zulip_image_command: Path | None = None,
+                    zuliprc: Path | None = None) -> dict[str, Any]:
+    """Normalize current repository policy and admit trusted command builders."""
+    manifest = load_optional_manifest(repo)
     # Apply defaults only to new repository policy, never to accepted sessions.
     manifest["capabilities"] = {**CAPABILITY_DEFAULTS, **manifest.get("capabilities", {})}
     # Snapshots are launcher-owned normalized policy. Version 1 command image
@@ -2746,8 +2840,8 @@ def snapshot_main(args: argparse.Namespace) -> int:
     manifest = serializable_manifest(manifest)
     if "zulip" in manifest["commands"]:
         raise ConfigError("repository manifest may not override trusted command: zulip")
-    if args.jj_image_command:
-        builder = Path(args.jj_image_command)
+    if jj_image_command:
+        builder = Path(jj_image_command)
         if not builder.is_absolute():
             raise ConfigError("trusted jj image command must be absolute")
         _regular_unlinked(builder, "trusted jj image command")
@@ -2762,8 +2856,6 @@ def snapshot_main(args: argparse.Namespace) -> int:
             "network": True,
             "mounts": [{"source": ".", "target": ".", "proxy": "read-write"}],
         }
-    zulip_image_command = getattr(args, "zulip_image_command", None)
-    zuliprc = getattr(args, "zuliprc", None)
     if bool(zulip_image_command) != bool(zuliprc):
         raise ConfigError("trusted Zulip proxy requires both image command and credentials")
     if zulip_image_command and manifest["capabilities"]["zulip"]:
@@ -2781,8 +2873,7 @@ def snapshot_main(args: argparse.Namespace) -> int:
             "network": True,
             "mounts": [],
         }
-    write_atomic(Path(args.output), json.dumps(manifest, sort_keys=True))
-    return 0
+    return manifest
 
 
 def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:

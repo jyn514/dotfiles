@@ -74,8 +74,7 @@ class TicCdPreflightTest(unittest.TestCase):
                 Path(directory).chmod(0o700)
 
     def load_policy(self, state):
-        state.manifest = self.root / 'policy.json'
-        state.manifest.write_text(json.dumps({'commands': {}}))
+        state.manifest = {'commands': {}}
         state.capabilities = frozenset({'tic'} if self.selected else ())
 
     def compile_bundle(self, source, expected):

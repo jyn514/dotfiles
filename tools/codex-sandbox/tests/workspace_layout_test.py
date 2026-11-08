@@ -191,16 +191,13 @@ class WorkspaceLayoutTest(unittest.TestCase):
             before = Path.cwd()
             function(state)
             self.assertEqual(before, Path.cwd())
-            self.addCleanup(state.workspaces_file.unlink, missing_ok=True)
             self.assertEqual([self.main, dotfiles], [item.host_root for item in state.workspaces])
-            self.assertEqual([item.to_dict() for item in state.workspaces], json.loads(state.workspaces_file.read_text()))
             metadata = (dotfiles / ".jj/repo").stat().st_ino
             launcher["initialize_dotfiles"](dotfiles)
             self.assertEqual(metadata, (dotfiles / ".jj/repo").stat().st_ino)
         with mock.patch.dict(function.__globals__, DOTFILES=self.main), \
                 contextlib.chdir(self.main):
             function(state)
-            self.addCleanup(state.workspaces_file.unlink, missing_ok=True)
             self.assertEqual(1, len(state.workspaces))
 
     def test_concurrent_initializers_recheck_under_existing_coordination_lock(self):
@@ -257,32 +254,36 @@ class WorkspaceLayoutTest(unittest.TestCase):
             self.assertIn((workspace.lock_file, True), binds)
         self.assertIn((runtime_directory, False), binds)
 
-    def test_join_and_attach_pass_the_same_workspace_description_file(self):
+    def test_join_and_attach_pass_the_same_workspace_authority_without_transport_files(self):
         launcher = runpy.run_path(str(LAUNCHER))
-        state = SimpleNamespace(repository=self.main, container_repository=Path("/home/codex/src/main"),
-            workspaces_file=self.home / "workspaces.json", uid=os.getuid(), gid=os.getgid(),
+        guest = Path("/home/codex/src/main")
+        layouts = [discover_workspace(self.main, guest, self.home)]
+        state = SimpleNamespace(repository=self.main, container_repository=guest,
+            workspaces=layouts, uid=os.getuid(), gid=os.getgid(),
             proxy_state=self.home / "state.json", proxy_prefix="fixture", image="agent",
-            sidecar_image="", manifest=self.home / "manifest.json", prepared_images=None,
+            sidecar_image="", manifest=None, prepared_images=None,
             policy_source_present=False, zuliprc=None, proxy_lock=mock.Mock(shared=False))
+        policy = {"capabilities": {}, "commands": {}}
         seen = []
-
-        def helper(*arguments):
-            seen.append(arguments)
-            if arguments[0] == "join":
-                Path(arguments[arguments.index("--manifest") + 1]).write_text('{"capabilities": {}}')
-                Path(arguments[arguments.index("--accepted") + 1]).write_text(json.dumps({
-                    "source-present": False, "agent-image": "agent", "helper-image": ""}))
-
+        def join(request):
+            seen.append(request.workspaces)
+            return {}, {"manifest": policy, "source-present": False,
+                        "images": {"agent": "agent", "helper": None, "proxies": {}}}
+        def attach(request, manifest, images):
+            seen.append(request.workspaces)
+            self.assertEqual(policy, manifest)
+            self.assertEqual({}, images)
+            return {}, manifest, False
+        module = launcher["proxy_module"]()
         function_globals = launcher["attach_proxies"].__globals__
-        with mock.patch.dict(function_globals, helper=helper,
-                check_agent_pi_revision=lambda *_: None,
-                finalize_proxy_session=lambda *_: []):
+        with mock.patch.object(module, "join_session", side_effect=join), \
+                mock.patch.object(module, "attach_session", side_effect=attach), \
+                mock.patch.dict(function_globals, proxy_module=lambda: module,
+                    temporary_file=mock.Mock(side_effect=AssertionError("transport file")),
+                    check_agent_pi_revision=lambda *_: None, finalize_proxy_session=lambda *_: []):
             launcher["load_accepted_session"](state)
             launcher["attach_proxies"](state)
-        for arguments in seen:
-            self.assertEqual(str(state.workspaces_file), arguments[arguments.index("--workspaces") + 1])
-        for path in (state.manifest, state.prepared_images):
-            path.unlink(missing_ok=True)
+        self.assertEqual([[item.to_dict() for item in layouts]] * 2, seen)
 
     def test_read_only_active_validation_does_not_prepare_dotfiles_or_authority(self):
         launcher = runpy.run_path(str(LAUNCHER))

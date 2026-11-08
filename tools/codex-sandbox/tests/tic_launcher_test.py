@@ -349,8 +349,7 @@ class TicLauncherTest(unittest.TestCase):
         self.state.deferred_signal = None
         self.state.proxy_lock = SimpleNamespace(shared=False)
         self.state.sidecar_image = ''
-        self.state.manifest = self.root / 'snapshot.json'
-        self.state.manifest.write_text(json.dumps({'commands': {}}))
+        self.state.manifest = {'commands': {}}
         empty = ('validate_repository', 'acquire_lock', 'load_repository_policy', 'bind_repository_policy',
                  'recover_relays', 'stage_skills', 'agent_repository_mounts', 'prepare_host_pi_resources',
                  'register_tmux_pane', 'ensure_network', 'prepare_gateway', 'attach_proxies')

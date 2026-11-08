@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import fcntl
 import io
@@ -211,13 +212,11 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             root = Path(directory)
             credentials = root / ".zuliprc"
             credentials.write_text("unused")
-            manifest = root / "snapshot"
-            manifest.write_text(json.dumps({
-                "capabilities": {"host-editor": False, "zulip": False}, "commands": {},
-            }))
+            policy = {"capabilities": {"host-editor": False, "zulip": False}, "commands": {}}
+            module = SimpleNamespace(snapshot_policy=lambda *args, **kwargs: policy)
             state = SimpleNamespace(repository=root, home=root, zuliprc=None)
-            with mock.patch.dict(load.__globals__, temporary_file=lambda: manifest,
-                                 helper=mock.Mock()), \
+            with mock.patch.dict(load.__globals__, proxy_module=lambda: module,
+                                 bind_repository_policy=mock.Mock()), \
                     mock.patch.dict(os.environ, CODEX_SANDBOX_ZULIPRC=str(credentials)):
                 load(state)
             self.assertIsNone(state.zuliprc)
@@ -252,32 +251,36 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             sidecar_image='image', image='agent', uid=501, gid=20,
             policy_source_present=True, manifest=Path('/manifest'), zuliprc=None,
             prepared_images=None)
-        with mock.patch.dict(attach.__globals__, helper=mock.Mock(),
-                finalize_proxy_session=mock.Mock(side_effect=ValueError('publication failed'))):
-            with self.assertRaisesRegex(ValueError, 'publication failed'):
+        module = attach.__globals__['proxy_module']()
+        with mock.patch.object(module, 'attach_session', return_value=({}, {}, False)), \
+                mock.patch.dict(attach.__globals__, proxy_module=lambda: module,
+                    finalize_proxy_session=mock.Mock(side_effect=ValueError('publication failed'))):
+            with self.assertRaisesRegex(attach.__globals__['LauncherError'], 'publication failed'):
                 attach(state)
         lock.release_coordination.assert_not_called()
 
     def test_only_first_session_publishes_shared_proxy_state(self):
         launcher = runpy.run_path(str(LAUNCHER))
         finalize = launcher['finalize_proxy_session']
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            output = root / 'args'
-            state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), proxy_reused=False, repository=root,
-                                    container_repository=Path('/home/codex/src/repo'),
-                                    proxy_state=root / 'state', manifest=root / 'manifest')
-            def helper(operation, *arguments):
-                output.write_text('--read-only\n')
-            for status, operation in (('shared', 'agent-args'), ('idle', 'agent-args'), ('new', 'finalize')):
-                with self.subTest(status=status):
-                    state.proxy_lock.shared = status == 'shared'
-                    state.proxy_reused = status == 'idle'
-                    with mock.patch.dict(finalize.__globals__, {
-                            'temporary_file': lambda: output,
-                            'helper': mock.Mock(side_effect=helper)}) as scope:
-                        self.assertEqual(['--read-only'], finalize(state))
-                        self.assertEqual(operation, scope['helper'].call_args.args[0])
+        state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), proxy_reused=False,
+                                repository=Path('/repo'), container_repository=Path('/guest'),
+                                proxy_data={'proxies': []}, manifest={'commands': {}})
+        for status in ('shared', 'idle', 'new'):
+            with self.subTest(status=status):
+                state.proxy_lock.shared = status == 'shared'
+                state.proxy_reused = status == 'idle'
+                calls = []
+                module = SimpleNamespace(
+                    publish_session=mock.Mock(side_effect=lambda *args: calls.append('publish')),
+                    agent_arguments=mock.Mock(side_effect=lambda *args: calls.append('args') or ['--read-only']))
+                with mock.patch.dict(finalize.__globals__, proxy_module=lambda: module):
+                    self.assertEqual(['--read-only'], finalize(state))
+                self.assertEqual(['publish', 'args'] if status == 'new' else ['args'], calls)
+                module.agent_arguments.assert_called_once_with(
+                    state.repository, str(state.container_repository), state.manifest, state.proxy_data)
+                if status == 'new':
+                    module.publish_session.assert_called_once_with(
+                        state.repository, str(state.container_repository), state.proxy_data, state.manifest)
 
     def test_network_verification_failure_retains_captured_diagnostic(self):
         launcher = runpy.run_path(str(LAUNCHER))
@@ -503,18 +506,61 @@ class SharedProxyCleanupTest(unittest.TestCase):
 
 
 class ProxyHelperTest(unittest.TestCase):
-    def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
-        helper = runpy.run_path(str(LAUNCHER))["helper"]
-        entrypoint = mock.Mock(return_value=0)
-        with mock.patch.dict(helper.__globals__, proxy_module=lambda: SimpleNamespace(main=entrypoint)), \
-                mock.patch("subprocess.run", side_effect=AssertionError("unexpected process")):
-            self.assertEqual(0, helper("snapshot", "--repo", "example").returncode)
-            entrypoint.assert_called_once_with(["snapshot", "--repo", "example"],
-                                               runtime=helper.__globals__["OUTER_RUNTIME"])
-            entrypoint.return_value = 1
-            with self.assertRaises(subprocess.CalledProcessError):
-                helper("snapshot", "--repo", "example")
-            self.assertEqual(1, helper("snapshot", "--repo", "example", check=False).returncode)
+    def test_recovery_uses_bound_runtime_and_propagates_failure_without_dispatch(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        reset = launcher['reset_proxies']
+        module = launcher['proxy_module']()
+        with mock.patch.dict(reset.__globals__, proxy_module=lambda: module), \
+                mock.patch.object(module, 'reset_repository') as recover, \
+                mock.patch.object(module, 'main', side_effect=AssertionError('CLI dispatch')), \
+                mock.patch('subprocess.run', side_effect=AssertionError('unexpected process')):
+            reset('/example')
+            recover.assert_called_once_with(Path('/example'), wait=True)
+            recover.side_effect = module.ConfigError('recovery failed')
+            with self.assertRaisesRegex(launcher['LauncherError'], 'sandbox proxies: recovery failed'):
+                reset('/example')
+
+    def test_private_api_instances_keep_selected_runtime_and_repository_across_threads(self):
+        # Same repository with two independently discovered contexts exposes any
+        # accidental shared module cache, not just a missing repository match.
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            modules = []
+            for name in ('first', 'second'):
+                launcher = runpy.run_path(str(LAUNCHER))
+                owner = mock.Mock(provider=name)
+                owner.verify_builder_image.side_effect = lambda image, name=name: SimpleNamespace(reference=name + ':' + image)
+                factory = launcher['proxy_module']
+                with mock.patch.dict(factory.__wrapped__.__globals__, OUTER_RUNTIME=owner):
+                    module = factory()
+                paths = (repo / name / 'git', repo / name / 'common')
+                for path in paths:
+                    path.mkdir(parents=True)
+                module.use_repository_metadata(repo, paths)
+                modules.append((module, owner, paths, factory))
+                # Changing ambient runtime after binding must not reselect it.
+                factory.__wrapped__.__globals__['OUTER_RUNTIME'] = mock.Mock(provider='unrelated')
+                self.assertIs(factory(), module)
+                self.assertIs(module.OUTER_RUNTIME, owner)
+            barrier = threading.Barrier(2)
+            def consume(value):
+                module, owner, paths, _ = value
+                barrier.wait(timeout=3)
+                self.assertEqual(paths, module.git_metadata_paths(repo))
+                self.assertEqual({'one': owner.provider + ':image'}, module.resolve_images(
+                    repo, {'commands': {'one': {}}}, {'one': 'image'}))
+            with mock.patch('subprocess.run', side_effect=AssertionError('unexpected discovery or CLI')), \
+                    ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(consume, modules))
+            self.assertIsNot(modules[0][0], modules[1][0])
+            # After the previous owner has joined, a new attachment sees the
+            # newly selected runtime and cannot inherit old repository metadata.
+            for module, _, _, factory in modules:
+                factory.cache_clear()
+                replacement = factory()
+                self.assertIsNot(replacement, module)
+                self.assertIsNone(replacement.REPOSITORY_METADATA)
+                self.assertIs(replacement.OUTER_RUNTIME, factory.__wrapped__.__globals__['OUTER_RUNTIME'])
 
 
 class ContainerTimingTest(unittest.TestCase):
@@ -763,7 +809,6 @@ class RepositoryPreflightTest(unittest.TestCase):
             ):
                 launcher["validate_repository"](state)
             self.assertEqual(1, len(state.workspaces))
-            state.workspaces_file.unlink()
             self.assertEqual(repository, state.repository)
             self.assertEqual(repository / ".git", state.git_mount_source)
             self.assertTrue((repository / ".jj").is_dir())
@@ -843,7 +888,8 @@ class DirectoryHandoffTest(unittest.TestCase):
                 module = launcher["proxy_module"]()
                 manifest = root / "snapshot.json"
                 module.snapshot_main(SimpleNamespace(repo=str(destination), output=str(manifest), jj_image_command=None))
-                snapshot = manifest.read_text()
+                snapshot = json.loads(manifest.read_text())
+                manifest.unlink()
                 state = SimpleNamespace(repository=destination, host_working_directory=destination,
                                         manifest=None, capabilities=frozenset(), uid=501, gid=20)
                 runtime = mock.Mock(spec=launcher["ContainerRuntime"], provider="container")
@@ -854,8 +900,7 @@ class DirectoryHandoffTest(unittest.TestCase):
                 if failure:
                     compose.side_effect = ValueError("Cannot find module './identity.js'")
                 def load_policy(value):
-                    value.manifest = manifest
-                    manifest.write_text(snapshot)
+                    value.manifest = snapshot
                 forbidden = {name: mock.Mock(side_effect=AssertionError(name + " must not run during preparation"))
                              for name in ("acquire_lock", "run_agent", "cleanup", "unregister_tmux_pane",
                                           "ensure_network", "attach_proxies", "register_tmux_pane")}
@@ -897,8 +942,7 @@ class DirectoryHandoffTest(unittest.TestCase):
             write_executable(builder, "#!/bin/sh\nprintf 'legacy-base\\n'\n")
             manifest = repository / "manifest.json"
             def load_policy(state):
-                state.manifest = manifest
-                manifest.write_text(json.dumps({"commands": {}}))
+                state.manifest = {"commands": {}}
             state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset(), uid=501, gid=20)
             compose = mock.Mock(side_effect=ValueError("build failed"))
             runtime = SimpleNamespace(provider="container")
@@ -921,11 +965,10 @@ class DirectoryHandoffTest(unittest.TestCase):
             repository = Path(directory)
             manifest = repository / "manifest.json"
             def load_policy(state):
-                state.manifest = manifest
-                manifest.write_text(json.dumps({"commands": {"broken": {
+                state.manifest = {"commands": {"broken": {
                     "image-command": ["/bin/false"], "argv": ["proxy", "serve"],
                     "workdir": ".", "network": False, "mounts": [],
-                }}}))
+                }}}
             state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset())
             model = mock.Mock(return_value="agent-image")
             with mock.patch.dict(prepare.__globals__, {
@@ -1067,7 +1110,7 @@ class BackgroundRelayTest(unittest.TestCase):
                     snapshot = repository / "snapshot.json"
                     module.snapshot_main(SimpleNamespace(repo=str(repository), output=str(snapshot),
                                                          jj_image_command=None))
-                    state = SimpleNamespace(repository=repository, manifest=snapshot, uid=501, gid=20,
+                    state = SimpleNamespace(repository=repository, manifest=module.load_accepted_manifest(snapshot), uid=501, gid=20,
                                             capabilities=frozenset(), deferred_signal=None)
                     from sandbox_runtime import ContainerRuntime, VMRuntime
                     from docker_runtime import Docker
@@ -1100,7 +1143,7 @@ class BackgroundRelayTest(unittest.TestCase):
                         self.assertEqual({"version": 1, "operation": "resolve", "images": sorted(names),
                                           "engine": {"provider": provider, "platform": "linux/amd64"}}, requests[0])
                         self.assertEqual({name: results[command["image"]] for name, command in commands.items()},
-                                         json.loads(state.prepared_images.read_text()))
+                                         state.prepared_images)
                         self.assertEqual(len(names), runtime.verify_builder_image.call_count)
                         for invalid in ({}, {**results, "unexpected": "sha256:" + "9" * 64}):
                             network.reset_mock(); agent.reset_mock(); compose.reset_mock()
@@ -1251,7 +1294,7 @@ class BackgroundRelayTest(unittest.TestCase):
             manifest = repository / 'manifest.json'
             manifest.write_text('{"commands": {"bug": {"image-target": "bb-bug"}}}')
             state = SimpleNamespace(repository=repository, agent_docker=None, uid=501, gid=20,
-                                    codex_arguments=[], deferred_signal=None, manifest=manifest)
+                                    codex_arguments=[], deferred_signal=None, manifest=json.loads(manifest.read_text()))
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_gateway', 'start_gateway', 'start_keychain', 'attach_proxies')}
@@ -1276,7 +1319,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 self.assertEqual(0, execute(state))
                 replacements['resolve_agent'].assert_called_once_with(
                     replacements['OUTER_RUNTIME'], state.uid, state.gid, 'base@digest')
-                self.assertEqual(json.loads(state.prepared_images.read_text()), prepared.proxies)
+                self.assertEqual(state.prepared_images, prepared.proxies)
                 self.assertEqual(state.sidecar_image, prepared.auth)
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
                 preparation.side_effect = ValueError('image validation failed')
@@ -1811,51 +1854,7 @@ class CodexSandboxTest(unittest.TestCase):
                 for argument do printf '\t%s' "$argument"; done
                 printf '\n'
             } >> "$FAKE_PYTHON_LOG"
-            action=$2
-            shift 2
-            value_for() {
-                wanted=$1
-                shift
-                while [ "$#" -gt 0 ]; do
-                    if [ "$1" = "$wanted" ]; then printf '%s\n' "$2"; return; fi
-                    shift
-                done
-                return 1
-            }
-            case "$action" in
-                snapshot)
-                    output=$(value_for --output "$@")
-                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{},"zulip":{}}}' > "$output"
-                    ;;
-                join)
-                    state=$(value_for --state "$@")
-                    manifest=$(value_for --manifest "$@")
-                    images=$(value_for --images "$@")
-                    accepted=$(value_for --accepted "$@")
-                    if [ -n "$FAKE_PROXY_STATE" ]; then
-                        printf '%s\n' "$FAKE_PROXY_STATE" > "$state"
-                    else
-                        printf '%s\n' '{"proxies":[]}' > "$state"
-                    fi
-                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{}}}' > "$manifest"
-                    printf '%s\n' '{"jj":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}' > "$images"
-                    printf '%s\n' '{"source-present":true,"agent-image":"sha256:0000000000000000000000000000000000000000000000000000000000000000","helper-image":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}' > "$accepted"
-                    ;;
-                attach)
-                    state=$(value_for --state "$@")
-                    if [ -n "$FAKE_PROXY_STATE" ]; then
-                        printf '%s\n' "$FAKE_PROXY_STATE" > "$state"
-                    else
-                        printf '%s\n' '{"proxies":[]}' > "$state"
-                    fi
-                    ;;
-                agent-args|finalize)
-                    output=$(value_for --output "$@")
-                    printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
-                    ;;
-                publish|monitor|stop) ;;
-                *) exit 91 ;;
-            esac
+            [ "$2" = stop ] || exit 91
         """)
 
     def tearDown(self) -> None:
@@ -2285,7 +2284,7 @@ class CodexSandboxTest(unittest.TestCase):
                 helper = mock.Mock()
                 with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
                     launcher["restart_tmux_sessions"].__globals__, {
-                        "tmux_registrations": lambda: [first, registration], "run": run, "helper": helper,
+                        "tmux_registrations": lambda: [first, registration], "run": run, "reset_proxies": helper,
                     },
                 ), mock.patch.object(os, "kill") as kill:
                     with self.assertRaisesRegex(launcher["LauncherError"], message):
@@ -2319,7 +2318,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "tmux_registrations": mock.Mock(return_value=[first, duplicate, other]),
                 "request_restart_control": control,
                 "run": fail_second_preparation,
-                "helper": mock.Mock(),
+                "reset_proxies": mock.Mock(),
             },
         ), mock.patch.object(os, "kill") as kill:
             with self.assertRaisesRegex(launcher["LauncherError"],
@@ -2351,12 +2350,12 @@ class CodexSandboxTest(unittest.TestCase):
             function_globals, {
                 "tmux_registrations": mock.Mock(side_effect=[registrations, []]),
                 "run": fake_run,
-                "helper": lambda *arguments: resets.append(arguments),
+                "reset_proxies": lambda *arguments: resets.append(arguments),
             },
         ), mock.patch.object(os, "kill") as kill:
             self.assertEqual(0, launcher["restart_tmux_sessions"]())
         kill.assert_called_once_with(12345, signal.SIGTERM)
-        self.assertEqual([("reset", "--repo", str(self.repo), "--wait")], resets)
+        self.assertEqual([(str(self.repo),)], resets)
         self.assertIn(
             ["tmux", "set-option", "-p", "-t", "%3", "remain-on-exit", "on"],
             calls,
@@ -2388,7 +2387,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "tmux_registrations": mock.Mock(side_effect=[[old], [], [new]]),
                 "request_restart_control": control,
                 "run": fake_run,
-                "helper": mock.Mock(),
+                "reset_proxies": mock.Mock(),
             },
         ), mock.patch.object(launcher["Path"], "is_socket", return_value=True), \
                 mock.patch.object(os, "kill") as kill:
@@ -2427,13 +2426,13 @@ class CodexSandboxTest(unittest.TestCase):
 
                 def reset(*arguments):
                     self.assertNotIn(old["control"], live_controls)
-                    self.assertEqual(("reset", "--repo", str(self.repo), "--wait"), arguments)
+                    self.assertEqual((str(self.repo),), arguments)
 
                 with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
                     launcher["restart_tmux_sessions"].__globals__, {
                         # The interactive shell stays alive after Pi and its wrapper exit.
                         "tmux_registrations": lambda: [new if replacement else old],
-                        "request_restart_control": control, "run": run, "helper": reset,
+                        "request_restart_control": control, "run": run, "reset_proxies": reset,
                     },
                 ), mock.patch.object(launcher["Path"], "is_socket",
                                      lambda path: str(path) in live_controls), \
@@ -2463,7 +2462,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "tmux_registrations": mock.Mock(return_value=[first, second]),
                 "request_restart_control": control,
                 "run": run,
-                "helper": mock.Mock(),
+                "reset_proxies": mock.Mock(),
             },
         ), mock.patch.object(launcher["Path"], "is_socket", return_value=True), \
                 mock.patch.object(os, "kill") as kill:
@@ -2490,7 +2489,7 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["restart_tmux_sessions"].__globals__, {
                 "tmux_registrations": mock.Mock(side_effect=[registrations, registrations]),
                 "run": fake_run,
-                "helper": mock.Mock(),
+                "reset_proxies": mock.Mock(),
             },
         ), mock.patch.object(os, "kill") as kill:
             self.assertEqual(0, launcher["restart_tmux_sessions"]())
@@ -2543,7 +2542,7 @@ class CodexSandboxTest(unittest.TestCase):
                         helper = mock.Mock()
                         if failure == "reset":
                             helper.side_effect = subprocess.CalledProcessError(1, ["reset"])
-                        with mock.patch.dict(launcher["main"].__globals__, helper=helper, run=run), \
+                        with mock.patch.dict(launcher["main"].__globals__, reset_proxies=helper, run=run), \
                                 mock.patch.object(os, "kill", side_effect=stop_old_owner), \
                                 contextlib.redirect_stderr(io.StringIO()):
                             self.assertEqual(1, launcher["main"](["restart-all"]))
@@ -2566,7 +2565,7 @@ class CodexSandboxTest(unittest.TestCase):
                                 arguments = [*arguments[:-1], "sleep 30"]
                             return real_run(arguments, **kwargs)
 
-                        with mock.patch.dict(launcher["main"].__globals__, helper=mock.Mock(), run=resume), \
+                        with mock.patch.dict(launcher["main"].__globals__, reset_proxies=mock.Mock(), run=resume), \
                                 contextlib.redirect_stdout(io.StringIO()):
                             self.assertEqual(0, launcher["main"](["restart-all"]))
                         self.assertFalse(launcher["tmux_registrations"]()[0]["dead"])
@@ -2592,14 +2591,14 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["restart_tmux_sessions"].__globals__, {
                 "tmux_registrations": mock.Mock(side_effect=[[*selected, unrelated], [unrelated]]),
                 "run": fake_run,
-                "helper": lambda *arguments: resets.append(arguments),
+                "reset_proxies": lambda *arguments: resets.append(arguments),
             },
         ), mock.patch.object(os, "kill") as kill, \
                 mock.patch.object(time, "monotonic", side_effect=[0, 0.1, 30]), \
                 mock.patch.object(time, "sleep"):
             self.assertEqual(0, launcher["main"](["restart", "--repo", str(self.repo)]))
         kill.assert_called_once_with(12345, signal.SIGTERM)
-        self.assertEqual([("reset", "--repo", str(self.repo), "--wait")], resets)
+        self.assertEqual([(str(self.repo),)], resets)
         respawns = [call for call in calls if call[:2] == ["tmux", "respawn-pane"]]
         self.assertEqual(["%3", "%4"], [call[4] for call in respawns])
         self.assertEqual(
@@ -2634,7 +2633,7 @@ class CodexSandboxTest(unittest.TestCase):
                                         codex_arguments=["--resume"])
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0", "TMUX_PANE": pane}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
-                            "helper": mock.Mock(),
+                            "reset_proxies": mock.Mock(),
                             "run": lambda arguments, **kwargs: (
                                 subprocess.CompletedProcess(arguments, 0, stdout="")
                                 if arguments[1:2] == ["prepare-cd"]
@@ -2685,7 +2684,7 @@ class CodexSandboxTest(unittest.TestCase):
                 subprocess.run([*prefix, "set-environment", "-g", "RESTART_PI_RECEIPT", str(receipt)], check=True)
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0"}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
-                            "helper": mock.Mock(),
+                            "reset_proxies": mock.Mock(),
                             "run": lambda arguments, **kwargs: (
                                 subprocess.CompletedProcess(arguments, 0, stdout="")
                                 if arguments[1:2] == ["prepare-cd"]
@@ -2780,7 +2779,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "tmux_registrations": mock.Mock(return_value=[{
                     "repository": str(self.root / "other-repo"),
                 }]),
-                "run": run, "helper": helper,
+                "run": run, "reset_proxies": helper,
             },
         ), mock.patch.object(os, "kill") as kill:
             with self.assertRaisesRegex(launcher["LauncherError"], "no registered sandbox sessions for"):
@@ -2826,7 +2825,7 @@ class CodexSandboxTest(unittest.TestCase):
                     "tmux_registrations": lambda: [first, other, dead],
                     "request_restart_control": control,
                     "run": mock.Mock(side_effect=AssertionError("reload spawned a process")),
-                    "helper": mock.Mock(side_effect=AssertionError("reload reset the sandbox")),
+                    "reset_proxies": mock.Mock(side_effect=AssertionError("reload reset the sandbox")),
                 }), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(0, launcher["reload_tmux_sessions"]())
         self.assertCountEqual(control.call_args_list, [mock.call(first, "reload"), mock.call(other, "reload")])

@@ -137,12 +137,11 @@ class State:
     zuliprc: Path | None = None
     image: str = ""
     sidecar_image: str = ""
-    manifest: Path | None = None
-    prepared_images: Path | None = None
+    manifest: dict[str, object] | None = None
+    prepared_images: dict[str, str] | None = None
     proxy_lock: SessionLock | None = None
     proxy_state: Path | None = None
-    proxy_args: Path | None = None
-    proxy_reused_marker: Path | None = None
+    proxy_data: dict[str, object] | None = None
     proxy_reused: bool = False
     skills_tmp: Path | None = None
     skills_source: Path | None = None
@@ -171,7 +170,6 @@ class State:
     github_credential: Path | None = None
     metadata_roots: tuple[Path, ...] = ()
     workspaces: list[WorkspaceLayout] = field(default_factory=list)
-    workspaces_file: Path | None = None
     repository_mount_arguments: list[str] | None = None
     resource_owner: str = field(default_factory=lambda: secrets.token_hex(16))
     recovery_record: Path | None = None
@@ -214,7 +212,9 @@ def run(
 
 @cache
 def proxy_module():
-    # Snapshot loads this on the main thread before concurrent startup begins.
+    # One private module per launcher/runtime, loaded on the main thread before
+    # workers. Its runtime and discovered metadata stay fixed throughout startup;
+    # never call the standalone CLI dispatcher (which rebinds runtime) here.
     spec = importlib.util.spec_from_file_location("sandbox_proxies", PROXY_HELPER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -223,13 +223,12 @@ def proxy_module():
     return module
 
 
-def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    # Short operations share the launcher's interpreter.
-    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments],
-        proxy_module().main(list(arguments), runtime=OUTER_RUNTIME))
-    if check:
-        result.check_returncode()
-    return result
+def reset_proxies(repository: str) -> None:
+    module = proxy_module()
+    try:
+        module.reset_repository(Path(repository), wait=True)
+    except (module.ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
+        raise LauncherError(f"sandbox proxies: {error}") from error
 
 
 def temporary_file() -> Path:
@@ -645,33 +644,31 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
     state.metadata_roots = tuple(dict.fromkeys(
         path for workspace in workspaces for path in (
             workspace.host_root / ".jj", workspace.jj_repo, workspace.git_dir, workspace.common_dir)))
-    state.workspaces_file = temporary_file()
-    state.workspaces_file.write_text(json.dumps([workspace.to_dict() for workspace in workspaces]))
     with validation_timing("workspace mount plan"):
         _workspace_mount_plan(state)
     proxy_module().use_repository_metadata(repository, (active.git_dir, active.common_dir))
 
 
 def load_repository_policy(state: State) -> None:
-    state.manifest = temporary_file()
-    snapshot_arguments = [
-        "snapshot", "--repo", str(state.repository), "--output", str(state.manifest),
-        "--jj-image-command", str(DOTFILES / ".agents/sandbox/jj-proxy-image"),
-    ]
     zuliprc = Path(os.environ.get("CODEX_SANDBOX_ZULIPRC", state.home / ".zuliprc"))
     if zuliprc.exists() or zuliprc.is_symlink():
         state.zuliprc = zuliprc
-        snapshot_arguments += [
-            "--zulip-image-command", str(DOTFILES / ".agents/sandbox/zulip-proxy-image"),
-            "--zuliprc", str(zuliprc),
-        ]
     state.policy_source_present = (
         state.repository / ".agents" / "sandbox" / "proxy-commands.json"
     ).is_file() or (
         state.repository / ".agents" / "sandbox" / "docker-bake.hcl"
     ).is_file()
-    helper(*snapshot_arguments)
-    snapshot = json.loads(state.manifest.read_text(encoding="utf-8"))
+    module = proxy_module()
+    try:
+        snapshot = module.snapshot_policy(
+            state.repository, jj_image_command=DOTFILES / ".agents/sandbox/jj-proxy-image",
+            zulip_image_command=(DOTFILES / ".agents/sandbox/zulip-proxy-image"
+                                 if state.zuliprc is not None else None),
+            zuliprc=state.zuliprc,
+        )
+    except (module.ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
+        raise LauncherError(f"sandbox proxies: {error}") from error
+    state.manifest = snapshot
     bind_repository_policy(state, snapshot)
     if "zulip" not in snapshot["commands"]:
         state.zuliprc = None
@@ -712,63 +709,53 @@ def ensure_network() -> None:
 
 def acquire_lock(state: State) -> None:
     state.proxy_state = temporary_file()
-    state.proxy_reused_marker = temporary_file()
     state.proxy_lock = SessionLock(proxy_module().runtime_directory(state.repository))
 
 
-def load_accepted_session(state: State) -> None:
-    state.manifest = temporary_file()
-    state.prepared_images = temporary_file()
-    accepted = temporary_file()
-    try:
-        helper(
-            "join", "--repo", str(state.repository),
-            "--container-repo", str(state.container_repository),
-            *(["--workspaces", str(state.workspaces_file)] if getattr(state, "workspaces_file", None) else []),
-            "--state", str(state.proxy_state), "--manifest", str(state.manifest),
-            "--images", str(state.prepared_images), "--accepted", str(accepted),
-            "--uid", str(state.uid), "--gid", str(state.gid),
-        )
-        policy = json.loads(state.manifest.read_text(encoding="utf-8"))
-        values = json.loads(accepted.read_text(encoding="utf-8"))
-    finally:
-        accepted.unlink(missing_ok=True)
-    state.capabilities = frozenset(
-        name for name, selected in policy.get("capabilities", {}).items() if selected
+def proxy_request(state: State):
+    """Pass settled launch inputs; the staging path remains recovery authority."""
+    return proxy_module().SessionRequest(
+        repo=state.repository, container_repo=str(state.container_repository),
+        workspaces=([workspace.to_dict() for workspace in state.workspaces]
+                    if getattr(state, "workspaces", None) else None),
+        prefix=state.proxy_prefix, shared=state.proxy_lock.shared,
+        state=state.proxy_state, helper_image=state.sidecar_image or None,
+        network=SANDBOX_NETWORK, agent_image=state.image,
+        uid=state.uid, gid=state.gid, source_present=state.policy_source_present,
+        zuliprc=state.zuliprc,
     )
-    state.policy_source_present = values["source-present"]
-    state.image = values["agent-image"]
+
+
+def load_accepted_session(state: State) -> None:
+    module = proxy_module()
+    request = proxy_request(state)
+    try:
+        state.proxy_data, accepted = module.join_session(request)
+    except (module.ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
+        raise LauncherError(f"sandbox proxies: {error}") from error
+    state.manifest = accepted["manifest"]
+    state.prepared_images = accepted["images"]["proxies"]
+    state.capabilities = frozenset(
+        name for name, selected in state.manifest.get("capabilities", {}).items() if selected
+    )
+    state.policy_source_present = accepted["source-present"]
+    state.image = accepted["images"]["agent"]
     check_agent_pi_revision(OUTER_RUNTIME, state.image)
-    state.sidecar_image = values["helper-image"] or ""
+    state.sidecar_image = accepted["images"]["helper"] or ""
     if "nested-containers" in state.capabilities:
         load_agent_docker(state)
 
 
 def attach_proxies(state: State) -> list[str]:
-    reused_marker = getattr(state, "proxy_reused_marker", None)
-    arguments = [
-        "attach", "--repo", str(state.repository),
-        "--container-repo", str(state.container_repository),
-        *(["--workspaces", str(state.workspaces_file)] if getattr(state, "workspaces_file", None) else []),
-        "--prefix", state.proxy_prefix,
-        *(["--shared"] if state.proxy_lock.shared else []),
-        "--state", str(state.proxy_state),
-        *(["--reused", str(reused_marker)] if reused_marker is not None else []),
-        *(["--helper-image", state.sidecar_image] if state.sidecar_image else []),
-        "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
-        "--agent-image", state.image, "--uid", str(state.uid), "--gid", str(state.gid),
-        *(["--source-present"] if state.policy_source_present else []),
-    ]
-    if state.zuliprc is not None:
-        arguments += ["--zuliprc", str(state.zuliprc)]
-    if state.prepared_images is not None:
-        arguments += ['--images', str(state.prepared_images)]
-    with service_timing("proxies", "command-attach"):
-        helper(*arguments)
-    if reused_marker is not None:
-        state.proxy_reused = reused_marker.read_text(encoding="utf-8") == "idle"
-    with service_timing("proxies", "publication"):
-        result = finalize_proxy_session(state)
+    module = proxy_module()
+    try:
+        with service_timing("proxies", "command-attach"):
+            state.proxy_data, state.manifest, state.proxy_reused = module.attach_session(
+                proxy_request(state), state.manifest, state.prepared_images)
+        with service_timing("proxies", "publication"):
+            result = finalize_proxy_session(state)
+    except (module.ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
+        raise LauncherError(f"sandbox proxies: {error}") from error
     state.proxy_lock.release_coordination()
     return result
 
@@ -1582,20 +1569,14 @@ def stage_skills(state: State) -> None:
 
 
 def finalize_proxy_session(state: State) -> list[str]:
-    state.proxy_args = temporary_file()
-    # A shared join validated an existing publication under its lifetime lock;
-    # it must not rewrite that publication after releasing coordination.
-    operation = 'agent-args' if state.proxy_lock.shared or state.proxy_reused else 'finalize'
-    helper(
-        operation, "--repo", str(state.repository),
-        "--container-repo", str(state.container_repository),
-        "--state", str(state.proxy_state), "--output", str(state.proxy_args),
-        "--manifest", str(state.manifest),
-    )
-    arguments: list[str] = []
-    for line in state.proxy_args.read_text(encoding="utf-8").splitlines():
-        arguments.insert(0, line)
-    return arguments
+    module = proxy_module()
+    proxies = state.proxy_data
+    # Shared and idle reuse leave their existing accepted publication unchanged.
+    if not state.proxy_lock.shared and not state.proxy_reused:
+        module.publish_session(state.repository, str(state.container_repository),
+                               proxies, state.manifest)
+    return module.agent_arguments(state.repository, str(state.container_repository),
+                                  state.manifest, proxies)
 
 
 def report_container_timing(state: State) -> None:
@@ -2282,28 +2263,24 @@ def prepare_cd_images(state: State) -> None:
     # Build through the normal image owners, without session locks, attachment
     # release, terminal takeover, or destination service startup. Normal launch
     # revalidates and reuses these content-addressed builds after the handoff.
-    try:
-        load_repository_policy(state)
-        manifest = json.loads(state.manifest.read_text())
-        sidecar_selected = bool(state.capabilities - {'tic'})
-        prepared = prepare_declared_images(state, manifest, sidecar_selected)
-        if prepared is not None:
-            resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base)
-        else:
-            resolve_model_image(state)
-            if sidecar_selected:
-                resolve_sidecar_image()
-            # Legacy proxy builders normally run during attach. Check them now
-            # through that same owner, before the source attachment is released.
-            module = proxy_module()
-            try:
-                module.resolve_images(state.repository, manifest)
-            except module.ConfigError as error:
-                raise LauncherError(str(error)) from error
-        prepare_cd_tic(state, sidecar_selected=sidecar_selected)
-    finally:
-        if state.manifest is not None:
-            state.manifest.unlink(missing_ok=True)
+    load_repository_policy(state)
+    manifest = state.manifest
+    sidecar_selected = bool(state.capabilities - {'tic'})
+    prepared = prepare_declared_images(state, manifest, sidecar_selected)
+    if prepared is not None:
+        resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base)
+    else:
+        resolve_model_image(state)
+        if sidecar_selected:
+            resolve_sidecar_image()
+        # Legacy proxy builders normally run during attach. Check them now
+        # through that same owner, before the source attachment is released.
+        module = proxy_module()
+        try:
+            module.resolve_images(state.repository, manifest)
+        except module.ConfigError as error:
+            raise LauncherError(str(error)) from error
+    prepare_cd_tic(state, sidecar_selected=sidecar_selected)
 
 
 def execute(state: State) -> int:
@@ -2333,8 +2310,7 @@ def execute(state: State) -> int:
         launcher_notice(
             "Checking sandbox images and preparing services from current repository policy; "
             "cached resources are reused when valid; builds run only when needed.")
-        manifest = (json.loads(state.manifest.read_text()) if getattr(state, "manifest", None) is not None
-                    else {"commands": {}})
+        manifest = state.manifest if getattr(state, "manifest", None) is not None else {"commands": {}}
         phase("policy binding", lambda: bind_repository_policy(state, manifest))
     phase("relay recovery", lambda: recover_relays(state))
     phase("skill staging", lambda: stage_skills(state))
@@ -2388,8 +2364,7 @@ def execute(state: State) -> int:
                            if "flower-r2" in getattr(state, "capabilities", {"flower-r2"}) else None)
         network_future.result()
         if prepared is not None:
-            state.prepared_images = temporary_file()
-            state.prepared_images.write_text(json.dumps(prepared.proxies))
+            state.prepared_images = prepared.proxies
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
         )
@@ -2434,8 +2409,6 @@ def preflight_lima(state: State) -> None:
     readable = [state.home / "src", DOTFILES, state.skills_tmp]
     if getattr(state, "workspaces", None):
         readable.append(proxy_module().runtime_directory(state.repository))
-        if getattr(state, "workspaces_file", None) is not None:
-            readable.append(state.workspaces_file)
     host_pi_package = getattr(state, "host_pi_package", None)
     if host_pi_package is not None:
         readable += [host_pi_package / relative for relative in PI_RESOURCE_PATHS]
@@ -2647,10 +2620,8 @@ def cleanup(state: State) -> bool:
             print(f"warning: Cleaning up private Pi state {state.pi_agent_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("Pi state")
     for path in (
-        state.proxy_state, state.proxy_args, state.manifest,
-        state.prepared_images, getattr(state, "proxy_reused_marker", None),
+        state.proxy_state,
         getattr(state, "cd_request", None),
-        getattr(state, "workspaces_file", None),
         getattr(state, "pi_tool_connector", None),
     ):
         if path is not None and not keep_scratch:
@@ -2909,7 +2880,7 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
         raise LauncherError("sandbox panes did not stop within 15 seconds")
     for reset_repository in sorted({str(item["repository"]) for item in registrations}):
         # Pane death is not owner cleanup: detached owners may still hold lifetime locks.
-        helper("reset", "--repo", reset_repository, "--wait")
+        reset_proxies(reset_repository)
     for registration in registrations:
         command = (
             shlex.join(["cd", registration["cwd"]])
@@ -3124,6 +3095,9 @@ def launch(arguments: list[str]) -> int:
             destination, session = request
             os.chdir(destination)
             handoff_origin = origin
+            # Previous workers and cleanup are joined; the next attachment gets
+            # its own repository metadata binding rather than mutating theirs.
+            proxy_module.cache_clear()
             session_dir_arguments = []
             if prior_arguments.count("--session-dir") == 1:
                 index = prior_arguments.index("--session-dir")

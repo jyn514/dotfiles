@@ -382,7 +382,7 @@ class ProcessAndTmuxTest(unittest.TestCase):
         info = json.loads(original.with_suffix(".ready").read_text())
         peers = [self.side(info, name=name) for name in ("first-peer", "second-peer")]
         selected = {self.pane: original, **{pane: snapshot for snapshot, _clone, pane in peers}}
-        reset = launcher["helper"]
+        reset = launcher["reset_proxies"]
         real_run = launcher["run"]
         attempts = []
 
@@ -405,7 +405,7 @@ class ProcessAndTmuxTest(unittest.TestCase):
         try:
             with mock.patch.dict(os.environ, self.environment), mock.patch.dict(
                     launcher["restart_tmux_sessions"].__globals__,
-                    helper=reset_after_final_release, run=run_without_image_preparation):
+                    reset_proxies=reset_after_final_release, run=run_without_image_preparation):
                 with self.assertRaisesRegex(launcher["LauncherError"], "injected reset failure"):
                     launcher["restart_tmux_sessions"]()
                 retained = launcher["tmux_registrations"]()

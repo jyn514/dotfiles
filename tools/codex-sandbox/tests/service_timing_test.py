@@ -95,7 +95,12 @@ class ServiceTimingTest(unittest.TestCase):
                                 image='image', uid=1, gid=2, policy_source_present=True,
                                 zuliprc=None, prepared_images=None)
         events = []
-        patches = {'helper': lambda *args: events.append('commands'),
+        module = launcher['proxy_module']()
+        def attach(*args):
+            events.append('commands')
+            return {}, {}, False
+        module.attach_session = attach
+        patches = {'proxy_module': lambda: module,
                    'finalize_proxy_session': lambda *args: (events.append('publication') or ['proxy'])}
         with mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
                 mock.patch('sys.stderr', new_callable=io.StringIO) as stderr, \

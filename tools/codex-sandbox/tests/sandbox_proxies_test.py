@@ -1327,6 +1327,40 @@ class ManifestTest(unittest.TestCase):
         stop.assert_called_once_with(state)
         self.assertFalse(metadata.exists())
 
+    def test_direct_join_returns_accepted_values_without_transient_serialization(self):
+        self.write({"example": self.command()})
+        commands = sandbox_proxies.load_manifest(self.repo)["commands"]
+        metadata = self.schema4(commands)
+        state = sandbox_proxies.session_state(metadata)
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        path = runtime / "session.json"
+        path.write_text(json.dumps(metadata))
+        path.chmod(0o600)
+        original = path.read_bytes()
+        request = sandbox_proxies.SessionRequest(self.repo, str(self.container_repo), uid=501, gid=20)
+        owner = mock.Mock(provider="container")
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=state["runtime"]), \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
+                mock.patch.object(sandbox_proxies, "containers_running", return_value=True), \
+                mock.patch.object(sandbox_proxies, "write_atomic", side_effect=AssertionError("transport write")), \
+                mock.patch.object(sandbox_proxies, "main", side_effect=AssertionError("CLI dispatcher")), \
+                mock.patch.object(sandbox_proxies, "load_optional_manifest", side_effect=AssertionError("current policy")):
+            actual, accepted = sandbox_proxies.join_session(request)
+            self.assertEqual(state, actual)
+            self.assertEqual(metadata["accepted"]["policy"], accepted["manifest"])
+            self.assertEqual({"agent": "agent", "helper": None, "proxies": {"example": "sha256:" + "0" * 64}},
+                             accepted["images"])
+            # Engine argument order is direct; no reversed newline transport.
+            args = sandbox_proxies.agent_arguments(self.repo, str(self.container_repo),
+                                                   accepted["manifest"], actual)
+            self.assertEqual(["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies", "--env",
+                              "JJ_PROXY_REPO=" + str(self.container_repo), "--mount",
+                              "type=volume,src=shared-example,dst=/run/sandbox-proxies/example,readonly"], args)
+        self.assertEqual(original, path.read_bytes())
+        owner.verify_builder_image.assert_any_call("agent")
+        owner.verify_builder_image.assert_any_call("sha256:" + "0" * 64)
+
     def test_attach_reuses_published_proxy_state_and_manifest(self) -> None:
         self.write({"example": self.command()})
         runtime = sandbox_proxies.runtime_directory(self.repo)
@@ -1351,7 +1385,7 @@ class ManifestTest(unittest.TestCase):
         owner.container_matches_image.return_value = True
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
-                mock.patch.object(sandbox_proxies, "start_main") as start, \
+                mock.patch.object(sandbox_proxies, "start_session") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
                 mock.patch.object(sandbox_proxies, "resolve_images") as resolve, \
                 mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
@@ -1377,7 +1411,7 @@ class ManifestTest(unittest.TestCase):
         })
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
-                mock.patch.object(sandbox_proxies, "start_main") as start, \
+                mock.patch.object(sandbox_proxies, "start_session") as start, \
                 mock.patch.object(sandbox_proxies, "resolve_images",
                                   return_value=metadata["accepted"]["images"]["services"]), \
                 mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
@@ -1398,10 +1432,12 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
                 mock.patch.object(sandbox_proxies, "containers_running", return_value=True), \
                 mock.patch.object(sandbox_proxies, "stop_state") as stop, \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(idle_args))
         stop.assert_called_once()
-        start.assert_called_once_with(idle_args)
+        start.assert_called_once_with(idle_args,
+                                          sandbox_proxies.load_accepted_manifest(Path(idle_args.manifest)),
+                                          Path(idle_args.images))
 
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
@@ -1902,10 +1938,11 @@ class ManifestTest(unittest.TestCase):
             sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))
         ), encoding="utf-8")
         with mock.patch.object(sandbox_proxies, "stop_state") as stop, \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         stop.assert_called_once_with(old_state)
-        start.assert_called_once_with(args)
+        start.assert_called_once_with(args, sandbox_proxies.load_accepted_manifest(Path(args.manifest)),
+                                      Path(args.images) if getattr(args, "images", None) else None)
 
     def test_exclusive_session_stops_changed_schema4_services_before_replacement(self) -> None:
         self.write({"example": self.command()})
@@ -1926,12 +1963,13 @@ class ManifestTest(unittest.TestCase):
                                side_effect=sandbox_proxies.ConfigError("implementation changed")), \
                 mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
                 mock.patch.object(sandbox_proxies, "stop_state") as stop, \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         self.assertEqual(["example"], [
             proxy["name"] for proxy in stop.call_args.args[0]["proxies"]
         ])
-        start.assert_called_once_with(args)
+        start.assert_called_once_with(args, sandbox_proxies.load_accepted_manifest(Path(args.manifest)),
+                                      Path(args.images) if getattr(args, "images", None) else None)
 
     def test_exclusive_session_preserves_replaced_vm_record_without_touching_new_vm(self) -> None:
         self.write({"example": self.command()})
@@ -1959,10 +1997,11 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=new), \
                 mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
                 mock.patch.object(sandbox_proxies, "stop_state") as stop, \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         stop.assert_not_called()
-        start.assert_called_once_with(args)
+        start.assert_called_once_with(args, sandbox_proxies.load_accepted_manifest(Path(args.manifest)),
+                                      Path(args.images) if getattr(args, "images", None) else None)
         self.assertFalse(session.exists())
         archived = list(runtime.glob("session.replaced-*.json"))
         self.assertEqual(1, len(archived))
@@ -1976,7 +2015,7 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=policy_change), \
                 mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
                 mock.patch.object(sandbox_proxies, "stop_state", side_effect=RuntimeError("policy drift")) as stop, \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             with self.assertRaisesRegex(RuntimeError, "policy drift"):
                 sandbox_proxies.attach_main(args)
         stop.assert_called_once()
@@ -2011,7 +2050,7 @@ class ManifestTest(unittest.TestCase):
             "shared": True, "state": str(self.repo / "state"),
             "manifest": str(manifest),
         })
-        with mock.patch.object(sandbox_proxies, "start_main") as start:
+        with mock.patch.object(sandbox_proxies, "start_session") as start:
             with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unavailable"):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
@@ -2031,10 +2070,11 @@ class ManifestTest(unittest.TestCase):
             "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
-                mock.patch.object(sandbox_proxies, "start_main") as start:
+                mock.patch.object(sandbox_proxies, "start_session") as start:
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         self.assertFalse(cached.exists())
-        start.assert_called_once_with(args)
+        start.assert_called_once_with(args, sandbox_proxies.load_accepted_manifest(Path(args.manifest)),
+                                      Path(args.images) if getattr(args, "images", None) else None)
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {"runtime": {"provider": "container"},
