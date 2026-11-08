@@ -10,9 +10,7 @@ Use plain `ti list` for compact tables, `--markdown` for detailed inspection, an
 Use explicit ticket and writeup IDs; do not rely on current-ticket defaults.
 Native Markdown can suggest commands unavailable through the proxy; follow the supported workflows below instead.
 
-## Basic Workflow
-
-### Inspect a ticket
+## Inspect a ticket
 
 Inspect the assigned ticket.
 Use listing to locate tickets when needed:
@@ -22,177 +20,24 @@ ti list
 ti show <id> --markdown
 ```
 
-### Choose work when authorized
+Read its current requirements and acceptance record before drawing conclusions about completion.
+Tracker state alone does not prove that the required outcome is accepted.
+Stop after the requested inspection or summary when no tracker change is authorized.
 
-Use `next` only when authorized to choose work, with filters appropriate to that scope.
-For example:
+## Select further operations
 
-```sh
-ti next --assigned <email> --tag <tag> --markdown
-```
+- When authorized to choose work, when inspecting graph dependencies or state, or when deciding whether an outcome is accepted, read [selection and graph inspection](references/selection-and-graphs.md).
+- When ticket creation, editing, claiming, comments, state, planning fields, or dependency changes are authorized, read [ticket changes](references/ticket-changes.md) before mutation.
+- When inspecting or changing a versioned draft, linking it, or promoting it into a ticket, read [writeups](references/writeups.md).
+  Writeups and ticket specs are optional homes for requested work, not prerequisites for every ticket.
 
-Treat the result as a recommendation, not a persistent selection or reservation.
-Inspect its assignment and blockers before starting; `next` can return blocked tickets and excludes child tickets.
-It does not supersede an assigned task or coordinate ownership between agents.
-Pass the ticket ID on every later operation, including work delegated to subagents.
-
-### Claim only when assignment is intended
-
-Claim a ticket only when assigning it to the configured author and setting its status to open and state to assigned are both intended.
-Claiming can reopen a closed ticket or replace an in-progress or blocked state; do not use it merely to announce that work starts.
-
-```sh
-ti claim -t <id>
-```
+## Identity and authority
 
 The proxy uses its accepted workspace authorship identity, not a separate identity for each agent or subagent.
-Assignment and explicit ticket IDs do not reserve work for an agent.
+Use explicit ticket/writeup IDs or unique prefixes on every operation, including delegated work.
+Assignment and explicit IDs do not reserve work for an agent or authorize starting it.
 Filter assignments explicitly with `ti list --assigned <email>`.
-
-## Inspect An Issue Graph
-
-Inspect tracker state, dependencies, and acceptance records:
-
-```sh
-ti list --state in-progress --subissues
-ti list --all --subissues --json
-ti show <id> --filter .comments
-```
-
-Include `--subissues` when listing the whole graph; the default list omits child tickets.
-Use JSON to join tickets with their dependency IDs and identify unfinished prerequisites.
-A dependency-clear ticket is not necessarily authorized or ready to start; inspect its required inputs and governing workflow.
-`next` can recommend an in-progress ticket, so it is not an unclaimed-work queue.
-
-### Establish whether the outcome is accepted
-
-Keep dependency closure, tracker state, current execution, and accepted outcomes distinct.
-An in-progress state does not prove an agent is currently executing the task, and a closed dependency may be resolved, rejected, or a duplicate.
-Read the canonical acceptance record before claiming the required outcome is met; `resolved` alone is not acceptance evidence.
-For an overview, link to that record in its chosen home, such as ticket comments, a specification, or a linked artifact.
-
-## Create And Edit Tickets
-
-For new or substantially rewritten ticket titles and descriptions, use [holistic-writing](../holistic-writing/SKILL.md) before submitting them.
-Tracker mechanics do not replace editorial review.
-State changes, tags, and routine progress comments do not require that pass.
-
-For proxy calls, save input files inside the shared checkout and use paths relative to the caller's cwd.
-Guest-only temporary files are unavailable.
-Create a ticket from a UTF-8 file whose first line is the title and remaining lines are the description:
-
-```sh
-ti new -F ticket.md --tags bug,parser --markdown
-```
-
-Edit the title and description with the same file format:
-
-```sh
-ti edit <id> -F ticket.md
-```
-
-Supply files or explicit text instead of requesting an interactive editor.
-`-F -` names a literal file called `-`; it does not read stdin.
-
-## Progress Notes
-
-Add comments with an explicit target and body:
-
-```sh
-ti comment -t <id> -- "found the failing case"
-ti comment -t <id> -- "implemented fix; running the tests"
-```
-
-## State And Triage
-
-Tickets have a broad status and a specific state:
-
-```text
-open: new, assigned, in-progress, blocked, review
-closed: resolved, wontfix, duplicate, invalid
-```
-
-Useful updates:
-
-```sh
-ti state blocked -t <id>
-ti state review -t <id>
-ti close <id>
-```
-
-`ti close` resolves the ticket and records the configured author as `closed_by`.
-
-## Planning Fields
-
-Set priority, tags, estimates, or milestones only when the task or project workflow calls for them.
-These are independent operations, not required setup steps:
-
-```sh
-ti priority -t <id> 2
-ti tag -t <id> bug parser
-ti points -t <id> 3
-ti milestone -t <id> v1.0
-```
-
-Read existing requirements before implementing and clarify missing decisions when needed.
-Use the ticket's `spec` field when it is the chosen home for those requirements or implementation notes.
-Do not create a spec for every change or duplicate a maintained repository specification:
-
-```sh
-ti spec -t <id> -F spec.md
-ti show <id> --filter .spec
-```
-
-## Dependencies
-
-Track ordering constraints explicitly:
-
-```sh
-ti dep <blocker-id> -t <id>
-ti dep <blocker-id> -t <id> --remove
-```
-
-`ti next` skips tickets whose dependencies are not closed; it does not require those dependencies to be closed as resolved.
-
-## Writeups
-
-Use a writeup when the task calls for a versioned draft, not as a required step before creating tickets.
-Create a ticket directly for actionable work; use ticket comments for incremental observations about existing work.
-
-Create and inspect a draft:
-
-```sh
-ti writeup new --title "Parser cleanup" -F writeup-body.md
-ti writeup list
-ti writeup show <writeup-id>
-```
-
-For `writeup new`, the file contains only the body; supply the title separately.
-To revise the draft:
-
-```sh
-ti writeup edit <writeup-id> -F revised-writeup.md
-```
-
-For `writeup edit -F`, the first line is the updated title and remaining lines supply a new body version when present.
-Alternatively, `--body` supplies a complete new body version without changing the title.
-Neither form appends observations to the previous body; default `show` and promotion use the latest version.
-Use `ti writeup show <writeup-id> --all` to inspect earlier versions.
-
-Linking to an existing ticket and promotion into a new ticket are different choices, not required sequential steps.
-To link a draft to existing work:
-
-```sh
-ti writeup link <writeup-id> <ticket-id>
-```
-
-To create a new ticket from the draft:
-
-```sh
-ti writeup promote <writeup-id>
-```
-
-Promotion creates a ticket and closes the writeup; use the returned ticket ID for later work.
+Inspection does not authorize tracker mutation; follow the task's permitted effects.
 
 ## Boundaries And Failures
 
@@ -204,10 +49,3 @@ Saved views and reviews are deferred; do not use their command families through 
 A failed or disconnected mutation may already have changed metadata.
 Inspect the affected ticket or writeup before deciding whether to retry; never retry automatically or bypass a failed proxy.
 
-## Agent Practices
-
-- Use explicit ticket/writeup IDs or unique prefixes.
-- Read existing requirements and clarify missing decisions; add a ticket spec only when it is the appropriate owner.
-- Comment when you learn something important or finish a meaningful step.
-- Mark blockers with an explicit state update and dependencies with `ti dep`.
-- Resolve tickets only after implementation and verification are complete.
