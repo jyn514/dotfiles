@@ -195,6 +195,7 @@ Optional configuration lives at:
   "modelResponseTimeoutMs": 600000,
   "models": ["openai-codex/gpt-5.6-sol", "anthropic/claude-opus-4-6"],
   "modelsFromEnabledModels": true,
+  "modelGuidance": "Choose model independently of role; preserve the task's acceptance checks.",
   "directSkillRoutes": {
     "tighten-docs": { "agentType": "luna-direct" },
     "session-title-curation": {
@@ -220,7 +221,10 @@ Configuration is read when agents spawn, while cleanup runs when the extension l
 Template skills and extensions override configured defaults; these are additions to native discovery, not its replacement.
 Skills explicitly requested by the parent are added to configured template/default skills.
 Tool selection belongs to the template or uses native activation when omitted: fresh defaults for a fresh child, retained source-active selection for a fork.
-A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model without a template.
+A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model with or without a role template.
+The `strategist` template is the model exception: the manager always selects the active parent's provider/model at spawn, ignoring conflicting caller overrides and template model defaults.
+This applies to ordinary, forked, and direct-skill spawns; it does not fix thinking effort.
+Existing workers retain their selected model on continuation and recreation, even if the parent later changes models.
 
 ## Direct skill routing
 
@@ -249,7 +253,14 @@ The arguments are offered only when at least one allowed model is available, and
 | `"models": ["typo/xyz"]` | nothing available | absent, entry reported as a notification |
 | both keys set | the union, deduplicated | present, `model` lists the union |
 
-The list is resolved when a session starts: `models` entries are filtered to what is currently available, unavailable entries are reported as a warning notification, and the scoped models are merged in. Editing the configuration or the Pi setting takes effect when the next session starts, matching the `storageDir` and `retentionDays` behavior above. If a provider drops out mid-session, `spawn_agent` refuses that model at spawn time instead of serving a stale route.
+`modelGuidance` optionally supplies installation-owned model-selection advice as a nonempty string.
+The extension includes it in the caller-visible `spawn_agent` description beside the model-selection capability and template catalog, not in child role prompts.
+It is advice, not an automatic router or a restriction on roles; the named `strategist` model invariant is enforced by the manager.
+To revise or remove the advice, edit or omit this field and start a new session or `/reload` the parent.
+The same boundary refreshes the available model choices; children already running keep their original selection.
+Keep the installation's policy in its configuration rather than duplicating it in package documentation.
+
+The list is resolved when a session starts: `models` entries are filtered to what is currently available, unavailable entries are reported as a warning notification, and the scoped models are merged in. Editing the model configuration or the Pi setting takes effect at the next session start or parent `/reload`. If a provider drops out mid-session, `spawn_agent` refuses that model at spawn time instead of serving a stale route.
 
 An allowed model may belong to an extension-registered provider.
 Its provider extension must load through native discovery or the template's explicit additions.

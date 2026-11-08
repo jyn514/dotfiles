@@ -60,6 +60,7 @@ export interface SubagentConfig {
   retentionDays?: number;
   models?: string[];
   modelsFromEnabledModels?: boolean;
+  modelGuidance?: string;
   modelResponseTimeoutMs?: number;
   directSkillRoutes?: Record<string, DirectSkillRoute>;
   defaults?: {
@@ -348,6 +349,7 @@ function normalizeConfig(value: unknown): SubagentConfig {
     ...(retentionDays !== undefined ? { retentionDays } : {}),
     ...(stringList(raw.models) ? { models: stringList(raw.models) } : {}),
     ...(raw.modelsFromEnabledModels === true ? { modelsFromEnabledModels: true } : {}),
+    ...(typeof raw.modelGuidance === "string" && raw.modelGuidance.trim() ? { modelGuidance: raw.modelGuidance.trim() } : {}),
     ...(modelResponseTimeoutMs !== undefined ? { modelResponseTimeoutMs } : {}),
     ...(Object.keys(directSkillRoutes).length ? { directSkillRoutes } : {}),
     ...(defaults && Object.keys(defaults).length ? { defaults } : {}),
@@ -590,7 +592,8 @@ export function getAgentDefinitionsDescription(): string {
   if (!definitions.length) return "None configured, so omit `agent_type`.";
   return definitions.map((definition) => {
     let line = `- \`${definition.name}\`${definition.description ? ` — ${definition.description}` : ""}`;
-    if (definition.provider && definition.model) line += ` — model: ${definition.provider}/${definition.model}`;
+    if (definition.name === "strategist") line += " — model: always the current parent model (overrides ignored)";
+    else if (definition.provider && definition.model) line += ` — model: ${definition.provider}/${definition.model}`;
     if (definition.thinking) line += ` — thinking: ${definition.thinking}`;
     if (definition.extensions?.length) line += ` — extensions: ${definition.extensions.join(", ")}`;
     return definition.hint ? `${line}\n  Caller hint: ${definition.hint}` : line;
@@ -1378,7 +1381,9 @@ export class AgentManager {
     const definition = getAgentDefinition(params.agent_type);
     if (params.agent_type && !definition) throw new Error(`Agent template not found: ${params.agent_type}`);
     const templateModel = definition?.provider && definition.model ? { provider: definition.provider, modelId: definition.model } : undefined;
-    const { provider, modelId } = params.model ?? templateModel ?? { provider: params.inheritedProvider, modelId: params.inheritedModelId };
+    const parentModel = { provider: params.inheritedProvider, modelId: params.inheritedModelId };
+    // Strategist is a role invariant, not a template default: every spawn route reaches this point.
+    const { provider, modelId } = definition?.name === "strategist" ? parentModel : params.model ?? templateModel ?? parentModel;
     const config = loadSubagentConfig();
     readChildPrompt();
     const configuredSkills = definition?.skills ?? config.defaults?.skills;

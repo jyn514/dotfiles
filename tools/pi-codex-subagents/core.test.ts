@@ -129,6 +129,20 @@ Review the requested files.`, "fallback");
   });
 });
 
+test("model guidance accepts nonempty text without accepting structured or blank values", () => {
+  const configFile = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "config.json");
+  fs.mkdirSync(path.dirname(configFile), { recursive: true });
+  try {
+    for (const [input, expected] of [
+      ["  synthetic selection advice\nkeep checks  ", "synthetic selection advice\nkeep checks"],
+      ["  ", undefined], [42, undefined], [{ text: "not text" }, undefined],
+    ] as const) {
+      fs.writeFileSync(configFile, JSON.stringify({ modelGuidance: input }));
+      expect(loadSubagentConfig().modelGuidance).toBe(expected);
+    }
+  } finally { fs.rmSync(configFile, { force: true }); }
+});
+
 describe("run storage", () => {
   const packageDir = path.join(TEST_AGENT_DIR, "pi-codex-subagents");
   const configFile = path.join(packageDir, "config.json");
@@ -382,6 +396,32 @@ describe("spawn model and thinking resolution", () => {
       delete process.env.PI_SUBAGENT_PI_BIN;
     }
   });
+});
+
+test("strategist fixes both provider and model but leaves thinking independent", async () => {
+  process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+  const parentSessionId = "strategist-model-invariant";
+  const templateFile = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "agents", "strategist.md");
+  fs.mkdirSync(path.dirname(templateFile), { recursive: true });
+  fs.writeFileSync(templateFile, "---\nname: strategist\nprovider: template-provider\nmodel: template-model\nthinking: medium\n---\nStrategy role.");
+  const manager = new AgentManager();
+  try {
+    for (const [task, model, thinking, expectedThinking] of [
+      ["template", undefined, undefined, "medium"],
+      ["override", { provider: "other-provider", modelId: "other-model" }, "xhigh", "xhigh"],
+    ] as const) {
+      await manager.spawnAgent({ ...spawnParams(parentSessionId, task, "work"), agent_type: "strategist",
+        inheritedProvider: "actual-parent-provider", inheritedModelId: "actual-parent-model",
+        inheritedThinking: "low", model, thinking });
+      expect(manager.getAgentInfo(task, parentSessionId)).toMatchObject({
+        provider: "actual-parent-provider", modelId: "actual-parent-model", thinking: expectedThinking,
+      });
+    }
+  } finally {
+    await manager.shutdown();
+    fs.rmSync(templateFile, { force: true });
+    delete process.env.PI_SUBAGENT_PI_BIN;
+  }
 });
 
 describe("child process lifecycle", () => {
@@ -1052,6 +1092,7 @@ describe("extension completion delivery and TUI", () => {
     fs.mkdirSync(path.dirname(configFile), { recursive: true });
     // A thinking suffix on an allowlist entry is tolerated and stripped from the offered pair.
     fs.writeFileSync(configFile, JSON.stringify({
+      modelGuidance: "SYNTHETIC_MODEL_ADVICE: choose by uncertainty, not task size.",
       models: ["test/fake:high", "typo/nope"],
       modelsFromEnabledModels: true,
       directSkillRoutes: {
@@ -1096,6 +1137,7 @@ describe("extension completion delivery and TUI", () => {
       expect(notifications).toEqual(['spawn_agent models not available: typo/nope']);
       // The values live in the schema, but the description has to say the capability exists.
       expect(tools.get("spawn_agent").description).toContain("`model` takes one of the values its schema lists");
+      expect(tools.get("spawn_agent").description).toContain("SYNTHETIC_MODEL_ADVICE: choose by uncertainty, not task size.");
       expect(commands.has("subagents")).toBe(true);
       expect(tools.has("steer_subagent")).toBe(true);
       expect(tools.has("wait_all_agents")).toBe(false);
@@ -1387,9 +1429,16 @@ describe("extension completion delivery and TUI", () => {
         target: "missing-steering-target", message: "work",
       }, undefined, undefined, ctx)).rejects.toThrow("steer_subagent failed:");
 
+      // A new session refreshes advice without a matching tool or caller edit.
+      fs.writeFileSync(configFile, JSON.stringify({ modelGuidance: "REPLACED_SELECTION_ADVICE" }));
+      await emit("session_start", { reason: "restart" });
+      expect(tools.get("spawn_agent").description).toContain("REPLACED_SELECTION_ADVICE");
+      expect(tools.get("spawn_agent").description).not.toContain("SYNTHETIC_MODEL_ADVICE");
+
       // Unconfigured takes both runtime arguments away again even though Pi still has enabledModels.
       fs.writeFileSync(configFile, "{}");
       await emit("session_start", { reason: "restart" });
+      expect(tools.get("spawn_agent").description).not.toContain("REPLACED_SELECTION_ADVICE");
       expect(spawnArgs().model).toBeUndefined();
       expect(spawnArgs().thinking).toBeUndefined();
       expect(tools.get("spawn_agent").description).not.toContain("`model` takes one of the values");

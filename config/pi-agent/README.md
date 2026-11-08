@@ -31,8 +31,12 @@ Pi applies the edited prompt after that pane exits.
 ## Subagent routing
 
 Exact allowlisted skills may route a subagent through the `luna` template.
-Absent, unknown, or mixed skill sets inherit the parent model.
-Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
+Other skills follow normal parent execution unless explicitly delegated.
+Use the explicit `parent` template for generic delegation without a specialized role procedure.
+Model choices and caller-visible selection policy live in [`pi-codex-subagents/config.json`](pi-codex-subagents/config.json).
+The manager delivers that guidance in `spawn_agent`; select `agent_type` for responsibilities and `model` / `thinking` independently.
+The `luna` preset remains for the two configured direct skill routes, not as a parallel role procedure.
+Use a role plus the Terra model instead of a separate `terra` template.
 
 Use [work-selection](../../skills/work-selection/SKILL.md) for priority comparison and local method reassessment.
 When assigned, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
@@ -65,7 +69,10 @@ The specialized templates are:
 Use the [self-contained assignment procedure](../../skills/delegation/references/executive.md#give-a-self-contained-assignment) for common packet requirements; each advertised role hint names its specific inputs.
 The templates supply stable procedures.
 Select the named `agent_type` explicitly rather than rely on generic or skill-based routing.
-All five templates inherit the parent's model and thinking settings.
+These role templates omit model and thinking defaults, so omitted caller settings inherit from the parent.
+Caller overrides may select another model for any role except `strategist`.
+The manager always uses the active parent's model when spawning a strategist, even with conflicting caller or template model settings.
+Thinking remains independent and follows caller, template, then parent precedence.
 Executive replaces the former coordinator template; callers must select `executive`.
 Strategist replaces the former detective template; callers must select `strategist`.
 Historical detective reports and the detective-only commit retain their original names.

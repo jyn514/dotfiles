@@ -1,4 +1,9 @@
 {
+  "models": [
+    "openai/gpt-6-luna",
+    "openai/gpt-6.1-terra"
+  ],
+  "modelGuidance": "Luna (openai/gpt-6-luna): explicit-input extraction, classification, and mechanical supporting work with checkable outputs.\nTerra (openai/gpt-6.1-terra): scoped implementation, debugging, writing, and focused review against settled requirements; ordinary local judgment is expected.\nInherit the parent model for consequential interacting uncertainties, unsettled architecture, or broad synthesis.\nChoose the role separately from the model. Task size alone does not determine model choice. Preserve acceptance checks regardless of model.\nStrategists always use the actual parent model; model overrides and template model defaults cannot change that. Thinking is a separate choice.",
   "directSkillRoutes": {
     "tighten-prose": {
       "agentType": "luna"

@@ -37,18 +37,20 @@ const extensions = argv.flatMap((arg, i) => arg === "--extension"
 const skills = argv.flatMap((arg, i) => arg === "--skill" ? [resolve(argv[i + 1])] : []);
 const agentDir = join(process.env.HOME!, ".pi/agent");
 mkdirSync(agentDir, { recursive: true });
-const faux = fauxProvider();
+// Optional multi-model faux catalog exercises real model selection without provider I/O.
+const modelCatalog = process.env.PI_TEST_MODEL_CATALOG ? JSON.parse(process.env.PI_TEST_MODEL_CATALOG) : undefined;
+const faux = fauxProvider(modelCatalog);
 function messageText(message: { content: unknown } | undefined): string {
   if (typeof message?.content === "string") return message.content;
   return Array.isArray(message?.content) ? message.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "";
 }
 // An unlimited deterministic responder permits steer/resume without paid APIs.
 // Fixed fixture task texts exercise production tools, not a fixture-only agent API.
-const respond: FauxResponseFactory = (context) => {
+const respond: FauxResponseFactory = (context, options, _state, model) => {
   faux.appendResponses([respond]);
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
-  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name), ...(process.env.PI_TEST_CAPTURE_CONTEXT === "1" ? { messages: context.messages } : {}) })}\n`);
+  if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, provider: model.provider, modelId: model.id, thinking: options?.reasoning, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name), ...(process.env.PI_TEST_CAPTURE_CONTEXT === "1" ? { messages: context.messages } : {}) })}\n`);
   if (text === "peer-provider-failure") return fauxAssistantMessage("", { stopReason: "error", errorMessage: "peer provider failure" });
   const peerTask = context.messages.filter(message => message.role === "user").map(messageText)
     .map(text => text.match(/^peer-detective:(auto|explicit|escalate|failure)$/m)).find(Boolean);
@@ -218,6 +220,10 @@ const modelRuntime = await ModelRuntime.create({
   allowModelNetwork: false, refreshOnCreate: false,
 });
 modelRuntime.registerNativeProvider(faux.provider);
+const selectedModel = modelCatalog ? faux.getModel(option("--model")!) : faux.getModel();
+if (!selectedModel || (modelCatalog && option("--provider") !== selectedModel.provider)) {
+  throw new Error("Requested child provider/model is absent from the disposable faux catalog");
+}
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: argv.includes("--approve") });
   settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } });
@@ -250,8 +256,9 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, 
     },
   });
   const result = await createAgentSessionFromServices({
-    services, sessionManager, sessionStartEvent, model: faux.getModel(),
-    thinkingLevel: "off",
+    services, sessionManager, sessionStartEvent,
+    model: selectedModel,
+    thinkingLevel: modelCatalog ? (option("--thinking") as any ?? "off") : "off",
     tools: option("--tools")?.split(",").map(name => name.trim()).filter(Boolean),
     noTools: argv.includes("--no-tools") ? "all"
       : argv.includes("--no-builtin-tools") ? "builtin" : undefined,

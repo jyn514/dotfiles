@@ -80,7 +80,9 @@ The fixture supports the tested CLI subset: `--session`, ordered `--extension` a
 `--no-context-files`, `--system-prompt`, and `--append-system-prompt`.
 Explicit tool selection goes through the real SDK's registration and activation rules, including plain lists and native modifiers.
 Without tool-selection flags, fresh sessions use normal builtin and extension-tool activation; resumed or forked sessions retain native transcript selection among currently registered tools.
-Model selection remains faux.
+Model I/O remains faux.
+The model-selection suite supplies a disposable multi-model faux catalog; the child honors the manager's provider/model and thinking arguments and refuses pairs absent from that catalog.
+It verifies the selected model in the actual provider request, not just manager metadata.
 Native settings load from disposable user/project files with the supplied project-trust decision;
 only compaction and retry are overridden for deterministic tests.
 Paths go through public resource-loader options and Pi's shipped
@@ -107,6 +109,11 @@ Completed tool results prevent either batch from being resent on fresh continuat
 production options or fixture-only APIs.
 
 ## Coverage and limits
+
+`model-selection.test.ts` copies the tracked model configuration and templates into private state, then drives the production `spawn_agent` through a real parent's model-issued tool call.
+It checks caller-visible guidance and choices, role prompts on independently selected models, unchanged delegation permissions, model/thinking precedence, both configured direct skill routes, and proposal-only prompt delivery.
+Strategist cases cover normal inheritance, conflicting caller and template settings, a changed parent model, native forks, and direct skill routing.
+Only provider responses and model catalogs are faux; no live-provider request or behavioral-quality claim is made.
 
 `fork.test.ts` creates owned native branched sources with messages, completed tool results, compaction, metadata cuts and labels.
 It checks actual provider context and the registered `spawn_agent` schema, including required `message`, exact source/cut failures and fresh omission.

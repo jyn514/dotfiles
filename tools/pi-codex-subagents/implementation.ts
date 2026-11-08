@@ -109,6 +109,7 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
   };
 
   let spawnModels = new Map<string, SpawnModel>();
+  let modelGuidance: string | undefined;
 
   const resolveSpawnModels = (ctx: any) => {
     const config = loadSubagentConfig();
@@ -318,7 +319,10 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
     get description() {
       return `Spawn a Pi subagent for a concrete task. Without fork_from it starts fresh; fork_from retains the named native session branch through the selected entry (inclusive), then appends the required message. Current child configuration still applies. Children use normal Pi context and base/append prompt composition with additive child-role instructions. They discover built-in, configured, and local extensions, skills, and prompt templates using the parent's resolved project trust. Agent templates may configure a provider/model pair, thinking level, tools, skills, and extensions; template-only \`disabledExtensions\` excludes extension entrypoints (including \`builtin:name\`) before they execute. Omitted model and thinking settings inherit from the parent. With template tools omitted, fresh children use normal activation and forks retain native source-active selection among currently registered tools. Plain-name template tools override that selection; modifiers follow Pi's native rules.
 ${spawnModels.size ? `
-A task may run on a model of its own, without a template: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort.
+A task may run on a model of its own, independently of its role: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort. Caller overrides precede template defaults, then parent settings. Exception: \`strategist\` always uses the current parent model, ignoring caller and template model settings; thinking still follows normal precedence.
+` : ""}${modelGuidance ? `
+Model selection guidance:
+${modelGuidance}
 ` : ""}
 Returns after the child accepts its initial task. Continue with independent work instead of waiting; the child's final response will be delivered automatically when ready. Use \`wait_agent\` only when your next action depends on the subagent response and you have no useful work to do meanwhile.
 
@@ -342,7 +346,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
         skills: Type.Optional(Type.Array(Type.String(), { description: "Additional skill names from the loaded parent skills listed in this tool description." })),
         ...(spawnModels.size
           ? {
-              model: Type.Optional(StringEnum([...spawnModels.keys()], { description: "Optional model for this one task, for example an independent review by another vendor. Defaults to the template model, otherwise the parent model." })),
+              model: Type.Optional(StringEnum([...spawnModels.keys()], { description: "Optional model for this task, independent of role. Overrides the template model, otherwise inherits the parent model. Ignored for strategist, which always uses the current parent model." })),
               thinking: Type.Optional(StringEnum(THINKING_LEVELS, { description: "Optional thinking level. Defaults to the template level, otherwise the parent level." })),
             }
           : {}),
@@ -452,6 +456,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     if (loadSubagentConfig().directSkillRoutes && typeof ctx.resolveSkillCommand !== "function") {
       ctx.ui?.notify?.("Direct skill routes require Pi extension context resolveSkillCommand() support", "warning");
     }
+    modelGuidance = loadSubagentConfig().modelGuidance;
     try { spawnModels = resolveSpawnModels(ctx); }
     catch (error: any) { ctx.ui?.notify?.(`spawn_agent model resolution failed, keeping the previous list: ${error?.message || error}`, "warning"); }
     pi.registerTool(spawnAgentTool);
