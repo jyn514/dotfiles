@@ -11,20 +11,28 @@ Use [evidence standards](../references/review-evidence.md) to support findings a
 
 Read repository instructions and contributor documentation for the specification entry point, issue tracker, ownership map, and validation rules.
 
-### Select the tracker and specification independently
+### Select the specification
 
-Use the documented issue tracker and specification.
-If the tracker is not documented, use TicGit (`ti`) and consult the `ticgit` skill for its commands.
-If the specification is not documented, start in `doc/` and identify the current normative documents, not obsolete design snapshots.
-Apply these fallbacks independently; a documented tracker does not override the specification fallback or vice versa.
-If the specification is missing or ambiguous, or the tracker is unavailable, report the limitation rather than inventing requirements or silently switching trackers.
+Use the documented specification.
+If it is not documented, start in `doc/` and identify the current normative documents, not obsolete design snapshots.
+If the specification is missing or ambiguous, report the limitation rather than inventing requirements.
+
+### Consult the tracker when needed
+
+Select the tracker when issue history is needed as evidence, for whole-spec deduplication, or when authorized reconciliation or filing needs tracker work.
+A bounded findings-only comparison supported by the supplied contract, implementation, and tests needs no tracker lookup.
+Use the documented issue tracker; if none is documented, use TicGit (`ti`) and consult the `ticgit` skill for its commands.
+Select tracker and specification independently: neither documented owner overrides the other fallback.
+If a needed tracker is unavailable, report the affected evidence or filing limitation rather than silently switching trackers.
+Continue checks that do not depend on it.
 
 ### Choose bounded or whole-spec scope
 
 Start with files, sections, symbols, tests, commands, or revisions named by the request.
 For a named revision, inspect its changes first; treat a spec-changing revision as the requirement delta and audit the current tree against the resulting specification.
 Only when the request gives no narrower scope, audit the current specification using [Whole-spec audit](references/whole-spec-audit.md).
-Use the current specification and issue history as the gap ledger.
+Use the current specification as the contract and relevant issue history as the gap ledger when the audit needs it.
+Whole-spec audits retain issue-history coverage and deduplication even when filing is not authorized.
 
 A review-only request authorizes findings, not specification edits or issue writes.
 When asked to reconcile the specification or file bugs, perform those actions within the requested scope.
