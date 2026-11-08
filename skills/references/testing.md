@@ -48,6 +48,19 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 
 ## Consumer and integration boundaries
 
+### Partition tests alongside an extraction
+
+Organize tests by the behavior and owner they exercise, not by mirroring production filenames.
+Move owner-specific cases to tests that use the extracted owner's supported interface without loading the old orchestrator merely to reach it.
+Keep tests of composition and cross-owner guarantees at the assembled boundary; passing owner tests does not establish that their wiring works.
+For example, a session owner's argument tests can import that owner, while a launcher test still checks that session and gateway outputs reach the guest together.
+
+Share fixtures when they represent the same supported input or disposable resource lifecycle.
+Do not make owner tests depend on an entire launcher fixture to reuse a small setup step, or introduce a shared fixture that hides the behavior under test.
+When moving cases or changing fixtures, preserve the protected behavior, failure conditions, and boundary needed to establish the claim rather than merely their names or count.
+Verify that the normal test command still discovers the moved cases, using the registration guidance above.
+Use `architecture-design` if test partitioning exposes an unsettled production ownership boundary; moving tests alone does not justify a production refactor.
+
 ### Validate consumer behavior and resource selection
 
 - Validate the test oracle against the consumer's actual behavior. A mock accepting generated Docker arguments does not establish that Docker can mount them. Check equivalence and cardinality when relevant: distinct occurrences, objects, refs, paths, or owners must not collapse because normalized text or fingerprints match. If no reliable oracle is available, record that validation limit rather than claiming the invariant is protected.

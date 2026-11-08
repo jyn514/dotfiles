@@ -106,6 +106,7 @@ For proposed reusable machinery, hooks, or configurable dimensions, establish th
 Keep extraction separate from behavior changes, schema redesign, message rewrites, new frameworks, and public API expansion unless explicitly in scope.
 
 Consumer behavior should remain stable during extraction.
+When an extraction changes test ownership or shared fixtures, use [test partitioning](../references/testing.md#partition-tests-alongside-an-extraction) to separate owner-specific cases from assembled integration coverage.
 A proposed cycle is a failed boundary unless an existing public adapter owns the composition.
 
 ## Compare gain with churn and challenge the result
