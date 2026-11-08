@@ -55,7 +55,9 @@ Read [delegation](../../skills/delegation/SKILL.md) when actually splitting or c
 Organizers follow its on-demand executive route; specialists do not load executive guidance simply to participate.
 Additional workers need concrete expected value or requested independence, not a requirement to fill the role catalog.
 A bounded helper leaves its caller free to finish its own task.
-[Autonomous work](../../skills/autonomous-work/SKILL.md) preserves the same distinction for authorized runs; run startup does not mandate a team.
+For an authorized [autonomous run](../../skills/autonomous-work/SKILL.md), every root acts as executive and keeps technical work with delegated owners.
+One technical owner may suffice; this does not require staffing the full role catalogue.
+Ordinary delegated assignments do not inherit the parent's autonomous mode or load autonomous-work merely because the parent is autonomous.
 
 The specialized templates are:
 
@@ -78,10 +80,10 @@ Strategist replaces the former detective template; callers must select `strategi
 Historical detective reports and the detective-only commit retain their original names.
 Executive can manage subagents within its assignment's authority and resource limits.
 Other role templates keep subagent management disabled.
-Root status does not imply executive responsibility.
+Root status alone does not imply executive responsibility; explicit autonomous-root authority does.
 `ROOT.md` supplies the conditional delegation route, not executive or common-skill body includes.
 Selected executive workers receive their role template; a root taking executive responsibility reads that same installed role body through delegation's conditional route.
-A bounded-helper caller reads only the organizer procedure and retains its own task, without adopting the dedicated executive role.
+Outside autonomous-root mode, a bounded-helper caller reads only the organizer procedure and retains its own task, without adopting the dedicated executive role.
 
 Peer references in the templates refer to assigned responsibilities, not a requirement to create those agents.
 Without a separate owner, workers keep ordinary work and checks within their assignment and return questions outside it to their caller.

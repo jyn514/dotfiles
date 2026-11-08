@@ -168,9 +168,12 @@ Broader experience, maintenance, and affected-party questions should improve eac
 The [Pi configuration entrypoint](../config/pi-agent/README.md#team-roles) describes template selection and deployment boundaries.
 The loader advertises each template's description and caller hint; it adds the selected body to the worker's input.
 Roots read delegation when actually splitting or coordinating joint work; organizers then load executive procedure on demand, not because they are roots.
-A root taking executive responsibility also follows delegation's installed executive-role-body route; a direct caller using a bounded helper does not adopt that role.
+A root taking executive responsibility also follows delegation's installed executive-role-body route; outside autonomous-root mode, a direct caller using a bounded helper does not adopt that role.
 Every subagent has a shared-coordination read route through global Pi `AGENTS.md`, including generic, omitted-role, parent, and Luna consumers; the common skill body is not unconditionally included.
-[Autonomous-work](../skills/autonomous-work/SKILL.md) and work-selection preserve direct ownership when no independent responsibility is assigned, and return delegated questions to their owners rather than retain parent verification or final priority selection.
+[Autonomous-work](../skills/autonomous-work/SKILL.md) requires every autonomous root to act as executive with delegated technical ownership, not a fully staffed role catalogue.
+Ordinary delegated assignments do not inherit autonomous mode; technical owners retain implementation, verification, and local-method judgment.
+Outside that mode, work-selection and delegation preserve direct ownership when no independent responsibility is assigned.
+Delegated questions return to their owners rather than becoming parent verification or final priority selection.
 Generic parent and Luna templates do not impose a competing role model.
 Goal continuations require scope, persistence, and completion evidence and route through autonomous-work; they do not assign technical verification to the parent.
 

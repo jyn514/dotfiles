@@ -1,12 +1,9 @@
 ---
 name: autonomous-work
-description: Pursue an explicitly requested autonomous or unattended task, or an active user-authorized tracked goal, through verified completion. Use for implementation, research, writing, planning, or review, including resuming an established run. Do not use for an ordinary bounded request without run authority, passive goal tracking, or a paused, blocked, or budget-limited goal alone. Preserve the requested activity; autonomy does not authorize implementing a plan, fixing review findings, publishing writing, or other unrequested effects.
+description: Organize an explicitly requested autonomous or unattended root task, or an active user-authorized root goal, through verified completion as an executive. Use for implementation, research, writing, planning, or review runs, including resumption. Delegated assignments do not inherit the parent's autonomous mode or require this skill; an explicitly authorized delegated run retains its assigned role. Not for ordinary bounded requests without run authority, passive goal tracking, or paused, blocked, or budget-limited goals alone. Preserve the requested activity and effects; autonomy does not authorize implementing a plan, fixing review findings, or publishing writing.
 ---
 
 # Autonomous work
-
-You are an executive.
-Read [executive.md](../delegation/references/executive.md) before proceeding.
 
 Before starting, confirm either an explicit request for an autonomous run or an active, user-authorized tracked goal.
 An active goal authorizes work only within its objective.
@@ -15,11 +12,25 @@ Reassess activation when the task changes; having this skill in context does not
 Respect paused, blocked, and budget-limited states and the harness's resume requirements.
 An inactive goal is saved state, not permission to continue.
 
+## Establish the run owner
+
+Every autonomous root is an executive.
+For a root run, read [delegation](../delegation/SKILL.md), its [executive procedure](../delegation/references/executive.md), and the installed executive role body through delegation's root-executive route before organizing the run.
+The root keeps technical creation, investigation, method selection, and verification with delegated technical owners.
+It does not retain direct technical ownership by calling the task bounded or omitting other roles.
+Use existing assigned owners or assign the technical work within the root run's authority and resource limits.
+If those limits prevent required delegation, return that staffing dependency rather than taking over the technical task.
+
+An ordinary delegated assignment does not inherit the root's autonomous mode and needs no autonomous-work read merely because its parent runs autonomously.
+A delegated worker reads this skill only when its own task has explicit autonomous-run authority or an active user-authorized goal.
+It applies continuity and acceptance rules within its assignment without becoming an executive or transferring implementation and verification judgment to the parent.
+
 This skill owns run authority, persistence, required acceptance order, resumable state, and stopping.
 [Work-selection](../work-selection/SKILL.md) owns next-action selection, dependency justification, reassessment, and scouting within the authorized task.
 Activity-specific skills own their procedures; goal tools own status changes and budgets.
 Where these responsibilities are assigned, apply acceptance duties through their owners: the builder integrates, QA independently verifies and investigates failures, and the strategist decides overall next-work priority.
-A direct owner performs ordinary implementation and checks without staffing those roles; a bounded helper does not transfer the whole task.
+A delegated technical owner performs ordinary implementation and checks without separately staffing QA, a strategist, or a designer.
+The autonomous root remains executive even when one technical owner can complete the task.
 The executive preserves scope, dispatches work, coordinates dependencies, and ratifies alignment; it does not perform a parent technical pass.
 Use delegation's shared responsibility guidance when evidence or a proposal is inadequate.
 Autonomy authorizes persistence within the task, not a different activity or additional effects.
@@ -54,10 +65,10 @@ Record acceptance cases before substantive work, and refine them only within the
 Read-only work may retain state in the session; recording progress does not authorize project-file edits.
 Create a harness goal only when explicitly requested; unavailable goal tools do not prevent an otherwise authorized run.
 
-An authorized run does not itself require a team.
-Use [delegation](../delegation/SKILL.md) when actually splitting or coordinating joint work; it gives all participants shared responsibility guidance and routes organizers to executive procedure.
-Additional workers need concrete expected value or requested independence, not merely a substantive or multi-step task.
-Preserve responsibilities already assigned without automatically staffing new roles at startup or a new workstream.
+An autonomous root requires technical ownership separate from its executive responsibility, not a full role catalogue.
+One technical owner may suffice; additional workers need concrete expected value or requested independence, not merely a substantive or multi-step task.
+Use [delegation](../delegation/SKILL.md) for shared responsibility, assignments, and worker lifecycles.
+Preserve responsibilities already assigned without automatically staffing QA, a strategist, or a designer at startup or a new workstream.
 
 ## Use an outcome graph when needed
 
@@ -85,7 +96,8 @@ The graph skill owns decomposition; work-selection supplies the overall-priority
 ## Select work within the authorized run
 
 Use [work-selection](../work-selection/SKILL.md) for next-work priority, dependency justification, and comparison of authorized approaches.
-When a strategist owns overall priority, return that comparison to it; otherwise the direct owner performs it.
+When a strategist owns overall priority, return that comparison to it; otherwise the assigned technical owner performs it.
+The executive arranges that ownership rather than selecting technical priority itself.
 Workers choose local actions within their responsibilities; executives question scheduling and dispatch the ratified work.
 Reassess before extending repeated similar batches during an active run, even when they succeed.
 Return changes to overall priority to its assigned owner; do not make a strategist direct every worker's next command.
@@ -181,7 +193,7 @@ Use [creative-inquiry](../creative-inquiry/SKILL.md) if another approach could r
 Declare the whole run blocked only when no meaningful authorized progress remains, then explain the dependency.
 
 At completion, the responsible technical owner or workers compare the actual result with the original request and acceptance cases using the permitted activity's evidence standards.
-Where an executive owns coordination, it ratifies reported coverage and returns gaps to their owners rather than performing verification itself.
+The autonomous root ratifies reported coverage and returns gaps to their technical owners rather than performing verification itself.
 Require concrete evidence for every explicit requirement and no required work remaining.
 For completed implementation, apply the review threshold above and [completion review](../completion-audit/SKILL.md) when required.
 For research, writing, planning, and review, the assigned technical owner verifies the requested answer or artifact without executing the proposed work or repairing findings unless separately authorized.
