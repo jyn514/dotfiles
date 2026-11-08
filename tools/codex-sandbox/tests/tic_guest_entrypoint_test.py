@@ -98,8 +98,7 @@ class TicGuestEntrypointTest(unittest.TestCase):
                 self.assertFalse(marker.exists())
                 self.assertEqual({}, state.tic_environment)
                 state.__dict__.update(cleaned=False, cleanup_succeeded=False,
-                                      codex_container_created=False, gateway_handle=None, proxy_lock=None,
-                                      proxy_state=None, proxy_args=None, manifest=None, prepared_images=None)
+                                      codex_container_created=False, gateway_handle=None, command_session=None)
                 with mock.patch.dict(globals_, OUTER_RUNTIME=runtime):
                     self.assertTrue(launcher['cleanup'](state))
                 self.assertFalse(staged.exists())

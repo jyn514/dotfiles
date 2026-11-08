@@ -3,6 +3,8 @@
 The host child and lifetime pipe are real. Provider container/network effects and
 its guest readiness result are fake; native provider acceptance remains separate.
 """
+from command_session_fixture import session_for, proxy_backend
+
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
@@ -259,7 +261,7 @@ class TicLauncherTest(unittest.TestCase):
         self.assertFalse((self.home / '.cache').exists())
 
     def test_new_policy_defaults_and_explicit_true_warn_while_false_has_no_host_contact(self):
-        module = self.globals['proxy_module']()
+        module = proxy_backend()
         for source in (None, {'version': 1, 'commands': {}}, {'version': 2},
                        {'version': 1, 'commands': {}, 'capabilities': {'tic': True}},
                        {'version': 2, 'capabilities': {'tic': True}},
@@ -347,9 +349,9 @@ class TicLauncherTest(unittest.TestCase):
 
     def test_tic_only_transport_build_failure_does_not_block_new_session(self):
         self.state.deferred_signal = None
-        self.state.proxy_lock = SimpleNamespace(shared=False)
+        session_for(self.state, shared=False)
         self.state.sidecar_image = ''
-        self.state.manifest = {'commands': {}}
+        session_for(self.state, policy={'commands': {}})
         empty = ('validate_repository', 'acquire_lock', 'load_repository_policy', 'bind_repository_policy',
                  'recover_relays', 'stage_skills', 'agent_repository_mounts', 'prepare_host_pi_resources',
                  'register_tmux_pane', 'ensure_network', 'prepare_gateway', 'attach_proxies')
@@ -1009,7 +1011,7 @@ class TicLauncherTest(unittest.TestCase):
 
     def test_shared_join_runs_tic_without_resolvers_and_continues_without_failed_tic(self):
         self.state.deferred_signal = None
-        self.state.proxy_lock = SimpleNamespace(shared=True)
+        session_for(self.state, shared=True)
         empty = ('validate_repository', 'prepare_host_session', 'acquire_lock', 'load_accepted_session',
                  'recover_relays', 'stage_skills', 'agent_repository_mounts', 'prepare_host_pi_resources',
                  'register_tmux_pane', 'ensure_network', 'prepare_gateway', 'attach_proxies')

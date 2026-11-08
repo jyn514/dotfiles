@@ -43,7 +43,7 @@ def reset_session(_runtime, *, unpublished_state=None):
 
 # Startup and removal use the same fake service boundary. Real metadata and
 # native session locking are covered by the cleanup and session-lock suites.
-native_proxy_module = launcher["proxy_module"]
+native_session = launcher["CommandProxySession"]
 
 def record_api(action, **values):
     # Record meaningful inputs at the lifecycle boundary, not CLI serialization.
@@ -93,26 +93,26 @@ def agent_arguments(repo, container_repo, manifest, state):
     return ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
 
 
-def proxy_module():
-    module = native_proxy_module()
+def command_proxy_session(*arguments, **options):
+    session = native_session(*arguments, **options)
+    module = session._backend
     module.reset_session = reset_session
     module.snapshot_policy = snapshot_policy
     module.join_session = join_session
     module.attach_session = attach_session
     module.publish_session = publish_session
     module.agent_arguments = agent_arguments
-    return module
+    return session
 
-proxy_module.cache_clear = native_proxy_module.cache_clear
-launcher["main"].__globals__["proxy_module"] = proxy_module
+launcher["main"].__globals__["CommandProxySession"] = command_proxy_session
 acquire = launcher['acquire_lock']
 
 def acquire_lock(state):
     acquire(state)
     # Shared-session fixtures supply accepted authority through the fake helper.
     if os.environ.get('FAKE_SESSION') == 'shared':
-        state.proxy_lock.shared = True
-        state.proxy_lock.release_coordination()
+        state.command_session._lock.shared = True
+        state.command_session.release_coordination()
 
 launcher['main'].__globals__['acquire_lock'] = acquire_lock
 raise SystemExit(launcher["main"](sys.argv[1:]))

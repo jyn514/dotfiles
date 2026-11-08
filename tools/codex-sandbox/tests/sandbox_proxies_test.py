@@ -198,18 +198,19 @@ class NativeMetadataConsumerTest(unittest.TestCase):
                     self.assertEqual(before, dict(os.environ))
 
     def test_old_launcher_janitor_command_reaches_installed_metadata_runtime(self):
-        # Load the producer before replacing the disposable live-loaded helper.
-        # Its generated argv must work unchanged with the candidate consumer.
-        launcher = runpy.run_path(str(ROOT / "tools/codex-sandbox/codex-sandbox"))
+        # Import the session producer directly; its detached CLI command must
+        # retain the pre-extraction wire shape when the consumer is live-loaded.
+        import command_proxy_session as owner
+        session = owner.CommandProxySession(sandbox_proxies.OUTER_RUNTIME, self.repo)
+        session._backend = sandbox_proxies
         sandbox_proxies.use_repository_metadata(self.repo, (self.repo / ".git",) * 2)
         runtime = sandbox_proxies.runtime_directory(self.repo)
         for selectors in self.selectors:
             with self.subTest(selectors=selectors), mock.patch.dict(os.environ, selectors):
-                function = launcher["defer_proxy_cleanup"]
-                with mock.patch.dict(function.__globals__, proxy_module=lambda: sandbox_proxies,
-                                     PROXY_HELPER=self.helper, PROXY_IDLE_SECONDS=0), \
+                with mock.patch.object(owner, 'HELPER', self.helper), \
+                        mock.patch.object(owner, 'IDLE_SECONDS', 0), \
                         mock.patch.object(subprocess, "Popen") as spawn:
-                    self.assertTrue(function(SimpleNamespace(completed_successfully=True, repository=self.repo)))
+                    self.assertTrue(session._defer_cleanup())
                 argv = spawn.call_args.args[0]
                 self.assertNotIn("env", spawn.call_args.kwargs)
                 self.assertTrue(spawn.call_args.kwargs["start_new_session"])

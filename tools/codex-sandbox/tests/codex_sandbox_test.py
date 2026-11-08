@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from command_session_fixture import session_for, proxy_backend
+
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
@@ -206,22 +208,6 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             self.assertFalse((state.pi_agent_tmp / "extensions/codex-sidecar").exists())
             self.assertTrue((state.pi_agent_tmp / "pi-codex-subagents/runs").is_dir())
 
-    def test_policy_opt_out_drops_host_credentials(self):
-        load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            credentials = root / ".zuliprc"
-            credentials.write_text("unused")
-            policy = {"capabilities": {"host-editor": False, "zulip": False}, "commands": {}}
-            module = SimpleNamespace(snapshot_policy=lambda *args, **kwargs: policy)
-            state = SimpleNamespace(repository=root, home=root, zuliprc=None)
-            with mock.patch.dict(load.__globals__, proxy_module=lambda: module,
-                                 bind_repository_policy=mock.Mock()), \
-                    mock.patch.dict(os.environ, CODEX_SANDBOX_ZULIPRC=str(credentials)):
-                load(state)
-            self.assertIsNone(state.zuliprc)
-            self.assertEqual(frozenset(), state.capabilities)
-
     def test_agent_image_key_tracks_sources_platform_parameters_and_actual_base(self):
         key = runpy.run_path(str(TOOL / "owned_images.py"))["agent_cache_key"]
         with tempfile.TemporaryDirectory() as directory:
@@ -245,42 +231,14 @@ class ContainerRepositoryPathTest(unittest.TestCase):
 
     def test_failed_publication_keeps_coordination_until_cleanup(self):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
-        lock = mock.Mock(shared=False)
-        state = SimpleNamespace(proxy_lock=lock, repository=Path('/repo'),
-            container_repository=Path('/home/codex/src/repo'), proxy_prefix='proxy', proxy_state=Path('/state'),
-            sidecar_image='image', image='agent', uid=501, gid=20,
-            policy_source_present=True, manifest=Path('/manifest'), zuliprc=None,
-            prepared_images=None)
-        module = attach.__globals__['proxy_module']()
-        with mock.patch.object(module, 'attach_session', return_value=({}, {}, False)), \
-                mock.patch.dict(attach.__globals__, proxy_module=lambda: module,
-                    finalize_proxy_session=mock.Mock(side_effect=ValueError('publication failed'))):
-            with self.assertRaisesRegex(attach.__globals__['LauncherError'], 'publication failed'):
-                attach(state)
-        lock.release_coordination.assert_not_called()
-
-    def test_only_first_session_publishes_shared_proxy_state(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        finalize = launcher['finalize_proxy_session']
-        state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), proxy_reused=False,
-                                repository=Path('/repo'), container_repository=Path('/guest'),
-                                proxy_data={'proxies': []}, manifest={'commands': {}})
-        for status in ('shared', 'idle', 'new'):
-            with self.subTest(status=status):
-                state.proxy_lock.shared = status == 'shared'
-                state.proxy_reused = status == 'idle'
-                calls = []
-                module = SimpleNamespace(
-                    publish_session=mock.Mock(side_effect=lambda *args: calls.append('publish')),
-                    agent_arguments=mock.Mock(side_effect=lambda *args: calls.append('args') or ['--read-only']))
-                with mock.patch.dict(finalize.__globals__, proxy_module=lambda: module):
-                    self.assertEqual(['--read-only'], finalize(state))
-                self.assertEqual(['publish', 'args'] if status == 'new' else ['args'], calls)
-                module.agent_arguments.assert_called_once_with(
-                    state.repository, str(state.container_repository), state.manifest, state.proxy_data)
-                if status == 'new':
-                    module.publish_session.assert_called_once_with(
-                        state.repository, str(state.container_repository), state.proxy_data, state.manifest)
+        state = SimpleNamespace(proxy_prefix='proxy', sidecar_image='image', image='agent')
+        session = session_for(state)
+        session.publish.side_effect = attach.__globals__['SessionError']('publication failed')
+        with self.assertRaisesRegex(attach.__globals__['LauncherError'], 'publication failed'):
+            attach(state)
+        session.attach.assert_called_once()
+        session.agent_arguments.assert_not_called()
+        session.release_coordination.assert_not_called()
 
     def test_network_verification_failure_retains_captured_diagnostic(self):
         launcher = runpy.run_path(str(LAUNCHER))
@@ -394,173 +352,6 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             repository = root / "project"
             repository.mkdir()
             self.assertEqual(Path("/home/codex/src/repository"), function(home, repository))
-
-
-class SharedProxyCleanupTest(unittest.TestCase):
-    def repository(self, directory):
-        root = Path(directory) / "repo"
-        subprocess.run(["jj", "git", "init", str(root)], cwd=directory,
-                       check=True, stdout=subprocess.DEVNULL)
-        return root
-
-    def test_launcher_removes_shared_services_after_last_attachment(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        proxies = launcher["proxy_module"]()
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
-            root = self.repository(directory)
-            runtime = proxies.runtime_directory(root)
-            recovery = {"runtime": {"provider": "container"}, "proxies": []}
-            metadata = runtime / "session.json"
-            metadata.write_text(json.dumps({"version": 2, "state": recovery}))
-            first = launcher["new_state"]([])
-            first.repository = root
-            first.proxy_lock = launcher["SessionLock"](runtime)
-            first.proxy_lock.release_coordination()
-            second = launcher["new_state"]([])
-            second.repository = root
-            second.proxy_lock = launcher["SessionLock"](runtime)
-            with mock.patch.object(proxies, "stop_state") as stop, \
-                    mock.patch.dict(launcher["cleanup"].__globals__, defer_proxy_cleanup=mock.Mock(return_value=False)):
-                self.assertTrue(launcher["cleanup"](first))
-                stop.assert_not_called()
-                self.assertTrue(metadata.exists())
-                self.assertTrue(launcher["cleanup"](second))
-                stop.assert_called_once_with(recovery)
-                self.assertFalse(metadata.exists())
-                # Cleanup is idempotent even when invoked again by finalization.
-                self.assertTrue(launcher["cleanup"](second))
-                self.assertEqual(1, stop.call_count)
-
-    def test_successful_final_attachment_retains_shared_services_for_idle_reuse(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        proxies = launcher["proxy_module"]()
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
-            root = self.repository(directory)
-            runtime = proxies.runtime_directory(root)
-            metadata = runtime / "session.json"
-            metadata.write_text(json.dumps({"version": 2, "state": {
-                "runtime": {"provider": "container"}, "proxies": [],
-            }}))
-            state = launcher["new_state"]([])
-            state.repository = root
-            state.completed_successfully = True
-            state.proxy_lock = launcher["SessionLock"](runtime)
-            state.proxy_lock.release_coordination()
-            defer = mock.Mock(return_value=True)
-            with mock.patch.object(proxies, "stop_state") as stop, \
-                    mock.patch.dict(launcher["cleanup"].__globals__, defer_proxy_cleanup=defer):
-                self.assertTrue(launcher["cleanup"](state))
-            defer.assert_called_once_with(state)
-            stop.assert_not_called()
-            self.assertTrue(metadata.exists())
-
-    def test_idle_cleanup_detaches_only_after_success(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        with tempfile.TemporaryDirectory() as directory:
-            runtime = Path(directory)
-            state = SimpleNamespace(completed_successfully=True, repository=Path("/repo"))
-            module = SimpleNamespace(
-                runtime_directory=lambda _repo: runtime,
-                write_atomic=lambda path, value: path.write_text(value),
-            )
-            with mock.patch.dict(launcher["defer_proxy_cleanup"].__globals__,
-                                 proxy_module=lambda: module), \
-                    mock.patch.object(launcher["defer_proxy_cleanup"].__globals__["secrets"],
-                                      "token_hex", return_value="lease"), \
-                    mock.patch("subprocess.Popen") as start:
-                self.assertTrue(launcher["defer_proxy_cleanup"](state))
-            command = start.call_args.args[0]
-            self.assertEqual(["idle-cleanup", "--repo", "/repo", "--delay", "300.0",
-                              "--lease", "lease"], command[1:])
-            self.assertEqual("lease", (runtime / "idle-cleanup.lease").read_text())
-            self.assertTrue(start.call_args.kwargs["start_new_session"])
-            state.completed_successfully = False
-            with mock.patch("subprocess.Popen") as start:
-                self.assertFalse(launcher["defer_proxy_cleanup"](state))
-            start.assert_not_called()
-
-    def test_launcher_retains_unpublished_recovery_on_removal_failure(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        proxies = launcher["proxy_module"]()
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
-            root = self.repository(directory)
-            runtime = proxies.runtime_directory(root)
-            state = launcher["new_state"]([])
-            state.repository = root
-            state.proxy_lock = launcher["SessionLock"](runtime)
-            state.proxy_state = root / "unpublished.json"
-            recovery = {"runtime": {"provider": "container"}, "proxies": []}
-            state.proxy_state.write_text(json.dumps(recovery))
-            with mock.patch.object(proxies, "stop_state", side_effect=proxies.ConfigError("busy")):
-                stderr = io.StringIO()
-                with contextlib.redirect_stderr(stderr):
-                    self.assertFalse(launcher["cleanup"](state))
-            self.assertIn("Shared proxy cleanup failed", stderr.getvalue())
-            metadata = runtime / "session.json"
-            self.assertEqual(recovery, proxies.session_state(json.loads(metadata.read_text())))
-            self.assertTrue(state.proxy_state.exists())
-            with mock.patch.object(proxies, "stop_state") as stop:
-                self.assertEqual(0, proxies.reset_main(SimpleNamespace(repo=str(root))))
-            stop.assert_called_once_with(recovery)
-            self.assertFalse(metadata.exists())
-
-
-class ProxyHelperTest(unittest.TestCase):
-    def test_recovery_uses_bound_runtime_and_propagates_failure_without_dispatch(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        reset = launcher['reset_proxies']
-        module = launcher['proxy_module']()
-        with mock.patch.dict(reset.__globals__, proxy_module=lambda: module), \
-                mock.patch.object(module, 'reset_repository') as recover, \
-                mock.patch.object(module, 'main', side_effect=AssertionError('CLI dispatch')), \
-                mock.patch('subprocess.run', side_effect=AssertionError('unexpected process')):
-            reset('/example')
-            recover.assert_called_once_with(Path('/example'), wait=True)
-            recover.side_effect = module.ConfigError('recovery failed')
-            with self.assertRaisesRegex(launcher['LauncherError'], 'sandbox proxies: recovery failed'):
-                reset('/example')
-
-    def test_private_api_instances_keep_selected_runtime_and_repository_across_threads(self):
-        # Same repository with two independently discovered contexts exposes any
-        # accidental shared module cache, not just a missing repository match.
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            modules = []
-            for name in ('first', 'second'):
-                launcher = runpy.run_path(str(LAUNCHER))
-                owner = mock.Mock(provider=name)
-                owner.verify_builder_image.side_effect = lambda image, name=name: SimpleNamespace(reference=name + ':' + image)
-                factory = launcher['proxy_module']
-                with mock.patch.dict(factory.__wrapped__.__globals__, OUTER_RUNTIME=owner):
-                    module = factory()
-                paths = (repo / name / 'git', repo / name / 'common')
-                for path in paths:
-                    path.mkdir(parents=True)
-                module.use_repository_metadata(repo, paths)
-                modules.append((module, owner, paths, factory))
-                # Changing ambient runtime after binding must not reselect it.
-                factory.__wrapped__.__globals__['OUTER_RUNTIME'] = mock.Mock(provider='unrelated')
-                self.assertIs(factory(), module)
-                self.assertIs(module.OUTER_RUNTIME, owner)
-            barrier = threading.Barrier(2)
-            def consume(value):
-                module, owner, paths, _ = value
-                barrier.wait(timeout=3)
-                self.assertEqual(paths, module.git_metadata_paths(repo))
-                self.assertEqual({'one': owner.provider + ':image'}, module.resolve_images(
-                    repo, {'commands': {'one': {}}}, {'one': 'image'}))
-            with mock.patch('subprocess.run', side_effect=AssertionError('unexpected discovery or CLI')), \
-                    ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(consume, modules))
-            self.assertIsNot(modules[0][0], modules[1][0])
-            # After the previous owner has joined, a new attachment sees the
-            # newly selected runtime and cannot inherit old repository metadata.
-            for module, _, _, factory in modules:
-                factory.cache_clear()
-                replacement = factory()
-                self.assertIsNot(replacement, module)
-                self.assertIsNone(replacement.REPOSITORY_METADATA)
-                self.assertIs(replacement.OUTER_RUNTIME, factory.__wrapped__.__globals__['OUTER_RUNTIME'])
 
 
 class ContainerTimingTest(unittest.TestCase):
@@ -885,13 +676,13 @@ class DirectoryHandoffTest(unittest.TestCase):
                         sys.executable, str(TOOL / "tests/fixtures/launch-resolver.py")]}}}))
                 launcher = runpy.run_path(str(LAUNCHER))
                 launch = launcher["launch"]
-                module = launcher["proxy_module"]()
+                module = proxy_backend()
                 manifest = root / "snapshot.json"
                 module.snapshot_main(SimpleNamespace(repo=str(destination), output=str(manifest), jj_image_command=None))
                 snapshot = json.loads(manifest.read_text())
                 manifest.unlink()
                 state = SimpleNamespace(repository=destination, host_working_directory=destination,
-                                        manifest=None, capabilities=frozenset(), uid=501, gid=20)
+                                        command_session=None, capabilities=frozenset(), uid=501, gid=20)
                 runtime = mock.Mock(spec=launcher["ContainerRuntime"], provider="container")
                 runtime.build_platform.return_value = "linux/amd64"
                 runtime.builder_environment.side_effect = lambda: dict(os.environ)
@@ -900,7 +691,7 @@ class DirectoryHandoffTest(unittest.TestCase):
                 if failure:
                     compose.side_effect = ValueError("Cannot find module './identity.js'")
                 def load_policy(value):
-                    value.manifest = snapshot
+                    session_for(value, policy=snapshot)
                 forbidden = {name: mock.Mock(side_effect=AssertionError(name + " must not run during preparation"))
                              for name in ("acquire_lock", "run_agent", "cleanup", "unregister_tmux_pane",
                                           "ensure_network", "attach_proxies", "register_tmux_pane")}
@@ -942,8 +733,8 @@ class DirectoryHandoffTest(unittest.TestCase):
             write_executable(builder, "#!/bin/sh\nprintf 'legacy-base\\n'\n")
             manifest = repository / "manifest.json"
             def load_policy(state):
-                state.manifest = {"commands": {}}
-            state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset(), uid=501, gid=20)
+                session_for(state, policy={"commands": {}})
+            state = SimpleNamespace(repository=repository, command_session=None, capabilities=frozenset(), uid=501, gid=20)
             compose = mock.Mock(side_effect=ValueError("build failed"))
             runtime = SimpleNamespace(provider="container")
             with mock.patch.dict(prepare.__globals__, {
@@ -959,22 +750,19 @@ class DirectoryHandoffTest(unittest.TestCase):
     def test_prepare_cd_rejects_a_failed_legacy_proxy_image_build(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         prepare = launcher["prepare_cd_images"]
-        module = launcher["proxy_module"]()
         runtime = SimpleNamespace(provider="lima")
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
             manifest = repository / "manifest.json"
             def load_policy(state):
-                state.manifest = {"commands": {"broken": {
-                    "image-command": ["/bin/false"], "argv": ["proxy", "serve"],
-                    "workdir": ".", "network": False, "mounts": [],
-                }}}
-            state = SimpleNamespace(repository=repository, manifest=None, capabilities=frozenset())
+                selected = session_for(state, policy={"commands": {"broken": {}}})
+                selected.resolve_images.side_effect = launcher['SessionError']('image-command for broken')
+            state = SimpleNamespace(repository=repository, command_session=None, capabilities=frozenset())
             model = mock.Mock(return_value="agent-image")
             with mock.patch.dict(prepare.__globals__, {
                 "OUTER_RUNTIME": runtime, "load_repository_policy": load_policy,
-                "resolve_model_image": model, "proxy_module": lambda: module,
-            }), mock.patch.object(module, "OUTER_RUNTIME", runtime):
+                "resolve_model_image": model,
+            }):
                 with self.assertRaisesRegex(launcher["LauncherError"], "image-command for broken"):
                     prepare(state)
             model.assert_called_once_with(state)
@@ -1106,12 +894,13 @@ class BackgroundRelayTest(unittest.TestCase):
                         "version": 2, "capabilities": {"zulip": False}, "commands": commands,
                         "images": {"base": "project-base", "resolver": {"kind": "command", "argv": [
                             sys.executable, str(TOOL / "tests/fixtures/launch-resolver.py")]}}}))
-                    module = launcher["proxy_module"]()
+                    module = proxy_backend()
                     snapshot = repository / "snapshot.json"
                     module.snapshot_main(SimpleNamespace(repo=str(repository), output=str(snapshot),
                                                          jj_image_command=None))
-                    state = SimpleNamespace(repository=repository, manifest=module.load_accepted_manifest(snapshot), uid=501, gid=20,
+                    state = SimpleNamespace(repository=repository, command_session=None, uid=501, gid=20,
                                             capabilities=frozenset(), deferred_signal=None)
+                    session_for(state, policy=module.load_accepted_manifest(snapshot))
                     from sandbox_runtime import ContainerRuntime, VMRuntime
                     from docker_runtime import Docker
                     runtime_type = {"container": ContainerRuntime, "lima": VMRuntime, "lima-docker": Docker}[provider]
@@ -1131,7 +920,7 @@ class BackgroundRelayTest(unittest.TestCase):
                     replacements.update(OUTER_RUNTIME=runtime, ensure_network=network, run_agent=agent,
                                         resolve_agent=compose,
                                         temporary_file=lambda: repository / "prepared-images.json",
-                                        acquire_lock=lambda value: setattr(value, "proxy_lock", SimpleNamespace(shared=False)))
+                                        acquire_lock=lambda value: session_for(value, shared=False))
                     receipt = repository / "request.json"
                     environment = {"LAUNCH_RESOLVER_REQUEST": str(receipt),
                                    "LAUNCH_RESOLVER_IMAGES": json.dumps(results)}
@@ -1143,7 +932,7 @@ class BackgroundRelayTest(unittest.TestCase):
                         self.assertEqual({"version": 1, "operation": "resolve", "images": sorted(names),
                                           "engine": {"provider": provider, "platform": "linux/amd64"}}, requests[0])
                         self.assertEqual({name: results[command["image"]] for name, command in commands.items()},
-                                         state.prepared_images)
+                                         replacements['attach_proxies'].call_args.args[1])
                         self.assertEqual(len(names), runtime.verify_builder_image.call_count)
                         for invalid in ({}, {**results, "unexpected": "sha256:" + "9" * 64}):
                             network.reset_mock(); agent.reset_mock(); compose.reset_mock()
@@ -1161,7 +950,7 @@ class BackgroundRelayTest(unittest.TestCase):
             "recover_relays", "stage_skills", "prepare_launch_images", "start_keychain", "ensure_network", "run_agent")}
         with mock.patch.dict(execute.__globals__, effects | {
             "validate_repository": mock.Mock(),
-            "acquire_lock": lambda value: setattr(value, "proxy_lock", SimpleNamespace(shared=False)),
+            "acquire_lock": lambda value: session_for(value, shared=False),
             "load_repository_policy": mock.Mock(side_effect=ValueError("rejected raw policy")),
         }):
             with self.assertRaisesRegex(ValueError, "rejected raw policy"):
@@ -1182,8 +971,7 @@ class BackgroundRelayTest(unittest.TestCase):
                              "attach_proxies", "prepare_gateway", "stage_skills", "start_keychain",
                              "prepare_host_pi_resources")
             }
-            replacements["acquire_lock"] = mock.Mock(side_effect=lambda value: setattr(
-                value, "proxy_lock", SimpleNamespace(shared=False)))
+            replacements["acquire_lock"] = mock.Mock(side_effect=lambda value: session_for(value, shared=False))
             replacements["load_repository_policy"] = mock.Mock()
             replacements.update(
                 prepare_host_session=mock.Mock(),
@@ -1202,7 +990,7 @@ class BackgroundRelayTest(unittest.TestCase):
         state = SimpleNamespace(repository=Path("/unused"))
 
         def acquire(value):
-            value.proxy_lock = SimpleNamespace(shared=False)
+            session_for(value, shared=False)
 
         with mock.patch.dict(os.environ, CODEX_SANDBOX_QUIET_NOTICES=""), \
                 mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
@@ -1231,7 +1019,7 @@ class BackgroundRelayTest(unittest.TestCase):
 
         def acquire(value):
             observed.append("lock")
-            value.proxy_lock = SimpleNamespace(shared=False)
+            session_for(value, shared=False)
 
         def load(value):
             self.assertIs(value, state)
@@ -1249,7 +1037,7 @@ class BackgroundRelayTest(unittest.TestCase):
         state = SimpleNamespace(repository=Path("/unused"))
 
         def acquire(value):
-            value.proxy_lock = SimpleNamespace(shared=True)
+            session_for(value, shared=True)
 
         policy = mock.Mock(side_effect=AssertionError("join read repository policy"))
         with mock.patch.dict(os.environ, CODEX_SANDBOX_QUIET_NOTICES=""), \
@@ -1275,8 +1063,9 @@ class BackgroundRelayTest(unittest.TestCase):
             producer.parent.mkdir(parents=True)
             producer.touch()
             stage = mock.Mock()
-            acquire = mock.Mock(side_effect=lambda state: setattr(
-                state, 'proxy_lock', SimpleNamespace(shared=False)))
+            def acquire(state):
+                session_for(state, shared=False).bind_policy.side_effect = execute.__globals__['SessionError'](
+                    'bundled Bake resolver requires CODEX_SANDBOX_RUNTIME=lima-docker')
             with mock.patch.dict(execute.__globals__, OUTER_RUNTIME=SimpleNamespace(provider='container'),
                                  validate_repository=mock.Mock(), acquire_lock=acquire,
                                  load_repository_policy=mock.Mock(), stage_skills=stage):
@@ -1294,12 +1083,12 @@ class BackgroundRelayTest(unittest.TestCase):
             manifest = repository / 'manifest.json'
             manifest.write_text('{"commands": {"bug": {"image-target": "bb-bug"}}}')
             state = SimpleNamespace(repository=repository, agent_docker=None, uid=501, gid=20,
-                                    codex_arguments=[], deferred_signal=None, manifest=json.loads(manifest.read_text()))
+                                    codex_arguments=[], deferred_signal=None)
+            session_for(state, policy=json.loads(manifest.read_text()))
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_gateway', 'start_gateway', 'start_keychain', 'attach_proxies')}
-            replacements['acquire_lock'].side_effect = lambda value: setattr(
-                value, 'proxy_lock', SimpleNamespace(shared=False))
+            replacements['acquire_lock'].side_effect = lambda value: session_for(value, shared=False)
             replacements['load_repository_policy'] = mock.Mock()
             prepared = SimpleNamespace(base='base@digest', auth='auth@digest', proxies={'bug': 'bug@digest'})
             def prepare(*args, **kwargs):
@@ -1319,7 +1108,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 self.assertEqual(0, execute(state))
                 replacements['resolve_agent'].assert_called_once_with(
                     replacements['OUTER_RUNTIME'], state.uid, state.gid, 'base@digest')
-                self.assertEqual(state.prepared_images, prepared.proxies)
+                self.assertEqual(replacements['attach_proxies'].call_args.args[1], prepared.proxies)
                 self.assertEqual(state.sidecar_image, prepared.auth)
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
                 preparation.side_effect = ValueError('image validation failed')
@@ -1369,7 +1158,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 build_finished.set()
                 return "image"
 
-            def attach_proxies(_state):
+            def attach_proxies(_state, _images=None):
                 proxy_attached.set()
                 return []
 
@@ -1390,8 +1179,7 @@ class BackgroundRelayTest(unittest.TestCase):
                     "acquire_lock", "prepare_gateway", "stage_skills",
                 )
             }
-            replacements["acquire_lock"].side_effect = lambda value: setattr(
-                value, "proxy_lock", SimpleNamespace(shared=False))
+            replacements["acquire_lock"].side_effect = lambda value: session_for(value, shared=False)
             replacements["load_repository_policy"] = mock.Mock()
             replacements.update(
                 resolve_agent=resolve_agent,
@@ -1483,8 +1271,7 @@ class BackgroundRelayTest(unittest.TestCase):
                              "acquire_lock", "attach_proxies", "prepare_gateway",
                              "stage_skills", "start_keychain")
             }
-            replacements["acquire_lock"].side_effect = lambda value: setattr(
-                value, "proxy_lock", SimpleNamespace(shared=False))
+            replacements["acquire_lock"].side_effect = lambda value: session_for(value, shared=False)
             replacements["load_repository_policy"] = mock.Mock()
             replacements["prepare_gateway"].side_effect = lambda value: (
                 setattr(value, "gateway_handle", SimpleNamespace(
@@ -2723,7 +2510,7 @@ class CodexSandboxTest(unittest.TestCase):
         launcher = runpy.run_path(str(LAUNCHER))
         environment = {"TMUX": "/tmp/tmux", "HOME": str(self.home)}
         with mock.patch.dict(os.environ, environment):
-            proxies = launcher["proxy_module"]()
+            proxies = proxy_backend()
             proxies.use_repository_metadata(self.repo, (self.repo / ".git", self.repo / ".git"))
             runtime = proxies.runtime_directory(self.repo)
             holder = subprocess.Popen(
@@ -2753,6 +2540,8 @@ class CodexSandboxTest(unittest.TestCase):
                         [registration], [{**registration, "dead": True}],
                     ]),
                     "run": mock.Mock(return_value=SimpleNamespace(stdout="off\n")),
+                    "CommandProxySession": mock.Mock(return_value=launcher['CommandProxySession'](
+                        launcher['OUTER_RUNTIME'], self.repo, metadata=(self.repo / '.git', self.repo / '.git'))),
                 }), mock.patch.object(os, "kill"), mock.patch.object(fcntl, "flock", observe_lock), \
                         contextlib.redirect_stderr(io.StringIO()) as diagnostics:
                     result = launcher["main"](arguments)

@@ -1,3 +1,4 @@
+from command_session_fixture import proxy_backend
 import errno
 import json
 import pty
@@ -350,7 +351,7 @@ class ProcessAndTmuxTest(unittest.TestCase):
         # not the sandbox's protected source working copy.
         subprocess.run(["jj", "git", "init", "--colocate", str(self.root)],
                        cwd=self.root, check=True, capture_output=True)
-        proxies = launcher["proxy_module"]()
+        proxies = proxy_backend()
         proxies.use_repository_metadata(self.root, (self.root / ".git", self.root / ".git"))
         runtime = proxies.runtime_directory(self.root)
         self.environment["FIXTURE_RESTART_LOCK"] = str(runtime / "session.lock")

@@ -1,4 +1,6 @@
 """Opt-in phase evidence without installed services or VM access."""
+from command_session_fixture import session_for
+
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
@@ -88,23 +90,15 @@ class ServiceTimingTest(unittest.TestCase):
 
     def test_launcher_separates_commands_and_publication_in_order(self):
         launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
-        state = SimpleNamespace(repository=Path('/repo'), container_repository=Path('/home/codex/src/repo'),
-                                proxy_prefix='prefix', proxy_lock=SimpleNamespace(shared=False,
-                                    release_coordination=lambda: events.append('unlock')),
-                                proxy_state=Path('/state'), sidecar_image='', manifest=Path('/manifest'),
-                                image='image', uid=1, gid=2, policy_source_present=True,
-                                zuliprc=None, prepared_images=None)
+        state = SimpleNamespace(proxy_prefix='prefix', sidecar_image='', image='image')
         events = []
-        module = launcher['proxy_module']()
-        def attach(*args):
-            events.append('commands')
-            return {}, {}, False
-        module.attach_session = attach
-        patches = {'proxy_module': lambda: module,
-                   'finalize_proxy_session': lambda *args: (events.append('publication') or ['proxy'])}
+        session = session_for(state)
+        session.attach.side_effect = lambda **options: events.append('commands')
+        session.publish.side_effect = lambda: events.append('publication')
+        session.agent_arguments.return_value = ['proxy']
+        session.release_coordination.side_effect = lambda: events.append('unlock')
         with mock.patch.dict(os.environ, {'CODEX_SANDBOX_TIMING': '1'}), \
-                mock.patch('sys.stderr', new_callable=io.StringIO) as stderr, \
-                mock.patch.dict(launcher['attach_proxies'].__globals__, patches):
+                mock.patch('sys.stderr', new_callable=io.StringIO) as stderr:
             self.assertEqual(['proxy'], launcher['attach_proxies'](state))
         self.assertEqual(['commands', 'publication', 'unlock'], events)
         self.assertEqual(['proxies/command-attach', 'proxies/publication'],

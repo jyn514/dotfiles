@@ -1,4 +1,6 @@
 """Controlled lifecycle concurrency; no installed state, VM, or service access."""
+from command_session_fixture import session_for
+
 from concurrent.futures import ThreadPoolExecutor
 import io
 from pathlib import Path
@@ -25,9 +27,9 @@ def load_launcher():
 def startup_state(root):
     manifest = root / 'manifest.json'
     manifest.write_text('{"commands": {}}')
-    return SimpleNamespace(repository=root, uid=501, gid=20, manifest=manifest,
+    return SimpleNamespace(repository=root, uid=501, gid=20, command_session=mock.Mock(shared=False, policy={"commands": {}}),
                            capabilities={'tic'}, sidecar_image='', deferred_signal=None,
-                           proxy_lock=SimpleNamespace(shared=False), agent_docker=None)
+                           agent_docker=None)
 
 
 def startup_replacements(launcher, state):
@@ -46,8 +48,8 @@ def cleanup_state(root):
     return SimpleNamespace(cleaned=False, cleanup_succeeded=False,
                            codex_container_created=False, gateway_handle=None,
                            tic_handle=None, tic_environment={'SANDBOX_TIC_TOKEN': 'old'},
-                           tic_resources=None, proxy_lock=None, proxy_state=None,
-                           proxy_args=None, manifest=None, prepared_images=None,
+                           tic_resources=None, command_session=None,
+                           
                            skills_tmp=None, pi_agent_tmp=None, repository=root,
                            resource_owner='owner')
 
@@ -60,7 +62,7 @@ class StartupOverlapTest(unittest.TestCase):
             proxy_started, tic_started, release = (threading.Event() for _ in range(3))
             replacements = startup_replacements(launcher, state)
 
-            def proxies(_state):
+            def proxies(_state, _images=None):
                 proxy_started.set()
                 self.assertTrue(tic_started.wait(3), 'Tic still serialized after proxy publication')
                 self.assertTrue(release.wait(3))
@@ -101,7 +103,7 @@ class StartupOverlapTest(unittest.TestCase):
                 finished.set()
                 return []
 
-            def proxies(_state):
+            def proxies(_state, _images=None):
                 self.assertTrue(tic_started.wait(3))
                 raise ValueError('injected proxy failure')
 
@@ -147,21 +149,20 @@ class CleanupOverlapTest(unittest.TestCase):
                 self.assertTrue(scratch.exists())
                 return CleanupResult(0, (), ())
 
-            def shared(action):
+            def shared(*, completed_successfully):
                 self.assertTrue(revoked.is_set())
                 self.assertEqual({}, state.tic_environment)
                 shared_started.set()
                 self.assertTrue(tic_started.wait(3))
                 self.assertTrue(release.wait(3))
                 self.assertTrue(scratch.exists())
-                action()
+                self.assertFalse(completed_successfully)
 
             state.tic_handle = SimpleNamespace(revoke=revoked.set, stop=stop)
-            state.proxy_lock = SimpleNamespace(coordination=None, finish=shared)
-            module = SimpleNamespace(reset_session=mock.Mock(), runtime_directory=lambda _: root,
-                                     ConfigError=type('ConfigError', (ValueError,), {}))
+            session = session_for(state)
+            session.finish.side_effect = shared
             with mock.patch.dict(launcher['cleanup'].__globals__, OUTER_RUNTIME=runtime.ContainerRuntime(),
-                                 proxy_module=lambda: module), ThreadPoolExecutor(1) as worker:
+                                 ), ThreadPoolExecutor(1) as worker:
                 future = worker.submit(launcher['cleanup'], state)
                 try:
                     self.assertTrue(shared_started.wait(3))
@@ -174,7 +175,8 @@ class CleanupOverlapTest(unittest.TestCase):
                 self.assertTrue(future.result(5))
             self.assertFalse(scratch.exists())
             self.assertFalse(state.pi_tool_connector.exists())
-            module.reset_session.assert_called_once()
+            session.finish.assert_called_once_with(completed_successfully=False)
+            session.discard_staging.assert_called_once()
 
     def test_failures_from_both_branches_retain_recovery_and_return_false(self):
         launcher = load_launcher()
@@ -187,21 +189,25 @@ class CleanupOverlapTest(unittest.TestCase):
                 self.assertTrue(revoked.is_set())
                 stopped.set()
                 return CleanupResult(0, (failure,), ('container:owned-tic',))
-            def shared(_action):
+            def shared(*, completed_successfully):
                 self.assertTrue(revoked.is_set())
                 raise ValueError('injected shared failure')
             state.tic_handle = SimpleNamespace(revoke=revoked.set, stop=stop, owner='tic-owner')
             state.tic_resources = object()
-            state.proxy_lock = SimpleNamespace(coordination=None, finish=shared)
-            module = SimpleNamespace(ConfigError=ValueError)
+            session = session_for(state)
+            session.finish.side_effect = shared
+            session.recovery_path = root / 'unpublished.json'
+            session.recovery_path.write_text('{}')
             persist = mock.Mock()
             with mock.patch.dict(launcher['cleanup'].__globals__, OUTER_RUNTIME=runtime.ContainerRuntime(),
-                                 proxy_module=lambda: module, persist_relay_recovery=persist,
+                                 persist_relay_recovery=persist,
                                  temporary_file=lambda: root / 'recovery.json',
                                  runtime_identity=lambda _: {'provider': 'fake'}), mock.patch('sys.stderr', new_callable=io.StringIO) as stderr:
                 self.assertFalse(launcher['cleanup'](state))
             self.assertTrue(stopped.is_set())
             self.assertTrue(state.recovery_record.exists())
+            self.assertTrue(session.recovery_path.exists())
+            session.discard_staging.assert_not_called()
             persist.assert_called_once_with(state, state.tic_resources, 'tic-owner', ('container:owned-tic',))
             self.assertIn('Shared proxy cleanup failed', stderr.getvalue())
             self.assertIn('container:owned-tic', stderr.getvalue())

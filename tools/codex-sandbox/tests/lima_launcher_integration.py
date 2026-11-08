@@ -200,8 +200,8 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                 assert before == after, "failed creation changed or deleted the existing relay network"
             finally:
                 runtime.run(["network", "rm", network], stdout=subprocess.DEVNULL)
-                if collision.proxy_state is not None:
-                    collision.proxy_state.unlink(missing_ok=True)
+                if collision.command_session is not None:
+                    collision.command_session.discard_staging()
                 if collision.recovery_record is not None:
                     collision.recovery_record.unlink(missing_ok=True)
             print("PASS: the conflicting network survived; fixture resources and recovery record removed.\n",

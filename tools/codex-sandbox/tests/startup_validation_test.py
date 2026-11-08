@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import fcntl
@@ -38,7 +39,7 @@ class StartupValidationTest(unittest.TestCase):
                         # never to reinitialization or the service session lock.
                         with mock.patch.object(Path, "home", return_value=home), mock.patch.dict(
                             initialize.__globals__,
-                            proxy_module=mock.Mock(side_effect=AssertionError("session resources queried")),
+                            CommandProxySession=mock.Mock(side_effect=AssertionError("session resources queried")),
                             run=mock.Mock(side_effect=AssertionError("existing metadata replaced")),
                         ):
                             initialize(repository)
@@ -84,7 +85,7 @@ class StartupValidationTest(unittest.TestCase):
 
             with mock.patch.object(Path, "home", return_value=home), mock.patch.dict(
                 initialize.__globals__, run=run,
-                proxy_module=lambda: mock.Mock(runtime_directory=lambda repo: runtime),
+                proxy_runtime_directory=lambda repo, _runtime: runtime,
             ), mock.patch.object(fcntl, "flock", side_effect=flock), \
                     ThreadPoolExecutor(max_workers=2) as executor:
                 first = executor.submit(initialize, repository)
@@ -131,7 +132,7 @@ class StartupValidationTest(unittest.TestCase):
                 native_flock(lock, fcntl.LOCK_EX)
                 with mock.patch.object(Path, "home", return_value=home), mock.patch.dict(
                     initialize.__globals__, run=run,
-                    proxy_module=lambda: mock.Mock(runtime_directory=lambda repo: runtime),
+                    proxy_runtime_directory=lambda repo, _runtime: runtime,
                 ), mock.patch.object(fcntl, "flock", side_effect=observe_flock), \
                         ThreadPoolExecutor(max_workers=1) as executor:
                     task = executor.submit(initialize, repository)

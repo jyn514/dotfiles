@@ -1,4 +1,5 @@
 """Native disposable repositories exercise launch authority and pointer layouts."""
+
 import json
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
@@ -246,44 +247,13 @@ class WorkspaceLayoutTest(unittest.TestCase):
                          resources[str(self.home / ".pi/agent/AGENTS.md")])
         backend = mock.Mock()
         with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
-                proxy_module=lambda: SimpleNamespace(runtime_directory=lambda _: runtime_directory)):
+                command_session=lambda _: SimpleNamespace(directory=runtime_directory)):
             launcher["preflight_lima"](state)
         binds = backend.check_binds.call_args.args[0]
         for workspace in workspaces:
             self.assertIn((workspace.host_root, True), binds)
             self.assertIn((workspace.lock_file, True), binds)
         self.assertIn((runtime_directory, False), binds)
-
-    def test_join_and_attach_pass_the_same_workspace_authority_without_transport_files(self):
-        launcher = runpy.run_path(str(LAUNCHER))
-        guest = Path("/home/codex/src/main")
-        layouts = [discover_workspace(self.main, guest, self.home)]
-        state = SimpleNamespace(repository=self.main, container_repository=guest,
-            workspaces=layouts, uid=os.getuid(), gid=os.getgid(),
-            proxy_state=self.home / "state.json", proxy_prefix="fixture", image="agent",
-            sidecar_image="", manifest=None, prepared_images=None,
-            policy_source_present=False, zuliprc=None, proxy_lock=mock.Mock(shared=False))
-        policy = {"capabilities": {}, "commands": {}}
-        seen = []
-        def join(request):
-            seen.append(request.workspaces)
-            return {}, {"manifest": policy, "source-present": False,
-                        "images": {"agent": "agent", "helper": None, "proxies": {}}}
-        def attach(request, manifest, images):
-            seen.append(request.workspaces)
-            self.assertEqual(policy, manifest)
-            self.assertEqual({}, images)
-            return {}, manifest, False
-        module = launcher["proxy_module"]()
-        function_globals = launcher["attach_proxies"].__globals__
-        with mock.patch.object(module, "join_session", side_effect=join), \
-                mock.patch.object(module, "attach_session", side_effect=attach), \
-                mock.patch.dict(function_globals, proxy_module=lambda: module,
-                    temporary_file=mock.Mock(side_effect=AssertionError("transport file")),
-                    check_agent_pi_revision=lambda *_: None, finalize_proxy_session=lambda *_: []):
-            launcher["load_accepted_session"](state)
-            launcher["attach_proxies"](state)
-        self.assertEqual([[item.to_dict() for item in layouts]] * 2, seen)
 
     def test_read_only_active_validation_does_not_prepare_dotfiles_or_authority(self):
         launcher = runpy.run_path(str(LAUNCHER))

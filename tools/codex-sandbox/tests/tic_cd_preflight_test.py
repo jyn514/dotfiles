@@ -1,4 +1,6 @@
 """Owned artifact/compiler and provider fakes; no operational broker, guest or Pi."""
+from command_session_fixture import session_for
+
 import contextlib
 import hashlib
 import io
@@ -39,7 +41,7 @@ class TicCdPreflightTest(unittest.TestCase):
         self.launcher = runpy.run_path(str(TOOL / 'codex-sandbox'))
         self.launch = self.launcher['launch']
         self.state = SimpleNamespace(home=self.home, repository=self.repository,
-                                     host_working_directory=self.repository, manifest=None,
+                                     host_working_directory=self.repository, command_session=None,
                                      capabilities=frozenset(), uid=os.getuid(), gid=os.getgid(),
                                      skills_source=None, pi_agent_tmp=None, workspaces=[])
         self.events = []
@@ -74,7 +76,7 @@ class TicCdPreflightTest(unittest.TestCase):
                 Path(directory).chmod(0o700)
 
     def load_policy(self, state):
-        state.manifest = {'commands': {}}
+        session_for(state, policy={'commands': {}})
         state.capabilities = frozenset({'tic'} if self.selected else ())
 
     def compile_bundle(self, source, expected):
