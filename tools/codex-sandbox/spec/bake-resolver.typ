@@ -40,14 +40,13 @@ pruned image requires a build even when inputs are unchanged. On a miss, capture
 private snapshots of all local inputs, hash the captured representation, and
 repeat lookup before building exclusively from those snapshots. Bytes built
 must match bytes hashed, even if the checkout changes.
-The resolver evaluates all requested targets together and shares dependency
-results within that invocation. It coordinates concurrent
-misses and publishes cache results only after successful builds and verification.
-Locks and atomic result records live in the owner-only
-`/tmp/codex-sandbox-images-<uid>` directory. Acquire target locks in sorted cache-key
-order, repeat image lookup while holding them, and replace a result record only
-after verifying the built image. A crash may leave an unused temporary file or
-lock file; neither is a cache hit, and the next invocation repeats engine lookup.
+The resolver evaluates all requested targets together and shares dependency results within that invocation.
+It coordinates concurrent misses and returns immutable image references only after successful builds and engine verification.
+The engine's available content-keyed images are the reusable results; no per-target result files are written or consulted.
+Target locks and the atomic upstream-pin record live in the owner-only `/tmp/codex-sandbox-images-<uid>` directory.
+Acquire target locks in sorted cache-key order and repeat engine image lookup while holding them before building.
+A leftover lock file or obsolete result file is not a cache hit; every invocation checks the engine.
+Ordinary upstream resolution may persist pins before building; refresh publishes changed pins only after all affected builds and verification succeed.
 Ordinary acquisition follows the launcher's resolution-versus-refresh policy.
 Its refresh command resolves updated upstream image identities and rebuilds
 affected dependents while preserving valid build caches. An explicit clean
@@ -61,5 +60,5 @@ before adding metadata caches or file watchers.
 Acceptance tests cover added, removed, renamed, and modified context entries;
 permissions and symlink changes; named contexts and dependency image changes;
 checkout mutation between lookup and build; concurrent misses; pruned images;
-and failed or cancelled builds and refreshes. No failure may publish a reusable
-result, and every successful build must consume the captured input bytes.
+and failed or cancelled builds and refreshes.
+No failure may return an unverified result or publish refreshed pins, and every successful build must consume the captured input bytes.

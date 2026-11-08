@@ -37,14 +37,6 @@ def _cache_locks(keys):
         yield
 
 
-def _record(key, image):
-    directory = _cache_directory()
-    temporary = directory / (key + f'.{os.getpid()}.tmp')
-    temporary.write_text(json.dumps({'version': CACHE_CONTRACT, 'image': image.reference}) + '\n')
-    os.chmod(temporary, 0o600)
-    temporary.replace(directory / (key + '.json'))
-
-
 def _write_atomic(path, value):
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
     temporary.write_text(json.dumps(value, sort_keys=True) + '\n')
@@ -417,8 +409,6 @@ def _resolve(runtime, repo, requested, *, declaration=None, file=None, captures=
                             if result.returncode:
                                 raise BuildError(result.returncode, result.args)
                         resolved = {name: runtime.resolve_image(tag) for name, tag in tags.items()}
-                        for name, image in resolved.items():
-                            _record(tags[name].removeprefix('sandbox-bake:'), image)
                         images.update(resolved)
             sorter.done(*ready)
         _publish_pins(pending_pins)

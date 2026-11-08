@@ -503,13 +503,44 @@ class BakeTest(unittest.TestCase):
         self.assertEqual(raised.exception.returncode, 7)
         self.assertEqual(self.engine.builds, [])
 
-    def test_failed_build_publishes_no_cache_record(self):
+    def test_engine_backed_results_need_only_locks_and_upstream_pins(self):
+        self.engine.metadata['target'].pop('proxy')
+        (self.repo / 'ci/base.Dockerfile').write_text('FROM alpine:3.22\n')
+        first = resolve(self.engine, self.repo, ['base'])
+        cache = bake._cache_directory()
+        self.assertEqual(['upstream-pins.json'], [path.name for path in cache.glob('*.json')])
+        pins = json.loads((cache / 'upstream-pins.json').read_text())
+        self.assertEqual({'test-engine\0linux/arm64\0alpine:3.22':
+                          'alpine@sha256:' + '1' * 64}, pins)
+        tag = self.engine.builds[0]['base']['tags'][0]
+        self.assertTrue((cache / (tag.removeprefix('sandbox-bake:') + '.lock')).is_file())
+        self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
+        self.assertEqual(1, len(self.engine.builds))
+        # A pruned engine image must rebuild, despite identical captured inputs.
+        self.engine.images.pop(tag)
+        second = resolve(self.engine, self.repo, ['base'])
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(self.engine.builds))
+        self.assertEqual(['alpine:3.22'], self.engine.upstream_calls)
+        self.assertEqual(['upstream-pins.json'], [path.name for path in cache.glob('*.json')])
+
+    def test_obsolete_result_record_cannot_replace_a_missing_engine_image(self):
+        self.engine.metadata['target'].pop('proxy')
+        first = resolve(self.engine, self.repo, ['base'])
+        tag = self.engine.builds[0]['base']['tags'][0]
+        record = bake._cache_directory() / (tag.removeprefix('sandbox-bake:') + '.json')
+        record.write_text(json.dumps({'version': 4, 'image': first['base']}) + '\n')
+        self.engine.images.pop(tag)
+        second = resolve(self.engine, self.repo, ['base'])
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(self.engine.builds))
+        self.assertEqual(first['base'], json.loads(record.read_text())['image'])
+
+    def test_failed_build_returns_no_engine_image(self):
         self.engine.build_status = 23
         with self.assertRaises(BuildError):
             resolve(self.engine, self.repo, ['base'])
-        records = [path for path in bake._cache_directory().glob('*.json')
-                   if path.name != 'upstream-pins.json']
-        self.assertEqual([], records)
+        self.assertEqual({}, self.engine.images)
 
     def test_engine_error_is_not_a_cache_miss(self):
         def unavailable(tag):
@@ -580,6 +611,26 @@ class BakeTest(unittest.TestCase):
         self.engine.build_status = 0
         self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
         self.assertEqual(['alpine:3.22', 'alpine:3.22'], self.engine.upstream_calls)
+
+    def test_failed_image_verification_does_not_publish_refreshed_pin(self):
+        self.engine.metadata['target'].pop('proxy')
+        (self.repo / 'ci/base.Dockerfile').write_text('FROM alpine:3.22\n')
+        first = resolve(self.engine, self.repo, ['base'])
+        pins = bake._cache_directory() / 'upstream-pins.json'
+        previous = pins.read_bytes()
+        self.engine.upstream = 'sha256:' + '2' * 64
+        inspect = self.engine.resolve_image
+
+        def fail_built_image(tag):
+            if len(self.engine.builds) > 1:
+                raise APIError(500, ['image', 'inspect', tag], 'verification failure')
+            return inspect(tag)
+
+        with mock.patch.object(self.engine, 'resolve_image', side_effect=fail_built_image):
+            with self.assertRaises(APIError):
+                resolve(self.engine, self.repo, ['base'], operation='refresh')
+        self.assertEqual(previous, pins.read_bytes())
+        self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
 
     def test_late_ordinary_resolution_cannot_overwrite_refreshed_pin(self):
         key = 'test-engine\0linux/arm64\0alpine:3.22'
