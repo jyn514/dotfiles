@@ -67,6 +67,9 @@ Use the actual state and governing requirements to construct alternatives across
 - Remove an agent-selected constraint versus satisfy the dependencies it creates.
   Name the choice that creates the dependency: “keeping X requires Y” is not the same as “the user’s goal requires Y.”
 
+For a worked example of how describing a tool limitation as a task requirement changes which alternatives remain visible,
+see [when a tool's limitation becomes the user's obligation](../references/common-misconceptions.md#when-a-tools-limitation-becomes-the-users-obligation).
+
 For example, a leftover installed artifact may need one authorized cleanup rather than cleanup on every startup.
 If supported installation can recreate it, a one-off cleanup does not meet a requirement to prevent recurrence.
 Compare fixes to the responsible source behavior.

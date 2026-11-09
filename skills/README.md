@@ -1,6 +1,10 @@
 # Agent skills
 
 This collection covers software design, testing, writing, and coordinating work among coding agents.
+[Common misconceptions](references/common-misconceptions.md) develops distinctions through worked examples,
+starting with why present activity does not reveal every available possibility.
+It is explanatory reading, not an additional skill or a mandatory checklist.
+
 Choose a section by the work you need:
 
 - [Test code and assess tests](#test-code-and-assess-tests): write properties and generators, review existing tests, or check whether tests detect plausible implementation mistakes.

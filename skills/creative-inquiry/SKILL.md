@@ -35,6 +35,9 @@ Consider the conditions under which a solution must live: who uses it, who maint
 
 Examine the concepts organizing the problem. What counts as an object, a relationship, a permission, an event, or a boundary? Which ideas have been bundled together, and which have been separated mostly by convention? Try a different representation when it could expose something the current one makes difficult to think about. A table might become a journey; an ownership problem might become a question about distinct responsibilities; a workflow might become a conversation.
 
+For worked examples of how descriptions shape possibilities, and why understanding need not end in classification,
+see [describing a situation versus participating in it](../references/common-misconceptions.md#describing-a-situation-versus-participating-in-it).
+
 Give a promising alternative enough shape to compare with the current approach.
 An inherited constraint—or one you introduced—may be negotiable: what becomes possible without it, and what would be lost?
 When troublesome cases invite more exceptions, inspect what produces them; changing that source may preserve a useful rule instead of teaching around accidental interference.
