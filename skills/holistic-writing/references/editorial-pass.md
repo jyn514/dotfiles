@@ -43,6 +43,8 @@ A reference can serve a reader who wants one answer; an argument may need sustai
 Establish what is observed, selected, provisional, and unresolved.
 Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority.
 Preserve provenance for measurements and reconstructed decisions.
+Preserve the author's stated goals and experience; wanting to use something does not establish having used it.
+Attribute checks and observations to whoever performed them rather than turning agent-run checks into the author's experience.
 Your review limits are not facts about the author's investigation.
 Do not add a first-person claim such as “I have not tested this” unless supplied evidence establishes it.
 When reviewing, describe the language and its reading effects rather than inferring the author's identity or effort.
@@ -57,6 +59,13 @@ Make its title and opening intelligible without session context.
 Define named proposals or policies rather than relying on their labels.
 Explain unfamiliar specialist terms before consequential use while preserving precise established domain terms.
 Distinguish facts, decisions, proposals, examples, and unresolved questions.
+
+Organize decision-oriented writing around the reader's decision, not the investigation's chronology.
+Read the title and opening together and preserve the specific request.
+Name a proposed change before explaining workarounds unless the required form dictates another order.
+Do not turn a proposal into general advice-seeking or require a fix proposal for a genuine support question.
+Do not add a request to find or design an alternative unless that is part of the author's intent.
+See the [request-before-workaround contrast](reading-examples.md#state-the-request-before-the-workaround).
 
 ### Explain choices and consequences
 
@@ -86,6 +95,7 @@ If an essential connection is unsupported, identify that specific gap rather tha
 When a mechanism remains a list of facts, compare the [property-and-consequence and feedback-loop examples](reading-examples.md#explain-what-the-detail-changes-for-the-reader).
 
 Develop a hypothesis as a hypothesis, explaining its proposed mechanism and uncertainty without claiming confirmation.
+Keep observations distinguishable from the diagnosis so they remain useful if the diagnosis changes.
 For a nontrivial mechanism, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
 Introduce one conceptual layer at a time, with plain-language meaning before notation and a worked example before an algorithm when useful.
 Preserve deliberate concrete-to-general development.
@@ -100,6 +110,10 @@ Give a thought room to develop.
 Joining sentences or packing definitions together can preserve facts while making their connections harder to follow.
 Concision makes good use of attention; it need not mean compressing the prose.
 Use the space that helps the reader follow, without rewarding either length or brevity on its own.
+
+For decision-oriented writing, make the main text sufficient to understand the problem, why it matters, the requested outcome, and any material limits of obvious alternatives.
+Keep decisive evidence visible; put supporting traces, setup, and background in appendices or collapsed details when the format allows it.
+Point to the relevant supporting section rather than repeating its contents.
 
 ### Present measurements
 
@@ -120,6 +134,17 @@ Cut explanatory padding too: a second paraphrase needs a purpose beyond being an
 Preserve effective voice, deliberate casing, fragments, idiom, and precise terms rather than normalizing them for consistency.
 Voice also lives in particular attention, selection, connections, and implications, not only verbal personality.
 Apply vocabulary bans by meaning rather than word matching.
+
+Prefer familiar words and active verbs with concrete subjects: “the launcher calls Python,” not “Python is called.”
+Check for hidden actors when responsibility or evidence matters: name who performed an operation, observed a result, or skipped a check.
+Distinguish a deliberate skip from a check blocked by missing access or inputs; give the reason when it changes the conclusion or next action.
+Limit claims about unperformed checks to the investigation whose records you have.
+Use the known actor or state the behavior directly; do not invent an actor just to eliminate passive voice.
+
+For task-oriented prose, make an aggressive deletion pass once the explanation works.
+Cut repeated claims, investigation narration, defensive qualifications, and sentences that merely announce what follows.
+Keep the request, concrete motivation, decisive evidence, and qualifications that change the conclusion or next action.
+Compare the shorter version with the original and restore anything whose loss makes the reader reconstruct a necessary connection.
 
 Read headings on their own: what subject or task would a reader expect under each one?
 Compare that promise with what the section actually does; regroup or rename when they differ.

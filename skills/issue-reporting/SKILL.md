@@ -50,11 +50,13 @@ If evidence is missing, make a small authorized check or ask a bounded question.
 
 ### Decide whether to stop or request a change
 
-Stop without drafting when existing guidance resolves the problem.
+Stop without drafting when existing guidance satisfies the requested outcome, not merely when a workaround makes the task possible.
 If an explicitly unsupported configuration causes the issue, identify who selects it and recommend correcting it at its owner; do not report the known incompatibility again or implement the correction.
 Do not require a fix proposal for an unresolved failure; preserve uncertainty about its cause.
 If an upstream change is still needed, identify the minimum change for the remaining problem.
-A working but costly workaround supports a simplification request, not a claim that upstream changes are required for correctness.
+A working workaround does not settle a request to change defaults, remove recurring configuration, or reduce access granted by default.
+Evaluate that remaining outcome rather than narrowing the request to documentation because a workaround exists.
+Describe the workaround accurately without claiming an upstream change is necessary for functionality the tool already supplies.
 Compare the downstream cost with the proposed upstream work and maintenance.
 
 ## 2. Gather the evidence
@@ -70,7 +72,6 @@ For remote source, shallow-clone the repository into a temporary directory.
 
 Incorporate jyn's latest corrections and experiments.
 Track whether each result came from jyn, an agent-run check, or source inspection.
-Distinguish goals and reported experience from verification.
 Describe agent-run checks with their commands, reproducers, and captured results; never say jyn ran them.
 Do not present proposed steps as completed checks or invent commands, logs, environment details, or successful tests.
 A source defect does not prove a runtime reproduction.
@@ -95,41 +96,28 @@ Omit source links when the report makes no source-based claim.
 
 ## 3. Write for the maintainer's decision
 
-Organize the report around the maintainer's decision, not the investigation's chronology.
-Read the title and body together; keep the specific request rather than broadening it.
-For a change proposal, name the change before the workaround unless the template requires another order.
-Before opening collapsed details, the maintainer should understand the failure, why it matters, the requested outcome, and why obvious workarounds fall short.
-When an existing supported approach might meet the need, ask about it without replacing a specific proposal with general advice-seeking.
-Do not imply an approach exists or ask the maintainer to design one unless that is the request.
+For a new report or substantial revision, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for request framing, concrete explanations, factual fidelity, actor clarity, and main versus supporting detail.
+For a bounded correction, check the changed passage in context and any affected claims, template fields, or links; do not restart the whole-artifact pass unless the correction changes the explanation or request.
+Apply the report-specific requirements below within that pass.
+
 A maintainer can recommend keeping a solution downstream without supplying an alternative.
 Do not duplicate requests already covered by template fields.
-See the [discussion contrast](../holistic-writing/references/reading-examples.md#state-the-request-before-the-workaround) for examples.
 
 ### Explain the workflow and limitation
 
 Use complete sentences and ordinary issue prose, even if the conversation uses IRC style.
-State jyn's goals and experience accurately; do not invent familiarity, use, or personal verification.
-If jyn supplies first-person experience, preserve wording such as “In my case.”
-“I want to use ...” does not establish “I use ...”.
 
 For a bug report, name the general failure in the title, not just the tool that exposes it; for example, title a failure “user-local Python” and name mise in the body.
 Treat exact UI labels and [improper nouns](https://siderea.dreamwidth.org/1773806.html) as terms of art: quote them in titles when Markdown is unavailable, format them distinctly in the body, and define unfamiliar terms on first use.
-Use familiar words and active voice with concrete subjects.
-For example: “The command returned ...” rather than “The execution yielded ...”; “the launcher calls Python” rather than “Python is called.”
 For GitHub issues and pull requests in the target repository, use `#123` without repeating the full URL.
 
-Explain the practical need through a concrete workflow, not just a desired mechanism.
 When motivation or upstream responsibility is not obvious, add a motivation section or use the template field.
-Introduce downstream tools before relying on them for context, and explain why a technical term matters.
-Connect what the user wants to do, what the failure prevents, and what a fix must preserve.
-Explain where the limitation arises and why workarounds fall short, distinguishing what each one solves.
+Connect the concrete workflow, what the failure prevents, and what a fix must preserve.
 When execution boundaries matter, say where processes and data live; “guest” alone does not distinguish a VM from a container.
-Use examples to explain the workflow, not as detached facts followed by API details.
 Separate evidence implicating the target project from assumptions that it must change.
 Do not claim downstream fixes are impossible when they are merely awkward or incomplete.
 
 State the visible failure and practical consequence, then explain the cause if established.
-Label hypotheses and keep the observed behavior useful even if the diagnosis is wrong.
 Describe expected behavior separately.
 For a bug report without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
 Add a small fix suggestion only when evidence supports it; do not turn the report into an implementation plan.
@@ -151,11 +139,8 @@ Avoid merely labeling steps “hardware-dependent” or “not minimal” withou
 Include a failing input or artifact when useful, even if not minimized; state any minimization limit.
 Use screenshots for visual failures.
 
-Keep decisive evidence visible, including any supported conclusion about upstream versus downstream responsibility.
-Put most reproduction setup, source tracing, patch identification, and supporting output inside `<details>` unless needed to understand the failure.
-Point from the visible conclusion to the named details section rather than moving the full trace into the main description.
-Collapse supporting output unless it explains the visible failure.
-Do not repeat the visible excerpt inside collapsed output.
+Keep any supported conclusion about upstream versus downstream responsibility visible.
+Use `<details>` for supporting reproduction setup, source tracing, patch identification, and output.
 Preserve observed output verbatim in a fenced block; say if it is an excerpt or from an older version, and never present old output as a new test.
 Put each bare GitHub permalink on its own line immediately after the claim it supports.
 
@@ -186,23 +171,15 @@ A redacted body does not sanitize attachments.
 Preserve raw evidence; use labeled copies for redacted attachments and inspect the final archive again.
 State remaining identifying metadata or body/attachment mismatches outside the report, even when no credentials appear.
 
-Review each authored sentence for passive voice and hidden actors.
-Use the known actor or state the behavior directly; do not invent an actor to satisfy this check.
-For unperformed checks, name who did not run them and distinguish a deliberate skip from a check blocked by missing access or inputs.
-Write “We did not run this test,” not “No test result is available”; give the known reason when it matters.
-Limit the claim to this investigation when jyn's other testing is unknown.
-
 Save the issue body as Markdown at jyn's requested path, or use a descriptive filename in the working directory.
 Keep it current when revising.
 Return a copy-ready title and a link to the file.
 Keep process commentary, remaining checks, and the issue-creation URL outside the report body.
 For each material check that remains, give the exact check to run and say which sentence or field to replace for each possible result.
-Keep unverified claims out of the report; do not turn agent limitations into first-person claims or claim checks neither jyn nor an agent performed.
+Keep unverified claims out of the report.
 Incorporate jyn's results when supplied.
 If no material checks remain, say so briefly.
 After the first draft, provide the upstream issue-creation URL outside the report body.
 Drafting does not authorize submission; submit only when explicitly requested and the project's policy permits agent submission.
 
-For a new report or substantial revision, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact editorial review.
-For a bounded correction, check the changed passage in context and any affected claims, template fields, or links; do not restart an established whole-artifact pass unless the correction changes the report's explanation or request.
 Make clear which response from the maintainer would help, and distinguish existing capabilities from proposed changes.
