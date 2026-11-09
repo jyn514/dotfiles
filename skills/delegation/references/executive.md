@@ -38,6 +38,13 @@ Retain explicit user-imposed limits and approvals.
 Require return before an unresolved consequential choice, conflicting ownership, or effects outside the assignment's authority or resource limits.
 For coupled implementation, use the [shared-contract check](shared-contracts.md) rather than assume separate files imply independence.
 
+For work already tracked, use native issue fields to record current ownership, state and dependencies within your mutation authority.
+Use labels for useful routing or waiting distinctions that existing fields do not express.
+Follow project conventions and tracker procedures; do not introduce a standard label set for every run.
+Update those fields when work starts, responsibility changes, a candidate enters review, or a blocker appears or clears.
+Put rationale and evidence in comments rather than using comments as the only record of current state.
+An agent finishing its turn does not establish issue completion.
+
 ### Give a self-contained assignment
 
 Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
@@ -73,6 +80,10 @@ A review needs the supplied design as its object, not as a required conclusion.
 Include cumulative mechanisms and evidence that could disprove the approach, not just its latest patch.
 
 ## Schedule, wake, and reconcile
+
+Use issue states, ownership, dependencies and relevant labels to identify work needing dispatch or follow-up.
+Reconcile them with current assignments and acceptance evidence when they disagree.
+Distinguish the issue's remaining obligation from whether an agent is currently running; do not copy transient execution events into the tracker.
 
 Choose workers suited to the task's judgment and cost requirements; tools and capability do not expand authority.
 Allow preparation while a later action must wait, and hold only concrete conflicting operations or dependencies.

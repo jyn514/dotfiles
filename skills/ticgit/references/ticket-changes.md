@@ -73,8 +73,10 @@ ti close <id>
 
 ## Planning Fields
 
-Set priority, tags, estimates, or milestones only when the task or project workflow calls for them.
-These are independent operations, not required setup steps:
+Use supported fields and tags when they help select work, identify responsibility or explain a waiting condition.
+Ordinary executive coordination is a valid reason to maintain them within existing mutation authority; jyn need not request each update.
+Follow project conventions and do not populate unrelated fields merely because they exist.
+Priority, tags, estimates and milestones are independent operations, not required setup steps:
 
 ```sh
 ti priority -t <id> 2
