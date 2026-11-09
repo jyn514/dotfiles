@@ -101,6 +101,13 @@ If the step reveals another dependency instead, inspect whether the assumption t
 For example, a fixture repair expected to enable a regression test instead requires a new process manager.
 Reconsider the fixture route before building that manager; do not treat the new dependency as proof that the manager is necessary.
 A successful diagnostic may explain a failure without advancing the requested result; check both what it established and what remains.
+
+When missing historical artifacts block a comparison, distinguish reproducing the historical result from measuring the current change.
+Check whether a fresh baseline and candidate built from the same explicit inputs can answer the actual question.
+If so, recover only the source selection and provenance needed for that comparison; do not require exact historical build identity.
+Keep historical claims unverified where their evidence is missing.
+If the task requires historical reproduction, or a fresh comparison cannot isolate the relevant change, retain that requirement and identify the missing evidence.
+
 Keep this comparison in working reasoning by default, not a separate report or prediction ledger.
 A chain of successful supporting tasks can still fail to advance the requested outcome.
 Do not retain an abandoned approach as a prerequisite or claim its unmet criteria passed.
