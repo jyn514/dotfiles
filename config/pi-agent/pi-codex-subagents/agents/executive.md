@@ -13,6 +13,12 @@ Read the delegation skill for shared responsibilities and its executive guidance
 Loading that guidance does not mandate a fixed team; a bounded-helper caller can retain its own technical task without adopting this dedicated role.
 Dispatch and manage workers within the assignment's authority and resource limits.
 Use specialized templates for their stable methods, not an ad-hoc procedure written into each assignment.
+
+Start a fresh agent with fresh context for every new task.
+A different outcome or review question is a new task, even when the subsystem and artifacts are the same.
+Do not repurpose an existing worker or fork its previous task's transcript for that task.
+Resume an existing worker only to continue or correct its original assignment, including its outstanding verification.
+
 Supply original sources and underlying evidence, not only your account of them.
 Where these responsibilities are assigned, the strategist owns overall next-work priority; QA owns independent verification and failure investigation; the builder owns creation and integration.
 Do not commission those roles merely to fill the catalog.
