@@ -1,6 +1,5 @@
 import { createServer } from "node:net";
 import { writeFileSync } from "node:fs";
-import { captureCheckpoint, createBoundaryTool } from "./commit-boundary-operations.mjs";
 import { createEditSuggestionsTool } from "./edit-suggestions-core.ts";
 
 const startupStarted = performance.now();
@@ -113,9 +112,9 @@ const server = createServer((socket) => {
         let result;
         if (request.tool === "commit_boundary_checkpoint") {
           if (Object.keys(request.params).length !== 0) throw new Error("invalid checkpoint request");
-          result = await captureCheckpoint(process.cwd(), {
-            signal: controller.signal, env: callEnv(process.env),
-          });
+          // Older host attachments still request captures. The feature is off;
+          // acknowledge without creating a checkpoint or intercepting writes.
+          result = { revision: null };
         } else if (request.tool === "validate_skill") {
           const { getAgentDir, loadSkills } = await loadToolModule();
           if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
@@ -148,7 +147,8 @@ const server = createServer((socket) => {
           } = await loadToolModule();
           const toolFactories = {
             read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
-            edit: createEditTool, write: createWriteTool, grep: createGrepTool,
+            edit: (cwd) => createEditSuggestionsTool({ createEditToolDefinition, generateDiffString }, cwd),
+            write: createWriteTool, grep: createGrepTool,
             find: createFindTool, ls: createLsTool,
           };
           const spawnHook = context => ({
@@ -157,18 +157,6 @@ const server = createServer((socket) => {
           if (!Object.hasOwn(toolFactories, request.tool)) throw new Error("unknown tool");
           const shellOptions = request.tool === "bash" || request.tool === "powershell"
             ? { spawnHook } : undefined;
-          if (request.tool === "edit" || request.tool === "write") {
-            // Keep the guard's operations inside Pi's queue and capture that same
-            // authoritative read for suggestions; neither wrapper retries a match.
-            const factories = {
-              createEditTool: (cwd, options) => createEditSuggestionsTool(
-                { createEditToolDefinition, generateDiffString }, cwd, options),
-              createWriteTool,
-            };
-            guarded = createBoundaryTool(factories, request.tool, process.cwd(), {
-              signal: controller.signal, env: callEnv(process.env),
-            });
-          }
           const tool = guarded?.tool ?? toolFactories[request.tool](process.cwd(), shellOptions);
           result = await tool.execute(
             request.id ?? "guest-tool", request.params, controller.signal,

@@ -342,6 +342,12 @@ and start a new sandbox to deploy the host extension and worker together;
 
 ## Commit-boundary warning
 
+**Disabled.** The native bundle does not activate this extension, and guest tools no longer capture response boundaries or intercept writes for `agent-split` checks.
+A response ending does not establish a change worth preserving separately; the warnings repeatedly interrupted ordinary iterative editing.
+There is no configuration switch.
+The lower-level implementation and its direct tests remain; the design below describes that inactive implementation, not current default behavior.
+Existing sandbox workers need replacement to pick up the worker change; `/reload` alone does not replace their code.
+
 The selected `commit-boundary.ts` design records one working-copy boundary after an editing response fully settles, including automatic continuation.
 The harness takes an ordinary wrapped Jujutsu snapshot and saves immutable `@` as a JSON string, for example `"0123..."`, in the ignored, working-copy-local `target/jj-split/commit-boundary.json`.
 The record must never enter a Jujutsu snapshot.

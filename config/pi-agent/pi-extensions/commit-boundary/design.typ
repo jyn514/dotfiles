@@ -5,7 +5,10 @@
 
 = Commit-boundary warning
 
-*Status:* Implemented and tested; jyn manually verified the feature in a sandbox session, without establishing global activation or universal extension loading.
+*Status:* Disabled in the native bundle and sandbox tools at jyn's request.
+Response boundaries did not reliably identify changes worth preserving separately, and warnings interrupted iterative editing.
+This document describes the retained inactive implementation, not current default behavior.
+It was implemented and tested, including manual sandbox verification.
 This document records the design and implementation ownership for a small advisory feature in the Pi extension bundle and the existing `agent-split` tool.
 It does not authorize automatic commits.
 

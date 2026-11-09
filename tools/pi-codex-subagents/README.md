@@ -465,6 +465,10 @@ An in-flight link admission keeps its process only until the manager reads the r
 
 ### Working-copy commit-boundary protection
 
+The dotfiles integration is disabled in the native bundle and sandbox tools.
+The following describes the retained inactive implementation; ordinary worker writes no longer capture or check response boundaries.
+See the [canonical status](../../config/pi-agent/pi-extensions/README.md#commit-boundary-warning).
+
 The independently deployed dotfiles boundary integration can warn before a structured write makes the latest finished editing response's diff no longer separately selectable by `agent-split`.
 Its ignored `target/jj-split/commit-boundary.json` record belongs to the working copy, so protection follows writes across parent sessions, fresh workers and resumed workers, including after child-process exit.
 A warning blocks that write once and retires the protected selection; an intentional retry can proceed.

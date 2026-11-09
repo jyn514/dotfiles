@@ -14,7 +14,7 @@ import {
   parsePiResourcePaths, rewritePiResourcePaths, sessionToolInputToHost,
   sessionToolMetadataToGuest, sessionToolTextToGuest,
 } from "./guest-tools-core.ts";
-import { createBoundaryController, type BoundaryMetadata } from "./commit-boundary.ts";
+import type { BoundaryMetadata } from "./commit-boundary.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
 
@@ -196,8 +196,6 @@ export default function guestTools(pi: ExtensionAPI) {
   const { cwd, repository, resourcePaths, previousCwd } = attachment;
   if (!cwd) throw new Error("guest working directory is unavailable");
   pi.on("session_start", () => attachment.ready());
-  const boundary = createBoundaryController(pi, (ctx, signal) =>
-    attachment.call("commit_boundary_checkpoint", {}, attachment.context(ctx), signal));
   const sandboxContext = repository
     ? readFileSync(new URL("../../agents/sandbox-context.md", import.meta.url), "utf8")
       .replaceAll("{{repository}}", () => repository).trim()
@@ -259,22 +257,7 @@ export default function guestTools(pi: ExtensionAPI) {
     pi.registerTool({
       ...tool,
       async execute(id, params, signal, onUpdate, ctx) {
-        if (tool.name !== "edit" && tool.name !== "write") {
-          return attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx), signal, onUpdate);
-        }
-        const call = boundary.begin(ctx);
-        let metadata: BoundaryMetadata | undefined;
-        let successfulWrite = false;
-        try {
-          const result = await attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx),
-            signal, onUpdate, undefined, {
-              onBoundary(value) { metadata = value; },
-            });
-          successfulWrite = !result.isError;
-          return result;
-        } finally {
-          boundary.finish(call, metadata, successfulWrite);
-        }
+        return attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx), signal, onUpdate);
       },
     });
   }

@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import askUser from "./ask-user.ts";
 import contextBreakdown from "./context-breakdown.ts";
-import commitBoundary from "./commit-boundary.ts";
 import compactSession from "./compact-session.ts";
 import currentDate from "./current-date.ts";
 import detailedReasoning from "./detailed-reasoning.ts";
@@ -32,7 +31,6 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   askUser(pi);
   contextBreakdown(pi);
   editSuggestions(pi);
-  commitBoundary(pi);
   currentDate(pi);
   detailedReasoning(pi);
   footer(pi);

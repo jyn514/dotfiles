@@ -10,7 +10,9 @@ import { jsonl, until } from "./source-runtime.ts";
 const source = process.env.PI_TEST_COMMIT_BOUNDARY_SOURCE;
 const sourceTest = test.skipIf(!process.env.PI_TEST_CORE_TSCONFIG || !source);
 for (const mode of ["native", "guest"] as const) {
-  sourceTest(`actual ${mode} boundary protects worker A after exit from fresh worker B, warns once and permits resumed retry`, async () => {
+  sourceTest(mode === "guest"
+    ? "guest workers write across manager restarts without boundary captures or warnings"
+    : "retained native controller warns once and permits resumed retry across worker exits", async () => {
     const { AgentManager, SUBAGENT_DIR } = await import("../core.ts");
     const root = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, `domain-${mode}-`));
     const cwd = join(root, "repo");
@@ -88,6 +90,23 @@ for (const mode of ["native", "guest"] as const) {
       const firstSessionId = jsonl(first.sessionFile).find(entry => entry.type === "session").id;
       expect(readFileSync(join(cwd, "rules.md"), "utf8")).toBe(reorganized);
       expect(jsonl(first.sessionFile).find(entry => entry.message?.toolName === "write").message.isError).not.toBe(true);
+      if (mode === "guest") {
+        expect(existsSync(recordFile)).toBe(false);
+        await manager.shutdown();
+        manager = new AgentManager({ modelResponseTimeoutMs: 20000 });
+        parentSessionId = crypto.randomUUID();
+        await manager.ready();
+        await spawnAgent("update-rules", task(extracted));
+        const second = await settled("update-rules");
+        expect(second.id).not.toBe(first.id);
+        expect(jsonl(providerCallsFile(second.sessionFile))[0].pid).not.toBe(firstPid);
+        const write = jsonl(second.sessionFile).filter(entry => entry.message?.toolName === "write").at(-1).message;
+        expect(write.isError).not.toBe(true);
+        expect(readFileSync(join(cwd, "rules.md"), "utf8")).toBe(extracted);
+        expect(existsSync(recordFile)).toBe(false);
+        expect(readFileSync(join(cwd, "unrelated.txt"), "utf8")).toBe("unrelated formatting\n");
+        return;
+      }
       expect(existsSync(recordFile)).toBe(true);
       const record = readFileSync(recordFile, "utf8");
       expect(JSON.parse(record)).toBe(jj("log", "-r", "@", "--no-graph", "-T", "commit_id"));
