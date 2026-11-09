@@ -1,4 +1,5 @@
 moonlander.rules=/etc/udev/rules.d/50-zsa.rules
+magic-trackpad-plover-workaround.rules=/etc/udev/rules.d/72-magic-trackpad-plover-workaround.rules
 sshrc=/etc/ssh/sshrc
 kde-fingerprint=/etc/pam.d/kde-fingerprint
 kscreenlockerrc=/etc/xdg/kscreenlockerrc

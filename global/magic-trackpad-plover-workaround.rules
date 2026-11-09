@@ -1,0 +1,6 @@
+# Hide the auxiliary Magic Trackpad interface from unprivileged programs.
+# Works around https://github.com/CachyOS/linux-cachyos/issues/1126.
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", \
+     ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="0324", \
+     ENV{ID_USB_INTERFACE_NUM}=="00", \
+     OWNER:="root", MODE:="0600", TAG-="uaccess"
