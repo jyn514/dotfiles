@@ -46,6 +46,7 @@ copy_globals() {
 	d=$(date "+%F %T")
 	for f in "$(realpath global)"/*; do
 		base=$(basename "$f")
+		if [ -n "${2:-}" ] && [ "$base" != "$2" ]; then continue; fi
 		while IFS="=" read -r local DEST; do
 			if [ "$local" = "$base" ]; then break; fi
 		done < install/global.txt

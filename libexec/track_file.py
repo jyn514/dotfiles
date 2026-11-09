@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -163,17 +164,20 @@ def track_global(source: Path, name: str, root: Path, dry_run: bool) -> None:
         new_manifest += "\n"
     new_manifest += f"{name}={source}\n"
 
+    apply_command = [
+        "sudo", "libexec/setup/setup_sudo.sh", "copy_globals", "--force", name,
+    ]
     if dry_run:
         print(f"copy {source} -> {tracked}")
         print(f"add {name}={source} to install/global.txt")
-        print("run sudo libexec/setup/setup_sudo.sh copy_globals --force")
+        print(f"run {shlex.join(apply_command)}")
         return
 
     shutil.copy2(source, tracked)
     try:
         atomic_write(manifest_path, new_manifest)
         subprocess.run(
-            ["sudo", "libexec/setup/setup_sudo.sh", "copy_globals", "--force"],
+            apply_command,
             cwd=root,
             check=True,
         )
