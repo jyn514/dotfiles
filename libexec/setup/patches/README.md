@@ -164,10 +164,101 @@ second local build. The successful reviewed build used a 4-GiB Node heap; the
 build deltas. The initial reviewed result contains 138 changed/new uncompressed browser
 files; that count is evidence for that build, not a rule for future revisions.
 
+## Check the installed patch and running browser assets
+
+Run these checks on the host, from the dotfiles repository root, with mise's Node and pnpm on `PATH`.
+They read the installed package and query the running daemon; they do not install, restart, pair a device, or change configuration.
+Start with `pi-dashboard --version` and `pi-dashboard status` to identify the installed release and running daemon.
+Do not use `pi-dashboard --help`: this release starts the foreground server for that argument.
+
+The following command checks three different things: the installation matches our patch, the running server returns the denial signal,
+and the browser entrypoint it serves matches the patched asset.
+It resolves the installation and split web package through the existing setup helpers, not a guessed pnpm store path.
+The HTTP checks default to the configured port on loopback, which requires `listenOnLoopback` or a loopback primary listener.
+If needed, set `DASHBOARD_CHECK_URL` to the daemon's reachable HTTP origin before running the command.
+Do not point it at an unrelated server.
+From Fish, enter `bash` before pasting the heredoc below; `exit` returns to Fish.
+
+```sh
+python3 - <<'PY'
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import urllib.request
+
+root = Path.cwd()
+setup = runpy.run_path(str(root / "libexec/setup/setup_dashboard.py"))
+command = setup["command"]
+install = Path(command("mise", "where", setup["TOOL"])).resolve()
+version = setup["pin"]()
+core = setup["installed_core"](install)
+components = setup["component_roots"](core)
+setup["validate_roots"](core, components, version, install)
+receipt = json.loads((install / setup["STAMP"]).read_text())
+assert receipt["version"] == version, "installed release differs from the mise pin"
+patch = setup["patch_file"](version)
+assert receipt["patch_sha256"] == hashlib.sha256(patch.read_bytes()).hexdigest(), "installed patch is stale"
+for name, expected in receipt["files"].items():
+    target = install / name
+    actual = hashlib.sha256(target.read_bytes()).hexdigest() if target.exists() else None
+    assert actual == expected, f"installed file differs: {name}"
+print("Installed files match the current patch receipt")
+
+config = json.loads((Path.home() / ".pi/dashboard/config.json").read_text())
+base = os.environ.get("DASHBOARD_CHECK_URL", f"http://127.0.0.1:{config.get('port', 8000)}").rstrip("/")
+print(f"Configured primary: {config.get('bindHost')}; checking: {base}")
+request = urllib.request.Request(base + "/api/health", headers={"X-Forwarded-For": "203.0.113.9"})
+with urllib.request.urlopen(request, timeout=10) as response:
+    health = json.load(response)
+assert health.get("networkAccess", {}).get("error") == "network_not_allowed", "missing remote denial verdict"
+print("Running server reports the unpaired caller's network denial")
+
+
+def get(path):
+    request = urllib.request.Request(base + path, headers={"Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        body = response.read()
+        return gzip.decompress(body) if response.headers.get("Content-Encoding") == "gzip" else body
+
+
+index = components["web"][0] / "dist/index.html"
+# Vite's production HTML has a script entrypoint; the server injects its import map separately.
+entry_pattern = rb'<script[^>]+src="([^"]+\.js)"'
+entry = re.search(entry_pattern, index.read_bytes()).group(1).decode()
+served_entry = re.search(entry_pattern, get("/")).group(1).decode()
+assert served_entry == entry, "server selects a different browser entrypoint"
+asset = get(entry)
+assert asset == (index.parent / entry.lstrip("/")).read_bytes(), "served browser asset differs"
+assert b"networkAccess" in asset, "browser entrypoint lacks the backported denial handler"
+print("Server selects and serves the patched browser entrypoint")
+PY
+```
+
+The denial check models an unpaired remote caller using a forwarding header and supplies no credentials.
+It expects this deployment's `pair` trust mode; a different admission policy can legitimately omit the field.
+Health polling does not create denial events or admission counters.
+A successful result does not prove the phone can reach the Tailscale listener or complete pairing.
+Check those in the actual browser.
+
+A `null` receipt hash means the installer intentionally removed that old asset; absence is the expected result.
+The HTML shell is not byte-identical to the installed `index.html`: the server inserts its import map and a per-response CSP nonce.
+Compare its selected entrypoint, then the decoded JavaScript bytes, rather than raw HTML equality.
+The asset request advertises gzip so a stale compressed sidecar cannot hide behind a correct uncompressed file.
+
 ## Validate before installing
 
 Run tests through `dev/test-environment`, from the patched source checkout. Start
-with `npm run lint` and the changed tests. Selected-address regressions live in
+with `npm run lint` and the changed tests.
+On a memory-limited Linux guest, run typechecking with `dev/test-environment env GOMEMLIMIT=3GiB GOGC=50 npm run lint`
+(use the wrapper's absolute path from the upstream checkout).
+These variables bound the native TypeScript 7 compiler's Go heap; Node's heap flag does not control it.
+Do not reuse only another checkout's root `node_modules` symlink for full typechecking: it does not reconstruct workspace dependency links.
+Use the frozen installation above.
+Selected-address regressions live in
 `server-auto-start-bind.test.ts`, `server-launcher.test.ts`, and
 `cli-specific-bind.test.ts`; they exercise real HTTP listeners.
 The bridge regression covers a stale primary address with a working loopback listener, before and after launch, and checks the child readiness endpoint.
