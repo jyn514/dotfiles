@@ -1,4 +1,4 @@
-// Trial config for Niri 26.04 and Noctalia 5; install both before starting.
+// Trial config for Niri 26.04 and Noctalia 5; install both and Fcitx5 before starting.
 // Copy to ~/.config/niri/config.kdl. Start `niri` inside Plasma to try nesting,
 // or select Niri at login for gestures, portals, and the complete session.
 // Nested mode uses Alt for Mod; standalone mode uses Super.
@@ -7,6 +7,11 @@
 // Noctalia integration: https://docs.noctalia.dev/noctalia/compositor-settings/niri/
 
 spawn-at-startup "noctalia"
+spawn-at-startup "fcitx5"
+
+environment {
+    XMODIFIERS "@im=fcitx"
+}
 
 input {
     keyboard {
