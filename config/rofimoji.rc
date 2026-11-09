@@ -1,0 +1,5 @@
+selector = rofi
+action = type
+typer = wtype
+hidden-descriptions = True
+selector-args = -theme grid.rasi -kb-row-left Left -kb-row-right Right -kb-move-char-back Control+b -kb-move-char-forward Control+f

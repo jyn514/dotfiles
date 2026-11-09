@@ -78,6 +78,8 @@ binds {
     Mod+Comma hotkey-overlay-title="Noctalia settings" { spawn "noctalia" "msg" "settings-toggle"; }
     Mod+T hotkey-overlay-title="Kitty terminal" { spawn "kitty"; }
     Mod+D hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
+    Mod+Period hotkey-overlay-title="Pick an emoji" { spawn "rofimoji"; }
+
     // Modifications
     Mod+Shift+C { spawn "noctalia" "msg" "panel-toggle" "clipboard"; }
     // Windows compat
@@ -215,7 +217,7 @@ binds {
     // Column grouping and tabs
     Mod+BracketLeft { consume-or-expel-window-left; }
     Mod+BracketRight { consume-or-expel-window-right; }
-    Mod+Period { expel-window-from-column; }
+    // Mod+Period { expel-window-from-column; }
     Mod+W { toggle-column-tabbed-display; }
 
     // Upstream conflicts:
