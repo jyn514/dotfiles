@@ -14,7 +14,7 @@ This purpose does not authorize execution.
 Work backward from the promised result, not forward from the current implementation's limitations.
 A graph is useful only if completing its tasks establishes the user's goal without redefining success.
 
-Work through the numbered stages in order because each makes a different promise.
+The numbered stages make different promises; preserve those distinctions while allowing approach comparison and decomposition to inform each other.
 First recover the goal and inspect the actual problem (§§1–2); then fix the root's success conditions while translating current knowledge into bounded tickets (§§3–4).
 Those tickets may change as discovery resolves uncertainty, but their closure must continue to serve the stable root contract.
 Next connect their outputs with justified dependencies and add applicable integration, quality, and maintenance work (§§5–6); review whether the whole graph can establish the root outcome (§7); create or update it in the selected tracker (§8); then hand it off.
@@ -41,13 +41,20 @@ Define a compact root contract for the root issue:
 - Required observable outcomes, including distinct correctness, coverage, usability and maintenance requirements actually supported by the request.
 - The complete target population and authoritative inputs, revisions or environments.
 - Allowed ways to satisfy each outcome, explicit exclusions and material unresolved decisions.
+- The governing deadline and resource constraints, or an explicit answer that there is no fixed deadline.
+
+Recover the deadline from the request and existing decisions before asking again.
+If no deadline is established, ask the user what deadline the graph must meet; do not assume an open-ended schedule.
+For a relative duration, establish its start and resulting deadline; replanning does not restart the clock.
+Record an explicit "no fixed deadline" answer rather than inventing a limit.
 
 Cite the source of consequential constraints, especially compatibility, preservation and required human approval.
 Do not promote an implementation guard, provisional policy or conservative assumption into a user requirement.
 Ask focused questions when missing context changes the objective or permitted behavior.
 Use `human-review-packets` for consequential approvals or questions that require substantial context; ask simple preferences or missing facts directly.
 Continue independent investigation.
-If uncertainty concerns discoverable facts rather than a user choice, assign a bounded discovery task with a concrete output and consuming task.
+Investigate discoverable facts during authorized planning rather than asking the user or assigning discovery by default.
+If a genuine dependency prevents resolving them now, apply §4's justified-deferral rule and give the bounded discovery work a concrete output and consuming task.
 Do not require a full specification before a graph can describe discovery work.
 
 ## 2. Inspect the actual problem
@@ -61,6 +68,22 @@ For goals using “all” or “every,” inspect the original population, not o
 Look for boundary cases excluded by current parsers, filters, manifests or sampling.
 A reconciled exclusion report does not prove successful coverage of those items.
 Record evidence paths and what each receipt actually establishes; representative successes cannot establish whole-population completion.
+
+### Sketch routes before committing to a breakdown
+
+When the overall approach is unsettled, partially decompose credible candidates enough to explain how each produces the requested result.
+Identify the input-to-consumer path, existing capabilities, new mechanisms, hardest work, required facts and consequential unknowns.
+Use these sketches to compare approaches and remaining cost, not to commit to the current mechanism before alternatives are understood.
+Do not require a full implementation graph for every candidate or choose an approach without explaining how it could work.
+Within authorized design work, use `architecture-design` to settle architectural choices; preserve the authority boundaries above.
+Refine sketches when decomposition reveals a difficulty that changes the comparison, then turn the selected route into executable issues.
+
+Distinguish evidence sufficient to choose an approach from evidence that its finished implementation meets acceptance.
+Current code, established patterns and a traced or worked representative case can justify a choice without demonstrating finished coverage.
+Do not require an alternative to produce delivered gains before considering it while favoring already-implemented fragments of the current route.
+Use a probe when its result changes the choice, not merely to find a larger collection of locally successful repairs.
+If repeated probes yield only local repairs without a credible route to the whole outcome, reopen the approach comparison using `work-selection`.
+Do not merely enlarge the repair bundle or treat planning as a requirement to prove the finished product in advance.
 
 ## 3. Make root closure explicit
 
@@ -99,7 +122,13 @@ Stop splitting when the leaf can be completed and checked without another substa
 Do not substitute arbitrary time limits, one-file tasks or isolated implementation phases for useful bounded outcomes.
 
 Tracking parents may aggregate broad outcomes, but are not executable assignments.
-When missing knowledge prevents a sound split, create a bounded discovery or decision task that supplies the information needed for the next decomposition.
+Resolve substantial scope and approach choices that available evidence and authorized planning can settle.
+Investigate discoverable facts during planning rather than leaving implementation workers to select substantial scope later.
+For each substantial choice left open, explain why planning cannot resolve it.
+Identify the required user judgment, genuinely unavailable external evidence, or bounded implementation experiment needed to decide it.
+If a governing scope or stage boundary prevents deciding here, cite it rather than expanding planning authority.
+Naming an owner, filing a discovery ticket or marking the choice pending does not supply that justification.
+When such a dependency prevents a sound split, define bounded work through the next consequential decision and its result-dependent next actions.
 Keep the remaining parent explicitly pending that decomposition; calling it provisional does not make it bounded or ready.
 Already-authorized bounded tasks need not wait for decomposition of independent branches.
 Do not invent speculative implementation children merely to make the graph look complete.
@@ -122,7 +151,8 @@ Name the mechanism and the existing path it extends or replaces, where applicabl
 Check that the cited basis supports the step this ticket must add, not merely a nearby helper or a manually supplied intermediate result.
 Record material implementation uncertainty and what finding would require reconsidering the approach.
 Treat an approach as settled when it is chosen and grounded, not proven successful in advance.
-If an unresolved choice could materially change scope, dependencies or maintenance costs, the ticket is not ready for implementation; give that choice a bounded discovery or decision task.
+If an unresolved choice could materially change scope, dependencies or maintenance costs, the ticket is not ready for implementation.
+Resolve the choice during authorized planning where possible; defer it to bounded discovery or decision work only with the justification above.
 Routine implementation choices and debugging remain part of implementation.
 Do not require a complete implementation plan, a prototype for every change or a new approval step to establish readiness.
 
@@ -133,6 +163,54 @@ Each ticket needs enough detail for another agent to act without reconstructing 
 - Acceptance cases and the actual consumer or check that will establish success, including necessary negatives.
 - Required facts, fixtures or component outputs, their producer/owner and completion dependencies.
 - Material exclusions and uncertainty that affect the work.
+
+### Check practical feasibility before readiness
+
+Settled scope and a grounded approach do not establish that work is practical.
+Before marking implementation ready, establish a credible basis for completing it within governing time and resource constraints.
+Where no explicit budget exists, assess whether the cost is proportionate to the required result without inventing an arbitrary limit.
+Use existing code, comparable completed work and applicable measurements.
+Account for the hardest step, target scale, input preparation, integration and required human or external waits.
+Record material cost assumptions and their evidentiary basis in the existing ticket.
+Check the combined route too: splitting expensive work into small tickets does not reduce its total cost.
+Compare the selected full-goal route with the strongest credible available alternative using [work-selection](../work-selection/SKILL.md).
+Justify any additional cost by required quality, maintenance, useful outcomes or consequential learning; do not manufacture alternatives or assume the fastest route wins.
+For a fixed deadline, establish a credible elapsed-time forecast for delivering the original goal within the time remaining.
+Use [work-estimation](../work-estimation/SKILL.md) for that assessment.
+Include genuine overlap, required verification and likely repair, and unavoidable waits.
+Include decision experiments and their consequential follow-up work; timing only the next increment does not establish deadline fit.
+
+If known costs are unreasonable, revise the approach or surface the conflict with the governing constraints without weakening the goal.
+Where feasibility uncertainty could invalidate completion, resolve it with the cheapest credible representative check before committing the bulk of the effort.
+Use inspection and existing evidence during planning where sufficient.
+If implementation is needed, specify the bounded learning task below and keep the affected implementation commitment pending its result.
+Exercise the actual bottleneck and consequential scale; success with prepared inputs or an easy subcase may not support the cost claim.
+A promise to reconsider after expensive failure is not evidence of feasibility.
+
+Match checks to the actual risk; do not require exact estimates, a prototype, a separate de-risking ticket or a new approval for every task.
+Routine work with applicable evidence needs no additional experiment.
+
+### Bound implementation needed to choose a direction
+
+Implementation needed to choose a direction is itself a bounded learning task, not permission to defer planning into execution.
+State in its existing ticket:
+
+- The consequential choice between approaches.
+- The missing evidence and why implementation is the cheapest credible way to obtain it.
+- Plausible results that would lead to different choices, and the next action for each.
+- The minimum implementation and observation needed for credible evidence before committing further.
+
+If the task cannot specify these, continue resolving its decision framing and decomposition during planning.
+Keep the affected implementation pending while doing so; do not hand the unresolved planning to an implementation worker.
+Check that the proposed results can support the consequential choice, not merely establish that a local feature works.
+For example, a prototype may be needed to choose between streaming and indexed import when references could require retaining the whole input.
+Its fixtures must exercise those references; successfully importing a flat CSV file cannot settle that choice.
+If existing inspection or evidence settles the decision more cheaply, use it instead of inventing an implementation experiment.
+
+Plan through the next consequential decision without assuming subsequent small successes will add up to the root outcome.
+Do not require every future implementation ticket in advance.
+If an experiment reveals further uncertainty, revise the affected plan explicitly.
+Selecting another small task does not resolve the remaining strategy.
 
 ### Acceptance and completion evidence
 
@@ -183,17 +261,33 @@ Do not build a new tracker or validation framework merely to write the plan.
 Structural validation prevents omissions and stale-evidence mismatches; the closeout owner must still check that the evidence actually proves each criterion.
 Planning defines this contract, not completed evidence or permission to execute the checks.
 
+#### Work through consequential failure
+
 Acceptance contracts and evidence records explain what closure means; they do not replace decisions about whether the route remains viable.
-For risks that can invalidate an approach or prevent completion, name the observable trigger and affected outcome.
-Assign an owner for the next decisive check or choice.
-State what its plausible results change and when to stop the affected approach, revise the graph or obtain a user decision.
-An investigation that rules out the planned route must hand off an owned next action, not leave only a blocked dependent.
+For a risk that can invalidate the route or prevent completion, name its observable trigger, affected outcome and decision owner.
+Work through a plausible adverse result: what can that owner actually assign next, from which usable inputs or working code, with what time remaining?
+Resolve choices available planning can settle; “stop and reconsider” does not resolve a known alternative's scope or dependencies.
 Do not require a separate risk register or branches for ordinary tickets.
+
+For example, an eight-day import delivery chooses a parser rewrite; extending the existing parser is a credible smaller alternative.
+**Insufficient:** “Check correctness and scale early; if the rewrite fails, the owner stops and reconsiders. A smaller route exists.”
+**Worked through:** Assume the first integrated check rules out the rewrite after two days.
+The format-support ticket still depends on that rewrite, so naming the alternative leaves no executable next assignment.
+Ground the smaller route in the existing parser, replace the rewrite-only dependency with its actual prerequisites, and specify the first ready action.
+Switch to that route if the integrated check shows the rewrite cannot meet required correctness and scale within the deadline.
+Check that switching, remaining implementation, integration and verification fit the six days left and still satisfy the original import requirements.
+Do not plan the fallback against the original eight-day budget or require it to finish the abandoned rewrite first.
+
+**No valid fallback:** If the existing parser cannot preserve required cross-record references, format extensions alone cannot satisfy the same goal.
+Do not label them a fallback by dropping that requirement.
+Revise the approach or surface the constraint conflict; a known alternative is useful only if it remains a credible route to the governing outcome.
 
 Use one canonical home for shared policy and cross-ticket acceptance contracts.
 Link directly from each affected ticket and retain short local guards only where they prevent a concrete mistake.
 Keep distinct case expectations beside their owner rather than repeating the common workflow in every body.
-Give effort ranges only when requested and supported; distinguish component work, shared integration waits, uncertainty and elapsed time.
+Do not invent effort ranges for every ticket.
+Use grounded elapsed-time estimates where needed to assess deadline fit; otherwise give effort ranges only when requested and supported.
+Distinguish component work, shared integration waits, uncertainty and elapsed time.
 Do not sum concurrent allowances into an unsupported completion forecast.
 
 ## 5. Derive completion dependencies
@@ -216,6 +310,9 @@ Conditional or synthetic fixtures may test predicates but cannot replace require
 
 Allow independent preparation where possible.
 When a required dependency becomes concrete during discovery, update the graph rather than concealing it in prose or pretending the original graph was exhaustive.
+When expansion materially changes the route, including through cumulative small additions, reconsider selecting that work and recheck whole-goal sufficiency, feasibility, remaining deadline and scheduling using §§4 and 7.
+Record revised assumptions and forecasts in the existing canonical graph records.
+Ordinary decomposition that preserves the agreed scope and cost needs no full route review or added approval.
 
 ## 6. Include integration, quality and maintenance where required
 
@@ -272,8 +369,15 @@ Trace every root criterion backward to tickets and consumer-visible evidence.
 Trace every required ticket forward to a root criterion; remove unrelated work or mark it outside the required graph.
 Check dependency existence, direction, reasons and cycles, and ensure every required node reaches the root.
 Check every executable leaf for a specific deliverable, explicit scope and an observable stopping condition; recursively split any that still fail this check.
-For every implementation ticket marked ready, also check its stated approach, grounding and material uncertainty against the readiness requirements in §4; bounded acceptance cases alone do not establish readiness.
-An unbounded parent awaiting information needs an owned bounded discovery or decision task, and its implementation decomposition remains pending.
+For every implementation ticket marked ready, check its approach, grounding, practical feasibility and material uncertainty against §4.
+Bounded acceptance cases alone do not establish readiness.
+Check whether the combined route meets the remaining deadline and resource constraints, not just whether each ticket looks manageable.
+Review its selection against the strongest credible available alternative and the basis for any additional cost as in §4.
+When approach choice is open, check that candidates were not all confined to an agent-selected mechanism.
+Check that alternatives were not required to demonstrate finished delivery before consideration; apply the planning-evidence distinction in §2.
+For each substantial unresolved choice, check the §4 justification for why planning cannot settle it and the work through the next decision.
+Check that each justified deferral has owned bounded discovery or decision work and leaves dependent implementation pending.
+For implementation needed to choose a direction, check the decision-changing evidence and result-dependent next actions required in §4.
 Do not call the whole graph execution-ready while it still contains such unresolved decomposition.
 Structural validity does not prove scope completeness, feasibility or implementation correctness.
 
@@ -313,6 +417,15 @@ An unsupported PDF recorded as skipped is not a searchable document.
 An explicitly permitted alternative representation can satisfy coverage only when it works through the search consumer; it does not excuse missing required extractor behavior.
 
 ## Handoff
+
+For graph creation or revision, claim planning complete only when substantial choices resolvable during planning are settled.
+Remaining deferrals must meet §4.
+A settled task list is not a completed plan without a credible feasibility basis for its required work and combined route.
+When there is a fixed deadline, the route must plausibly deliver the original goal by that deadline, not merely finish an initial increment.
+An unknown deadline must be resolved with the user before claiming planning complete.
+A graph that merely labels unfinished planning is not a completed plan.
+If a genuine dependency prevents completion, report the affected planning as incomplete, name that dependency and distinguish independently ready work.
+Do not substitute a status report for completing planning that remains possible within the request.
 
 Provide the root contract, bounded tickets, explained edges, identified acceptance criteria with verification mappings and material unresolved decisions.
 Name the execution/closeout owner and canonical acceptance-evidence record; leave unexecuted evidence explicitly pending.
