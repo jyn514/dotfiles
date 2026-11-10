@@ -128,6 +128,7 @@ Avoid wide Markdown tables; use bullets or short subsections for prose, commands
 Identify the reading problem before choosing edits: a buried relationship needs different work from an awkward sentence.
 Develop a connected explanation before polishing its sentences; do not inherit the source's sentence order as the revision's plan.
 Revise connected passages when selection or arrangement causes the difficulty; retain what already works.
+For abstract instruction lists, see the [concrete-question contrast](reading-examples.md#turn-abstract-instructions-into-concrete-questions).
 Judge diction, rhythm, emphasis, selection, and development, not words removed or paragraphs joined.
 Words can earn attention through emphasis, rhythm, tone, or a needed connection, not only by adding facts.
 Cut explanatory padding too: a second paraphrase needs a purpose beyond being another way to say the same thing.

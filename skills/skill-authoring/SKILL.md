@@ -86,6 +86,10 @@ Write steps in the order the agent will perform them.
 What should it inspect first, what should it produce, and how will it know it is done?
 For an expensive step, say when to take it and when simpler evidence suffices.
 
+Settle fixed facts while authoring; leave future agents questions whose answers depend on their tasks.
+If you don't know how a supported harness handles a frontmatter field, check its loader or documentation now instead of requiring every future agent to verify it.
+Which files a particular review needs to inspect, by contrast, depends on the future task.
+
 Watch instructions such as “before creating a design, inspect the implementation.”
 They can imply that every task needs a design.
 If a design is conditional, say when it is needed before giving its preparation steps.

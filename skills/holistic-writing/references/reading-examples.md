@@ -11,7 +11,7 @@ The discussion and sentence-order examples use feature-level human feedback; the
 The help-page and reference-lookup passages and sample reviews are constructed and ungraded.
 The ticket example compares recorded local drafts and a corrected excerpt; it has no separate human grade.
 “Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
-The final five revision exercises are invented and ungraded.
+The smaller revision exercises are invented and ungraded.
 
 ## A product catalogue can be readable without making its product matter
 
@@ -393,6 +393,32 @@ Compare:
 
 The first sentence makes a plain engineering contrast sound grand.
 The second names the difference directly.
+
+### Turn abstract instructions into concrete questions
+
+These instructions help an agent review a bug-fixing procedure.
+
+**Abstract instructions**
+
+> Assess whether the procedure introduces unnecessary work or constrains viable alternatives.
+> Identify evidence for consequential requirements and the cheapest check that could disprove them.
+
+**Concrete questions and an example**
+
+> Follow the procedure for one bug fix.
+> What work would the agent do that the request never called for?
+> For example, would “before writing a specification” lead it to write a specification for a one-line fix?
+>
+> What useful option would it stop considering?
+> Would “preserve every interface” prevent it from fixing an internal interface whose callers can change together?
+>
+> For each added step, what would go wrong without it?
+> If the procedure requires another worker, what needs an independent check that the current agent cannot supply?
+
+The abstract version names categories the reviewer must translate into things to look for.
+The revision supplies recognizable wording and follows it to possible actions: writing a specification, ruling out a repair, or assigning another worker.
+Each question gives the reviewer a way to decide whether the instruction belongs.
+The revision is longer, but it asks the reader to do less decoding.
 
 ### Explain what the detail changes for the reader
 
