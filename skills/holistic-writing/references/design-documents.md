@@ -1,59 +1,36 @@
 # Writing selected designs and implementation specs
 
-Use this reference when documenting an already selected design or writing an implementation spec.
-It does not select a design, author requirements, or replace a specialized lifecycle or design-review owner.
-Use `new-tool-development` for its tool lifecycle and brief restrictions, `requirements-definition` for requirements from an approved brief, and [spec review](../../spec-review/SKILL.md) for auditing the specification's contract.
+Use this reference to explain an already selected design or write an implementation spec.
+Design selection, requirements authoring, and specification-contract review belong to their specialized owners.
+Use `new-tool-development` for its lifecycle and human-owned brief restrictions, `requirements-definition` for requirements from an approved brief, and [spec review](../../spec-review/SKILL.md) for contract audits.
 
 ## Explain before machinery
 
-For a selected nontrivial design, consider this progression when it helps the reader understand the proposal.
-Do not use it as a mandatory writing workflow or heading template:
+For a nontrivial mechanism, start with the problem and a concrete example or trace.
+Then explain the solution and its invariant.
+What does the named design mean, and what does it change?
+Readers need that model before solver notation, schemas, hashes, or APIs.
 
-1. **Motivation:** what is difficult today and why it matters.
-2. **Goals:** observable outcomes and protected behavior.
-3. **Proposal in plain language:** what the named design means and does not mean.
-4. **Terms and examples:** vocabulary and representative cases.
-5. **Evidence:** what was measured, using which inputs and limitations.
-6. **Scope and boundaries:** ownership, authority, effects, compatibility, and non-goals.
-7. **Detailed design:** data model, algorithms, lifecycle, failure behavior, schemas, and interfaces.
-8. **Delivery:** implementation sequence, migrations, documentation changes, and commits.
-9. **Proof:** tests, acceptance checks, unresolved decisions, and completion condition.
+For a nontrivial design, consider this progression rather than treating it as required headings:
 
-This is guidance, not a mandatory heading template; preserve the dependency: readers should understand the problem, proposal, and examples before encountering solver models, schemas, hashes, or APIs.
+1. The difficulty today, desired outcomes, and behavior to preserve.
+2. The proposal in plain language, with terms and representative cases.
+3. Evidence: inputs, measurements, and limitations.
+4. Boundaries: ownership, authority, effects, compatibility, and non-goals.
+5. Details: data model, algorithms, lifecycle, errors, recovery, and interfaces.
+6. Delivery and verification: implementation order, migrations, documentation, tests, and completion conditions.
 
-Explain a nontrivial mechanism as:
-
-1. the problem;
-2. a concrete example or trace;
-3. the solution and its invariant.
+Keep exact API, serialization, failure, and lifecycle contracts after the explanation needed to understand them.
+Explain which representations are authoritative or derived and which rejected alternatives account for the boundary.
+Include single and composed cases, required approvals, and unresolved decisions that block implementation.
 
 ## Organize implementation contracts
 
-For implementation specs, outline independently implementable contracts before drafting details.
-Order sections by dependency.
-Before filling them in, check whether sections bundle separate decisions or make readers reconstruct a contract across distant passages; reorganize as needed.
-Within each contract, make inputs, required behavior, failure cases, and examples or acceptance evidence easy to locate.
-Distinguish rationale from normative behavior.
-This is structural guidance, not a fixed template.
-
-Preserve exact API, serialization, failure, and lifecycle contracts after the reader has the model needed to understand them.
-
-## Make the selected design reviewable
-
-A selected design should make these reviewable without reconstructing hidden decisions:
-
-- motivation and success criteria;
-- exact meaning of the named design;
-- rejected alternatives that explain the boundary;
-- authoritative and derived representations;
-- ownership and approval;
-- normal behavior, errors, ambiguity, and recovery;
-- compatibility and migration effects;
-- representative single and composed cases;
-- implementation order;
-- verification tied to requirements;
-- blocking decisions and completion condition.
+Outline independently implementable contracts before drafting their details, then order them by dependency.
+Does one section bundle unrelated decisions, or must a reader reconstruct one contract across distant passages?
+Reorganize where needed.
+Make each contract's inputs, required behavior, failure cases, and acceptance evidence easy to locate.
+Distinguish rationale from normative behavior and tie verification to requirements.
 
 Write design documents in Typst by default when the `typst` skill and compiler are available.
 Use Markdown when repository convention, tooling, or the requested destination requires it.
-

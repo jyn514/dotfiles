@@ -1,17 +1,12 @@
 # Contrasting readings and revisions
 
-Use these examples when an explanation seems clear but the reading judgment feels thin, or when smoother sentences have not made a revision worth following.
-Read the continuous passages before their commentary.
-Notice both the experience of reading the prose and what it makes you think or feel about the subject; those effects can differ.
-The examples guide judgment, not a required style, emotional arc, or scoring procedure.
+Read the passages before their commentary when a judgment stops at “clear” or “smoother.”
+What is it like to follow the prose, and what does it make you think or feel about the subject?
+These examples guide judgment, not a required style or emotional arc.
 
-The whole-work judgments reported here are PhotoCraft 2/5, Frog and Toad 5/5, and the font article 5/5.
-They were supplied by jyn during calibration; the excerpts have no separate grades.
-The discussion and sentence-order examples use feature-level human feedback; they do not grade their excerpts or proposed rewrites.
-The help-page and reference-lookup passages and sample reviews are constructed and ungraded.
-The ticket example compares recorded local drafts and a corrected excerpt; it has no separate human grade.
-“Editorial reading” and the contrasting interpretations below are analysis, not additional human rationales or grades for imagined rewrites.
-The smaller revision exercises are invented and ungraded.
+jyn's whole-work grades are PhotoCraft 2/5, Frog and Toad 5/5, and the font article 5/5.
+Excerpts, constructed exercises, and proposed revisions are ungraded.
+Human feedback is attributed below; editorial readings are analysis, not additional human rationales.
 
 ## A product catalogue can be readable without making its product matter
 
@@ -40,16 +35,13 @@ The prose briefly helps me imagine using the product rather than counting its ca
 A revision could develop that consequence and select a useful editing situation before deciding which names belong here; it need not teach all 67 tools or shorten every sentence.
 The speed claim might matter to a reader waiting for previews, but the paragraph itself turns toward implementation rather than developing that experience.
 
-An inventory can be exactly right in a reference or a compatibility check.
-The reading problem here is its sustained use in an invitation to adopt a tool, not evidence that the tool is bad or that its developers have particular incentives.
-[Arvind Narayanan’s related thread](https://x.com/random_walker/status/1182635589604171776) ([unrolled](https://threadreaderapp.com/thread/1182635589604171776.html)) distinguishes purchasers’ feature checklists from end users’ needs and usability; it does not establish facts about PhotoCraft.
+An inventory could serve a reference or compatibility check; here the reader is deciding whether to adopt an editor.
 
 ## An upstream discussion can explain the setup while obscuring the request
 
 **Source:** [git-meta discussion 112](https://github.com/git-meta/git-meta/discussions/112).
 The excerpts also include local agent revisions, with human feedback on wording and organization.
 Rendered line breaks in the posted paragraph below are normalized.
-These feature-level comparisons do not establish a whole-document grade for the revision.
 
 ### State the request before the workaround
 
@@ -75,9 +67,6 @@ A subsequent agent revision makes the proposal explicit:
 **Editorial reading:** the agent's title names a problem area, while the upstream title tells a maintainer which change they are being asked to consider.
 The broad opening can read as a request for storage advice rather than a proposal to move the database.
 Making the proposal clear first gives the maintainer a reason to examine the workaround and its costs.
-The technical setup can be understandable while the requested action remains obscure.
-An agent's ability to reconstruct that request from the whole discussion does not establish that readers will recognize it when needed.
-This is not a requirement that every report propose a fix; a genuine support question should remain a question about how to do something.
 
 ### Read qualifications in their surrounding explanation
 
@@ -109,7 +98,6 @@ Her later wording corrections to the local revision included:
 Defending each qualification in isolation misses what the surrounding writing has supplied.
 In the workaround passage, the relevant cost is the extra code to prepare the directory and check existing files and links.
 The additional labels draw attention to verification and trust without explaining that cost better.
-Testing and trust can matter to a maintainer; these corrections do not prohibit those words or remove necessary evidence and limitations.
 
 ### Ask for the intended decision without adding another job
 
@@ -176,7 +164,6 @@ A revision that made the lesson explicit and reassuring could clarify the causal
 This is why reading for the effect comes before naming the mechanism that supposedly explains the quality.
 The voice is not just friendly words pasted onto technical information: what the story attends to, which motives it follows, and where it stops shape what the reader cares about.
 Nor must every joke earn its place by explaining a mechanism; an aside can simply be funny or interesting.
-None of this requires a technical reference to acquire characters, a plot, or an ominous ending.
 
 ## Technical detail can change what the reader sees
 
@@ -204,7 +191,7 @@ Her explicit transferable lesson was making readers care about the subject, not 
 ## Keep a relationship together
 
 **Source and scope:** this sentence from a Rust proposal prompted human feedback about its delayed relationship.
-The condition-first explanation was endorsed; the possible rewrite below is illustrative, not a human-rated revision or a whole-document judgment.
+Human feedback endorsed putting the condition first; the rewrite below is illustrative.
 
 > The proposal assigns `file!`, `line!`, and `column!` in an injected attribute a synthetic source file, such as `<cli-arg>`.
 
@@ -215,12 +202,10 @@ One possible revision puts that condition first:
 
 Now the macros and what they use stay together.
 The improvement comes from arranging the relationship, not from making the sentence short.
-A review that only restates which file is assigned misses the effort of following the original word order.
 
 ## A preface can delay help or protect a choice
 
-These help-page passages and sample reviews are constructed and ungraded.
-The first brief is to help an account holder change their password; the page is headed “Change your password.”
+In this constructed help-page example, the brief is to help an account holder change their password; the page is headed “Change your password.”
 
 > This section provides a comprehensive overview of the steps required to change your password.
 
@@ -234,9 +219,7 @@ The first brief is to help an account holder change their password; the page is 
 > “Comprehensive overview” makes a simple task sound like coursework.
 > Now I want the first step.
 
-That reading concerns what the sentence adds at this point, not whether its meaning is easy to recover.
-Something coming before the instructions is not inherently a problem.
-Consider an account owner deciding whether to delete an old project, with this text before the delete button:
+Now consider an account owner deciding whether to delete an old project, with this text before the delete button:
 
 > Warning: deleting this project also deletes its saved reports.
 > Export any reports you want to keep before continuing.
@@ -247,12 +230,10 @@ Consider an account owner deciding whether to delete an old project, with this t
 > Losing an old project and losing its reports are different decisions; the warning gives the owner a chance to keep the reports.
 
 The warning earns the interruption by changing the choice the reader can make before acting.
-The contrast does not make a preface or a formal phrase a defect by itself.
 
 ## Needed facts can still be hard to find
 
-These excerpts and sample reviews are constructed and ungraded.
-A testing reference has a long “Isolation” section.
+A constructed testing reference has a long “Isolation” section.
 Returning maintainers use it to check whether settings survive a run or which executable the runner uses.
 Here is part of that section:
 
@@ -295,8 +276,7 @@ Consider a revision that keeps every sentence:
 > A returning maintainer can recognize the executable-selection answer from the headings instead of rereading the cache rules.
 > “Temporary settings” and “Retained downloads” also make the difference in persistence visible before the reader assumes everything is temporary.
 
-The proposed improvement is lookup, not compression or a claim that the underlying behavior changed.
-It depends on the reference’s length and its readers’ return visits, not just the presence of several topics.
+The improvement depends on the reference’s length and its readers’ return visits, not just the presence of several topics.
 
 Now consider a short answer to “Why was the second run faster?”:
 
@@ -321,7 +301,6 @@ Splitting that answer into topics produces:
 Here the reader needs the connected explanation, not three independent lookup destinations.
 The labels repeat the sentence topics and interrupt the reasoning without helping the reader find a separate answer.
 Keep the continuous paragraph.
-The choice is whether a concrete revision helps these readers use the text, not whether necessary facts forbid edits or multiple topics require headings.
 
 ## A readable issue must preserve the causal story, not just its nouns
 
@@ -342,11 +321,9 @@ Its description included:
 > An existing test explicitly requires replacing older same-name backups, so a new retention policy cannot be assumed.
 > Choose latest per installed destination, all versions, or safe refusal on collision.
 
-This already records the loss and the reason not to assume a retention policy.
-But “setup of existing … files” leaves the reader to work out whether those files were installed, replaced, or backed up.
+“Setup of existing … files” leaves the reader to work out whether those files were installed, replaced, or backed up.
 “Only Mise survived” likewise leaves the affected data implicit.
 The title leads with an administrative decision before explaining what makes the decision necessary.
-A reviewer can recover the intended meaning without the passage making that recovery easy.
 
 ### A fluent rewrite that changes what happened
 
@@ -373,15 +350,13 @@ The corrected passage reads:
 
 Now the reader can follow the operation: two existing files share a backup destination, so one backup replaces the other while setup reports success.
 The test expectation then explains why the ticket asks for a policy decision rather than silently selecting a repair.
-The choices distinguish retaining the latest file for each destination, keeping history, and refusing the collision.
 
 The full ticket keeps the reproduction evidence, provenance, future test cases, and restriction against treating the ticket as implementation authority.
 Those details follow the problem and choice rather than replacing their explanation.
-Neither smoother sentences nor a new default retention policy would be an adequate correction.
 
 ## Smaller revision exercises
 
-These invented contrasts isolate useful choices; they do not account for everything the real readings above achieve.
+These exercises use invented examples.
 
 ### Reach the distinction without an abstract detour
 
@@ -526,8 +501,3 @@ This invented library newsletter explains why a worn book is being repaired rath
 The middle version preserves the facts but delays what makes them interesting: what the handwritten notes actually say.
 Joining sentences has not developed the explanation.
 The last version first shows the reader what a replacement would omit, then explains why the library will repair the book.
-
-Use these contrasts to guide judgment, not to impose their style on every document.
-Formality, fragments, repetition, and a restrained voice can all serve the reader.
-Develop what repays attention without inventing facts; development need not include a worked example of every application.
-

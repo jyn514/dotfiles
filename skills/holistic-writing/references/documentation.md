@@ -1,57 +1,40 @@
 # Documentation
 
-Use this reference for documentation-specific authoring decisions and usability or correctness reviews.
-It supplements the whole-artifact writing guidance, not a separate workflow to restart.
-Routine additions to an established section need validation of changed text and links, not a whole-artifact pass.
-Use `readme-writing` for an introductory README; it remains independently usable.
-Use `reorganize-docs` for existing page splits, renames, consolidation, archives, or navigation redesign.
-For placement alone, use [Documentation placement](../../references/documentation-placement.md).
+Use these checks for documentation authoring or usability and correctness review, within the caller's established task.
+Routine additions need checks of the changed text and links, not a whole-artifact pass.
+Use `readme-writing` for introductory READMEs, `reorganize-docs` for page splits or navigation redesign, and [documentation placement](../../references/documentation-placement.md) for placement alone.
 
-## Establish the reader's task
+## What does the reader need?
 
-Read the current page, nearest documentation entrypoint, authoritative inputs, and representative consumers.
-Reuse the established reader, purpose, evidence, destination, and decisions when another procedure has already supplied them.
-Identify whether the reader needs to learn, perform a task, look up facts, understand a design, or review a decision.
-Establish the canonical owner and destination for new content; retain the destination in a review unless relocation is requested.
-Do not select a design or author a human-owned product brief as incidental documentation work.
+Read the current page, nearest documentation entrypoint, authoritative inputs, and representative uses.
+Reuse reader, purpose, evidence, destination, and decisions already established.
+For new content, establish its canonical owner and destination.
 
-## Choose the form
+Choose a form that serves the task:
 
-Keep these needs distinct without imposing a fixed page template:
+- **Tutorial:** guide a learner through a safe, successful experience; state what she will build or understand and the starting state.
+- **How-to:** state the task, prerequisites, expected result, and hazards for a competent reader.
+- **Reference:** organize accurate, neutral facts for lookup; state the system, version, scope, and notation.
+- **Explanation:** develop understanding through reasons, examples, and consequences.
 
-- **Tutorial:** guide a learner through a safe, successful experience.
-  State what she will build or understand, prerequisites, and the safe starting state.
-- **How-to:** help a competent reader accomplish a specific task.
-  State the task, prerequisites, expected result, and important hazards.
-- **Reference:** present accurate, neutral facts structured like the subject.
-  State the covered system, version, scope, notation, and lookup organization.
-  Do not force motivation or design goals into neutral reference material.
-- **Explanation:** develop understanding through context, reasons, examples, and consequences.
-  Explain the problem, goals, and important non-goals before the proposal.
+Separate mixed needs within a page rather than imposing one template.
+For an already selected design or implementation spec, read [design documents](design-documents.md); this does not authorize selecting a design or writing a human-owned brief.
 
-A design document combines explanation with an implementation and verification contract.
-For an already selected design or implementation spec, use [Design documents](design-documents.md).
-That reference does not choose the design or impose its progression on other documentation.
-Within a page, separate mixed reader needs with clear sections or links.
-Route a multi-page split or navigation redesign to `reorganize-docs` rather than treating it as incidental prose editing.
-
-## Make starting points and routes usable
+## Can the reader start and finish?
 
 Assume the reader opens the page directly months later.
-State required background, prerequisites, authoritative inputs, and important limitations where needed to begin safely.
-Use a glossary only when many project-specific terms interact; state the audience and assumed background when either is not obvious.
-Keep each concept's canonical owner clear and link from relevant starting points rather than copying its procedure.
-Keep action-specific warnings beside the actions they govern: cost, destructive effects, and safety conditions must not be hidden behind links.
-Check command references, examples, installation or migration instructions, and entrypoints for stale behavior.
+State background, prerequisites, authoritative inputs, and limitations where needed to begin safely.
+Use a glossary when many project-specific terms interact.
+Link to each concept's canonical owner instead of copying its procedure.
+Keep warnings about cost, destructive effects, and safety beside the affected actions.
+
+Follow the reader's route from its starting state through the task or lookup to the expected result.
+Do prerequisites arrive before dependent actions and warnings before hazards?
+Are commands, examples, installation or migration instructions, and entrypoints current?
+Check supported versions, limitations, and unresolved decisions.
 Preserve exact commands, interfaces, paths, conditions, exceptions, and required lookup routes when revising.
 
-## Validate the reader's workflow
-
-Follow the intended reader's route from its starting state through the task or lookup to the expected result.
-Check that prerequisites arrive before dependent actions and warnings before their hazards.
-Check authoritative owners, supported versions, limitations, and unresolved decisions.
-A successful route check does not substitute for judging the complete reading experience.
-Validate changed links, commands, and examples and the final rendered or compiled representation with applicable repository checks.
-Distinguish textual usability review from verified operational behavior; report failed or unavailable checks, skipped surfaces, and residual uncertainty.
-Finish when the reader can start, find authoritative information, and complete the intended task without session context.
-Review-only work reports findings and the smallest useful corrections without unauthorized edits.
+Validate changed links, commands, examples, and rendered or compiled output with applicable repository checks.
+Report what was actually exercised, what was only reviewed as text, and failed or unavailable checks.
+A successful route check does not establish that the complete page reads well.
+For review-only work, report findings and the smallest useful corrections without editing.
