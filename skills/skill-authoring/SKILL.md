@@ -80,6 +80,23 @@ Use `references/` for detail needed only in some cases, `scripts/` for determini
 Make reference-loading conditions explicit, either in the surrounding step or beside the link.
 Delete generated scaffolding; do not add skill READMEs, changelogs, quick references, or process notes.
 
+### Teach decisions through worked choices
+
+Work through a concrete task the skill should help with and imagine a good result.
+Identify a decision that makes that result fit the task: what information informs it, what action follows, and what that action accomplishes.
+Teach how to find and use that information, with an example that carries the decision through to its result.
+Have the agent make that decision from its task's inputs before taking the actions that depend on it.
+
+For example, a README reader deciding whether to replace pipx brings a familiar workflow.
+A comparison can explain what changes and what stays familiar, helping that reader judge the replacement.
+A reader trying to run their first Python script needs to understand how code, dependencies, and execution fit together.
+A connected example can develop those relationships in the order the reader encounters them.
+The intended understanding gives the writer a reason to select particular material and arrange it that way.
+
+Vary the task and follow the choice again.
+Can the guidance help the agent develop an approach suited to the new purpose?
+Use that comparison to refine the decision criteria.
+
 ### Make the next action clear
 
 Write steps in the order the agent will perform them.
