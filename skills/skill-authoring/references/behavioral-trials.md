@@ -141,6 +141,11 @@ Without the original-document comparison, report acceptable candidate quality ra
 A skill change does not erase an earlier useful artifact, but its score cannot stand in for newly required evidence about the changed skill.
 Use the governing task to determine which acceptance checks need rerunning; this example does not require every skill edit to regenerate every historical output.
 
+A first pass may fix obvious problems while leaving subtler ones untouched.
+When revision is part of the intended workflow, inspect successive drafts and judge what each pass improves or damages.
+A fresh reader can provide another perspective; neither fresh agents nor a fixed number of passes are required.
+Record feedback supplied between passes so you do not attribute improvement to repetition or the skill alone.
+
 ## Report scope and cost
 
 For each variant, report task outcomes alongside token use and elapsed time where available.
