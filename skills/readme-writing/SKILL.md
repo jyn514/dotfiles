@@ -5,123 +5,97 @@ description: Write, substantially revise, or review a repository, package, or to
 
 # Write a README for someone arriving
 
-Write the account the reader needs, not an introduction attached to the old manual.
-The source supplies facts, not a requirement to reproduce every feature, section, or contract.
-Fit the introduction to the reader's task: develop a focused use, or orient readers among independent uses.
-A shorter, self-contained replacement is valid; retaining the source's complete reference is not the default.
-
-This skill is sufficient to begin a README; do not load every broader writing workflow by default.
-May use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact prose guidance; reuse established reader, purpose, evidence, and decisions rather than restarting workflows.
-Use the [documentation reference](../holistic-writing/references/documentation.md) for documentation-specific forms and workflow checks, and `tighten-prose` for bounded local polish.
-Use `reorganize-docs` when extracting or moving existing material, or judging navigation and the documentation set.
-Those routes do not expand the task's write permission.
-
-## Understand the project and the brief
-
-Read the human brief and the complete source README, if one exists.
-Establish which files the task authorizes you to change or create before writing.
+Help the reader decide whether this project serves them, then explain how to begin.
+Use the source's facts to build an account for that reader.
 For review-only work, report findings without editing.
-Follow supplied repository context when you need to establish what the project does or how an operation works.
-Resolve relative links from the original README location, not the storage location of a copied input.
 
-Keep the human's reader, purpose, and request; do not replace them with a more convenient brief.
-For an introduction with no stated audience, consider a project newcomer who has not read the related documentation.
-A project newcomer is not necessarily a domain beginner.
-Establish what the intended reader already understands.
-Introduce what this particular project offers, why it matters, and when someone would choose it.
-Explain the broader category only where that background helps the reader understand the project.
-Do not assume familiarity with the project's private names.
+## Find the reader's reason to care
 
-Establish what someone wants to do, what they provide or choose, what the project supplies, and what happens as a result.
-Distinguish working behavior from plans and aspirations.
-If the source cannot establish the basic purpose, report the specific missing fact rather than filling the gap with terminology.
+Read the brief and complete existing README, if present.
+Establish which files you may change or create; leave others unchanged.
+Inspect supplied repository context for facts you need; resolve copied input's links from the original README location.
 
-Read [the examples](references/examples.md) before drafting.
-They show complete introductory development as well as sentence-level choices; they are not templates every README must copy.
+Keep the human's audience and purpose.
+Without a stated audience, write for a project newcomer who has not read related documentation.
+Establish what the reader already understands.
+Someone choosing among background-job libraries may know the category and want to understand what this particular one offers.
+Explain its value and introduce its private names through their meaning.
 
-## Build an explanation, then select the detail
+What does the reader want to do or understand?
+What do they supply, what does the project do, and what remains their responsibility?
+Distinguish working behavior from aspirations; report missing facts rather than filling gaps with terminology.
+Read the [real and constructed examples](references/examples.md) before drafting.
 
-### Choose the opening
+## Decide what you will write
 
-Choose the opening from the reader's task and the project's uses.
-For a focused tool or concept, develop one useful operation or line of thought.
-When readers need to choose among independent uses, introduce the common purpose and summarize which sections serve which tasks.
-Do not pick representative features merely to force a varied collection into a single-use explanation.
-Begin with that account rather than inheriting the source's section order.
-Keep effective existing prose when it already serves the reader.
+Before drafting, decide what you want to accomplish for this reader and how the writing will accomplish it:
 
-### Develop the explanation
+- What should they understand or be able to do afterward?
+- What part of the project will you develop to bring them there?
+- Which comparisons, examples, explanations, and routes will help them make that progress?
 
-Explain relationships through actions: who does what, what changes, and why the next step follows.
-Naming a mechanism does not explain it.
-If a definition depends on several other unfamiliar terms, develop one use in ordinary language before introducing the classification.
-The reader should gain understanding as the explanation proceeds, not keep translating one project term into another.
+Choose the material, its depth, and its order from those answers, then give it headings that help readers follow or find it.
+Keep existing prose that serves the account you've chosen.
 
-### Use supported examples
+For a reader familiar with shell filters, jq's comparison can establish its role briefly and lead into documentation or experimentation.
+For someone choosing among Python tooling workflows, uv's comparisons help locate familiar tasks; examples then explain how uv performs them.
+A queue introduction can develop the relationship between submitting work and running it.
+A collection of field guides can help readers recognize their situation and choose a guide.
+In each case, the structure serves a particular understanding or action.
 
-Use a concrete illustration where it makes a relationship understandable.
-For a conceptual method, an explicitly hypothetical situation can show the intended operation without claiming a successful experiment.
-Keep its actions within what the supplied material supports.
-Do not invent interfaces, commands, capabilities, guarantees, measurements, or observed results.
-An illustrative scenario is not a product feature or evidence that a method works.
+## Explain unfamiliar relationships
 
-Let the benefit emerge from what the reader can do and what effort or limitation it addresses.
-Do not substitute promotional adjectives for that account.
-Keep the project's appropriate voice; clear writing need not be chatty, cheerful, or simple-minded.
-Use concrete subjects and verbs, and retain specialized terms when they do precise work.
-Avoid making the reader pass through abstract classifications to reach an ordinary action.
+In the queue example, “durable job coordination with worker orchestration” names mechanisms.
+“A web process stores a job in PostgreSQL; a worker reads it and runs the handler you provide” assigns the work and connects the parts.
+Now the reader can understand why both processes need the same database.
 
-### Select details and route further reading
+In that example, ask:
 
-Select details by what readers need to understand or do, not by whether the source documents them.
-Keep the prerequisites, conditions, hazards, and limits needed for those tasks at the point of action.
-Preserve exact tokens in commands, interfaces, quoted output, and paths when you use them.
-Preserving product behavior means describing it accurately; it does not require documenting every other operation's contract here.
-Keep requirements from the human brief, even when they require a broader account.
-Use inspected existing documentation or source destinations for later tasks.
-When useful and authorized, create linked supporting documents with complete content for their own reader tasks.
-Not every README needs multiple files.
-Move migration procedures, configuration catalogs, and other specialized detail to real supporting owners when that improves the introduction.
-Use `reorganize-docs` for that extraction; preserve the constraints needed for the README's selected use beside its actions.
-Never invent a destination or link to a promised page without creating it.
-If supporting-file edits are outside the authorized scope, keep necessary detail here or report the missing owner rather than silently widening scope.
+- After adding the job, who performs it?
+- Does the library supply that work, or does the application supply a handler?
+- If the worker stops or the handler fails, what happens to the job?
 
-### Organize the selected material
+For a book or conceptual method, develop the corresponding thought or use.
+Introduce private terms through concrete meaning and familiar language.
+Make benefits tangible through what readers can do and the effort or limitation the project addresses.
+Keep the project's voice and precise specialized terms.
 
-Choose sections after you know what they develop.
-A table is useful for actual choices or lookup, not as a replacement for explaining how parts work together.
-Do not follow a table with the same list rewritten as a summary.
-Retain repetition that helps this reader; remove repeated explanations that demand attention without adding understanding.
+Hypothetical examples can explain a method, not establish its success.
+Label them and stay within supplied capabilities.
+Do not invent interfaces, commands, guarantees, measurements, or observed results.
+Preserve exact tokens in commands, interfaces, quoted output, and paths.
 
-## Finish the whole artifact
+## Select detail by the reader's task
 
-Produce the complete README you selected, not a partial replacement followed by the old manual.
-When copying an existing file for modification, use `cp` and verify it with `cmp` before editing the copy.
-A new account need not inherit the old structure; source length does not determine output length.
-Do not leave placeholders, “rest unchanged,” promises to append a reference, or process commentary inside the README.
+For the queue's introductory use, the shared database explains how the processes cooperate and the repeated-handler warning guides safe use.
+A tracing callback catalog serves readers configuring tracing; give those details an appropriate lookup destination.
+Select details for the account you've chosen and describe the operations accurately.
+Keep prerequisites, conditions, hazards, and limits beside the actions they govern.
+Use tables to make choices comparable or facts easy to look up, and prose to develop relationships.
+Give each a distinct purpose.
 
-Read the entire result as prose, including the ending and any reference sections you retained.
-Notice cadence, awkward compounds, delayed relationships, unsupported rhetorical force, and paragraphs that restart the same point.
-Revise the writing that causes that friction; do not defend it merely because its facts are relevant.
-A reader's ability to extract the information does not establish that the writing is satisfying to follow.
-Check that the opening's account continues through the body rather than disappearing beneath an inventory.
+Link to inspected documentation or source for further detail.
+Create supporting pages only when useful and authorized; never promise nonexistent destinations.
+Use `reorganize-docs` for extraction, moves, and navigation.
+Edit each destination for its own reader task rather than dumping cut prose there.
+If supporting edits are outside scope, keep necessary detail here or report the missing owner.
+A small project may need no supporting pages.
 
-## Review the README first, then its routes
+## Read the whole result, then follow its links
 
-First judge the complete README as prose on its own, including retained reference sections and the ending.
-If the opening maps independent uses, can readers recognize their task and find the matching section?
-Does its chosen account develop understanding, or does it disappear beneath an inventory?
-Do not credit explanations that appear only in unseen linked pages.
-For independent source-blind prose review, supply the README without the source or drafting rationale; do not infer what unseen links contain.
-An independent agent is optional, not a required step for every README.
+Deliver the complete README without placeholders or process commentary.
+Read through the ending and retained reference sections.
+Compare the reading with your intentions: what can the reader now explain, choose, or do?
+How does each section contribute, and where does the reader need more development or a clearer connection?
+Read for cadence, emphasis, and the experience of following the account.
+Cut repeated explanations and revise awkward or delayed relationships so the prose rewards attention.
 
-Second, when linked pages matter to the selected use or changed documentation, follow those routes and judge each page by its own role.
-A configuration reference should support lookup; a migration procedure should make the transition and its hazards clear.
-Use `reorganize-docs` to judge navigation or the set of documents, not a giant concatenation treated as one compulsory introduction.
-Supporting pages must be edited for their readers, not used as a dumping ground for unedited source prose.
-Keep the README prose judgment separate from supporting-page and navigation findings; do not combine them into a score.
-If linked material cannot be inspected, report that limit rather than imply that the documentation set was verified.
+The [shared editorial pass](../holistic-writing/references/editorial-pass.md) can guide this reading without restarting the task.
+Use the [documentation reference](../holistic-writing/references/documentation.md) for documentation-specific checks and `tighten-prose` for local polish.
 
-Keep the source and other repositories unchanged unless the task authorizes those edits.
-Report factual uncertainty, incomplete work, and checks not performed outside the README.
-Do not claim rendering, link checks, or product verification merely because you reviewed the prose.
+Judge the README before borrowing explanations from linked pages.
+For optional source-blind review, supply it without the source or drafting rationale.
+Then inspect links relevant to the selected use or changed documentation, judging each page by its task.
+Report README prose findings separately from supporting-page and navigation findings, not as a combined score.
+Report unread material, unresolved facts, and unperformed checks separately from the README.
+Prose review does not establish rendering, working links, or product behavior.
