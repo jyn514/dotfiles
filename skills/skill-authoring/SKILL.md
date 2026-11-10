@@ -5,140 +5,64 @@ description: Create or evaluate portable agent skills, including existing or pro
 
 # Skill authoring
 
-Create or evaluate skills that change action reliably without burdening every prompt.
+A skill changes which work an agent takes on and how it does that work.
+Review what makes the agent load it, what it will do after reading it, and what useful choices it might stop considering.
 
-For review, inspect the existing or proposed guidance and its callers, then apply §6's discovery and procedure checks.
-Use §1's provenance checks when assessing a proposed correction.
-Report supported findings and the smallest useful corrections; a review request does not authorize edits or creation of a replacement skill.
-Consult `spec-review`'s [non-narrowing check](../spec-review/references/non-narrowing.md) when a concrete question concerns supported cases or governing authority, not as another full review.
-For creation or substantive changes, follow the workflow below.
+For review, read the skill and its callers, then use **Review loading and actions** below.
+For creation or revision, start with the task the skill should help an agent perform.
 
-## 1. Justify the skill
+## Decide what belongs in the skill
 
-Before writing, identify:
+What recurring task needs help, and where does an agent currently go wrong?
+Check existing skills and instructions before creating another owner.
+A skill needs repeated use, a second consumer, or a hard constraint.
+Rules that apply to every task belong in the relevant `AGENTS.md`.
 
-- the target agent harnesses and their skill specifications, discovery rules, and supported tools;
-- the recurring task or hard constraint the skill owns;
-- the concrete trigger phrases and contexts that should load it;
-- nearby skills, repository instructions, or canonical docs that may already own the behavior;
-- the decisions or failure modes that generic agent behavior handles poorly.
+For substantive revisions, recover why the guidance exists.
+Use history in the conversation and past sessions, using `jj-workflow` for file history when needed.
+Separate what had to be achieved from the failure that prompted the rule and the particular solution chosen.
+For example, “leave the live checkout usable” is a requirement; a separate workspace is one way to meet it.
 
-### Recover purpose and provenance
+### When correcting a failure
 
-For changes within this skill's scope, recover why the affected guidance was introduced or revised before choosing the change.
-Mechanical spelling or link corrections that preserve discovery and behavior do not require this history check.
+Read the recorded decision, the instructions available then, and the alternatives the agent rejected.
+Did it ignore a rule, follow a bad rule, invent a restriction, or lack information needed to choose?
+If following the instructions caused the problem, change those instructions rather than adding “use judgment.”
 
-Use relevant history already established in the current conversation rather than searching again.
-Otherwise, search retained sessions by skill name, affected guidance or motivating incident, and read the relevant exchanges before choosing the change.
-Treat search hits as leads, not complete evidence.
+What fact or counterexample should have changed the choice?
+Teach the agent how to find that fact and what to do with each possible answer.
+Keep a session's particular answer in an example unless evidence supports it as a general rule.
+If repeated corrections don't help, consider whether the framing of the question or task is wrong, not just the procedure.
 
-Distinguish the original requirement, the failure the guidance addressed, and the mechanism chosen to address it.
-Preserve the requirement when replacing the mechanism.
-If no relevant record is found or history is unavailable, state that limit; do not infer that the guidance has no purpose.
-Use `jj-workflow` when file history is needed to locate or explain the change.
+## Put discovery where agents can see it
 
-### Analyze failures and proposed corrections
+Put task triggers in the description: the agent reads descriptions to choose which bodies to load.
+“Use this skill when…” inside the body is too late.
 
-A missed instruction alone does not establish a guidance problem.
-A clear requirement can still benefit from a more explicit execution order or decision check.
+Read the existing descriptions and caller instructions before adding another route.
+Does the agent already receive a trigger that covers this task?
+Add a route only when it supplies a different decision or reaches callers that lack the existing trigger.
+Plain references need an explicit route from a caller.
 
-Identify what the proposed revision changes at the failed decision point.
-Do not assume either that rewording will improve compliance or that existing clarity makes improvement impossible.
-Correct an isolated miss without invoking this workflow merely to redesign the instruction.
-Use failure analysis here when evidence points to ambiguous or conflicting guidance, bad routing, or a missing decision rule.
-Also use it when following an instruction produces an unwanted action.
+Use an always-loaded trigger when it must interrupt a plausible wrong action, protect a constraint outside the skill's scope, or fix an observed loading failure.
+Keep rules that apply even without the skill in always-loaded instructions, with a link from the skill to their owner.
+For example, ownership checks still apply to routine commits excluded by `jj-workflow`;
+test isolation still applies when running tests without a test-design skill.
 
-For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
-Do not infer the cause from an outcome summary alone.
-Distinguish missing guidance, ignored guidance, restrictions introduced by the chosen approach, and guidance that permits or directs the unwanted action.
-Inspect the instructions available at the decision, not only the agent's retrospective explanation.
-When compliance produces the problem, revise the prescription rather than strengthen reminders to exercise judgment.
+## Write instructions an agent can follow
 
-For a correction-driven revision, identify the assumption being challenged, the question or counterexample that challenged it, and why reconsideration was warranted.
-Teach what the agent must inspect or construct to answer that question, and how different answers change its next action.
-Keep the governing outcome fixed; questioning an implementation obligation does not authorize weakening the requirement.
+Say what request the skill handles, what it leaves to other skills, and what the agent may change.
+If a request omits scope, give a usable default or say what the agent must ask.
+For a multi-phase task, say where this skill starts and stops.
 
-### Check generalization
+Link to other procedure owners instead of copying their steps.
+Use the [consolidation check](../holistic-writing/references/consolidation.md) when removing duplicated policy.
+Keep a warning beside an action when following that action alone would otherwise be unsafe.
+For uncertainty about supported cases or who may act, consult the [non-narrowing check](../spec-review/references/non-narrowing.md).
 
-Do not overfit a revision to the session that exposed the failure.
-Broader vocabulary does not make the corrected answer a reusable decision rule.
-Keep task-specific conclusions in examples unless independent evidence or an established constraint supports the broader prescription.
-Use §6's scope and interaction checks to challenge the rule's main prescription, not just confirm that its exceptions preserve required behavior.
-For judgment guidance, trace how different governing requirements could lead to different choices, including cases where the rejected mechanism is necessary.
-Distinguish observed replay success from generalization; matching the originating answer alone establishes neither portability nor reliable improvement.
+### Package and frontmatter
 
-When distilling research into guidance, identify the tempting inference and its smallest counterexample.
-Ask whether an agent without the research history could derive the decision-changing check from the existing guidance.
-Add only the missing distinction, reasoning step, or worked example; a research case may justify no edit.
-
-### Require recurring use and place discovery
-
-When reviewing or changing routing, first identify what the target harness exposes at the decision point.
-Separate always-loaded instructions and descriptions from on-demand skill bodies and references; verify the actual loading model.
-Trace how the agent chooses the next resource using only information already available.
-An applicability statement inside an unloaded reference cannot make that reference discoverable.
-
-Reuse an existing visible trigger when it already covers the task instead of adding a parallel caller route or a new skill.
-Keep a separate route when it supplies a distinct task-specific decision or serves callers that do not receive the existing trigger.
-
-Require a concrete repeated use, second consumer, or hard constraint.
-Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable constraints in the relevant `AGENTS.md` instead.
-
-Put normal task-discovery conditions in the skill description first.
-Do not duplicate them in always-loaded instructions merely to make invocation more likely.
-Keep an explicit always-loaded trigger only when it must interrupt an otherwise plausible action, protects a constraint outside the skill's discovery scope, or addresses an observed discovery failure.
-When extracting instructions, assess whether the existing skill description can own discovery; do not automatically replace every extracted section with a shared trigger.
-Plain references are not discoverable skills and still need an explicit route from their callers.
-
-Distinguish discovery triggers from constraints that apply even when the skill is not used.
-Keep those constraints in always-loaded instructions and link to their owner from the skill.
-For example, ownership checks also apply to routine commits excluded by `jj-workflow`, and test isolation applies when running existing tests without a test-design procedure.
-
-Use the smallest workflow justified by uncertainty and risk.
-Give every costly stage an entry condition.
-Stop when simpler evidence settles the task.
-
-## 2. Declare scope and authority
-
-State what the skill does, when it applies, and adjacent work it does not own.
-
-Define how to derive a deterministic working scope when the request omits one.
-Stop for clarification when no safe default exists.
-
-For multi-phase work, say which phase the skill owns.
-Forbid contaminating adjacent phases, such as selecting during critique or mutating during review.
-
-Before adding a procedure, check nearby skills for an owner.
-Refer to that owner under §3 rather than copying its workflow.
-
-Keep one authoritative owner for each procedure.
-When removing duplicated policy, apply the [consolidation check](../holistic-writing/references/consolidation.md).
-Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation.
-For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
-
-## 3. Design progressive disclosure
-
-Create `<skill-name>/SKILL.md`.
-Match the directory name to the frontmatter `name` for cross-harness compatibility.
-Add other files only when they earn their loading cost:
-
-- `references/` for detailed material needed only in some cases;
-- `scripts/` for deterministic operations that prose should not reimplement;
-- `assets/` for templates or static inputs.
-
-Keep the main skill sufficient to choose and begin the workflow.
-Refer to owning skills by name rather than copying their procedures; links to specific sections are optional.
-Say when to read or run each reference, and distinguish its scope from local work.
-Preserve referenced triggers and phase boundaries.
-For example, consult [review evidence standards](../references/review-evidence.md) before work without invoking its completion audit.
-
-Keep `SKILL.md` procedural and short.
-Move bulky examples or variant detail to directly linked references, read only when needed.
-Delete generated template text; do not add a README, changelog, quick reference, or process notes to a skill.
-
-## 4. Write the frontmatter
-
-Use:
+Create `<skill-name>/SKILL.md` with:
 
 ```yaml
 ---
@@ -147,155 +71,100 @@ description: What the skill does. Use when concrete trigger contexts occur.
 ---
 ```
 
-The name must match the parent directory.
-Use lowercase letters, digits, and single hyphens, with no leading or trailing hyphen.
-Keep the name within 64 characters and the description within 1024 characters.
-Treat the description as routing logic.
-Include the task, trigger contexts, and important exclusions that must be known before loading the body.
+Match `name` to the directory: lowercase letters, digits, and single hyphens, with no leading or trailing hyphen; at most 64 characters.
+The description must exist, stay within 1024 characters, and expose the task, triggers, and exclusions needed before loading.
+Use optional fields only when they have operational meaning and every target harness supports them.
 
-Add optional frontmatter only when it has operational meaning and every target harness supports it.
-Do not rely on one harness ignoring unknown fields.
-A missing description prevents discovery in common harnesses.
+The main file should let the agent choose and begin the work.
+Use `references/` for detail needed only in some cases, `scripts/` for deterministic helpers, and `assets/` for templates or static inputs.
+Make reference-loading conditions explicit, either in the surrounding step or beside the link.
+Delete generated scaffolding; do not add skill READMEs, changelogs, quick references, or process notes.
 
-## 5. Write an executable procedure
+### Make the next action clear
 
-State the intended action directly.
-Mention an alternative only when choosing or rejecting it is necessary to the task.
-Avoid framing an instruction as “before doing X” when X is not otherwise called for; that wording can introduce X as an expected later step.
+Write steps in the order the agent will perform them.
+What should it inspect first, what should it produce, and how will it know it is done?
+For an expensive step, say when to take it and when simpler evidence suffices.
 
-Use imperative steps in execution order.
-Every skill should define:
+Watch instructions such as “before creating a design, inspect the implementation.”
+They can imply that every task needs a design.
+If a design is conditional, say when it is needed before giving its preparation steps.
 
-- initial observations and prerequisites;
-- scope, ownership, authoritative inputs, and phase boundaries;
-- stop conditions and the cheapest decision-changing escalation;
-- valid outcomes and an evidence-based completion condition;
-- outputs, evidence provenance, and what validation can and cannot prove.
+Choose checks for the failures this task can actually encounter.
+An audit needs to distinguish inspected files from skipped files;
+a write that can partly succeed needs a way to determine what changed and how to recover.
+For generated output, check what its consumer receives rather than only whether an intermediate file parses.
 
-Separate observed facts, assumptions, decisions, and unresolved questions when confusing them could change the action.
-Distinguish discovery signals from proof.
-Inspect the owning artifact before turning search matches, metrics, or worker reports into findings.
+Explain non-obvious constraints and keep examples that help the agent choose.
+Cut motivational prose, defensive sentences, exhaustive catalogs, duplicated documentation, and development history that does not change the reader's action.
+Prescribe tools available in every target harness or provide an alternative.
+Use `dependency-review` before adding dependencies; keep helper languages in separate files and use the owning package manager.
 
-Select hazard-specific protections for concrete failure modes, not merely because a workflow belongs to a category.
-Preserve protections required by governing instructions.
-Use the concerns below to choose relevant rules, not as a checklist every matching skill must implement:
+## Review loading and actions
 
-- **Mutable state:** consider freshness, authorization, bypass paths, idempotency, interruption, partial effects, unknown outcomes, cleanup, recovery, and independent verification.
-- **Bounded audits:** account for inspected, excluded, skipped, and unexamined scope so silence cannot imply completeness.
-- **Delegation:** use self-contained, non-overlapping packets and assign one owner for shared effects, deduplication, and synthesis.
-- **Resumability:** persist only state expensive to reconstruct—completed evidence, unresolved work, governing decisions, and invalidation conditions.
-- **Generated or transformed output:** validate the final consumer-visible representation, not only source syntax or an intermediate artifact.
+### Will it load for the right requests?
 
-Separate requirements from examples.
-Preserve reasons for non-obvious constraints and rejected tempting alternatives.
-Judge examples by what they help the consuming agent decide, not what they help the author remember or substantiate.
-Keep development history out of the reading path unless understanding that history changes the reader's action.
-Avoid motivational prose, broad expertise summaries, and duplicated repository documentation.
-Avoid exhaustive catalogs the agent can discover when needed.
+Read the description alongside each caller that routes work to it.
+Use a request that should load the skill and a nearby request that should not.
+For a general-purpose skill, include a task outside the domain that originally prompted it.
 
-Do not prescribe tools unavailable in any target harness unless the skill includes a clearly routed alternative.
-If helper code is needed, keep each language in its own file.
-Use the owning package manager.
-Follow dependency-review before adding a dependency.
+For each request, follow the information the agent would actually see:
 
-## 6. Review the skill as routing and procedure
+- What visible wording would make it select the skill?
+- Could it miss the intended task? A description advertising only README writing may miss “review this README without editing it.”
+- Could it claim adjacent work? A description mentioning every README may catch a syntax-only correction that needs no writing workflow.
+- If a caller now links elsewhere, can the agent still reach the guidance that was removed?
 
-Check both layers independently:
+Explain what each missed or unwanted invocation would cause before recommending broader or narrower triggers.
 
-- **Before loading:** does the description trigger on every intended request without claiming adjacent work?
-- **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition? Check for rules that conflict, unclear precedence when rules interact, and edge cases where the next action is underspecified. State which rule takes priority or what the agent should do when it cannot resolve the conflict safely.
+### What will it make the agent do—or stop doing?
 
-Treat discovery as classification against the skill's declared scope.
-A false positive loads the skill for adjacent work it does not own;
-a false negative misses work that needs its procedure.
-Identify the concrete consequence of each error and tune triggers and exclusions accordingly;
-do not assume the two errors are equally costly or reduce one by making the other unbounded.
-Positive and negative task examples test only those cases, not the complete discovery boundary.
+Take a representative request and follow the work an agent would infer from the skill.
+Look beyond explicit commands to the framing, sequence, examples, and assumed defaults.
 
-Read each changed caller and the target skill’s description together.
-Confirm the caller’s intended tasks satisfy the target’s trigger conditions and do not fall under its exclusions.
-Trace further delegation when it replaces removed policy.
+What work would it do that the request never called for?
+Look for added investigations, documents, workers, approvals, and prerequisites.
+For example, importing a tracker guide can turn “this tracker supports specifications” into an expectation to write a specification for every change.
+Ask whether each added step earns its cost under the agent's available attention, context, and other responsibilities.
 
-When loaded guidance leaves the target decision unchanged, check whether the failing choice violates the guidance or remains defensible under it.
-If the guidance permits the failure, correct the missing distinction or decision rule rather than adding stronger exhortations.
+What useful option would it stop considering?
+“Preserve every example” can rule out an effective rewrite even when the request only requires preserving the explanation.
+A skill can also discourage an option by describing only one route, making alternatives sound exceptional, or treating an example as the normal case.
 
-Review when each recommended operation is warranted, not just whether its syntax is valid.
-Trace one representative task through the work this guidance would generate.
-Identify consequential investigations, artifacts, staffing, approvals, and prerequisites introduced by the instructions rather than required by the request.
-For each material addition, establish when its benefit warrants its cost.
-Evaluate the work under the agent's expected operating conditions, including attention, context load, and competing responsibilities—not only the number of steps or handoff cost.
-Before making a required mechanism conditional, check whether the agent can reliably judge that condition when the mechanism is needed.
-Preserve the governing requirement and justify whether its mechanism must be required or conditional.
-This is a focused task trace, not an exhaustive audit of every instruction.
+When a step is conditional, compare an in-scope task that needs it with one that does not.
+Does the wording help the agent choose differently?
+Before making a required check conditional, establish that the agent can recognize when it is needed.
 
-When importing or adapting a guide, inspect inherited workflow advice rather than accepting it as policy.
-Remove or qualify recommendations that lack a task or project-workflow reason; command availability does not make an operation required.
-For example, a tracker supporting reviews or specs does not require agents to create them for every change.
+Read through the task from first action to completion.
+Where could the agent get stuck, follow conflicting rules, or call the work finished too early?
+If two instructions conflict, state which wins or what the agent should do next.
+If a bad choice follows reasonably from the text, fix the instruction that permits it.
 
-Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not.
-For a skill claiming general-purpose use, include a positive task outside its originating domain.
-
-Check that the procedure works without that domain's unstated vocabulary, data model, or workflow.
-Explain domain-specific examples rather than treating them as prerequisites.
-The existing positive task can meet this check; add another only when needed.
-
-For a conditionally recommended consequential mechanism, trace two in-scope tasks: one where it is warranted and one where it is not.
-Check that the instructions produce different actions for a concrete reason, rather than merely describe exceptions.
-For example, delegation can apply to both tasks while only one benefits from another worker.
-Reuse the routing examples when they also establish this distinction; this textual check does not require behavioral trials.
-A justified mandatory mechanism need not have a skip case.
-These contrasting-task checks test an existing conditional prescription; they do not require making every prescription conditional.
-
-When revising a collaboration process, use the proposed responsibility split in the revision itself where practical and within existing authorization.
-Use the experience to notice where work falls back into the old responsibilities, not as proof that the new process is reliable.
-This practice does not require a team, an efficacy study, or trial infrastructure.
-
-Keep evidence checks within the requested review or change scope, including affected interactions with existing requirements.
-Trace cases where those requirements interact.
-Verify that the instructions produce compatible actions or explicitly resolve the conflict.
-For each consequential requirement in that scope, identify supporting evidence and the cheapest check that could disprove it.
-Do not claim completion while evidence required for that scope is missing.
-A textual trace can support the prescribed decision; it does not establish that agents reliably follow the instructions.
+For a claim such as “another worker is needed,” what supports it, and what quick check could show otherwise?
+When revising collaboration guidance, use the proposed responsibilities where practical and authorized.
 Remove rules that merely restate normal competence.
 
-For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
+### Behavioral evidence: only on request
 
-For example, if a skill supports both writing and review, test “review this README without editing it,” not only “write a README.”
-A review procedure in the body does not make the skill discoverable when its description mentions only authoring.
+When behavioral evidence is requested, read [Behavioral trials](references/behavioral-trials.md) before preparing inputs or contacting agents.
+This includes passive observation and paired behavioral or summarization trials.
+Report separately what you predict from the text, what you observed agents do, and what supports applying the result to other tasks.
 
-Before arranging behavioral evidence about a prompt or skill change, read [Behavioral trials](references/behavioral-trials.md).
-This includes passive observation of ongoing work and paired behavioral or summarization trials; consult it before preparing inputs or contacting an observed agent.
-A textual review does not require a trial.
+## Validate and finish
 
-## 7. Validate and tighten
+Choose checks for what changed:
 
-Apply every relevant category when a change spans several kinds.
-Use the applicable type-specific checks below, then apply the universal checks to every change.
+- **Body or reference:** review the changed instructions and affected links; reuse evidence for unchanged discovery.
+- **Caller route:** read caller and description together, follow intended and excluded requests, and check paths.
+- **Description meaning:** review which requests it claims and check frontmatter limits; reuse loader evidence when syntax, fields, installation, and configuration are unchanged.
+- **New skill:** check frontmatter and links, then load it in the current harness.
+- **Harness-specific loading changes:** check the affected harnesses for successful loading, warnings, collisions, and precedence.
+  For Pi loading checks, first read [Pi loader checks](references/pi-loader-checks.md).
 
-### Type-specific checks
+Use every row that applies.
+Check affected commands, run checks for changed bundled code, and review how the changes interact with existing instructions.
+Reload an active session before using its behavior as evidence of edited instructions.
 
-- **Body or reference only:** review the changed procedure, constraints, and references.
-  Reuse discovery evidence when the name, frontmatter, installed location, and discovery configuration are unchanged.
-  A body-only edit does not require loading every harness again.
-- **Caller route only:** read the caller and target description together, and trace one task that must route and one nearby task that must not.
-  Check linked paths; a changed route alone does not require reloading an unchanged skill.
-- **Description meaning only:** review the description's scope and apply §6's routing checks.
-  Reuse loader evidence when the name, frontmatter syntax and field set, installed location, and discovery configuration are unchanged.
-  Check that the edited description still meets the frontmatter requirements in §4; changed wording alone does not require every harness to reload it.
-- **Loader or discovery-configuration change:** for a new skill or changes to name, frontmatter syntax or field set, installed location, or discovery configuration,
-  load it through every target harness and inspect discovery or validation warnings.
-  Confirm no collision or precedence rule causes another skill to win discovery.
-  When Pi is a target, read [Pi loader checks](references/pi-loader-checks.md) before checking it.
-
-### Checks for every change
-
-For every change, confirm affected linked paths exist and affected commands match the repository and installed CLI.
-Run repository checks for bundled scripts or code that changed.
-Apply §6's positive, negative, and interaction checks to changed behavior and routes.
-Reload an active session before using its behavior as evidence for edited instructions.
-Use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) after creating or substantially rewriting the skill, preserving the behavior and discovery decisions established here.
-Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
-
-Report changed files, checks performed, reused evidence, and any environment-specific limitation.
-Distinguish textual review, loader validation, discovery, and observed behavior.
-Do not claim the skill loaded successfully from syntax inspection alone.
+After creation or substantial rewriting, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md).
+Report findings or changed files, checks performed or reused, and what remains unresolved.
+Separate textual review, successful loading, discovery, and observed behavior in the report.
