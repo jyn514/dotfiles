@@ -5,181 +5,147 @@ description: Draft or revise upstream bug reports, support questions, and design
 
 # Issue reporting
 
-Write for a maintainer who does not know the conversation or investigation.
-Use the project and problem already established; ask which repository only when it cannot be identified.
-Choose the right channel—bug report, support question, feature request, or design discussion—and describe the workflow, limitation, and workaround rather than forcing every request into a bug report.
-Assume jyn is writing to another maintainer.
+Write for another maintainer who was not in the investigation.
+Use the established project and problem; ask which repository only when you cannot identify it.
 
-## 1. Decide whether to report
+## Check permission and form
 
-### Check permission to draft
+Read the project's current contribution instructions, reporting template, and linked policies.
+Follow reporting requirements, not unrelated PR checks.
+For remote source, shallow-clone into a temporary directory.
+Tell jyn if no template is available.
 
-Check the target project's current contribution instructions and linked policies for AI, LLM, or agent rules.
-Determine which rules apply to drafting, issue bodies, comments, disclosure, and agent submission.
-Permission to generate code does not imply permission to write posts.
-If the project prohibits AI-written reports or comments, do not draft, rewrite, or provide copy-ready text—even with disclosure or human submission.
-Explain the restriction and cite the policy; continue only with permitted work, such as investigation and raw evidence collection.
-Resolve unclear policy applicability before drafting.
-If no policy is found, state where you checked outside the report; do not claim the project permits AI-written reports.
-Follow project-specific disclosure rules when they differ from this skill's default.
+Check AI rules for drafting, comments, disclosure, and submission—not just code generation.
+If AI-written posts are prohibited, do not draft, rewrite, or supply copy-ready text, even for human submission or with disclosure.
+Cite the restriction and continue only with permitted work, such as raw evidence collection.
+Resolve unclear applicability before drafting.
+If no policy is found, tell jyn where you checked outside the report; do not claim permission.
 
-### Check for existing reports
-
-Search open and closed issues and pull requests for the visible failure, relevant component, and distinctive errors or function names.
-Read plausible matches and relevant comments; compare their reproduction and affected versions with the current evidence.
-For a match, read its resolution and maintainer comments before proposing follow-up.
-Recommend a follow-up only when new evidence could change the diagnosis, resolution, or requested action.
-Reproducing a known unsupported configuration on newer versions does not by itself justify another comment.
-Link related reports for different failures and explain the connection.
-If search is unavailable or finds no match, state that limit outside the report; do not claim the bug has never been reported.
-
-### Identify what still needs upstream action
-
-Before attributing the problem upstream, separate the observed problem and required behavior from the preferred mechanism.
-
-Distinguish governing requirements from constraints introduced by a downstream design choice, and identify who chose it.
-A draft's directory layout is not automatically an upstream requirement; do not add a disclaimer when the context already makes the choice clear.
-
-Check plausible solutions in the supported configuration and public APIs.
-State what each workaround solves, and distinguish unchanged-tool capabilities from approaches requiring consumer patches, downstream forks, or upstream adoption.
-A library API does not establish that an unmodified CLI exposes the same capability.
-
-Tie any remaining insufficiency to a concrete requirement and evidence, not an assumed side effect.
-If it follows from a revisable downstream choice, reconsider that choice instead of treating it as an upstream constraint.
-If evidence is missing, make a small authorized check or ask a bounded question.
-
-### Decide whether to stop or request a change
-
-Stop without drafting when existing guidance satisfies the requested outcome, not merely when a workaround makes the task possible.
-If an explicitly unsupported configuration causes the issue, identify who selects it and recommend correcting it at its owner; do not report the known incompatibility again or implement the correction.
-Do not require a fix proposal for an unresolved failure; preserve uncertainty about its cause.
-If an upstream change is still needed, identify the minimum change for the remaining problem.
-A working workaround does not settle a request to change defaults, remove recurring configuration, or reduce access granted by default.
-Evaluate that remaining outcome rather than narrowing the request to documentation because a workaround exists.
-Describe the workaround accurately without claiming an upstream change is necessary for functionality the tool already supplies.
-Compare the downstream cost with the proposed upstream work and maintenance.
-
-## 2. Gather the evidence
-
-Read the target project's `CONTRIBUTING.md` and current issue template before drafting, plus any linked instructions that apply.
-If `CONTRIBUTING.md` is absent, check the project's documented contribution instructions.
-Follow issue-reporting requirements, not unrelated PR-only requirements; drafting does not authorize fixes or PR checks.
-For required diagnostic collectors, check their effects and attempt collection within authorization rather than dismissing them because the suspected cause lies elsewhere.
-If access or privilege blocks collection, report the actual blocker and request the specific human step needed; do not silently substitute “not collected.”
-Use the applicable issue or discussion template, retaining its headings, order, and required fields; omit template comments and metadata.
-If no template is available, tell jyn.
-For remote source, shallow-clone the repository into a temporary directory.
-
-Incorporate jyn's latest corrections and experiments.
-Track whether each result came from jyn, an agent-run check, or source inspection.
-Describe agent-run checks with their commands, reproducers, and captured results; never say jyn ran them.
-Do not present proposed steps as completed checks or invent commands, logs, environment details, or successful tests.
-A source defect does not prove a runtime reproduction.
-In a field about an unperformed runtime comparison, also state any supported source-based expectation; distinguish that expectation from a tested result.
-Include relevant local patches, forks, nonstandard configuration, and prior attempts with their results.
-Include a working control when it narrows the failure, such as one picker order failing while the reverse order works.
-In the report, include facts that help the maintainer reproduce, diagnose, or fix the failure; omit investigation narration and redundant checks when a working control already establishes the relevant difference.
-
-Record the installed version, installation source, and relevant runtime dependencies.
-Name the source precisely (for example, a GitHub release asset, distribution package, or local source build); say when it is unknown rather than using “official.”
-For a required latest-version test, compare the running and installed versions with current release or package metadata before proposing an upgrade.
-If the failing installation is already current, an upgrade is not a prerequisite.
-If the project requests a development-version test, check that requirement and report whether it was met.
-If that test needs another build, prefer an isolated standalone directory to replacing the installed program.
-Follow `dependency-review` for a requested build or update; do not silently expand drafting into installation.
-
-Inspect source when making a source-based claim.
-When upstream-versus-downstream attribution matters, compare the actual patched build's failing path with upstream and identify the relevant patch.
-For GitHub, resolve the full commit hash and use a permalink with precise line anchors—never a branch name or abbreviated hash.
-For other hosts, use an equivalent stable, revision-specific link when available.
-Omit source links when the report makes no source-based claim.
-
-## 3. Write for the maintainer's decision
-
-For a new report or substantial revision, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for request framing, concrete explanations, factual fidelity, actor clarity, and main versus supporting detail.
-For a bounded correction, check the changed passage in context and any affected claims, template fields, or links; do not restart the whole-artifact pass unless the correction changes the explanation or request.
-Apply the report-specific requirements below within that pass.
-
-A maintainer can recommend keeping a solution downstream without supplying an alternative.
-Do not duplicate requests already covered by template fields.
-
-### Explain the workflow and limitation
-
-Use complete sentences and ordinary issue prose, even if the conversation uses IRC style.
-
-For a bug report, name the general failure in the title, not just the tool that exposes it; for example, title a failure “user-local Python” and name mise in the body.
-Treat exact UI labels and [improper nouns](https://siderea.dreamwidth.org/1773806.html) as terms of art: quote them in titles when Markdown is unavailable, format them distinctly in the body, and define unfamiliar terms on first use.
-For GitHub issues and pull requests in the target repository, use `#123` without repeating the full URL.
-
-When motivation or upstream responsibility is not obvious, add a motivation section or use the template field.
-Connect the concrete workflow, what the failure prevents, and what a fix must preserve.
-When execution boundaries matter, say where processes and data live; “guest” alone does not distinguish a VM from a container.
-Separate evidence implicating the target project from assumptions that it must change.
-Do not claim downstream fixes are impossible when they are merely awkward or incomplete.
-
-State the visible failure and practical consequence, then explain the cause if established.
-Describe expected behavior separately.
-For a bug report without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
-Add a small fix suggestion only when evidence supports it; do not turn the report into an implementation plan.
-
-### Present reproduction and technical details
-
-Keep required template headings and fields visible.
-Reduce the reproducer to the smallest verified operation that retains the failure being reported; remove unrelated callers, dependencies, and setup.
-Keep the original application when its own behavior is part of that failure.
-State actual prerequisites; omit lists of dependencies or workflows that the minimized reproducer no longer involves.
-Put the installation or invocation in the reproduction.
-Give a concrete command and the point where failure appears; use numbered steps when several actions or the template requires them.
-Include relevant inputs, configuration, cursor position, or keystrokes.
-When a step requires a machine-specific identifier, provide a discovery command and explain which result to select, not just the value from one machine.
-Mark proposed steps unverified when needed, and distinguish runnable reproducers from illustrative code with omitted setup or placeholders.
-If inaccessible infrastructure prevents reproduction, state that limit and provide available evidence.
-Explain reproduction limits concretely: identify the required hardware, environment, or unavailable input, and distinguish the observed reproduction from any missing portable or minimized reproducer.
-Avoid merely labeling steps “hardware-dependent” or “not minimal” without explaining what that means for someone trying them.
-Include a failing input or artifact when useful, even if not minimized; state any minimization limit.
-Use screenshots for visual failures.
-
-Keep any supported conclusion about upstream versus downstream responsibility visible.
-Use `<details>` for supporting reproduction setup, source tracing, patch identification, and output.
-Preserve observed output verbatim in a fenced block; say if it is an excerpt or from an older version, and never present old output as a new test.
-Put each bare GitHub permalink on its own line immediately after the claim it supports.
-
-Unless the template requires otherwise, put exact versions, installation provenance, runtime dependencies, and source analysis in a `<details>` block at the end.
-Repeat a version elsewhere only to distinguish results across versions.
-Include full development commit hashes and the tested invocation; do not repeat hashes in prose when source permalinks identify them.
-Say “using commit ...” rather than narrating source comparisons.
-For standalone builds, include build and resource paths and any environment variables needed to load them, so the reproduction does not silently use installed catalogs.
-
-Follow the project's disclosure placement.
-Otherwise, put this disclosure before the template's first heading:
+Retain the template's headings, order, required text, and fields; omit comments and metadata.
+Follow project-specific disclosure rules.
+Otherwise, put this exact disclosure before the first template heading:
 
 `🤖 this issue description was generated by an LLM 🤖`
 
-Keep the template headings, order, and required fields after the disclosure.
-Preserve required template text, the disclosure, and quoted output verbatim.
 Leave disclosure of later human edits to jyn.
 
-## 4. Validate and deliver
+## Decide what needs an upstream response
 
-Check the final body against the template, contribution requirements, and jyn's latest evidence.
-Verify code links identify the inspected revision and lines, reproduction commands match the reported test, and required fields are filled or explicitly unknown.
-Check template attestations individually; do not mark research, clean-environment, or latest-version checks complete without evidence.
+Choose a bug report, support question, feature request, or design discussion to fit the request.
+An unresolved failure needs no diagnosis or fix proposal.
 
-If the report has attachments, inspect the actual files and archive members.
-Compare paths, hostnames, environment values, and private content with the report's privacy choices and redactions.
-A redacted body does not sanitize attachments.
-Preserve raw evidence; use labeled copies for redacted attachments and inspect the final archive again.
-State remaining identifying metadata or body/attachment mismatches outside the report, even when no credentials appear.
+Search open and closed issues and pull requests for the failure, component, and distinctive errors or function names.
+Compare plausible matches' reproductions and versions; read resolutions and maintainer comments.
+Recommend a follow-up only with new evidence that could change the diagnosis, resolution, or requested action.
+Link related but different failures and explain the connection.
+State unavailable or unsuccessful search outside the report, not as a claim that nobody reported the problem.
 
-Save the issue body as Markdown at jyn's requested path, or use a descriptive filename in the working directory.
-Keep it current when revising.
-Return a copy-ready title and a link to the file.
-Keep process commentary, remaining checks, and the issue-creation URL outside the report body.
-For each material check that remains, give the exact check to run and say which sentence or field to replace for each possible result.
-Keep unverified claims out of the report.
-Incorporate jyn's results when supplied.
-If no material checks remain, say so briefly.
-After the first draft, provide the upstream issue-creation URL outside the report body.
-Drafting does not authorize submission; submit only when explicitly requested and the project's policy permits agent submission.
+### Does the workaround meet the outcome?
 
-Make clear which response from the maintainer would help, and distinguish existing capabilities from proposed changes.
+1. **What must work?** Separate required behavior from the preferred mechanism and downstream design choices; identify who chose those constraints.
+2. **What already works?** Check supported configurations and public APIs; what does each workaround solve?
+   Distinguish unchanged-tool capabilities from consumer patches, downstream forks, and upstream adoption.
+3. **What remains?** Tie insufficiencies to requirements and evidence.
+   Reconsider revisable downstream choices; resolve missing facts with a small authorized check or bounded question.
+
+For example, suppose a CLI stores its database beside other repository metadata.
+Linked worktrees already share it, but allowing a sandboxed CLI to write there also grants access to unrelated files.
+A wrapper can move the database into a dedicated directory after setup, at the cost of recurring setup code.
+If the request is to use that dedicated directory by default, sharing already works; the remaining request concerns access and setup cost.
+A library API for choosing another path is not a solution for the unchanged CLI if using it requires a fork.
+Ask for the default change and compare its maintenance cost with the wrapper's, rather than claiming sharing is impossible or replacing the proposal with a documentation suggestion.
+
+Stop when existing guidance satisfies the requested outcome, not merely when a workaround makes the task possible.
+If an explicitly unsupported configuration causes the failure, recommend correction at its owner rather than reporting the known incompatibility again.
+This does not authorize implementing the correction.
+Otherwise, request the minimum upstream change, if needed, and compare its work and maintenance cost with the downstream workaround's.
+
+## Gather evidence
+
+Use jyn's latest corrections and experiments.
+Distinguish jyn's reports, agent-run checks, and source inspection.
+Give commands and captured results for agent checks; never say jyn ran them or invent checks, logs, or environment details.
+Include relevant patches, forks, nonstandard configuration, and prior attempts with their results.
+
+For an unperformed runtime comparison, state the limit and any supported source-based expectation separately.
+For example, if the development source still rejects the failing input, a comparison field might say:
+“The agent did not run the development build. Its source still rejects empty device names, so I expect the same failure for that input.”
+The expectation comes from source inspection, not a runtime result.
+
+Attempt required diagnostic collectors within authorization after checking their effects, even if you suspect another cause.
+Report access or privilege blockers and request the specific human step needed rather than silently substituting “not collected.”
+
+### Reproduction
+
+Reduce to the smallest verified operation retaining the failure; keep the original application when its behavior matters.
+Remove unrelated setup and update prerequisites accordingly.
+Include useful working controls: one picker order failing while the reverse works can replace redundant checks.
+
+Give the installation or invocation, relevant inputs and configuration, and point of failure.
+Include cursor position and keystrokes when relevant.
+Use numbered steps for multiple actions or when required by the template.
+For machine-specific identifiers, give a discovery command and explain which result to select.
+Distinguish tested steps from proposals and runnable reproducers from illustrations with placeholders or omitted setup.
+
+Name required hardware, unavailable inputs, or inaccessible infrastructure; distinguish the observed failure from any missing portable or minimized reproducer.
+Include useful failing artifacts even before minimization, and screenshots for visual failures.
+
+### Installation and source
+
+Record versions, runtime dependencies, and precise installation provenance: a GitHub release asset, distribution package, or local source build, not “official.”
+Mark unknowns explicitly.
+For required latest-version checks, compare running and installed versions with current release or package metadata before proposing an upgrade; an already-current installation needs none.
+Report whether required development-build checks were met.
+Drafting does not authorize installation; use `dependency-review` for requested builds or updates and prefer isolated standalone builds over replacing installed programs.
+Include full development hashes, the tested invocation, and standalone build/resource paths and environment variables so reproduction does not silently use installed catalogs.
+
+Inspect source for source-based claims.
+When attribution matters, compare the patched build's failing path with upstream and identify the relevant patch.
+For GitHub, link precise lines at the full inspected commit hash, never a branch or abbreviated hash.
+On other hosts, use equivalent stable revision-specific links when available.
+Omit source links without source-based claims.
+
+## Write for the maintainer's decision
+
+For a new report or substantial revision, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for explanation, request framing, factual fidelity, and main versus supporting detail.
+For bounded corrections, check the affected passage, claims, template fields, and links; repeat the whole pass only when the explanation or request changes.
+
+Use ordinary issue prose, not chat shorthand.
+For a bug title, name the general failure rather than only the tool that exposes it: “User-local Python is not found,” with mise named in the body.
+Distinguish exact UI labels and domain terms that look like ordinary descriptions.
+For example, write `shows “Offline” instead of “Request access”`, not `hides request access behind offline state`.
+Quote those terms in titles when Markdown is unavailable, format them distinctly in the body, and define unfamiliar terms on first use.
+Use `#123` for issues and pull requests in the same GitHub repository.
+
+Separate expected behavior from the visible failure and its consequence; explain the cause only if established.
+Without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
+A supported fix suggestion is optional, not an implementation plan.
+When motivation or upstream responsibility is unclear, use the template field or add a motivation section.
+Locate processes and data when execution boundaries matter; “guest” alone does not distinguish a VM from a container.
+A maintainer can recommend keeping a solution downstream without supplying an alternative.
+
+Keep required fields and supported conclusions about upstream versus downstream responsibility visible.
+Use `<details>` for supporting setup, source tracing, and output.
+Unless the template requires otherwise, collect versions, provenance, dependencies, and source analysis in a final `<details>` block.
+Repeat versions only to distinguish results; do not repeat hashes supplied by permalinks.
+Preserve output verbatim in fenced blocks; label excerpts and older-version output.
+Put each bare GitHub permalink on its own line immediately after its supported claim.
+
+## Check and deliver
+
+Compare the body with contribution requirements, the template, and jyn's latest evidence.
+Check commands against reported tests and links against inspected revisions and lines.
+Fill required fields or mark them unknown; check each research, clean-environment, and latest-version attestation against evidence.
+Preserve required template text, disclosure, and quoted output verbatim.
+
+Inspect actual attachments and archive members for paths, hostnames, environment values, and private content inconsistent with the body's privacy choices.
+Preserve raw evidence; redact labeled copies and reinspect the final archive.
+Report remaining identifying metadata or body/attachment mismatches outside the report, even without credentials.
+
+Save and maintain the Markdown body at jyn's requested path or a descriptive filename in the working directory.
+Return a copy-ready title, file link, and—after the first draft—the upstream issue-creation URL.
+Keep that URL, process commentary, and remaining checks outside the body.
+For each material unfinished check, give the exact check and the sentence or field to replace for each result.
+Keep unverified claims out and incorporate jyn's results when supplied.
+Say briefly when no material checks remain.
+Submit only when explicitly requested and project policy permits agent submission.
