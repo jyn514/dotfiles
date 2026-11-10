@@ -5,98 +5,62 @@ description: Review what a supplied specification promises, against its own stat
 
 # Specification review
 
-Use [evidence standards](../references/review-evidence.md) to support findings and state what each check establishes.
+Review supported cases, ownership, interfaces, failure behavior, and verification obligations against governing requirements and the specification's own statements.
+Report findings; edit only when asked, except for the TODO comments `new-tool-development` permits on human-authored product briefs.
+Use the shared [evidence standards](../references/review-evidence.md) for findings and inspected-scope reporting.
 
-Audit the specification's contract: its declared requirements, supported cases, ownership, interfaces, failure behavior, and verification obligations.
-For an unqualified specification-review request, start with this contract audit.
-Consult design or editorial guidance only for a concrete design or explanation question; do not automatically run adjacent review workflows.
-Report findings; revise the artifact only when requested, except for the TODO comments that `new-tool-development` permits agents to add to human-authored product briefs.
+## Establish authority and review depth
 
-## Read First
+Read the artifact, its governing decisions, and the project's relevant principles and documentation conventions—not another project's rules.
+Inspect representative consumers when their needs or responsibilities could change the assessment; do not infer those needs from the draft alone.
 
-- Read the project's design principles, documentation conventions, and canonical
-  references relevant to the artifact. Do not import another project's rules.
-- Establish maturity: an exploratory sketch, a selected design, or an
-  implementation-ready specification. Use its stated scope and open questions
-  to set the review threshold.
-- Inspect representative consumers when needed to establish whether the declared
-  inputs, effects, ownership, and guarantees match governing requirements.
-  Do not infer consumer requirements solely from the specification being audited.
+Judge gaps against the artifact's stated scope and open questions:
 
-## Maturity-specific review for new-tool artifacts
+- **Sketch:** establish important ownership and guarantees; transport and algorithms may remain open.
+- **Selected design:** settle decisions that change the architecture.
+- **Implementation-ready specification:** leave no incompatible observable behaviors for implementers to choose between.
 
-For a new-tool workflow, distinguish these artifact maturities:
+In a staged new-tool workflow, distinguish decision authority:
 
-- **Product brief:** owns the problem, outcomes, scope, non-goals, and human decisions.
-- **Requirements:** must trace to an approved brief, be observable and solution-neutral, and flag invented product decisions.
-- **Implementation spec:** must cover the requirements, own mechanisms, boundaries, and evidence, and introduce no new product behavior.
+- **Product brief:** problem, outcomes, scope, non-goals, and human decisions.
+- **Requirements:** observable, solution-neutral obligations traced to an approved brief.
+- **Implementation specification:** mechanisms, boundaries, and evidence covering those requirements, without new product behavior.
 
-Review upstream/downstream consistency and identify dependent artifacts or evidence invalidated by stale upstream decisions. These distinctions supplement the consistency, necessity, duplication, completeness, rationale, orthogonality, and findings rules below; they do not replace them.
+Flag invented product decisions and identify dependent artifacts or evidence invalidated by upstream changes.
 
-## Non-narrowing check
+## Follow promises through cases
 
-For requirements and implementation specs, apply the [non-narrowing check](references/non-narrowing.md) to establish upstream permissions before assessing downstream eligibility rules.
-Use it to check population and phase distinctions, permitted explanation modes and their sufficient evidence, competing readings, and downstream rejection conditions.
-The focused reference is part of this audit; other callers may consult it without starting a full specification review.
+For declared inputs, results, failures, and lifecycle transitions, ask: what is admitted, who acts, what result is promised, and what evidence would establish it?
+Do not demand a full API catalog or implementation plan from a sketch.
 
-## Consistency
+For example, suppose a specification promises that cancelling an export prevents publication.
+Its lifecycle section says the worker publishes as soon as computation finishes.
+Follow a cancellation arriving between computation and publication: which rule controls the destination file?
+If both sections require incompatible results, report a contradiction.
+If neither says who decides, report the missing ownership or cancellation rule at the depth this artifact needs.
+The finding concerns the promised behavior; it does not require choosing a new worker architecture.
 
-Flag contradictions and conceptual mismatches between sections, examples, and
-normative rules. Check that names, ownership, and guarantees retain the same
-meaning across boundaries. Distinguish an observed conflict from an assumption
-that needs evidence.
+For a concrete lifecycle, effect, or failure question, consult the relevant [design-risk check](../architecture-design/references/design-risks.md#applicability).
+Match it to the contract and maturity; do not start a separate design workflow.
+For requirements and implementation specifications, apply the [non-narrowing check](references/non-narrowing.md): downstream agreement can conceal a shared restriction unsupported upstream.
 
-When a revision moves ownership or simplifies an interface, audit signatures,
-lifecycle rules, examples, and open questions throughout the artifact and linked
-specifications for responsibilities still assigned to the old owner.
+Trace required features, restrictions, and prescribed mechanisms to governing outcomes or constraints.
+Flag obligations supported only by hypothetical needs or the draft's own assertions.
+An approved implementation choice is not necessarily a product requirement.
 
-## Necessity
+## Compare sections and owners
 
-Trace each required feature, restriction, and prescribed mechanism to a governing outcome or constraint.
-Flag obligations supported only by hypothetical needs or by the draft's own assertions.
-Distinguish an approved implementation choice from an unsupported product requirement.
-A mechanism appearing in the specification does not establish that upstream requirements demand it.
+Check that names, responsibilities, and guarantees agree across rules, signatures, examples, lifecycle descriptions, and open questions.
+After an ownership change, check linked specifications for duties still assigned to the old owner.
+Give normative rules one canonical owner, with references and enough local context to apply them.
 
-## Duplication
+Flag contradictory ownership or precedence, not multiple names alone.
+Preserve intentional language bindings, aliases, shorthands, and scoped overrides with documented precedence.
+Distinguish principle violations from deliberate, explained tradeoffs.
+Retain rationale, historical constraints, and rejected alternatives that explain decisions or prevent known failures; cut obsolete comparisons.
 
-Give normative behavior one canonical owner and use direct references elsewhere.
-Flag independently maintained definitions that can drift. Preserve local context
-needed to understand a rule where it is applied.
+## Return findings
 
-## Completeness
-
-Judge completeness against maturity. A sketch may leave transport and algorithms
-open if it states the important ownership and guarantees. A selected design must
-settle decisions that change its architecture; an implementation-ready spec must
-not leave incompatible observable behaviors for implementers to choose between.
-
-Look for missing inputs, results, failure behavior, lifecycle ownership, and
-acceptance evidence where they affect the design's claims. Do not demand a full
-API catalog or implementation plan from a high-level sketch.
-
-For a concrete question about a declared lifecycle, effect, or failure guarantee, consult the corresponding
-[design-risk check](../architecture-design/references/design-risks.md#applicability).
-Use only checks relevant to the contract and artifact's maturity; they do not require a separate design workflow or new mechanisms.
-
-## Rationale and principles
-
-Review against the project's stated principles; distinguish violations from
-deliberate, explained tradeoffs. State the current design directly. Remove obsolete
-comparisons, but retain rejected alternatives and historical constraints when they
-explain a decision or prevent a known failure.
-
-## Orthogonality
-
-Check whether separately named operations or options make distinct promises or restate the same contract.
-A documented alias or shorthand need not be a competing operation.
-Flag contradictory ownership or precedence rules, not multiple names alone.
-Preserve intentional language bindings, aliases, and scoped overrides with documented precedence.
-
-## Findings
-
-Use the shared evidence standards for finding structure and checked-scope reporting.
-Prioritize design consequences over typos and wording; cite canonical sections or concrete counterexamples rather than preference.
-
-If no material issue is supported, say so and name the review's limits. Do not
-manufacture findings to fill categories or prescribe a rewrite when a local
-correction suffices.
+Prioritize contract consequences over wording preferences; cite governing sections or concrete counterexamples.
+If no material issue is supported, say so and name the limits.
+Do not manufacture findings or prescribe a rewrite when a local correction suffices.

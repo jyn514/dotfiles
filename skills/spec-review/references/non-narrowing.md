@@ -1,38 +1,51 @@
 # Non-narrowing check
 
-Use this focused check when a concrete question concerns whether a contract narrows governing requirements, supported cases, or permitted explanation modes.
-It is owned by `spec-review`; consulting it does not start a full specification-contract audit.
+Check whether a downstream contract rejects cases upstream permits, including permitted explanation modes.
+This focused check does not start a full specification review.
+Use the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when tracing approval.
 
-For requirements and implementation specs, first establish what the upstream authority permits.
-Only then assess what downstream eligibility rules admit or reject.
-When tracing a draft constraint to approval, apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach).
+## 1. Establish permitted cases
 
-1. **Establish authority and permitted cases.** First read the approved brief, incorporated policy, and explicitly approved product decisions.
-   Write down a few cases that are otherwise valid and permitted, noting which source population each comes from.
-   For each explanation mode that the source permits, identify the least evidence that is sufficient for that mode.
-   A population is the group distinguished by origin or scope; if eligibility differs between groups, include otherwise-similar cases from both.
-   Looking only at the more restricted group cannot establish what the other group is allowed to do.
-   Keep uncertainty visible: neither a draft definition nor a label citing a source clause can grant itself authority.
-2. **Trace eligibility restrictions.** Check definitions, examples, and acceptance criteria for eligibility rules, rejection conditions, and evidence burdens.
-   For each stronger condition, identify its authoritative source and explain why it is needed to enforce that source.
-   Preserve the source's population, conditions, and phase.
-   For example, do not silently apply a restriction on new forms to inherited forms, or turn a condition for final adoption into a condition for pre-review.
-3. **Check permitted explanation modes.** Compare draft words such as “explained,” “justified,” “supported,” and “valid” with the explanation modes and sufficient evidence recorded in step 1.
-   For each mode the source permits, establish observable evidence sufficient for it.
-   Do not assume that every mode needs a derivation from a rule or the same kind of justification.
-4. **Compare plausible readings.** If an eligibility term in the draft has two plausible meanings, apply both meanings to the same otherwise-valid case permitted upstream.
-   If one meaning admits the case and the other rejects it, that is a material ambiguity even if the draft contains no direct contradiction.
-   When the source settles the case, ask for wording and acceptance evidence that preserve the source's permission.
-   When it does not, name the product decision needed before approval.
-   Do not choose the stricter meaning just because it seems “safer.”
-5. **Trace the downstream decision.** Follow each case to the downstream condition that rejects it or leaves acceptance unresolved.
-   Flag unsupported narrowing, including restrictions framed as safety or validation requirements, while preserving approved limits.
-   If authority is missing, that limits what the review can conclude; it does not prove the restriction false.
+Read the approved brief, incorporated policy, and explicitly approved product decisions—not just downstream documents that may repeat the same restriction.
+Draft definitions and source labels cannot authorize themselves.
+Record otherwise-valid permitted cases, their origins, and the minimum evidence that observably suffices for each permitted explanation mode.
 
-For example, suppose the source permits inherited mappings that are not derived from a rule, and explicitly counts them as memorized exceptions.
-Consider an otherwise-valid alternative containing an exact retained mapping, a verified identity for its source, and a recorded gap in deriving it from the selected rule.
-Ask whether the authority requires independent evidence of conflict or irregularity, or whether the stated facts suffice to count the mapping as memorized.
-If the authority settles the question, preserve its answer; if not, name the product decision needed before approval.
-Do not impose an independent-evidence requirement without that authority.
-Resolve the difference before approval; “justified exception” by itself does not say what qualifies.
-A missing derivation from a rule is not the same as a missing explanation when the source permits memorized mappings as an explanation mode.
+For example, suppose a spelling system inherits a mapping from `night` to `nite`.
+Its approved brief permits inherited mappings that cannot be derived from a rule and explicitly counts them as memorized exceptions.
+The proposed alternative retains that exact mapping, verifies its source identity, and records that the selected rule cannot derive it.
+The alternative is otherwise valid, but a downstream requirement says every exception must be “justified.”
+One reading accepts the recorded facts for this memorized exception.
+Another rejects it without independent evidence of conflict or irregularity.
+Both readings fit the word; they do not admit the same alternatives.
+
+Include otherwise-similar cases from differently governed populations—groups distinguished by origin or scope, such as inherited versus new mappings.
+Checking only the more restricted group cannot establish the other's permission.
+
+## 2. Trace rejection conditions
+
+Inspect definitions, examples, and acceptance criteria for eligibility rules and evidence burdens.
+For each stronger condition, identify its authority and why enforcing that authority needs it.
+Preserve the source's population, conditions, and phase:
+
+- Does a restriction on new forms now reject inherited forms too?
+- Has a condition for final adoption become a condition for entering review?
+- Does one explanation mode now have to meet another mode's evidence standard?
+
+In the spelling example, inability to derive `nite` does not by itself mean lack of an explanation: the brief permits memorization.
+Check what evidence that mode needs rather than treating derivation as the only possible justification.
+
+## 3. Compare plausible readings
+
+Compare “explained,” “justified,” “supported,” and “valid” with the evidence established in step 1.
+Apply competing meanings to the same otherwise-valid upstream case.
+If the readings admit different cases, report a material ambiguity even without a literal contradiction.
+Identify the condition rejecting the case or leaving acceptance unresolved.
+
+## 4. Follow authority, not stricter defaults
+
+If the source settles the case, request wording and acceptance evidence preserving its answer.
+Otherwise, name the product decision needed before approval.
+Missing authority does not prove a restriction false.
+Flag unsupported safety or validation restrictions while preserving approved limits.
+Do not default to stricter readings as “safer.”
+Resolve what “justified exception” requires before approval rather than leaving the eligibility decision to downstream readers.
