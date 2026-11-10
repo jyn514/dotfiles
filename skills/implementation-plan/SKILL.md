@@ -3,103 +3,126 @@ name: implementation-plan
 description: Work out or review how to implement a given ticket in the current repository. Use when explicitly asked to plan a ticket's implementation or review its implementation plan. Identify the existing code path, required changes, verification, and material unresolved choices. A concrete requested change can supply the task when no ticket exists; do not require ticket creation. Not for decomposing a broad goal, selecting product scope or architecture, ordinary ticket refinement, executing agreed work, or adding a mandatory planning stage to an already-actionable ticket.
 ---
 
-# Implementation Plan
+# Implementation plan
 
-Work out how to implement one ticket using the current repository's code and test facilities.
-Consume the ticket's outcome, acceptance conditions, and settled design; supply only the missing execution detail.
-A concrete requested change can serve as the task when no ticket exists; do not create a ticket just to use this procedure.
-Use this procedure when planning or plan review is requested; ordinary investigation during implementation does not require it.
-An already-actionable ticket needs no separate planning stage.
-Keep a working caller-to-result path throughout planning; inspection, verification, and any proposed commit structure must earn additions to it.
-Simplicity concerns the proposed work, not just the length of the document, and must not change the selected design or weaken required behavior or verification.
+Supply the execution detail another engineer needs to implement a ticket without reconstructing hidden decisions.
+Use the repository's code and test facilities; preserve the ticket's outcome, acceptance conditions, and settled design.
+A concrete requested change can stand in for a ticket; do not create tracker work just to plan it.
+An already-actionable ticket needs no separate plan.
+Creating the selected design's artifact or executing agreed work is implementation, not another planning stage.
+Planning alone does not authorize implementation edits.
 
-For a staged new-tool workflow only, require a ready implementation specification before planning. It is the design authority; the plan remains optional and must not alter requirements or design or become another human gate.
+For a plan review, check the proposed work against the repository using the sections below.
+Report missing detail and unsupported work; do not rewrite the plan unless asked.
 
-## Procedure
+For a staged new-tool workflow, require a ready implementation specification as the design authority.
+The plan remains optional; it must not change the requirements or design or require another human approval.
 
-1. **Establish the ticket's outcome and constraints.** Read its current acceptance conditions, linked design, existing implementation detail, and repository guidance.
-   Reuse settled decisions, contracts, and non-goals; do not reconstruct the wider goal's decomposition.
-   Identify required observable results and known preservation requirements before choosing implementation machinery.
-   Classify material choices as `decided`, `conservative default`, or `unresolved`; mark unresolved choices as blocking or non-blocking.
-   If inspection exposes an unsettled architecture, a missing prerequisite, or a necessary change to the ticket's boundary, report it and stop dependent planning.
-   Do not silently expand the ticket, select a replacement architecture, or revise the issue graph.
-   Continue independent planning within the settled scope.
-2. **Start with a complete working path.** Sketch how the caller reaches the required result using existing facilities and the selected design.
-   Carry forward known error, lifecycle, and compatibility requirements, not just the successful request.
-   Name uncertainties that could change this candidate; do not fill them with speculative components or interfaces.
-   This candidate is the basis for inspection and revision, not an extra document or approval stage.
-3. **Inspect to resolve those uncertainties.**
+## Establish the task
 
-   **Trace the candidate.**
-   Follow its entry points, data flow, side effects, deployed consumers, and affected bypass paths.
-   Inspect relevant tests, docs, and dependencies to establish which existing facilities suffice.
+Read the acceptance conditions, linked design, existing implementation detail, and repository guidance.
+Reuse settled decisions, contracts, and non-goals rather than reconstructing the wider goal's decomposition.
+Identify the required observable results and known preservation requirements before choosing machinery.
 
-   **Resolve decision-changing unknowns.**
-   Each further investigation must resolve an unknown that could change the candidate or its verification; stop when the evidence settles it.
-   Separate observations from assumptions.
+For material choices, distinguish what the plan inherits from what it proposes:
 
-   **Establish preservation and contracts.**
-   Before treating preservation as required, cite its source and trace whether affected consumers change and deploy together.
-   Apply [Compatibility](../references/change-with-evidence.md#compatibility); mark unknown preservation requirements as unresolved rather than conservative defaults.
-   Reference existing ownership, effects, representations, lifecycle, and compatibility contracts.
-   Fill only decision-changing gaps using the applicable [boundary-contract questions](../architecture-design/references/boundary-contracts.md).
+- **Decided:** cite the requirement, selected design, or existing contract that settles the choice.
+- **Conservative default:** identify a proposed choice within settled constraints, such as placing a regression in the existing test suite.
+- **Unresolved:** state what remains unknown and which work depends on the answer.
+  Mark it blocking when that implementation must wait for the answer, otherwise non-blocking.
 
-   **Trace affected transitions.**
-   Check relevant setup, error, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions without reopening unchanged lifecycle categories.
-4. **Revise the candidate as evidence changes.** First try to accommodate each finding through the current path and its existing owners.
-   Before adding a control, component, interface, test fixture, or phase, identify a required case the smaller candidate cannot handle.
-   A useful purpose does not establish that a separate mechanism is necessary.
-   If another complete approach is smaller, replace the candidate rather than retaining its machinery and adding workarounds.
-   When controls always vary together for current consumers, represent them as one concept; preserve independent choices that a current caller actually needs.
-   Require a concrete second consumer or governing constraint before adding reusable infrastructure or supporting additional scopes.
-   A current caller's need to choose a value can justify a narrowly scoped option without a second consumer.
-   Do not widen adjacent operations merely to match a new operation, or defer unnecessary work into a supposedly required later phase.
-   Keep useful optional work out of the required path.
-   Check interfaces against affected callers, producers, and transitions; specify high-risk behavior and invariants, leaving low-risk mechanics to implementation.
-5. **Choose verification for that path.** Identify the consumer-visible claim or realistic regression each check must establish.
-   Separate the required evidence from the machinery that produces it; compare existing test facilities before proposing a new maintained runner or fixture.
-   A required real-system check does not by itself justify new test infrastructure; apply the same candidate comparison to its setup.
-   For a small finite behavior space, use an exhaustive table or transition matrix with focused regression cases.
-   Require generated properties or action sequences only for identified invariants or combinations those cases cannot adequately cover.
-   When justified, use [property-based-testing](../property-based-testing/SKILL.md) to choose properties and generators within scope.
-   Use integration, pseudo-terminal, migration, or real-service tests when the observable boundary requires them, not merely because those tools exist.
-6. **Order the required edits.** Identify the affected files or subsystems and the useful intermediate results.
-   Include commit boundaries only when requested or when they materially help implementation or review.
-   For proposed commits, give an imperative subject and verification that passes at that point; use `commit-quality` for commit boundaries and messages.
-   Land tests with their behavior; keep preparatory refactors independently justified and behavior-preserving.
-   Commit boundaries organize the candidate; they do not justify extra architecture, fixtures, or deliverables to make a commit look self-contained.
-7. **Record only the missing implementation detail.** Use the existing ticket as its canonical home when updates are authorized.
-   A read-only or proposal-only request requires reporting the proposed detail without changing the ticket.
-   Do not maintain a parallel plan; create a separate artifact only when requested or needed by a concrete reader, and link it from the ticket when authorized.
-   Give each rule one canonical home beside the contract or work it constrains.
-   Group related failures under their governing invariant; keep reproductions and expected outcomes in one acceptance section.
-   Let steps identify the work and reference its checks rather than restating the rules.
-   Retain decision-changing rationale; omit investigation chronology, speculative extensions, and unsupported safeguards.
-8. **Check completeness against the repository.** Confirm that the current candidate still covers the governing requirements and required verification.
-   Within affected paths, check bypass paths, global state, unbounded resources, cancellation ownership, error precedence, compatibility, docs, generated files, dependencies, and platform behavior.
-   Check that every addition still has its distinguishing required case and that detail does not exceed evidence.
+If inspection reveals unsettled architecture, a missing prerequisite, or a necessary scope change, report it and stop dependent planning.
+Continue independent planning within the settled scope; do not select a replacement architecture or revise the issue graph.
 
-## Output
+## Trace a complete path
+
+Sketch how the caller reaches the required result through existing facilities and the selected design.
+Include known error, lifecycle, and compatibility requirements, not just the successful request.
+Use this candidate to direct inspection, not as an extra document or approval stage.
+Investigate unknowns that could change the path or its verification; do not fill them with speculative components or interfaces.
+Keep observations separate from assumptions, and stop investigating an unknown when the evidence settles it.
+
+Follow the entry points, data flow, side effects, and deployed consumers, including affected paths that bypass the main entry point.
+Inspect relevant tests, docs, and dependencies to establish which facilities suffice.
+Reference existing ownership, effects, representations, lifecycle, and compatibility contracts.
+Use the [boundary-contract questions](../architecture-design/references/boundary-contracts.md) for decision-changing gaps.
+
+Before treating preservation as required, cite its source and check whether affected consumers change and deploy together.
+Apply [Compatibility](../references/change-with-evidence.md#compatibility); unknown preservation requirements remain unresolved, not conservative defaults.
+
+Trace affected setup, error, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions without reopening unchanged behavior.
+For example, suppose an export must not publish a file after cancellation.
+A worker can finish computing before cancellation but publish afterward; checking cancellation only when the command starts misses that case.
+Find who owns publication at that point and what the change must do to uphold the cancellation contract.
+The plan needs that answer, not an inventory of every worker method.
+
+## Keep the proposed work small
+
+First try to handle findings through the current path and its existing owners.
+Before adding a control, component, interface, fixture, or phase, identify a required case the smaller candidate cannot handle.
+A useful purpose alone does not justify a separate mechanism.
+If another complete approach is smaller, replace the candidate rather than adding workarounds to preserve it.
+Simplify the work, not the required behavior, selected design, or verification.
+
+When controls always vary together for current consumers, represent them as one concept.
+Preserve independent choices a current caller needs: a narrowly scoped option does not require a second consumer.
+Reusable infrastructure or additional scopes do require a concrete second consumer or governing constraint.
+Do not widen adjacent operations merely to match a new one.
+Keep optional work out of the required path, including later phases.
+
+Check proposed interfaces against affected callers, producers, and transitions.
+Specify high-risk behavior and invariants; leave low-risk mechanics to implementation.
+Make affected cancellation, cleanup, output ownership, compatibility, and error precedence explicit, referencing settled contracts for unchanged behavior.
+
+## Choose verification
+
+Name the consumer-visible claim or realistic regression each check must establish.
+In the export example, observe whether the destination changes when cancellation arrives between computation and publication.
+A check that only observes a cancellation flag cannot establish that the file stays unpublished.
+
+Compare existing test facilities before proposing a maintained runner or fixture; a required real-system check does not itself justify new infrastructure.
+Review existing facilities before proposing a dependency.
+For a small finite behavior space, use an exhaustive table or transition matrix with focused regression cases.
+Require generated properties or action sequences only for identified invariants or combinations those cases cannot adequately cover.
+When justified, use [property-based-testing](../property-based-testing/SKILL.md) to choose properties and generators.
+Use integration, pseudo-terminal, migration, or real-service tests when the observable boundary requires them.
+
+## Order the edits and write the plan
+
+Identify affected files or subsystems and useful intermediate results.
+Include commit boundaries only when requested or when they materially help implementation or review.
+For proposed commits, use `commit-quality` for boundaries and imperative subjects, and identify verification that passes at each commit.
+Land tests with their behavior; keep preparatory refactors independently justified and behavior-preserving.
+Do not add architecture, fixtures, or deliverables just to make a commit look self-contained.
+Separate docs from behavior only when repository practice or generated output warrants it.
 
 Default to a compact plan containing:
 
-- **Task and constraints:** reference the ticket's outcome, acceptance conditions, and settled design rather than copying them; identify material implementation decisions.
-- **Implementation steps:** affected files, useful intermediate results, and checks that pass at each step; include logical commits only when useful or requested.
+- **Task and constraints:** reference the outcome, acceptance conditions, and settled design; identify material implementation decisions.
+- **Implementation steps:** affected files, useful intermediate results, and checks that pass at each step.
 - **Verification:** concrete acceptance cases and required repository checks.
-- **Material unresolved questions:** only those that can change implementation, marked blocking or non-blocking; omit if none remain.
+- **Unresolved questions:** choices that can change implementation, marked blocking or non-blocking; omit if none remain.
 
+These are contents, not mandatory headings.
 Put storage, lifecycle, and compatibility details beside the contract or step they constrain.
-Add separate sections only when they make the implementation easier to follow; the above is not a mandatory heading template.
-Keep implementation detail in the ticket when one exists and updates are authorized.
-Otherwise return a concise proposal in the requested format and location, following repository conventions.
-For a task without a ticket, do not create tracker work or a separate maintained artifact unless authorized.
-Separate docs from behavior only when repository practice or generated output warrants it.
+Give each rule one home; group related failures under their governing invariant and keep reproductions and expected outcomes in one acceptance section.
+Steps should reference those checks, not restate their rules.
+Retain decision-changing rationale; omit investigation chronology, speculative extensions, and unsupported safeguards.
+Give effort ranges only with evidence and dominant assumptions.
 
-## Constraints
+Use the existing ticket as the canonical home when updates are authorized.
+For a read-only or proposal-only request, return the proposed detail in the requested format and location without editing the ticket.
+Create a separate artifact only when requested or needed by a concrete reader; link it from the ticket when authorized rather than maintaining parallel plans.
+Without a ticket, follow repository conventions and do not create tracker work or a maintained artifact unless authorized.
 
-- Do not edit implementation files unless implementation was also requested.
-- A request to create the selected design's artifact or execute agreed work is implementation, not a request for another plan.
-- Give effort ranges only with evidence and dominant assumptions.
-- Make affected cancellation, cleanup, output ownership, compatibility, and error precedence explicit; reference settled contracts for unchanged behavior.
-- Review existing facilities before proposing a dependency.
-- Prefer a short complete plan over possibilities or premature implementation detail.
+## Check completeness
+
+Compare the finished plan with the governing requirements and required verification.
+Within affected paths, check:
+
+- **Alternate routes and shared state:** can a bypass path or another user of global state escape the proposed behavior?
+- **Resources and failure:** what bounds resource use, who owns cancellation and cleanup, and which error wins when more than one operation fails?
+- **Consumers and delivery:** have you preserved required compatibility and platform behavior, and covered affected dependencies, docs, and generated files?
+
+Does every addition still have a required case the smaller path cannot handle?
+Does the detail stay within the evidence?
