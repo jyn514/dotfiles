@@ -1,6 +1,6 @@
 ---
 name: issue-reporting
-description: Draft or revise upstream bug reports, support questions, and design discussions for maintainers. Use when asked to write an upstream issue or discussion, fill an issue template, or prepare a maintainer follow-up about a concrete workflow, limitation, or workaround. Not for internal design documents or implementing fixes. Does not authorize submission or software upgrades.
+description: Draft or revise upstream bug reports, support questions, and design discussions for maintainers. Use when asked to write an upstream issue or discussion, fill an issue template, or prepare a maintainer follow-up about a concrete workflow, limitation, or workaround. Not for internal design documents or implementing fixes. Does not authorize submission or changes to global state.
 ---
 
 # Issue reporting
@@ -15,9 +15,14 @@ Follow reporting requirements, not unrelated PR checks.
 For remote source, shallow-clone into a temporary directory.
 Tell jyn if no template is available.
 
+Treat each information item and check requested by upstream reporting instructions and the selected template as required by default.
+Before finishing, satisfy each item, explicitly explain why it does not apply to this case, or ask jyn for guidance on the unresolved requirement.
+Missing tools, access, authorization, or time do not make an item inapplicable.
+
 Check AI rules for drafting, comments, disclosure, and submission—not just code generation.
 If AI-written posts are prohibited, do not draft, rewrite, or supply copy-ready text, even for human submission or with disclosure.
 Cite the restriction and continue only with permitted work, such as raw evidence collection.
+Restrictions on drafting or submission do not waive investigative work that remains permitted.
 Resolve unclear applicability before drafting.
 If no policy is found, tell jyn where you checked outside the report; do not claim permission.
 
@@ -72,8 +77,12 @@ For example, if the development source still rejects the failing input, a compar
 “The agent did not run the development build. Its source still rejects empty device names, so I expect the same failure for that input.”
 The expectation comes from source inspection, not a runtime result.
 
-Attempt required diagnostic collectors within authorization after checking their effects, even if you suspect another cause.
-Report access or privilege blockers and request the specific human step needed rather than silently substituting “not collected.”
+Attempt tests and diagnostic collectors required by the reporting instructions or needed to support the report’s conclusions.
+Check their effects and run them within existing authorization, even if you suspect another cause.
+If a necessary check cannot run, stop the work that depends on it and ask jyn for guidance.
+Explain the exact check, what blocks it, why its result matters, and the smallest available way forward.
+Continue independent work while waiting.
+Merely marking the check “unverified” does not satisfy this requirement.
 
 ### Reproduction
 
@@ -96,7 +105,10 @@ Record versions, runtime dependencies, and precise installation provenance: a Gi
 Mark unknowns explicitly.
 For required latest-version checks, compare running and installed versions with current release or package metadata before proposing an upgrade; an already-current installation needs none.
 Report whether required development-build checks were met.
-Drafting does not authorize installation; use `dependency-review` for requested builds or updates and prefer isolated standalone builds over replacing installed programs.
+Task-local installations and builds needed for reporting checks are allowed without separate approval.
+Use disposable storage for the installed software, installer state, and caches.
+Do not change global state, including shared installations, default toolchains, or persistent user configuration, without explicit authorization.
+Use `dependency-review` for builds or updates.
 Include full development hashes, the tested invocation, and standalone build/resource paths and environment variables so reproduction does not silently use installed catalogs.
 
 Inspect source for source-based claims.
@@ -135,7 +147,7 @@ Put each bare GitHub permalink on its own line immediately after its supported c
 
 Compare the body with contribution requirements, the template, and jyn's latest evidence.
 Check commands against reported tests and links against inspected revisions and lines.
-Fill required fields or mark them unknown; check each research, clean-environment, and latest-version attestation against evidence.
+Check each research, clean-environment, and latest-version attestation against evidence.
 Preserve required template text, disclosure, and quoted output verbatim.
 
 Inspect actual attachments and archive members for paths, hostnames, environment values, and private content inconsistent with the body's privacy choices.
@@ -145,7 +157,8 @@ Report remaining identifying metadata or body/attachment mismatches outside the 
 Save and maintain the Markdown body at jyn's requested path or a descriptive filename in the working directory.
 Return a copy-ready title, file link, and—after the first draft—the upstream issue-creation URL.
 Keep that URL, process commentary, and remaining checks outside the body.
-For each material unfinished check, give the exact check and the sentence or field to replace for each result.
+Before handing off work as finished, [account for every requested item](#check-permission-and-form), including in evidence-only handoffs.
+If jyn chooses to proceed with an unresolved requirement, mark missing information as unknown and explain which conclusions remain unresolved.
 Keep unverified claims out and incorporate jyn's results when supplied.
 Say briefly when no material checks remain.
 Submit only when explicitly requested and project policy permits agent submission.
