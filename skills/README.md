@@ -114,6 +114,7 @@ before committing the session's work and ending it.
 | Review a proposed dependency addition or update | [Dependency review](dependency-review/SKILL.md) |
 | Investigate slow execution or benchmark a change | [Performance investigation](performance-investigation/SKILL.md) |
 | Diagnose native-process crashes, hangs, or missing symbols | [Process debugging](process-debugging/SKILL.md) |
+| Harden a workstation around local credentials, hardware tokens, and boot integrity | [Workstation hardening](workstation-hardening/SKILL.md) |
 | Inspect or reshape Jujutsu history | [JJ workflow](jj-workflow/SKILL.md) |
 | Compose Jujutsu conflict snapshots semantically | [JJ conflict resolution](jj-conflict-resolution/SKILL.md) |
 | Enforce an established rule while reducing existing violations | [Ratchet](ratchet/SKILL.md) |
