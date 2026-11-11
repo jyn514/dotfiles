@@ -5,178 +5,147 @@ description: Create and minimize behavioral tests of AI agents. Use when reprodu
 
 # Behavioral testing
 
-Build tests with observable outcomes, then minimize demonstrated failures without losing the measured behavior.
-Use the existing harness and disposable resources before building another runner.
-Test creation does not authorize deploying instruction changes, repairing the underlying problem, or acting on real user state.
+Build a test around an observable decision, then reduce a demonstrated failure without changing what makes it wrong.
+Test creation does not authorize deploying instructions, repairing the underlying problem, or acting on real user state.
 
 Before arranging a trial, read and follow [Behavioral trials](../skill-authoring/references/behavioral-trials.md).
-That reference owns historical replay, paired comparisons, instruction exposure, passive observation, and summarization trials.
-Use the procedure below for constructing the fixture and, when requested, minimizing a demonstrated failure.
+It owns historical replay, paired comparisons, instruction exposure, passive observation, and summarization trials.
+This skill develops fixtures and minimizes failures when requested.
 
-## Select a behavioral trial
+## Choose the case and claim
 
-Start with the decision the evaluation should inform, then identify the requested kind of trial before designing its fixture:
+Name the decision the evaluation should inform and the observation that would change it.
+Choose the requested trial before designing its fixture:
 
-- **Historical reproduction:** follow the historical replay procedure in the trial protocol to establish the original baseline before simplifying it.
-- **New evaluation inspired by an incident:** a small synthetic fixture is valid, but it is a new condition, not the original baseline.
-- **Minimization:** reduce an already demonstrated reproducer using §4.
+- **Historical reproduction:** establish the original baseline through the trial protocol before simplifying it.
+- **New evaluation:** a synthetic case inspired by an incident tests a new condition, not the original baseline.
+- **Minimization:** start from a demonstrated reproducer; use **Reduce the surroundings, retain the failure** below.
 
-Shortlist cases that exercise the decision.
-Prefer a small useful test over a large one, but do not choose an easy case that measures a different behavior.
-For historical candidates, use session searches to locate episodes, then read the governing request and the evidence around the decision.
-Treat complaints, search snippets, quoted histories, and retrospective explanations as leads rather than proof of an independent failure.
+For historical candidates, search sessions, then read the governing request and decisive evidence.
+Complaints, snippets, quoted histories, and retrospective accounts are leads, not proof of independent failure.
+Establish the requirements, permission changes, and information available at the choice.
+Check the actual action and result against those requirements, not the agent's account.
+What evidence should have changed its inference?
+Choose an observable outcome distinguishing the violation from a legitimate alternative, and pair it with a nearby control.
 
-For each promising candidate, establish:
+Literal test values can express a fixed contract or synthetic input; copying mutable configuration into another consumer tests a different choice.
+Updating obsolete specification text can be correct; deleting a requirement because implementation lacks it is different.
+Retrying a late producer can help; waiting for a representation it never creates cannot.
+These distinctions produce controls, not blanket judgments about literals, documentation edits, or retries.
 
-- The requirement or constraint in force, including later permission or scope changes.
-- The information available when the agent chose its action.
-- The concrete action and its observed result, separated from the agent's account of them.
-- The tempting inference the case tests and what evidence should have changed that inference.
-- An observable outcome that distinguishes the failure from a legitimate alternative.
+Match the starting state to the claim.
+Testing whether an agent introduces literal assertions from scratch requires a starting state without a suite supplying them.
+Updating inherited assertions does not establish that behavior; removing a historical suite creates a derived trial.
+Record the adaptation.
 
-Check that the action was actually wrong under those requirements.
-Literal test values can encode a fixed contract or synthetic inputs; copying a mutable configuration value into another consumer is a different case.
-Updating obsolete specification text can be correct; deleting a requirement merely because implementation lacks it tests a different judgment.
-A retry can be appropriate when a producer runs late; waiting for a representation that the producer never creates cannot repair the failure.
-Use these distinctions to identify a nearby control, rather than grading every literal, documentation edit, or retry as a failure.
+Rank candidates by relevance, evidence, scoring clarity, and cost of reaching the decisive action, including needed state, tools, and constraints.
+Prefer a small case that preserves the choice; use a more involved one when necessary.
+For new evaluations, prefer local files, small interfaces, and controlled command results.
+Two configurations sharing an installer can test whether a repository-local dependency request changes only that repository, without a real image build.
+That does not reproduce the historical incident.
+Treat the fixture as a hypothesis until it reproduces through the assembled path.
+Establish one representative case and control before expanding the collection.
 
-Match the starting state to the question.
-If the question is whether the agent introduces a test pattern from scratch, choose a starting state without a suite that supplies it.
-Updating inherited literal assertions does not establish that the agent would introduce those assertions from scratch.
-Removing the old suite can create a useful derived trial; record that adaptation rather than claiming it was the historical starting state.
+## Define what counts
 
-Rank candidates by relevance, strength of evidence, clarity of scoring, and the cost of reaching the decisive action now.
-For a new evaluation, prefer local files, small callable interfaces, and controlled command results when they preserve the relevant choice.
-For example, a repository-local dependency request can be tested with two configurations sharing an installer;
-check that only the requested repository changes instead of requiring a real image build.
-That synthetic scenario does not establish reproduction of the original incident.
-Estimate setup cost without silently dropping the state, tools, or constraints needed to exercise the choice.
-Label a proposed small fixture as a hypothesis until it reproduces through the assembled path.
+Define failure through inspectable actions or outputs and set the observation endpoint at the tested judgment.
+Capture enough evidence to score it, then stop; require downstream implementation only when the criterion tests it.
+Stopping too early is inconclusive; a later timeout does not erase an already valid observation.
 
-Choose a more involved case when no simpler candidate preserves the judgment being tested.
-For a new evaluation, do not require a large historical environment when a smaller setup preserves the relevant choice.
-Select one representative candidate and its nearby control before expanding to a collection.
-Carry its proposed outcome into the criterion below; establish the baseline before minimizing it.
+Separate independently occurring outcomes.
+Editing without requirements and claiming completion are different failures.
+If actual edits define failure, poor reasoning or a scope request without edits does not reproduce it.
+An edit later reverted still counts.
+Inspect intermediate actions and successful tool results, distinguishing attempts, failed calls, identical-content writes, and actual changes.
 
-## 1. Fix the observable criterion
-
-Recover the request and decisive evidence before choosing the test.
-Name the decision the result should change and the observation that would change it.
-Define the failure in terms of inspectable actions or outputs.
-Set the observation endpoint at the judgment being tested, not at conversation completion.
-Capture enough evidence to score that judgment, then stop; do not require downstream implementation unless the criterion tests it.
-A run that stops before enough evidence exists is inconclusive; a later timeout does not erase an already validly observed judgment.
-
-Separate outcomes that can occur independently.
-For example, editing without requirements and claiming completion are different failures.
-If the criterion is actual edits, bad reasoning or a scope request without edits does not reproduce it.
-An edit later reverted still counts as an edit; a clean final inventory alone cannot establish that no edits occurred.
-Check successful tool results and intermediate actions as well as the final files.
-Distinguish attempted edits, failed tool calls, identical-content writes, and actual changes.
-
-Choose the repeatability check before selecting a reduced fixture.
+Choose repeatability before selecting a reduced fixture.
 For a small reproducibility check, default to two valid runs out of two unless the request requires another standard.
-Stop after the agreed check rather than increasing the sample count after the selection decision is settled.
-Report the observed count without treating it as a failure-rate estimate or a guarantee about future runs.
-Rate comparisons require a sampling design appropriate to that claim.
+Stop at the agreed check; report counts without treating them as failure-rate estimates or guarantees.
+Rate comparisons need a sampling design suited to that claim.
 
-## 2. Build a faithful baseline
+## Build and verify the baseline
 
-Start with the closest available execution path that can expose the failure.
-Reuse native model access, authentication, tools, and subagents where available.
-Do not introduce guest credentials, a new broker, or a replacement harness before checking what the existing route supports.
-Keep model calls and mutations within the authorized scope and use owned disposable state.
+Use the closest available execution path that can expose the failure, with owned disposable state and authorized model calls and mutations.
+Check existing harnesses, native model access, authentication, tools, and subagents before building a runner or introducing credentials or a broker.
 
-For a historical case, use the trial protocol to choose the cut and adjust state fidelity.
-Recover the actual model and reasoning setting from recorded metadata rather than current defaults.
-Recover the governing instructions, relevant task state, attempted operation, and returned error from raw evidence.
-Session readers can omit metadata or tool-result bodies; inspect the underlying record when those omissions affect fidelity.
-An unavailable model is a blocker to that model's trial, not permission to substitute another silently.
-Record an approved substitution as a different condition.
+### Reconstruct the choice
 
-Preserve uncertainty and information order when they define the choice being tested.
-Do not make ambiguous requirements explicit merely to simplify scoring; keep evaluator precision separate from the agent-visible task.
-Do not expose later requirements, diagnoses, or repair interfaces before their historical appearance.
-For example, a callback introduced during a later repair is not part of the original pre-failure interface.
+For historical trials, use the protocol to choose the cut and decide how much state to restore.
+Recover the actual model and reasoning setting, governing instructions, relevant state, attempted operation, and returned error from raw records.
+Inspect underlying records when session readers omit consequential metadata or tool results.
+An unavailable model blocks that model's trial; record any approved substitution as a different condition.
 
-Preserve the inputs the agent could inspect and the failure it actually encounters.
-A source export is not a working repository when the task uses history or repository status.
-A direct file permission error is not automatically equivalent to an issue command failing on a repository lock.
-If an input is deliberately inaccessible, synthetic hidden contents can suffice; verify the access boundary and label the contents synthetic.
-Do not make recovery of invisible historical contents a prerequisite without a reason tied to the test.
+Ask what the agent could know at that cut.
+Preserve ambiguity when resolving it would change the choice, even if explicit requirements would simplify scoring.
+Keep evaluator expectations and reference answers out of the inputs.
+Preserve the historical timing of requirements, diagnoses, and repair interfaces: a callback introduced during repair is not part of the pre-failure interface.
 
-Record known differences and their possible effects.
-Call reconstructed inputs a reconstruction; do not claim exact replay when runtime, tools, instructions, or workspace identity differ.
+Then ask what the agent needs to inspect or encounter.
+For a failed issue command, does the choice depend on repository history or status?
+If so, use a working repository rather than a source export.
+Does it depend on the command's lock error?
+A file permission error is not automatically equivalent.
+By contrast, deliberately inaccessible files can have synthetic contents if you verify the access boundary and label them synthetic.
+Recover invisible historical contents only for a reason tied to the test.
+Record reconstruction differences and possible effects rather than claiming exact replay.
 
-## 3. Verify the assembled path
+### Does the assembled path deliver that condition?
 
-Check that the model receives the intended instructions and uses the intended tool execution target.
-Use effective request captures and representative operations through the native bindings.
-Tool names and declarations alone do not prove which implementation runs.
-For a file-editing test, verify the actual workspace and permission boundary through the tools the model will invoke.
-An isolated helper test or container preflight does not establish model behavior through the assembled harness.
+Before scoring, inspect effective request captures for intended instructions.
+Verify the tools' execution target with representative operations through native bindings.
+For file edits, verify workspace and permissions through the model's tools.
+Declarations, helper tests, and container preflights do not establish what runs through the assembled harness.
 
-Keep expected worker errors separate from authentication, transport, initialization, and evidence-capture failures.
-Validate each run against its declared fixture through the observation endpoint before scoring behavior.
-For example, an unexpectedly missing repository invalidates a repository baseline; deliberately removing it can be a valid minimization condition.
-An invalid run is neither a reproduction nor evidence that the agent behaves correctly.
-Retain its failure evidence and fix the infrastructure before drawing behavioral conclusions.
+Validate each run against its fixture through the observation endpoint.
+An unexpectedly missing repository invalidates a repository baseline; deliberately removing it may be a valid reduction.
+Separate expected worker errors from authentication, transport, initialization, and capture failures.
+Retain invalid-run evidence and fix infrastructure before drawing behavioral conclusions.
+Invalidity establishes neither reproduction nor correct behavior.
 
-Score the baseline against the chosen criterion.
-Use the nearby control required by the trial protocol to distinguish the failure from an unsuitable fixture.
-Keep evaluator expectations, reference answers, and later diagnoses out of the worker's inputs.
-For a fresh evaluation, no observed failure is a valid result; report it and finish the requested evaluation.
-Begin minimization only when a failure meets the chosen criterion and repeatability check.
-If the request is reproduction and that check fails, report the failure as unreproduced rather than weakening the criterion.
+Score the baseline and nearby control against the criterion.
+For a fresh evaluation, no observed failure is a valid result: report it and finish.
+For reproduction, report an unmet repeatability check as unreproduced rather than weakening the criterion.
+Minimize only after failure meets both criterion and repeatability check.
 
-## 4. Minimize while preserving the failure
+## Reduce the surroundings, retain the failure
 
-Choose the reduction objective from the requested use: a clearer reproducer, less setup, fewer input tokens, or lower execution cost.
-Compare candidates against that objective and note material cost regressions.
-A shorter history can reopen resolved work and increase tool calls; do not prefer fewer messages automatically.
+Choose the reduction objective for the requested use: clarity, less setup, fewer input tokens, or lower execution cost.
+Compare candidates on that objective and note material regressions.
+A shorter history can reopen resolved work and increase tool calls; fewer messages need not be better.
 
-Keep an immutable passing fixture and an explicit record of rejected candidates.
-Hold the model, reasoning setting, and scoring criterion fixed while reducing setup.
-Keep the execution path fixed unless it is the dimension deliberately being reduced; verify changed bindings before interpreting that reduction.
-Use fresh disposable state and session context for each run.
+Keep an immutable passing fixture and a record of rejected candidates.
+Hold model, reasoning setting, and criterion fixed.
+Keep the execution path fixed unless deliberately reducing it; verify changed bindings before interpreting that reduction.
+Use fresh disposable state and session context for every run.
 
-1. Remove a substantial group of inputs: instruction blocks, unrelated files, repository history, dependencies, or auxiliary context.
-   Prefer cuts that substantially reduce setup or expose which context drives the action.
-   Preserve the task requirement or constraint whose violation defines the failure.
-2. Capture the candidate's effective inputs and verify the intended cut.
-   Remove alternate copies too: shortening stdin while leaving a longer reread packet is a different reduction.
-   Check discovered instructions, file aliases, and inherited context when they can restore supposedly removed inputs.
-3. Run the candidate against the unchanged criterion.
-   A smaller setup that retains only poor reasoning while losing the required action is a failed reduction.
-4. Retain the candidate only when it meets the agreed repeatability check.
-   Under a two-out-of-two requirement, an observed miss disqualifies that configuration.
-   Do not discard a failure and restart the count to manufacture two successes.
-   Additional runs of a rejected candidate need a separate diagnostic purpose.
-5. If a cut fails, return to the last passing setup and try a smaller cut or another group.
-   If separate cuts pass, test their combination; independent successes do not establish that the combination reproduces.
-
-Preserve the behavior being tested while reducing its surroundings.
-Removing a prohibition that made an action wrong changes the task; do not score that action against the original prohibition.
-Do not add an obvious new defect, tell the agent to skip the missing requirement, or change the oracle to rescue a candidate.
-For code reductions, retain the relevant original behavior instead of substituting a different bug that is easier to trigger.
+1. Remove a substantial input group, such as instruction blocks, unrelated files, history, or dependencies.
+   Favor cuts that reduce setup or reveal which context drives the action.
+   Retain the requirement whose violation defines failure and, for code reductions, the relevant original behavior.
+2. Capture effective inputs and verify the cut, including alternate copies.
+   Shorter stdin with a longer reread packet is a different reduction; discovered instructions, aliases, and inherited context can restore removed inputs.
+3. Apply the unchanged criterion.
+   Poor reasoning without the required action fails the reduction.
+   Adding an easier defect or telling the agent to skip the requirement changes the task.
+4. Retain only candidates meeting the agreed repeatability check.
+   With two-out-of-two, a miss disqualifies that configuration: restarting the count cannot manufacture success.
+   Further runs of rejected candidates need a separate diagnostic purpose.
+5. After a failed cut, return to the last passing fixture and try a smaller cut or different group.
+   Test combined cuts even when each passes separately; separate successes do not establish the combination.
 
 Stop when the requested reduction and repeatability check are satisfied, a meaningful next cut fails, or an agreed limit is reached.
-Keep the tested passing fixture that best serves the reduction objective, with evidence for that choice.
-Preserve smaller tested conditions and any rejected case that demonstrates an observed boundary.
-Say which dimensions remain untested; do not imply a global minimum from a bounded search.
+Keep the passing fixture that best serves the objective, smaller tested conditions, and rejected cases showing an observed boundary.
+Name untested dimensions; a bounded search establishes no global minimum.
 
-## 5. Leave a reproducible result
+## Leave a reproducible result
 
-Provide a runnable entry point and fixture, with model/settings, effective instructions, tool behavior, and state identity recorded.
-Preserve the baseline, controls, reduction lineage, valid/invalid status, raw action evidence, and observed counts.
-Record final retained changes separately from transient edits and completion claims.
-Keep failures in the results rather than retaining only successful samples.
-Distinguish historical observations, fresh trials of the original baseline, and derived-fixture trials.
-A non-reproduction in a reconstruction establishes only that condition's observed outcome, not whether the original baseline reproduces.
-Do not report an untested original baseline as a failed reproduction.
+Provide a runnable entry point and fixture with model/settings, effective instructions, tool behavior, and state identity.
+Preserve baseline, controls, reduction lineage, valid/invalid status, raw action evidence, and counts—including unsuccessful samples.
+Record retained changes separately from transient edits and completion claims.
 
-For minimization, report the retained setup, what it improves, material cost regressions, and any tested cut that stops reproducing or becomes intermittent.
-Identify the smallest tested passing setup if it differs from the retained choice.
-For evaluation without a reproduced failure, report the measured outcomes and the scope actually exercised.
-State relevant validation limits in either case.
-Include token use and elapsed time when available; avoid efficiency claims when those costs are unmeasured.
+Distinguish historical observations, fresh original-baseline trials, and derived-fixture trials.
+A reconstruction's non-reproduction establishes only that condition's outcome; an untested original baseline has not failed reproduction.
+
+For minimization, explain the retained setup's improvement, material cost regressions, and tested cuts that stop reproducing or become intermittent.
+Identify the smallest tested passing setup if different from the retained choice.
+For evaluations without reproduced failure, report outcomes and scope exercised.
+State validation limits and include token use and elapsed time when available; unmeasured costs support no efficiency claim.
