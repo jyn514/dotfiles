@@ -29,6 +29,12 @@ Do not infer a hidden input change solely from different outputs.
 For example, a process logs an old configuration value although the file contains the new value.
 That contradicts current-file loading only if this process loaded these bytes before that operation.
 Inspect the process's loaded value and reload boundary before treating either the file or the log as wrong.
+Track three separate times when configuration or code changes:
+when bytes appeared on disk, when the process loaded them, and when the new state became active after reload, restart, or reboot.
+A file installed during a long-running process does not explain behavior until that process crosses the relevant reload boundary.
+When several changes can become active at the same boundary, make a short ledger before ranking causes.
+Record each changed input, the boundary that made it effective, and the symptom it could directly explain.
+A shared reboot, restart, or relogin does not turn several hypotheses into one cause.
 
 ## Locate the first unsupported connection
 
@@ -39,6 +45,9 @@ Current source and an installed version do not establish what a past process ran
 Attribute each decisive fact to the process, machine or namespace, resource, and time it describes, as relevant.
 Do not use a guest installation, guest limit, or current file to rule out a failure in a different context.
 When two cases behave differently, locate the first branch or boundary where their execution differs.
+Start from the visible symptom, then find the earliest failed dependency that every later symptom depends on.
+A downstream failure can be real and still be too late to distinguish causes.
+Prefer the first failed load, bind, policy decision, handoff, or other prerequisite over the final user-visible breakage.
 
 For every observation, ask what it can actually see:
 
@@ -59,6 +68,10 @@ Include an incorrect premise or measurement, as well as a system defect, when ea
 For each serious candidate, identify the cheapest observation that would contradict it.
 Do not keep adding speculative candidates when one available check separates the leading explanations.
 Use work-selection when another substantive diagnostic round needs justification.
+When two plausible changes happened before the failure, test an off-diagonal case before blaming either one.
+Think in terms of old and new inputs:
+old binary with new config, new binary with old config, or another cheap split that isolates one change.
+Run the smallest case that would falsify one explanation; do not infer from the timeline alone.
 
 Pair the input observation and resulting action from the same operation where possible.
 A correct request in one operation and a bad action in another do not establish a correct-input/bad-action pair.
@@ -94,6 +107,9 @@ Report the observed failure, eliminated explanations with their scope, and the r
 Use explicit outcomes: reproduced cause, supported but unconfirmed mechanism, current success with historical cause unresolved, or insufficient evidence.
 When evidence contradicts an earlier diagnosis, withdraw the dependent claim and reassess the next action.
 Do not replace it with another confident story merely because that story also fits.
+After applying a proposed fix or workaround, re-check the original symptom before carrying the diagnosis forward.
+If the symptom survives, demote that cause immediately and reopen the explanation from the remaining evidence.
+A partial improvement can identify one contributing factor without explaining the incident by itself.
 
 If the original request, state, or timing is irrecoverable, stop trying to prove its contents from later success.
 Preserve useful findings in the project's established tracker and identify the smallest capture needed on recurrence.
