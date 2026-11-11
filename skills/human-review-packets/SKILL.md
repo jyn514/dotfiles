@@ -6,109 +6,89 @@ description: Frame consequential human approvals and explanations that need subs
 # Human review packets
 
 Help a person judge a recommendation or understand its consequences without reconstructing the investigation.
-Use this workflow for consequential approvals or explanations that need substantial context.
-Ask simple preference questions, routine confirmations, and requests for missing facts directly.
-This skill owns selection and framing of human review questions and explanations, not the underlying investigation or design selection.
-Use the owning investigation or design skill for that work.
-Use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact authoring and reader experience.
-It does not grant implementation or approval authority.
+This skill owns human-facing framing; leave investigation and design selection with their owning skills.
+It grants no implementation or approval authority.
+Ask simple preferences, routine confirmations, and missing-fact questions directly.
 
-## 1. Resolve what needs human judgment
+## Find the judgment that remains
 
-Start with the current request and the decisions already made.
-Read previous answers, authoritative sources, and affected examples.
-Separate settled decisions, deferred decisions, and questions that are still open.
+Read the request, previous answers, authoritative sources, and affected examples.
+Separate open, settled, and deferred decisions.
+Resolve factual and procedural questions from records and tools you can access before asking for human judgment.
+When a decision depends on how a rule or category applies, follow [Rule scope and applicability](references/rule-scope.md).
 
-### Resolve facts and scope first
+Choose what the reader needs to judge or understand, and what their answer would change.
+Default to one decision or consequence per explanation and the smallest useful batch; separate independent choices.
+Resolve unclear approval scope before drafting.
+Reopen settled or deferred choices only for a new reason, and keep deferred material outside the active reading list.
 
-Investigate factual or procedural questions you can answer yourself.
-Do not ask a human to troubleshoot a tool, inspect records, or provide evidence you can retrieve.
+When authoritative guidance settles a question, perform the authorized work and required checks.
+Evidence gathering, licensing investigation, mechanical repairs, and validation are work, not blanket approvals to request.
+If no concrete human choice is ready, say no decision is needed now and continue authorized work.
+Keep later acceptance separate.
 
-Before calling something a contradiction, check the relevant sources and examples.
-If the decision depends on how a rule or category applies to a case, follow [Rule scope and applicability](references/rule-scope.md) before asking a human to resolve it.
+## Establish what changes
 
-### Establish the consequence
+Choose a concrete case that shows what the alternatives change in behavior, effort, cost, risk, access, or usable evidence.
+Distinguish adding an option from replacing a result, and internal bookkeeping or explanatory changes from observable fixes.
+Reuse comparisons that establish the consequence.
+If a material consequence remains uncertain, use an authorized, proportionate test when it can resolve that uncertainty; hold other variables fixed.
+Otherwise, explain the case and what remains unverified.
+A successful test establishes behavior, not support from requirements.
 
-Explain why the choice matters: what changes in behavior, effort, cost, risk, access, or the evidence people can rely on?
-Reuse available comparisons when they establish the consequence.
-When a material consequence remains uncertain and an authorized test can resolve it at proportionate cost, compare alternatives with other variables fixed and show the actual difference.
-Otherwise, give a concrete case and say what remains unverified.
-Distinguish adding an option from replacing an existing result.
-A successful test does not prove that requirements support the alternative.
-If a change affects only explanation or internal bookkeeping, say so; do not claim it fixes observable behavior.
+For a bug claim, trace the state before the action, the action, and the resulting harm.
+For a safeguard, show where it interrupts that sequence.
+Check how the state arises, whether it persists until the action, and what existing checks or cleanup do.
+Clearing a retry timer loses an expected retry only while the timer is pending; clearing an empty timer demonstrates no bug.
+Likewise, calling something “accounting state” or “recovery state” does not establish that resetting it loses useful work.
+Build the example from reachable events and existing controls.
+Distinguish reproduced failures, source-backed traces, and hypothetical risks with explicit assumptions.
+If no harm is established, withdraw the bug claim or mark the risk unverified and reassess the mechanism.
 
-For a claimed bug, trace a reachable sequence: the relevant state before the action, what the action changes, and the resulting harm.
-For a claimed safeguard, show the harmful sequence it prevents and where it intervenes.
-Check how the state arises, whether it can still exist when the action runs, and which existing checks or cleanup already prevent the harm.
-For example, clearing a retry timer loses an expected retry only if the timer is pending; clearing an empty timer does not demonstrate a bug.
-Distinguish reproduced failures, source-backed traces, and hypothetical risks, and state assumptions explicitly.
-Do not invent extra events or bypass existing checks to make the example work.
-If no harm is established, withdraw the bug claim or mark the risk unverified and reassess the proposed mechanism.
-A name such as “accounting state” or “recovery state” does not prove that resetting it loses useful work.
+## Build the explanation around the reader's choice
 
-### Ask only for the unresolved decision
+Assume the reader knows their domain, not your investigation or internal representations.
+For a follow-up, answer the specific question with the explanation it needs, rather than turning it into a full packet or approval request.
+For a new packet, develop:
 
-Ask only for judgment or intent that remains missing.
-If authoritative guidance settles the issue, handle it as agent work within existing authorization and perform the required checks; do not ask for new approval.
+1. **Problem:** the observed issue or remaining uncertainty and why it matters.
+2. **Example:** the actual case or alternatives, showing what changes.
+3. **Recommendation:** the smallest justified next action and its reason; label inferred premises where used.
+   If evidence supports no recommendation, identify what is missing.
+4. **Question, if one remains:** the human judgment needed, with short meaningful answers, a defer option, and ordinary-language replies accepted.
+   Otherwise, state that no decision is needed now.
 
-Separate work from decisions needed now.
-Evidence gathering, licensing investigation, mechanical repairs, and validation are not blanket approvals to request.
-When no concrete human choice is ready, say that no decision is needed now and continue authorized work; this does not approve that work or later acceptance.
-Ask a narrow question when evidence exposes one, and keep later acceptance reviews separate.
+For example: “Both forms collect the same information. A fits on one page; B uses two pages with larger text.
+I recommend B for its larger text. Which should we use?”
+Show both versions so the reader can judge the trade-off.
+The question concerns a preference left open by requirements, not approval of details those requirements settle.
 
-Do not reopen a settled choice or requeue a deferred approval without a new reason.
-Keep deferred material outside the active reading list.
+Introduce unfamiliar terms at first use through meaning and provenance.
+“Restricted, a category in the organization's information-sharing policy” identifies the label's source;
+classifying a particular document as Restricted may still be our provisional assessment.
+Translate notation beside its meaning: “stumble, written in two keyboard strokes: stum + ble (`STUPL/SWR-BL`)”.
+Lead with the human problem, not IDs, hashes, schemas, or status taxonomies.
+Let the person express judgment without reconstructing internal fields or implementation steps.
 
-Default to one decision or consequence per explanation and the smallest useful batch.
-State what the answer would change and what it would not authorize.
-Resolve unclear scope before drafting.
+## Keep the decision and its evidence distinct
 
-## 2. Write the human-facing page
+Keep decision-changing uncertainty and approval limits in the main explanation.
+State exactly what the answer selects and what it does not authorize; keep publication, required checks, and later acceptance separate.
+Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) for existing authorization.
+Preparing a packet changes no approval status, and approval of an example does not approve a system, dataset, class of cases, or method.
 
-Assume the reader knows their domain, but not the investigation or its internal representations.
-Explain unfamiliar specialized terms at first use, including their origin when that affects interpretation.
-For example, “Restricted, a category in the organization's information-sharing policy” identifies where the label comes from;
-whether a particular document belongs in that category may still be our provisional assessment.
-Do not make a source-defined term look like terminology invented by the agent.
-For a follow-up, answer the specific question directly and use only the parts below needed to explain it.
-Do not turn a short clarification into a full packet or an approval request.
-For a new review packet, lead with:
+Put exact records, excerpts, versions, traces, measurements, and reproduction details in an optional appendix or linked evidence page.
+Preserve provenance and conflicting or failed evidence.
+The reader should be able to judge the recommendation without reading that material.
 
-1. **Problem:** the observed issue or remaining uncertainty, and why it matters, in ordinary language.
-2. **Example:** show the actual case, behavior, or alternatives, including what changes between them.
-   Translate internal representations into something the person can inspect, and put notation beside its meaning.
-   For example, write “stumble, written in two keyboard strokes: stum + ble (`STUPL/SWR-BL`)”, not just the technical notation.
-3. **Recommendation:** state the smallest justified next action and its reason. Mark uncertain premises as inferred beside the explanation. If evidence supports no recommendation, say what is missing.
-4. **One question, if a human choice remains:** ask for the decision directly. Offer short, meaningful answers, including defer, and accept ordinary-language replies. Otherwise, state that no decision is needed now.
+## Read as the reviewer
 
-For example, if two form designs both meet the documented requirements, a real preference question might be: “Both forms collect the same information. A fits on one page; B uses two pages with larger text. I recommend B for its larger text. Which should we use?” Show both versions so the reader can judge the trade-off. Do not request approval of details already settled by the requirements.
+Read the front page without the appendix or original conversation.
+Can the person explain what changes, why you recommend it, what remains uncertain, and what their answer permits?
+Can they distinguish facts, inference, and proposals, including source terminology from your annotations?
+If not, rewrite the explanation rather than adding instructions for the reader.
+Check source fidelity and links, then use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for substantial drafts.
 
-Do not lead with IDs, hashes, branch counts, schemas, status taxonomies, or fill-in forms. Do not make the reader reconstruct internal field values or implementation steps to express their judgment. If several independent choices remain, separate them; do not hide them inside one approval question.
-
-## 3. Keep evidence available, not mandatory reading
-
-Put exact record identities, source excerpts, versions, traces, measurements, and reproduction details in an optional appendix or directly linked evidence page. Preserve provenance and conflicting/failed evidence.
-
-Keep decision-changing uncertainty in the main explanation; an appendix must not hide an inferred premise, an untested alternative, or a narrow approval scope. Do not imply a tested example approves an entire system, dataset, class of cases, or method.
-
-State exactly what a review answer selects; keep publication, required checks, and later acceptance separate from that decision.
-Apply the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) to determine existing authorization.
-Packet creation itself changes no approval status.
-
-## 4. Check the reading experience
-
-Read only the front page, ignoring the appendix:
-
-- Can the reader explain the problem and answer without IDs, traces, or the original conversation?
-- Does the example show a reachable change to a useful result—not merely an internal-state reset—and make the recommendation understandable?
-- Does this need human judgment, or can source inspection, implementation, or validation settle it?
-- Are observed facts, inference, and proposed changes distinguishable? Does the reader know which terms come from the source and which annotations we supplied?
-- If a decision remains, is there one clear question, with a real defer option and explicit scope? If none remains, does the page report the result without manufacturing a question?
-
-When a reader asks what a term means, explain its meaning and provenance.
-If they also ask why the behavior is harmful or the mechanism is needed, check the consequence rather than only defining the term.
-A request for clarification is not rejection of the design, but finding no support for its claimed benefit requires revising that claim or recommendation.
-
-If the front fails these checks, rewrite it rather than adding more instructions for the reader.
-Check source fidelity and links, then use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) for whole-artifact editorial review of substantial drafts.
-Stop when the packet is readable and faithful; no decision, response, or approval is required to finish preparing it.
+A clarification request calls for meaning and provenance; a question about harm also calls for checking the consequence.
+Clarification is not design rejection, but unsupported benefit claims require revising the claim or recommendation.
+Packet preparation ends when the explanation is readable and faithful, without waiting for a decision, response, or approval.
