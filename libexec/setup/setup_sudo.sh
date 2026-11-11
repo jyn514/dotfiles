@@ -173,6 +173,12 @@ setup_pcscd() {
 	fi
 }
 
+reload_systemd_after_globals() {
+	if exists systemctl; then
+		systemctl daemon-reload
+	fi
+}
+
 encrypt() {
 	if fscrypt_supported; then
 		encrypt_home_dir
@@ -280,6 +286,7 @@ main() {
 	install_device
 	set +x
 	copy_globals ''
+	reload_systemd_after_globals
 	setup_pcscd
 	set -x
 

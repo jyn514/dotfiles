@@ -88,6 +88,12 @@ class SetupSudoTests(unittest.TestCase):
             text=True, capture_output=True, timeout=10,
         )
 
+    def run_reload(self, mode):
+        return subprocess.run(
+            self.command(mode), cwd=ROOT, env=self.environment,
+            text=True, capture_output=True, timeout=10,
+        )
+
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
@@ -229,6 +235,18 @@ class SetupSudoTests(unittest.TestCase):
             ["systemctl", "enable", "--now", "pcscd.socket"],
             self.commands(),
         )
+
+    def test_global_copy_reloads_systemd_when_available(self):
+        result = self.run_reload("reload-systemd")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([["systemctl", "daemon-reload"]], self.commands())
+
+    def test_global_copy_skips_systemd_reload_when_unavailable(self):
+        result = self.run_reload("reload-no-systemd")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_affirmative_reply_preserves_migration_argv_and_deletes_only_backup(self):
         stderr = self.run_encryption(b"y\n")

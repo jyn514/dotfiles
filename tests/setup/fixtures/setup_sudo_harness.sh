@@ -34,6 +34,15 @@ if [ "$mode" = pcscd-socket ] || [ "$mode" = pcscd-service ]; then
 	exit "$?"
 fi
 
+if [ "$mode" = reload-systemd ] || [ "$mode" = reload-no-systemd ]; then
+	exists() {
+		[ "$mode" = reload-systemd ] && [ "$1" = systemctl ]
+	}
+	systemctl() { record systemctl "$@"; }
+	reload_systemd_after_globals
+	exit "$?"
+fi
+
 # No privileged command or profile installation escapes this fixture.
 setup_fscrypt_profile() { record setup_fscrypt_profile; }
 fscrypt() { record fscrypt "$@"; }
