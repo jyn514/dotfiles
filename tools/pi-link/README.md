@@ -187,7 +187,7 @@ At least one field is required.
 `name` must be nonempty after whitespace normalization and cannot contain `@`.
 `group` is the text after the first `@`; `""` selects the ungrouped group, and further `@` characters are group text.
 Omitted fields retain both their value and ownership.
-This does not rename the Pi session or change its selected session file.
+This updates a link-derived Pi title but preserves an explicitly set title and never changes the selected session file.
 
 Name and group have independent origins: `generated`, `agent`, or `user`.
 The tool can replace generated or agent-chosen fields, but a request that would replace either user-owned field fails atomically.
@@ -642,7 +642,15 @@ The bundled skill tells agents not to repeat those messages in their ordinary re
 | Already in a session                 | `/link-connect`         |
 | Disconnect mid-session               | `/link-disconnect`      |
 
-`pi-link <name>` resumes/creates a session AND sets your link identity in one step. `pi --link-name <name>` sets only the link identity, leaving Pi's normal session selection (latest in cwd, or fresh) untouched.
+`pi-link <name>` resumes/creates a session AND sets your link identity in one step.
+`pi --link-name <name>` leaves Pi's normal session selection (latest in cwd, or fresh) untouched.
+
+Saved Pi session titles default to the link name and follow renames, including assigned collision suffixes and offline preference changes.
+Setting a title explicitly with `/name` or a title tool stops automatic updates, even if you set the same text or clear the title.
+This choice survives reload and resume.
+Existing titles without automatic-naming provenance remain unchanged.
+Pi's terminal title always shows only the link name, without the `π -` prefix or working directory.
+Saved descriptive session titles remain available in Pi's session picker and history, independently of the terminal title.
 
 **Name normalization:** Link names are normalized — leading/trailing whitespace removed and internal whitespace runs collapsed to a single space. `/link-name "build   lead"` saves and shows as `build lead`.
 
@@ -654,7 +662,8 @@ A parent name already starting with `t-` keeps that prefix without adding anothe
 The parent's group and task-name path separators are preserved; normal collision handling still applies.
 Older managers that omit the task name keep the `subagent-<four-random-hex>` suffix.
 The child saves its own generated identity, so later parent renames do not rename existing children or change their names on reload/resume.
-Explicit or saved child names still take precedence, and generated link names do not set Pi session titles.
+Explicit or saved child names still take precedence.
+Generated child names also supply the default Pi title, subject to the same explicit-title protection.
 Parents must load this version before spawning children; without a matching parent handoff, children keep the independent random default.
 
 `/link-connect` and `/link-disconnect` save their intent to the session — resume later and the connection state is restored without needing the flag. Explicit user intent takes precedence over `--link`.
@@ -730,5 +739,7 @@ Without the filter, it runs and checks the complete native suite.
 The suite is also discovered by the repository's `dev/test` command through `bun test tests/pi`.
 CLI tests run the production list, resolve, and launcher paths with disposable session files and a fake Pi executable.
 Native extension tests use disposable copies and private WebSocket ports, not the live link on port 9900.
+The terminal-title regression checks real OSC output from Pi's TUI at startup, after renames, and when replacing a session.
+Set `PI_LINK_TITLE_PACKAGE_DIR` to an installed Pi package directory to run that TUI case against the installed build instead of the locked test SDK.
 Keep fork changes here rather than editing a Pi-installed package checkout.
 Bootstrap configuration and the installed upstream package are unchanged.

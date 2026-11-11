@@ -226,7 +226,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerFlag("link-name", {
     description:
-      "Set the pi-link terminal name on startup (link identity only; does not affect session)",
+      "Set the pi-link terminal name on startup (also the default Pi title; does not select a session)",
     type: "string",
   });
 
@@ -247,6 +247,7 @@ export default function (pi: ExtensionAPI) {
   let manuallyDisconnected = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let startupConnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let startupTitleWrite: ReturnType<typeof setImmediate> | undefined;
 
   // Status tracking (local truth)
   let agentRunning = false; // agent_start until agent_settled, not until agent_end
@@ -529,8 +530,29 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   }
 
+  /** Follow link names only while the latest title entry is ours, including across reload/resume. */
+  function syncSessionTitle(name: string) {
+    if (!ctx) return;
+    const entries = ctx.sessionManager.getEntries();
+    const latestTitle = entries.findLast((entry) => entry.type === "session_info");
+    const ownedTitleId = latestCustomData("link-session-title")?.sessionInfoId;
+    // Compare entry identity, not text: explicitly setting even the same title
+    // (or clearing it) relinquishes automatic naming. Legacy titles stay explicit.
+    if (latestTitle && latestTitle.id !== ownedTitleId) return;
+    if (pi.getSessionName() === name) return;
+    pi.setSessionName(name);
+    const written = ctx.sessionManager.getEntries().findLast((entry) => entry.type === "session_info");
+    if (written) pi.appendEntry("link-session-title", { sessionInfoId: written.id });
+  }
+
+  function updateTerminalTitle() {
+    if (ctx?.hasUI) ctx.ui.setTitle(terminalName);
+  }
+
   function setTerminalName(name: string) {
     terminalName = name;
+    syncSessionTitle(name);
+    updateTerminalTitle();
     const sessionId = ctx?.sessionManager.getSessionId();
     if (!sessionId) return;
     // The subagent manager copies process.env at each launch. Publish assigned
@@ -1609,6 +1631,8 @@ export default function (pi: ExtensionAPI) {
 
   function cleanup() {
     disposed = true;
+    if (startupTitleWrite !== undefined) clearImmediate(startupTitleWrite);
+    startupTitleWrite = undefined;
     // disconnect() cancels the attempt in flight, including the startup timer.
     disconnect();
     if (publishedParentIdentity !== undefined && process.env.PI_LINK_PARENT_IDENTITY === publishedParentIdentity) {
@@ -1637,9 +1661,8 @@ export default function (pi: ExtensionAPI) {
     // Resolve terminal name. Precedence:
     //   --link-name flag  >  PI_LINK_NAME env  >  saved link-name  >  session name  >  random
     //
-    // --link-name is the public CLI surface (link identity only, never touches session name).
-    // PI_LINK_NAME is the internal handoff from the `pi-link` wrapper, which DOES
-    // seed session name when absent (the wrapper's combined-mode contract).
+    // --link-name leaves session selection unchanged; titles default to the link name.
+    // PI_LINK_NAME is the internal handoff from the `pi-link` wrapper.
     // PI_LINK_NAME is consumed once and removed from process.env so spawned children don't inherit it.
     const cliRaw = pi.getFlag("link-name");
     let cliFlagName: string | undefined;
@@ -1656,7 +1679,6 @@ export default function (pi: ExtensionAPI) {
     const envFlagName = normalizeName(envRaw);
 
     const flagName = cliFlagName ?? envFlagName;
-    const fromEnv = !cliFlagName && !!envFlagName;
     identity = initialIdentity({
       generatedName: terminalName,
       entries: _ctx.sessionManager.getEntries(),
@@ -1669,11 +1691,17 @@ export default function (pi: ExtensionAPI) {
     // Persist provenance even on same-text manual assignment and first generated
     // startup. Reload must neither remove user ownership nor invent it.
     persistIdentity();
-    // Only wrapper combined mode seeds the Pi session name; identity tools never do.
-    if (fromEnv && !pi.getSessionName()) pi.setSessionName(flagName!);
-
+    // Pi writes its decorated default after binding session_start handlers.
+    // Defer once so an idle/offline session also keeps the plain title.
+    if (startupTitleWrite !== undefined) clearImmediate(startupTitleWrite);
+    startupTitleWrite = setImmediate(() => {
+      startupTitleWrite = undefined;
+      updateTerminalTitle();
+    });
     if (flagName || shouldConnect()) scheduleStartupConnect();
   });
+
+  pi.on("session_info_changed", () => updateTerminalTitle());
 
   pi.on("session_shutdown", async () => {
     cleanup();
@@ -1835,7 +1863,7 @@ export default function (pi: ExtensionAPI) {
     ...TOP_LEVEL_TOOL,
     name: "link_set_identity",
     label: "Link Identity",
-    description: "Set this session's preferred local link name and/or group without replacing user-owned fields. Does not change the Pi session title or reconnect an explicitly disconnected session. Omitted fields retain their value and ownership.",
+    description: "Set this session's preferred local link name and/or group without replacing user-owned fields. Updates a link-derived Pi title, preserves explicit titles, and does not reconnect an explicitly disconnected session. Omitted fields retain their value and ownership.",
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Local name, without @; nonempty after whitespace normalization" })),
       group: Type.Optional(Type.String({ description: "Group suffix; empty string selects the ungrouped group" })),

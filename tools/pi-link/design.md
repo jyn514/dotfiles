@@ -42,7 +42,12 @@ There is no separate group-creation operation: matching suffixes define membersh
   This prevents a name update from changing a separately protected group.
 - A supplied group uses the existing whitespace normalization; `""` selects the implicit group of ungrouped terminals.
   Preserve the existing first-`@` rule, including groups whose text contains another `@`.
-- The operation changes only this session's link identity, not its Pi session name, title, or selected session file.
+- The operation updates a link-derived Pi title, preserves explicit titles, and never changes the selected session file.
+  Automatic title writes record the ID of their `session_info` entry in a `link-session-title` custom entry.
+  Follow renames only while that ID still identifies the latest title entry; any explicit title write ends automatic naming, even with identical text or an empty name.
+  Without this provenance, preserve existing titles.
+  Publish only the assigned link name through Pi's `ui.setTitle` API without decoration, independently of the saved session title.
+  Refresh it on link renames and `session_info_changed`; defer the startup write once past Pi's default title update and cancel pending writes on shutdown.
 - It does not reconnect a session the user explicitly disconnected.
   An offline change saves the preference for the next connection.
 
@@ -486,7 +491,8 @@ This environment handoff is a naming hint, not proof of parentage for routing or
 Each child publishes its own snapshot for its children.
 Accepted runtime name changes refresh the snapshot, including offline renames and hub assignments; shutdown removes the runtime's snapshot if it still owns it.
 The child's generated identity persists through the normal `link-identity` entries, so later parent renames do not change an existing child's name.
-Neither inherited component claims user ownership or changes the child's Pi session title.
+Neither inherited component claims user ownership.
+The generated name supplies the child's default Pi title unless a title was explicitly set.
 
 **Groups (`local@group`):** see [Configuration](README.md#configuration) for the rule a user needs. Internally, the hub serves every group over one set of connections; for the targeted traffic it handles, `routeMessage()` treats a target in another group as not found. Collisions suffix the local part only, so a deduped name never changes group: `builder` becomes `builder-2`, `archon@pi-link` becomes `archon-2@pi-link`.
 

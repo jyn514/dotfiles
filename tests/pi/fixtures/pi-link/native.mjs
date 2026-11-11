@@ -683,7 +683,7 @@ test("identity fields have independent user ownership and protected updates are 
   assert.equal(unchanged.details.preferred.group, "");
 });
 
-test("generated identity can change without renaming the Pi session and offline updates do not reconnect", async (t) => {
+test("generated identity titles follow renames and offline updates do not reconnect", async (t) => {
   const { peers: [hub, generated] } = await network(t, ["hub", "generated"], {
     identities: { generated: { generated: true } },
   });
@@ -693,8 +693,8 @@ test("generated identity can change without renaming the Pi session and offline 
   assert.equal(initial.details.preferred.groupOrigin, "generated");
   const before = {
     id: generated.sessionManager.getSessionId(), file: generated.sessionManager.getSessionFile(),
-    name: generated.sessionManager.getSessionName(),
   };
+  assert.equal(generated.sessionManager.getSessionName(), initial.details.assignedName);
   const first = await tool(generated, "link_set_identity", { name: "  chosen   reviewer ", group: "review" });
   assert.equal(first.details.error, undefined);
   assert.deepEqual(first.details.preferred, {
@@ -712,20 +712,68 @@ test("generated identity can change without renaming the Pi session and offline 
   await named(generated, "chosen reviewer@review");
   assert.deepEqual({
     id: generated.sessionManager.getSessionId(), file: generated.sessionManager.getSessionFile(),
-    name: generated.sessionManager.getSessionName(),
-  }, before, "link identity must not change the Pi session identity, title or file");
+  }, before, "link identity must not change the Pi session identity or file");
+  assert.equal(generated.sessionManager.getSessionName(), "chosen reviewer@review");
   await command(generated, "link-disconnect");
   const offline = await tool(generated, "link_set_identity", { name: "saved offline", group: "later" });
   assert.equal(offline.details.error, undefined);
   assert.equal(offline.details.assignedName, null);
   assert.equal(offline.details.connectionState, "disconnected");
   assert.equal(offline.details.pending, false, "explicit disconnect must suppress reconnect");
+  assert.equal(generated.sessionManager.getSessionName(), "saved offline@later");
   // Observe beyond the documented 2–5s reconnect backoff, not just the next tick.
   await pause(5200);
   assert.equal((await roster(generated)).error, "not_connected");
   assert.ok(!(await roster(hub)).terminals.includes("saved offline@later"));
   await command(generated, "link-connect");
   await named(generated, "saved offline@later");
+});
+
+test("link-derived titles survive resume, collisions, and explicit title overrides", async (t) => {
+  const { peers: [hub, client], addPeer } = await network(t, ["hub", "generated"], {
+    identities: { generated: { generated: true } },
+  });
+  assert.equal(hub.sessionManager.getSessionName(), "hub", "CLI names seed default titles");
+  await command(client, "link-name", "hub");
+  await named(client, "hub-2");
+  assert.equal(client.sessionManager.getSessionName(), "hub-2", "use the hub assignment, not the preference");
+  await command(client, "link-disconnect");
+  await tool(client, "link_list", {}); // Flush the recording through a real assistant turn.
+  await client.session.extensionRunner.emit({ type: "session_shutdown" });
+  const resumed = await addPeer("resumed-title", SessionManager.open(client.sessionManager.getSessionFile()), { saved: true });
+  await named(resumed, "hub-2");
+  assert.equal(resumed.sessionManager.getSessionName(), "hub-2");
+  await command(resumed, "link-name", "resumed-default");
+  await named(resumed, "resumed-default");
+  assert.equal(resumed.sessionManager.getSessionName(), "resumed-default");
+
+  // Setting exactly the current title is still an explicit choice.
+  resumed.session.setSessionName("resumed-default");
+  await command(resumed, "link-name", "different-link");
+  await named(resumed, "different-link");
+  assert.equal(resumed.sessionManager.getSessionName(), "resumed-default");
+  resumed.session.setSessionName("Investigate parser failures");
+  await command(resumed, "link-name", "another-link");
+  await named(resumed, "another-link");
+  assert.equal(resumed.sessionManager.getSessionName(), "Investigate parser failures");
+  resumed.session.setSessionName("");
+  await command(resumed, "link-name", "after-clear");
+  await named(resumed, "after-clear");
+  assert.ok(!resumed.sessionManager.getSessionName(), "explicit clearing also disables automatic naming");
+  await command(resumed, "link-disconnect");
+  await tool(resumed, "link_list", {});
+  await resumed.session.extensionRunner.emit({ type: "session_shutdown" });
+  const explicit = await addPeer("explicit-resume", SessionManager.open(resumed.sessionManager.getSessionFile()), { saved: true });
+  await named(explicit, "after-clear");
+  await command(explicit, "link-name", "still-explicit");
+  await named(explicit, "still-explicit");
+  assert.ok(!explicit.sessionManager.getSessionName(), "explicit-title protection survives resume");
+});
+
+test("pre-existing explicit Pi titles remain unchanged by link startup and renames", async (t) => {
+  const { peers: [peer] } = await network(t, ["Explicit task title"], { startup: true });
+  await command(peer, "link-name", "short-link-name");
+  assert.equal(peer.sessionManager.getSessionName(), "Explicit task title");
 });
 
 test("native resume protects legacy identities and manual same-name claims persist ownership", async (t) => {
@@ -1105,7 +1153,7 @@ test("managed child inherits the assigned parent name across a real process boun
   assert.equal(first.preferred.group, "review");
   assert.equal(first.preferred.nameOrigin, "generated");
   assert.equal(first.preferred.groupOrigin, "generated");
-  assert.equal(first.sessionName, undefined, "generated link names must not seed the session title");
+  assert.equal(first.sessionName, `${first.preferred.name}@review`, "generated child names seed the session title");
   assert.equal(first.handoff.name, `${first.preferred.name}@review`, "the child publishes its own name for grandchildren");
   assert.notEqual(first.handoff.sessionId, parentId);
   assert.equal(first.connectionState, "disconnected");
@@ -1131,6 +1179,26 @@ test("managed child inherits the assigned parent name across a real process boun
   assert.equal(offline.preferred.explicitGroup, true);
   await parent.session.extensionRunner.emit({ type: "session_shutdown" });
   assert.equal(process.env.PI_LINK_PARENT_IDENTITY, undefined, "shutdown removes this runtime's published handoff");
+});
+
+test("Pi terminal titles contain only the link name while preserving saved session titles", () => {
+  const fixture = fileURLToPath(new URL("./title-tui.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [fixture, sourcePath], {
+    encoding: "utf8", timeout: 20_000, env: { ...process.env, PI_OFFLINE: "1" },
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}\n${result.error ?? ""}`);
+  let lastTitle;
+  const checkpoints = [];
+  for (const match of result.stdout.matchAll(/\x1b\]0;([^\x07]*)\x07|TITLE_CHECKPOINT (\{[^\n]+\})/g)) {
+    if (match[1] !== undefined) lastTitle = match[1];
+    else {
+      const checkpoint = JSON.parse(match[2]);
+      assert.ok(checkpoint.expected, `a nonempty title is required at ${checkpoint.phase}`);
+      assert.equal(lastTitle, checkpoint.expected, `${checkpoint.phase}: no Pi prefix or working directory`);
+      checkpoints.push(checkpoint.phase);
+    }
+  }
+  assert.deepEqual(checkpoints, ["startup", "link-rename", "explicit-title", "preserved-title", "cleared-title", "new-session"]);
 });
 
 test("managed child loading the configured package registers ordinary link tools and hooks", async () => {
