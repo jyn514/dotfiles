@@ -14,7 +14,8 @@
 
  :additions
  {:alpine [:bash :less :libgcc :shadow :cargo-audit :difftastic]
-  :arch [:bacon :kernel-modules-hook]
+  :arch [:age :age-plugin-yubikey :bacon :kernel-modules-hook
+         :pcsc-tools :yubikey-manager]
   :wsl [:keychain]
   :conditional [:powershell :onepassword]
   :brew-fallback [:bacon]}

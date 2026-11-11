@@ -17,6 +17,7 @@ Global setup can migrate an unencrypted home with fscrypt.
 It retains the unencrypted backup unless the final confirmation reads `y` successfully.
 On Arch, global package setup installs `kernel-modules-hook` to preserve the running kernel's modules across upgrades.
 `./setup sudo` (also included in `./setup all`) enables cleanup of old modules on future boots.
+On Arch, it also installs age YubiKey tooling and enables `pcscd.socket` for on-demand smart-card access.
 
 ### User services
 

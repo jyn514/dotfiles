@@ -16,7 +16,21 @@ record() {
 }
 
 if [ "$mode" = prompt ]; then
-	should_copy_global "$FIXTURE_NAME" "$FIXTURE_DEST"
+	should_copy_global "$FIXTURE_NAME" "$FIXTURE_DEST" "$FIXTURE_SOURCE"
+	exit "$?"
+fi
+
+if [ "$mode" = pcscd-socket ] || [ "$mode" = pcscd-service ]; then
+	exists() {
+		[ "$1" = pcscd ] || [ "$1" = systemctl ]
+	}
+	systemctl() {
+		record systemctl "$@"
+		if [ "$1" = cat ] && [ "$2" = pcscd.socket ]; then
+			[ "$mode" = pcscd-socket ]
+		fi
+	}
+	setup_pcscd
 	exit "$?"
 fi
 
