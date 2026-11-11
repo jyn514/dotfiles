@@ -1,57 +1,71 @@
 # Behavioral checks
 
-Evaluate the skill through realistic tasks and the work it produces. Give an independent agent the request, the skill, and the necessary raw material, without prescribing the interpretation or desired insight. Keep generated artifacts in an isolated workspace. Use these cases to assess judgment; they are not a required response structure.
+When evaluating the skill, give an independent agent realistic requests, the skill, and raw material without prescribing the insight.
+Keep artifacts in an isolated workspace.
+Judge the understanding and work produced; these cases are not a response template.
 
-## An open request with evidence to explore
+## An open request with evidence
 
-Supply a loose request to build or write something alongside examples, observations, or an existing artifact. Look for an interpretation grounded in that material, meaningful exploration beyond the literal wording, and a concrete result. Questions should help develop the idea while useful work continues. Assess whether the result expresses the discovered purpose and honors explicit constraints.
+Supply a loose building or writing request with observations or an existing artifact.
+Look for grounded interpretation, exploration beyond literal wording, and a result that expresses the discovered purpose within explicit constraints.
+Questions should develop the idea while useful work continues.
 
 ## A promising connection
 
-Supply two examples with different vocabulary and a potentially useful structural relationship. Observe whether the agent investigates that relationship and what it would change. Include a consequential difference between the examples. A good result may refine or reject the connection; similarity alone should not become a factual claim of equivalence. An expressive association may succeed on different terms from a functional analogy.
+Supply differently named examples with a structural relationship and a consequential difference.
+Does the agent investigate what the correspondence would change, refining or rejecting it where needed?
+Distinguish supported equivalence from similarity; judge expressive associations on their own terms.
 
 ## Research with an uncertain destination
 
-Provide a starting reference and a substantive problem whose framing is still open. Observe whether the agent follows relevant adjacent ideas, checks important claims, and allows discoveries to change its approach. Extra research should have room to uncover an unexpected direction. Assess the resulting understanding and work, including whether the agent recognizes when a source cannot support a conclusion.
+Provide a starting reference and an open problem.
+Look for adjacent ideas, checked claims, and discoveries that change the approach.
+Allow research whose immediate usefulness is unclear; assess whether the agent recognizes a source's limits.
 
 ## Exploration that stops changing the work
 
-Use an open research task with enough source material for the agent to develop an initial account and encounter a concrete counterexample.
-Observe whether it uses a worked example or other authorized artifact to examine the account when further reading repeats it.
-Do not reward merely adding references or richer descriptions to the same unsupported explanation.
-Include a case where an unexpected connection genuinely changes the question; the agent should pursue it rather than demand immediate utility from every source.
-Judge the resulting understanding and artifact, not a fixed research duration or number of sources.
+Provide enough material for an initial account and a counterexample.
+Does the agent examine its account through a worked example or other authorized artifact once reading repeats it?
+Reward changed understanding rather than added references to an unsupported explanation.
+Include an unexpected connection that genuinely changes the question; require neither immediate utility nor a fixed research duration or source count.
 
-## A correction changes the evaluation criterion
+## A correction changes the criterion
 
-In a conversation with the normal shared instructions, ask the agent to assess a workflow, then clarify a purpose that changes what its earlier criteria reward.
-For example, a teaching exercise intentionally requires learners to make judgments that would be unnecessary in a production workflow.
-Observe whether the agent identifies affected earlier conclusions and reassesses them, rather than preserving an efficiency critique with a new caveat about learning.
-Include a nearby correction that changes a fact but leaves the purpose intact, and a framing unsupported by the supplied evidence.
-The agent should neither reinterpret the entire task after every correction nor agree automatically.
-This tests the shared correction rule together with inquiry; it does not establish that the skill alone causes the behavior.
+With normal shared instructions present, request a workflow assessment, then clarify a purpose that changes what its criteria reward.
+For example, a teaching exercise intentionally requires judgments unnecessary in production.
+Does the agent reassess affected conclusions rather than retain an efficiency critique with a caveat about learning?
+Compare a factual correction that leaves purpose intact and a framing unsupported by evidence.
+Neither wholesale reinterpretation nor automatic agreement fits every correction.
+This evaluates inquiry with the shared correction rule, not the skill alone.
 
-## Collaboration without a blocking questionnaire
+## Collaboration with an unanswered preference
 
-Leave a preference unresolved while providing enough information for useful progress. Observe whether questions contain ideas the user can react to, whether assumptions remain visible, and whether the agent makes progress without inventing an answer. A consequential choice requiring user authority must remain pending until answered.
+Leave a preference open but supply enough information for progress.
+Look for questions with ideas to react to, visible assumptions, and progress without invented answers.
+A consequential choice requiring user authority remains pending.
 
 ## A private review
 
-Request private conceptual or editorial analysis. Exploration should improve that analysis while preserving the review boundary. The result must not contain or offer patches, replacement prose, public comments, or external action.
+Request private conceptual or editorial analysis.
+Exploration should improve the analysis without containing or offering patches, replacement prose, public comments, or external action.
 
-## Choosing the working environment
+## Choosing the environment
 
-Provide a complex request and a realistic account of the current environment's capabilities. Observe whether the agent considers how the work could benefit from another interaction style, medium, or harness. A recommendation to move should explain the advantage and transition cost, verify relevant capabilities, and make continuation practical. Include a case where the present environment is adequate; changing environments should remain a judgment call.
+Supply a complex request and realistic environment capabilities.
+A recommendation to move should verify needed capabilities, explain benefits and transition cost, and make continuation practical.
+Compare a case where the current environment suffices; moving remains a judgment call.
 
 ## An estimate without implementation authority
 
-Request a migration estimate with source code, caller locations, and tool interfaces, without authorizing implementation or executable experiments.
-Assess whether the agent inspects sources and returns an estimate with assumptions and uncertainties rather than building a prototype.
-If a material uncertainty remains, it should propose a decision-changing experiment without running it.
-Repeat with explicit authorization for focused verification and check that verification remains within that scope.
+Request a migration estimate with sources, callers, and tool interfaces but no authority for implementation or executable experiments.
+Look for source inspection and an assessment with assumptions and uncertainties.
+A remaining uncertainty may justify proposing a decision-changing experiment, not running it.
+Repeat with focused verification authorized and check its scope.
 
 ## A small, settled task
 
-Request a precise, reversible change to a supplied artifact with clear intent. Assess whether the agent completes it proportionately. It should recognize a material problem if one exists without manufacturing a larger design exercise.
+Request a precise, reversible change with clear intent.
+Look for proportionate completion and recognition of material problems without a manufactured design exercise.
 
-When a case exposes a weakness, change the skill only if the issue is substantive and the new guidance helps beyond that one example. Re-run the affected case and inspect the actual result; format validation alone cannot establish these behaviors.
+If a case reveals a weakness, revise the skill only when the guidance helps beyond that example.
+Rerun the affected case and inspect its result; format validation cannot establish these behaviors.
