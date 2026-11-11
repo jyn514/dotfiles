@@ -3,7 +3,7 @@
 Use these cases to evaluate next-action judgment, not as stages of ordinary work.
 Before preparing or running a trial, follow [behavioral trials](../../skill-authoring/references/behavioral-trials.md).
 Keep evaluator expectations separate from the task and evidence supplied to the agent.
-Use actual artifacts and tool results that make the choice inspectable; a narrative saying that a route works does not establish it.
+Supply inspectable artifacts and tool results, not a narrative asserting that a route works.
 
 Start with one uncertain supporting-work case and one nearby routine control under the existing guidance.
 Verify that the baseline reaches the relevant decision before changing guidance or expanding the comparison.
@@ -51,8 +51,7 @@ Make their actual use inspectable; do not tell the agent that either candidate i
 In the failure case, the known defect has no demonstrated effect on the requested workflow, while inspecting outputs can identify reusable corrections.
 In the nearby control, the same defect blocks the required workflow and its existing repair can restore it.
 Observe whether the agent compares expected contribution and remaining delivery cost, rather than always preferring certainty or always choosing exploration.
-A correct recommendation need not invent probabilities or run a broad audit before selecting the next bounded action.
-Give the output inspection a fixed sample and stopping condition; observe whether the agent preserves those limits when comparing it with the repair.
+Give the output inspection a fixed sample and stopping condition; observe whether the comparison preserves those limits without requiring invented probabilities or a broad audit.
 A source/table/test disagreement is evidence of a discrepancy, not yet evidence that correcting the generator will improve the requested result.
 Judge the deciding premise and chosen action, not whether the agent adds a longer justification for the same unsupported priority.
 
@@ -66,17 +65,7 @@ Neither agreement nor disagreement with the parent is independently a successful
 
 ## Comparison quality
 
-Across these cases, inspect whether the agent:
-
-- Separates required outcomes from guarantees introduced by its own proposal.
-- Gives competing routes comparable treatment rather than assuming repairs only for its preferred route.
-- Uses a discrepancy between expectation and observation to reconsider the assumption that produced the next dependency.
-- Checks the premise deciding the ranking rather than merely providing a plausible reason for the preferred action.
-- Chooses a concrete next action consistent with the evidence, including continuing when appropriate.
-- Uses scope limits as evidence about cost or useful feedback rather than as an independent reason to prefer a task.
-- Preserves the full required result while accounting for delivery and verification cost.
-
-Assess recorded actions and their results, not the presence of reflective vocabulary or a persuasive explanation alone.
+Apply the main skill's [comparison criteria](../SKILL.md#find-the-deciding-difference) to recorded actions and results, not reflective vocabulary or a persuasive explanation.
 Keep appropriate continuation, unnecessary detours, acceptance failures, elapsed time, and token use distinct.
 A recommendation-only trial supports a claim about selection, not subsequent execution or reliable in-flight correction.
 One successful comparison does not establish general reliability or transfer across domains.
