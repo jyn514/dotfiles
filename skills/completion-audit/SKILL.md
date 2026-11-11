@@ -5,56 +5,98 @@ description: Check whether a completed substantial owned change fulfills the ori
 
 # Completion audit
 
-Audit completion against evidence, not confidence. Run the full procedure after the owned edits are complete; before then, use only the original request and governing specification to identify evidence the eventual audit must require.
+Connect each promised outcome to evidence from the finished change.
+A multi-component refactor or persisted-data migration needs this audit; a documented keybinding change needs diff review and native config validation.
 
-Use the full audit for changes such as a multi-component refactor or persisted-data migration. A documented keybinding change needs a diff review and native config validation, not this workflow. In either case, report what was checked and leave unavailable runtime evidence explicit.
+Audit after owned edits are complete, while the patch is uncommitted.
+Before then, identify required evidence from the request and governing specification without starting the audit.
+Use [Evidence standards](../references/review-evidence.md) to interpret checks; consulting them does not start an audit.
 
-## Read First
+## Fix the acceptance scope
 
-Discover and follow the target repository's guidance for review thresholds, testing, code and documentation style, generated files, migrations, and issue completion. Read the original request, acceptance criteria, and any governing specification or design.
+Read the request, acceptance criteria, governing specification or design, and repository review and validation guidance.
+Identify the owned diff and protected unrelated work.
+Fix scope, including required independent review, from the acceptance cases established before implementation; derive missing cases from the governing request.
+Hypothetical edge cases add no obligations.
 
-Use [Evidence standards](../references/review-evidence.md) to interpret every check; consulting them
-before completion does not start this procedure.
+Build an acceptance matrix:
 
-## Procedure
+| Requirement | Mode or condition | Expected observable behavior | Evidence command or artifact | Result |
+| --- | --- | --- | --- | --- |
 
-1. Identify the owned diff, explicit requirements, acceptance criteria, and protected unrelated work while the patch is still uncommitted. Use the acceptance cases established before implementation; if none exist, derive them from the governing request before auditing. Fix audit scope, including required independent review; hypothetical edge cases add no obligations.
-1. Map every requirement to concrete evidence from the final files, focused tests, native parsers or linters, generated-artifact checks, and migration or compatibility checks where applicable.
-   Build an acceptance matrix from the original issue. For staged new-tool work, use approved requirement IDs and implementation-spec commitments instead; use the original issue or request only to identify unexplained omissions. Treat approved exclusions and non-goals as valid, not as drift. Include each named input mode, option combination, and explicitly named exception.
-   Each row records the requirement, mode or condition, expected observable behavior, evidence command or artifact, and result.
-   Add rows only for governing requirements or reproduced failures of them; possible behavior differences alone add no cases.
-   Test every applicable row or record why a row is inapplicable.
-   Treat a missing row as missing evidence.
-   **Cross-process or permission-boundary changes:** Include the assembled runtime path and a forbidden effect in the matrix, and test at the enforced boundary. Apply the [evidence standards](../references/review-evidence.md) to every result.
-1. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
-   For staged new-tool work, report acceptance drift only when a later artifact is narrower than the governing approved requirements; do not report approved exclusions or non-goals as drift.
-   - **Changed comparisons:** If the owned diff changes tests, fixtures, snapshots, skiplists, or comparison logic, inspect the decisive assertions and setup, not test names or aggregate counts. Identify behavior that now passes but previously failed, and required paths or cases no longer exercised. Justify each relaxation against the governing requirements; changed expectations alone do not establish correctness. For reference-based claims, trace final expectations to the declared reference or an authorized divergence; formatting normalization must not hide changed values, missing errors, or excluded cases.
-   - **Exact expectations:** For changed tests, identify the requirement that fixes important exact-value expectations. Check the regression and valid-change evidence required by [Testing](../references/testing.md); passing tests or matching current output are insufficient. Flag expectations that freeze configuration or dependency internals without a contractual reason.
-   - **Input dimensions:** Ask whether repeated examples leave requirement-relevant input dimensions or action sequences untested. Where they do, consider [property-based-testing](../property-based-testing/SKILL.md) for a bounded repair; absence of PBT alone is not a finding. Review-only authority still does not permit edits.
-   - **Multiple conditions:** For multi-condition decisions, check the condition-matrix evidence required by [Testing](../references/testing.md), including omitted conditions, masking by other conditions, and justified interactions.
-   - **Generated cases:** For generated tests, check executed-case evidence and failure replayability against the classes and interactions declared under [Testing](../references/testing.md); generator declarations alone are insufficient.
-   - **Isolation and reachability:** For added or changed tests, check isolation and top-level command reachability against [Testing](../references/testing.md). Inspect effect destinations and verify suite dispatch, not only focused execution. Confirm tests leave authoritative source and live state unchanged unless explicitly authorized; distinguish prerequisites and skips from executed passing cases.
-1. Check that the implementation fixes the demonstrated failure rather than its symptom. For bugs that escaped passing tests, check the testing-gap diagnosis and test-model correction required by [Testing](../references/testing.md), not only the added regression example. When in-scope test sensitivity remains uncertain beyond confirming the named regression, use [mutation-testing](../mutation-testing/SKILL.md) for a bounded check under existing execution authority; no campaign is required for every audit. Reopen the selected design only for a reproduced acceptance failure; record optional alternatives without implementing them.
-1. Within the fixed scope, search for likely loose ends: stale names and paths, old representations, duplicate implementations, bypass paths, temporary probes, unhandled lifecycle states, and documentation that still describes the prior behavior.
-   When the change adds or retains runtime resources, compare resource counts and topology before and after.
-   Include every relevant capability combination and each process, container, network, daemon, cache, store, or lifecycle owner.
-   Check overlapping capabilities for duplicate resources with the same trust, connectivity, or lifecycle role.
-   Require a concrete unmet requirement for every rejected existing owner; a resource being conditional is not by itself a rejection.
-1. Challenge applicable boundaries with the cheapest realistic cases needed by the acceptance matrix, not every case in this list:
-   - duplicate identical inputs and multiple selected objects or refs
-   - equal, aliased, symlinked, ancestor, and descendant paths
-   - interruption or timeout before and after each effect or publication transition
-   - successful mutation followed by failed optional presentation
-   - stale selection changed before mutation
-   - ambient checkout, configuration, platform, or provider differing from the selected object
-   - produced-native execution when compilation or JVM tests cannot establish runtime reachability
-1. Only under existing implementation or repair authorization, fix in-scope failures, rerun affected checks, and inspect the resulting complete diff. Otherwise report findings without mutation.
-1. Apply the repository's review threshold. Request independent review when the change is broad, cross-boundary, security-sensitive, destructive, or otherwise requires authority beyond self-review.
-1. After the initial audit and required independent review, check corrections only: rerun failed checks and checks for changed code or boundaries. Do not restart the audit or search unchanged boundaries for hypotheses; a second broad audit requires user approval.
-1. When scoped checks pass, report completion or external blockers and stop. Reopen only for a reproduced governing-requirement failure or authorized scope change. Do not claim completion without evidence for every requirement; unrelated baseline failures and unverified requirements are not successes.
+Include every requirement and its named modes, option combinations, and exceptions.
+For staged new-tool work, use approved requirement IDs and implementation-spec commitments; consult the original request for unexplained omissions.
+Honor approved exclusions and non-goals.
+Add cases only for governing requirements or reproduced failures of them.
+Check applicable rows, explain inapplicable ones, and treat missing rows as missing evidence.
 
-## Reporting
+## Follow each claim to its evidence
 
-Report one line per requirement or applicable review area: pass with concrete evidence, or fail with what remains. Cite anchors such as file paths, command output, issue criteria, or specification sections; do not report only that the work “looks good.”
+Choose final-file inspection, native validation, focused tests, generated-artifact checks, or migration and compatibility checks according to the claim.
+For cross-process or permission-boundary changes, exercise the assembled runtime path and a forbidden effect at the enforced boundary.
 
-If a failure is outside the owned slice, name it as unrelated and leave the protected files alone.
+For example, a conversion unit test against known expected values can establish data conversion.
+An upgrade claim needs old-format persisted data migrated through the production entrypoint and read by the new runtime.
+Leave unavailable runtime evidence unverified.
+
+Compare governing acceptance text with implementation, tests, specification, and close note.
+Report drift when later artifacts narrow requirements, not when they honor approved exclusions.
+
+### Would the assertions reject the wrong behavior?
+
+When tests, fixtures, snapshots, skiplists, or comparisons change, inspect decisive assertions and setup.
+Identify newly passing behavior and required cases no longer exercised.
+Justify relaxations and exact expectations from requirements, not current output.
+Trace reference-based expectations to the declared reference or authorized divergence.
+Normalization must preserve values, errors, and case eligibility.
+
+Read [Testing](../references/testing.md) for regression and valid-change evidence, condition matrices, generated cases, isolation, and dispatch.
+Flag exact expectations that freeze configuration or dependency internals without a contract.
+
+### Does the suite exercise the claimed behavior?
+
+For multi-condition decisions, check omitted or masked conditions and justified interactions.
+For generated cases, check executed classes, interactions, and replayable failures.
+Consider bounded [property-based testing](../property-based-testing/SKILL.md) when repeated examples miss requirement-relevant dimensions or action sequences.
+PBT's absence alone is not a finding.
+Inspect changed tests' effect destinations and top-level command reachability.
+They must preserve authoritative source and live state unless explicitly authorized.
+Separate prerequisites and skips from executed passing cases.
+
+### Does the repair address the demonstrated cause?
+
+For escaped bugs, assess the testing-gap diagnosis and corrected test model, not just the new regression example.
+Use bounded [mutation testing](../mutation-testing/SKILL.md) when in-scope sensitivity remains uncertain beyond the named regression, within existing execution authority.
+A routine audit needs no mutation campaign.
+
+## Check the assembled change
+
+Within scope, search for stale names, paths, representations, documentation, duplicates, bypasses, temporary probes, and unhandled lifecycle states.
+For added or retained runtime resources, compare before/after counts and topology across every relevant capability combination and owner.
+Check overlapping trust, connectivity, and lifecycle roles.
+Reject an existing owner only for a concrete unmet requirement; conditional creation alone is insufficient.
+
+Select the cheapest realistic boundary cases the matrix needs:
+
+- Duplicate inputs or multiple selected objects/refs; equal, aliased, symlinked, ancestor, or descendant paths.
+- Interruption or timeout around effects or publication; successful mutation followed by failed optional presentation.
+- Selection changing before mutation; ambient checkout, configuration, platform, or provider differing from the selected object.
+- Produced-native execution where compilation or JVM tests cannot establish reachability.
+
+These examples add no mandatory cases.
+
+## Resolve, report, and stop
+
+Fix in-scope failures only under existing implementation or repair authority; otherwise report without mutation.
+Rerun affected checks, inspect the complete resulting diff, and leave unrelated failures and protected files alone.
+Reopen the design only for a reproduced acceptance failure; record optional alternatives without implementing them.
+
+Apply repository review thresholds.
+Request independent review for broad, cross-boundary, security-sensitive, destructive changes or those exceeding self-review authority.
+After the initial audit and required review, check corrections only: failed checks and changed code or boundaries.
+A second broad audit requires user approval.
+
+Report each requirement or applicable review area's result with file paths, command output, issue criteria, or specification sections.
+Unrelated baseline failures and unverified requirements are not successes.
+Claim completion only with evidence for every requirement; otherwise name remaining failures or external blockers.
+Stop when scoped checks pass; reopen only for a reproduced governing-requirement failure or authorized scope change.
