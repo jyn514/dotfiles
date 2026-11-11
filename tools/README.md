@@ -61,6 +61,13 @@ These specialized Git helpers can change Git history or metadata directly.
 | Filter repository history | [`git-filter-repo`](../bin/git-filter-repo) invokes the vendored history rewriter; apply operations rewrite commit IDs and can change refs. |
 | Add Git colocation to an existing JJ workspace | [`jj-backfill-colocation`](../bin/jj-backfill-colocation) recreates the workspace, restores its files and sparse selection, and retains a recovery backup; changes workspace registration. |
 
+- [`jj-private-commit`](../bin/jj-private-commit) powers `jj c -m "public change"` using Babashka and jj's experimental squash insertion options.
+  It inserts changes from `@` after the sole public head in its ancestry, excluding the configured `git.private-commits` and their descendants.
+  It keeps the working copy above the private changes and leaves bookmarks unchanged.
+  Multiple public heads fail with a candidate list; use `jj c --into REVSET` to choose one.
+  Use `-i`, `--tool TOOL`, or filesets to select changes; `--editor` and repeated `-m` options work as with `jj commit`.
+  Without `-m`, it opens the description editor.
+  Literal `jj commit` stays unchanged.
 - [`agent-split`](agent-split/) performs deterministic, patch-level `jj split` operations with `bb agent-split`. It rewrites history; start with the [operator guide](agent-split/README.md), then consult the [design and safety contract](agent-split/design.typ).
 - [`git-autosquash`](git-autosquash/) implements `git-autosquash [--rebase] [BASE] [ARGS...]`, selecting an upstream base before an interactive revise or rebase.
 

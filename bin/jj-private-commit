@@ -1,0 +1,72 @@
+#!/usr/bin/env bb
+(require '[babashka.process :as process]
+         '[clojure.string :as str])
+
+(def usage "Usage: jj c [-m MESSAGE] [-i] [--tool TOOL] [--editor] [--into REVSET] [FILESETS...]
+
+Create a public commit while keeping private changes in the working copy.
+Select the sole public head in @'s ancestry, excluding git.private-commits
+and their descendants. Use --into to choose among ambiguous public heads.
+Keep @ in place, and leave bookmarks unchanged.")
+
+(defn fail [message]
+  (binding [*out* *err*]
+    (println (str "jj-private-commit: " message)))
+  (System/exit 2))
+
+(defn parse-args [args]
+  ;; Only commit-style options pass through: squash's source/destination options
+  ;; would let a later argument bypass public-history selection.
+  (loop [[arg & more] args, forwarded [], destination nil, description-option? false]
+    (let [result {:forwarded forwarded :destination destination :default-editor? (not description-option?)}]
+      (cond
+        (nil? arg) result
+        (#{"-h" "--help"} arg) (do (println usage) (System/exit 0))
+        (= "--" arg) (assoc result :forwarded (into forwarded (cons arg more)))
+        (#{"-i" "--interactive" "--editor"} arg)
+        (recur more (conj forwarded arg) destination (or description-option? (= arg "--editor")))
+        (#{"-m" "--message" "--tool" "--into"} arg)
+        (do
+          (when (nil? (first more)) (fail (str arg " requires a value")))
+          (if (= arg "--into")
+            (recur (next more) forwarded (first more) description-option?)
+            (recur (next more) (into forwarded [arg (first more)]) destination
+                   (or description-option? (contains? #{"-m" "--message"} arg)))))
+        (str/starts-with? arg "--message=")
+        (recur more (conj forwarded arg) destination true)
+        (str/starts-with? arg "--tool=")
+        (recur more (conj forwarded arg) destination description-option?)
+        (str/starts-with? arg "--into=")
+        (recur more forwarded (subs arg (count "--into=")) description-option?)
+        (and (str/starts-with? arg "-m") (> (count arg) 2))
+        (recur more (into forwarded ["-m" (subs arg 2)]) destination true)
+        (str/starts-with? arg "-") (fail (str "unsupported option " arg "\n" usage))
+        :else (recur more (conj forwarded arg) destination description-option?)))))
+
+(defn jj-output [& args]
+  (let [{:keys [exit out]} @(process/process (into ["jj"] args) {:out :string :err :inherit})]
+    (when-not (zero? exit) (System/exit exit))
+    (str/trim out)))
+
+(let [{:keys [forwarded destination default-editor?]} (parse-args *command-line-args*)
+      ;; Squash can silently reuse an empty description; commit must ask for one.
+      forwarded (if default-editor? (into ["--editor"] forwarded) forwarded)
+      private (jj-output "config" "get" "git.private-commits")
+      candidates (str "heads(::@- ~ (" private ")::)")
+      selected (if destination (str "(" candidates ") & (" destination ")") candidates)
+      ids (str/split-lines (jj-output "log" "--no-graph" "--color=never" "-r" selected
+                                     "-T" "commit_id ++ \"\\n\""))
+      ids (remove str/blank? ids)]
+  (case (count ids)
+    0 (fail "no eligible public destination; --into must select a public head in @'s ancestry")
+    1 (let [{:keys [exit]} @(process/process
+                            (into ["jj" "squash" "--insert-after" (first ids) "--keep-emptied"] forwarded)
+                            {:in :inherit :out :inherit :err :inherit})]
+        (System/exit exit))
+    (do
+      (binding [*out* *err*]
+        (println "jj-private-commit: multiple public heads; choose one with --into REVSET:")
+        (print (jj-output "log" "--no-graph" "--color=never" "-r" selected
+                          "-T" "commit_id.short() ++ \" \" ++ description.first_line() ++ \"\\n\""))
+        (println))
+      (System/exit 2))))

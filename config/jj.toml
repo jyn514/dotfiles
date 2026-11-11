@@ -58,7 +58,7 @@ email = "github@jyn.dev"
 [aliases]
 # abbreviations
 h = ["help"]
-c = ["commit"]
+c = ["util", "exec", "--", "jj-private-commit"]
 n = ["new"]
 e = ["edit"]
 l = ["log"]
