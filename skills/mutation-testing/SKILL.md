@@ -5,130 +5,90 @@ description: Set up, scope, run, and analyze mutation-testing campaigns using pr
 
 # Mutation testing
 
-Change an implementation deliberately and ask whether its tests notice. A surviving
-mutation is a reason to investigate, not proof of a production bug. This skill owns
-campaign selection, execution checks, and survivor analysis—not a particular engine,
-test framework, version-control system, or repository runner.
+Deliberately change an implementation and ask whether its tests notice.
+Explain survivors: they may expose a test gap, an equivalent change, or an execution problem.
+A survivor does not establish a production bug.
 
-## Start within the authorized scope
+## Choose the question and scope
 
-Read the project's instructions, relevant contracts, source, tests, and test commands.
+Read the project's instructions, contracts, source, tests, and test commands.
+Use the selected target, otherwise the component under discussion.
+If neither exists, select the smallest maintained component with tests and an identifiable contract; explain why.
+Ask when no safe, meaningful default exists.
+An engine's scanning range is not a reason to expand the target.
+Confirming one known regression can stay under [testing guidance](../references/testing.md).
 
-A request to run mutation testing authorizes temporary mutations in an isolated
-experiment, subject to repository restrictions.
-This permission covers only the experiment: it does not permit changing maintained code
-or tests, publishing artifacts, or accessing live application state.
+A request to run mutation testing permits temporary mutations in an isolated experiment, subject to repository restrictions.
+It does not permit maintained code or test changes, publication, or live-state access.
+Reviewing results grants no execution authority; automatically routed work uses only the enclosing task's authority.
+For supplied results, establish scope, source identity, exact mutations, and build/test commands, then read [survivor analysis](references/survivors.md).
+Retain missing provenance as a limitation; rerunning requires execution authority.
 
-Reviewing existing results does not authorize execution.
-For automatically routed test-sensitivity work, use only the execution authority of the
-enclosing task; loading this skill grants none.
-Confirming a single known regression can stay under
-[testing guidance](../references/testing.md) without a campaign.
+## Verify what the tests consume
 
-Use an explicitly selected target. Otherwise, use the component already under
-discussion; if none exists, inspect the requested project and select the smallest
-maintained component with existing tests and an identifiable contract. Explain the
-choice. Ask when there is no safe, meaningful default. Do not expand to the whole
-repository merely because an engine can scan it.
+Use the project's environment, isolation, build, and test mechanisms.
+Keep variants separate from maintained source and unrelated work.
+Mutate maintained source, not tests, expectations, generated outputs, unrelated source, installed packages, or externally owned vendored code.
+Rebuild or regenerate through the owner when the consumer needs an artifact.
+Use disposable data: checkout isolation does not make live services safe.
 
-For supplied results, establish their scope, source identity, mutation definitions,
-and test/build commands first. Read [survivors](references/survivors.md) and analyze
-what the evidence supports; missing execution provenance remains a limitation.
-Re-running requires execution authority.
+Identify the tests exercising the behavior, including indirect consumers.
+Run a baseline and confirm the intended cases execute without skips.
+If it fails, stop that scope and report the prerequisite failure.
 
-## 1. Establish the execution path
+Before the campaign, make a positive control: a behavior change an existing assertion should detect.
+Verify that the test consumes the changed code and fails because of it, rather than an import, environment, or unrelated build failure.
+If it survives, check stale artifacts and disconnected paths before judging assertions.
+Resolve the path or report it as unverified; survival alone does not establish weak tests.
 
-Use the project's documented environment, isolation, build, and test mechanisms.
-Keep temporary variants separate from maintained source and unrelated work. Mutate
-maintained source rather than generated files, installed packages, or vendored code
-owned elsewhere. Regenerate or rebuild through the owning mechanism when the tested
-consumer needs an artifact. Use disposable data; a temporary checkout does not make
-commands that contact live services or stores safe.
+Trace the complete consumer path, for example:
 
-### Establish a passing baseline
+- Rust constructor: source → rebuilt crate → rejection test.
+- TypeScript extension: source → host loader → filesystem fixture.
+- Python generator: source → generated artifact → native consumer.
 
-Identify which tests exercise the selected behavior, including subprocess, loader,
-serialization, and filesystem paths where applicable. Run the chosen baseline and
-confirm the intended cases execute without skips. If it fails, stop that scope and
-report the prerequisite failure rather than count subsequent failures as detections.
+A helper test alone cannot establish the last two paths.
 
-### Check that the test path detects a change
+## Choose meaningful mutations within a budget
 
-Before the campaign, use a positive control: a deliberate behavior change that an
-existing assertion should detect. Verify that the test consumes the changed code
-and fails for that change—not an import, environment, or unrelated build failure.
-If the control survives, check for stale artifacts or a disconnected test path before
-blaming weak assertions. Resolve the execution path or report it as unverified. A
-surviving control alone does not prove the suite is weak.
+Challenge the contract: remove a required check or effect, invert a condition, shift a reachable boundary, alter an error, or omit serialized or identity-significant information.
+Prefer an existing compatible engine when its mutations and test invocation fit.
+Check installed command help before choosing flags; use `dependency-review` for external tooling selection or addition.
+No particular engine or installation mechanism is required.
 
-For a Rust constructor, the path may be source → rebuilt crate → rejection test.
-For a TypeScript extension, it may be source → host loader → filesystem fixture.
-A Python generator may need source → generated artifact → native consumer. A helper
-test alone cannot establish the last two paths.
+When automation is unavailable or rebuild cost favors a small pilot, enumerate hand-selected mutations with exact diffs and disclose their selection limits.
+Keep a one-off script a one-off, not a reusable runner.
+Measure baseline runtime including rebuilding.
+Estimate total cost from mutation count and per-variant work, then set a finite budget and timeout.
+Narrow scope or ask before materially exceeding the agreed budget.
 
-## 2. Select mutations and cost
+## Run comparable variants
 
-Prefer an existing project-compatible mutation engine when its supported mutations
-and test invocation fit the target. Check installed command help before choosing
-flags. Follow `dependency-review` for adding or selecting external tooling; this
-skill does not require mewt, muton, or a new installation mechanism.
+Start each variant from the recorded baseline, one mutation at a time or in separate engine-managed variants.
+Keep inputs, assertions, build flags, and environment fixed; do not bless snapshots or repair tests or production code mid-campaign.
+Inspect generation or rebuild failures before consuming output or testing an older artifact.
 
-When automation is unavailable or rebuild costs make a small pilot preferable,
-enumerate hand-selected mutations and save their exact diffs. State that their
-selection limits coverage. Do not turn a one-off script into a reusable runner.
-
-Choose changes that challenge the declared behavior: remove a required check or
-effect, invert a condition, shift a reachable boundary, alter an error result, or
-omit information from serialization or identity calculation. Exclude tests,
-expectations, generated outputs, and unrelated source from mutation targets.
-
-Measure baseline runtime, including rebuilding, and estimate campaign cost from
-mutation count and per-variant work. Set a finite budget and timeout appropriate to
-the project. Narrow the scope or ask before materially exceeding the agreed budget;
-do not silently launch an overnight or whole-compiler campaign.
-
-## 3. Execute independent variants
-
-Start each variant from the recorded baseline. Run one mutation at a time or use
-separate engine-managed variants. Keep test inputs, assertions, build flags, and
-execution environment fixed. Do not bless snapshots, edit tests, or repair production
-code during the campaign. If mutation generation or rebuilding fails, inspect that
-failure before consuming its output or testing an older artifact.
-
-Record each exact mutation, source identity, build/test command, result, and decisive
-failure or output. Distinguish:
+Record each exact mutation, source identity, build/test command, result, and decisive output.
+Classify by evidence, not exit status:
 
 - **Detected:** an executed test observes the mutation through the intended path.
-- **Survived:** the selected tests execute and pass with the mutation present.
-- **Invalid:** the mutation cannot form a valid program or artifact; a compiler
-  rejection is not evidence that behavioral assertions work.
-- **Inconclusive:** timeout, environment failure, skipped or disconnected tests,
-  unrelated build failure, or uncertain artifact identity.
-- **Not run:** excluded, budget-stopped, or engine-skipped variants.
+- **Survived:** selected tests execute and pass with the mutation present.
+- **Invalid:** the mutation cannot form a valid program or artifact; compiler rejection does not test behavioral assertions.
+- **Inconclusive:** timeout, environment or unrelated build failure, skipped/disconnected tests, or uncertain artifact identity.
+- **Not run:** excluded, budget-stopped, or engine-skipped.
 
-A nonzero exit alone does not establish detection. A crash caused by a valid mutation
-can count when an exercised behavioral test detects it; failed test setup cannot.
+A valid mutation causing a crash can count as detected by an exercised behavioral test; failed setup cannot.
 
-## 4. Resolve survivors and report
+## Explain survivors and deliver
 
-Read [survivors](references/survivors.md) for each surviving mutation or when
-interpreting supplied results. Separate demonstrated test gaps, proven equivalent
-mutations, and unresolved cases. Do not infer a defect in the original implementation
-from a defect deliberately introduced by a mutation.
+Use [survivor analysis](references/survivors.md) to distinguish demonstrated gaps, proven equivalence, and unresolved cases.
+Recommend the smallest distinguishing tests.
+Permanent test changes require authorization; use [testing guidance](../references/testing.md) for their design and `property-based-testing` for domain-wide coverage.
+After adding tests, rerun the unchanged baseline and relevant mutations in a fresh, separately identified run.
+[Completion review](../completion-audit/SKILL.md) applies only within its own scope, not to every campaign.
 
-Recommend the smallest distinguishing tests. If permanent test changes are authorized,
-use [testing guidance](../references/testing.md) for contracts, regression/valid-change evidence, and test
-reachability; use `property-based-testing` when a whole input domain needs coverage.
-After adding tests, rerun the unchanged baseline and relevant mutations in a fresh,
-separately identified run. Use [completion review](../completion-audit/SKILL.md) only for its declared completion-audit
-scope, not as a required campaign phase.
-
-Finish with the target and selection method, execution-path evidence, outcome counts
-with denominators, concrete survivor conclusions, and remaining gaps. Identify
-excluded and unexamined work. Keep exact inputs and evidence needed to replay reported
-findings, without prescribing a report filename or artifact schema. A partial campaign
-is a valid result when labeled; unresolved cases are not clean results. Do not convert
-one campaign's detection rate into overall test adequacy or impose a universal score
-threshold.
+Report target and selection method, execution-path evidence, outcome counts with denominators, survivor conclusions, and excluded or unexamined work.
+Preserve replayable inputs and decisive evidence without imposing a filename or schema.
+Label partial campaigns and unresolved cases; a detection rate neither establishes overall test adequacy nor justifies a universal score threshold.
 
 Source and license: [adaptation notice](README.md).
