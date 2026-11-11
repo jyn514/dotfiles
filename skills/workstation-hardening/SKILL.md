@@ -44,6 +44,10 @@ A target-specific boundary can attach to one launcher, executable, or service.
 A user-wide sibling rule must cover the full set of processes and peer operations that the chosen mechanism uses to decide access.
 Transition-based confinement usually has to cover the relevant launch paths.
 Operation-based mediation usually has to cover the relevant read or trace hooks.
+For a user-wide sibling rule, prefer operation-based mediation when the kernel hook can express the denied read or trace directly.
+Treat launch-tree allowlists as fragile.
+If the design names trusted session roots, such as `user@.service`, ssh, mosh, or a display manager, inspect the live session tree before rollout and show that every required root is covered.
+Missing one root can both break legitimate sessions and leave an uncovered path.
 Do not present a target-specific confinement mechanism as a user-wide boundary unless that coverage has been shown.
 
 - same-uid secret exposure needs a same-uid boundary such as a separate account or mediated `/proc` and ptrace access;
