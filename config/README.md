@@ -158,6 +158,24 @@ systemctl show tailscaled -p LogFilterPatterns
 The filter takes effect after `daemon-reload`; restarting tailscaled is unnecessary.
 This filters journal recording; Tailscale still emits the messages.
 
+## User-manager logging on Linux
+
+[The user-manager drop-in](../global/user-manager-log-filter.conf) filters the exact `Fully synced` heartbeat emitted by headless Obsidian Sync.
+User services cannot enforce `LogFilterPatterns=` themselves because journald ignores regex filters from unprivileged user managers.
+The drop-in therefore applies at `user@.service`, which also means any user-service message with that exact text is filtered.
+Other Obsidian sync state, warnings, and failures remain visible.
+Its installation path is recorded in `install/global.txt` for global setup.
+To install only this drop-in from the repository root:
+
+```sh
+sudo install -D -m 644 global/user-manager-log-filter.conf /etc/systemd/system/user@.service.d/log-filter.conf
+sudo systemctl daemon-reload
+systemctl show user@1000.service -p LogFilterPatterns
+```
+
+The filter takes effect after `daemon-reload`; restarting the user manager is unnecessary.
+This filters journal recording; Obsidian still emits the message.
+
 ## Persistent tmux on Linux
 
 ### Pane colors
