@@ -5,192 +5,131 @@ description: Analyze possible futures, map what would have to happen, or critiqu
 
 # Grounded futurism
 
-Explain what would have to happen, through which routes, and what evidence would change the assessment.
-Do not dress intuition as a quantitative forecast.
+Follow a proposed change through the actions and responses that could produce different futures.
+A plausible route explains how an outcome could happen; a forecast also needs reasons to expect that progression over alternatives.
+Analysis does not authorize interventions, publication, edits, or changes to monitoring systems.
 
-## Scope and authority
+## Establish the question and premises
 
-Own forecast construction and critique, not policy selection or implementation.
-A request to analyze or review does not authorize edits, interventions, publication, or changes to monitoring systems.
-For critique, test the supplied model before building a replacement; distinguish its defects from alternative assumptions.
-Use `creative-inquiry` for broader purpose exploration and the relevant decision skill when asked to choose an intervention.
+Identify whether the request needs mechanisms, conditional scenarios, a date, or a probability.
+Mark stipulated premises, including assumptions held temporarily for exploration.
+Work within them; distinguish consequences conditional on a premise from evidence against it.
+Use the requested outcome and context; leave an unspecified setting, horizon, or success criterion conditional when useful.
+Ask only when material ambiguity cannot be handled conditionally.
 
-Use the outcome and context supplied in the request and conversation.
-If geography, population, scale, duration, or the meaning of success is omitted, leave it conditional when the answer remains useful.
-Ask a focused question when different interpretations would materially change the answer and conditional treatment would not resolve it.
-Do not silently choose a country, horizon, or definition of success.
+For a supplied framework, distinguish explicit claims from illustrative branches.
+Critique a causal link the model needs, not a fate it never predicts.
+An outcome represented by another branch is not a rebuttal.
+A model's result cannot rule out mechanisms it excludes.
+If a counterargument changes an exclusion, premise, or causal link, state the change and assess the revised model separately.
 
-## Procedure
+## Build paths through actions and responses
 
-### 1. Frame the question and inspect available evidence
+Trace causes, enabling conditions, intermediate outcomes, and reinforcing feedback.
+Justify claimed necessary conditions; otherwise treat them as belonging to one possible route.
+Does the outcome require shared intent and coordination, or could fragmented actions and responses produce it?
+Develop materially different paths, including partial implementation and equilibria that stop short of the proposed endpoint.
+A partial outcome can change the stakes without completing the scenario.
+Stop adding routes when they no longer change the conclusion or its uncertainty.
 
-Define the outcome in observable terms. Distinguish nearby outcomes when they have different prerequisites.
-Determine whether the request calls for a short conditional answer, a critique, or a researched assessment.
-Start with relevant conversation records and supplied evidence; verify material factual claims against their original sources.
-Keep observations, assumptions, inferences, and unresolved questions distinct.
-A source establishing one link does not establish the entire scenario.
+At each step, ask what the first implementation needs and what continued deployment could produce.
+Capital, data, infrastructure, political leverage, dependencies, and social legibility need not all exist at the start.
+Preserve dependencies that genuinely constrain the mechanism without assuming they must be supplied early or at full scale.
 
-When asked which actors are most likely to produce an outcome, derive candidates from the mechanisms that could produce it.
-Do not limit discovery to current officeholders, established organizations, or published policies.
-Identify who is already recruiting, building coalitions, supplying resources, or developing the relevant narrative.
-Compare candidates only after this discovery step; state consequential exclusions.
+Then follow people's responses as part of the path.
+Capabilities, incentives, institutions, preferences, rules, and constraints evolve together.
+Early success can change what later actions cost, who can block them, and which coalitions form.
+Do not assume familiar behavior remains stationary merely because it supplies a convenient prerequisite.
 
-### When relying on a model
+For example, initial deployment might depend on coercion but later become normalized.
+An efficiency gain might persist when political friction falls.
+Stigma can fade while material consequences remain.
+These possibilities change the next causal step; they do not establish that the whole progression follows.
 
-Inspect the model's actors, response mechanisms, and explicit exclusions.
-Do not use a result within the model to rule out an outcome produced by mechanisms it excludes.
+For continued-operation or breakdown claims, explain what keeps the system working: protection, maintenance, repair, and renewal of expertise.
+Trace how the proposed changes affect those capacities in this setting; apparent stability does not establish spare capacity.
 
-### For a conditional forecast
+### Test what actually blocks a path
 
-Hold the stipulated premises fixed and assess what follows from them.
-Separate uncertainty about those premises from uncertainty within the requested branch.
-Map proposed alternatives to the supplied scenario tree: an outcome already represented by another branch is not a rebuttal to this one.
-Keep those premises and the specified outcome fixed when constructing a counterargument too.
-For example, an argument against deliberate shutdown does not by itself counter an outcome of unintended system failure.
+Separate three questions:
 
-### 2. Construct the smallest useful causal account
+- **Who decides?** Concentrated control can enable action despite broad opposition.
+- **What remains dependent?** Dependence can outlast agreement or a particular holder of power.
+- **What does opposition change?** Opposition might raise costs, slow action, change coalitions, or trigger a discontinuous response.
 
-Identify the actors, resources, technical capabilities, institutions, and dependencies that could produce the outcome.
-Ask whether coordinated actors would deliberately achieve it, or whether it could emerge from fragmented actions and institutional responses.
-If a route appears to require shared intent, organization, or political victory, test whether the outcome itself requires them.
-For an emergent route, identify how local effects spread or reinforce one another, and what could interrupt that process.
-Do not infer likelihood merely from finding a route that bypasses coordination.
-Distinguish necessary conditions from enabling factors, accelerants, triggers, and consequences.
-State why a condition is necessary; if that cannot be justified, treat it as belonging to one possible route.
-For each proposed necessary condition, ask whether it must exist before the process begins or can develop through the process itself.
-Trace how earlier events could create or destroy organization, political permission, institutional capacity, and participants' commitments.
-Do not count conditions produced by the same feedback process as separate independent obstacles.
-Retain genuine prerequisites: durable enforcement may require capacities that disruption does not.
-Identify events that can occur concurrently and routes that bypass the initially salient mechanism.
-Use a branching diagram only when it clarifies relationships; a list of dependencies can suffice.
-Do not force feedback loops into a linear sequence.
+Trace opposition into one of those effects rather than counting it as resolution.
+It need not be ineffective, permanent, or doomed; neither collective action nor coercion has an automatic outcome.
 
-Derive candidate routes from the outcome and its context, not a fixed catalog of crises.
-For each important route, ask what could prevent it and whether another mechanism could reach the same outcome.
-Include technical and physical constraints where relevant, not only social mechanisms.
-Stop expanding routes when additional possibilities do not change the conclusion or its uncertainty.
+For a claimed intervention, identify how its effect changes the path.
+An intervention may fail outright, remove one problem while leaving other mechanisms active, or create new incentives and dependencies.
+“Banning causes more dangerous unregulated use” therefore needs a mechanism and conditions, not just a familiar analogy.
+Explain which link an intervention defeats or diverts.
+Where containment requires a response, check whether actors can detect deterioration in time and retain recovery options; the forecaster's evidence may not be available to them.
 
-### 3. Test interactions and competing explanations
+Use concrete operators and actions when abstractions conceal the mechanism.
+What would `decentralize`, `adapt`, `get adopted`, `institutions respond`, or `the market corrects` look like?
+Each should name a causal link, not supply a destination without a path.
 
-For consequential dependencies, examine both stabilizing and destabilizing effects and the conditions determining which dominates.
-An obstacle may change costs, timing, or the form of an outcome without making it impossible.
-Conversely, a conceivable bypass does not establish that the obstacle is easily overcome.
-Check whether apparent resistance, delay, or a plateau reflects a lasting constraint, temporary friction, or offsetting effects.
+Test the strongest available counterargument against the same premises and outcome.
+Revise the conclusion if it defeats the preferred account; otherwise identify the unresolved comparison.
 
-When a forecast depends on continued operation or breakdown, explain what currently keeps the system working.
-Inspect persistent faults, protective measures, and routine compensating work; apparent stability does not establish spare capacity.
-Identify how people detect trouble, adapt, and preserve services, not only how components can fail.
-Examine how automation, staffing changes, and disrupted training affect that work and the renewal of expertise.
-Test whether these mechanisms apply in the setting rather than treating properties of complex operational systems as universal laws.
+## Calibrate the account to evidence
 
-Construct the strongest available counterargument to the preferred forecast, keeping the stipulated premises and outcome fixed.
-Evaluate its assumptions and evidence, and revise the conclusion if it defeats the preferred account.
-If neither account prevails on the evidence, identify the unresolved comparison rather than merely appending a caveat.
+Before answering or quantifying, research existing mechanisms and warning signs that could change the conclusion.
+Use primary sources for current rules, technical capabilities, and narrow empirical claims; use deeper research for contested causal claims.
+Investigate what the chosen path needs rather than surveying the subject.
 
-When human responses matter, examine material incentives alongside identity, moral commitments, status, narratives, and coordination.
-Do not require grievances to be accurately attributed for people to organize around them.
-Do not assume either rational calculation or desperation alone determines collective action.
-Where coordination is required, identify how it develops; do not require a pre-existing organization if one could form during the crisis.
-When dependence matters, consider both incentives to preserve the system and ways dependence enables coercion, resentment, or fragility.
-When spillovers matter, trace their transmission and the scope for substitution or containment.
-Global consequences do not require international ideological agreement.
+Compare relevant precedents and present constraints with possible stepping stones:
+what exists now, what could change it, and what has already started?
+A precedent supplies evidence about a mechanism and its conditions, not an ending the future must repeat.
+Do not silently replace an unfamiliar future with today's familiar system, or assume history repeats with fixed actors and institutions.
 
-Test proposed alternatives through their consequences, not just their initial aims.
-Ask whether an attempted remedy disrupts dependencies, worsens the original grievance, or creates conditions for the feared outcome.
-Preserving physical assets does not necessarily preserve the services, skills, trade, and coordination that make them productive.
-Treat later motives and political capacity as things the crisis can change, not only as conditions that must exist at the start.
-For example, investigate whether breakdown encourages scapegoating and persecution rather than treating these as unrelated possibilities.
-Trace both escalation and containment; neither a conceivable escalation nor a conceivable remedy establishes its likelihood.
+When symptoms resemble a developing risk, preserve that resemblance while testing what it establishes.
+Separate consistency with a forecast from evidence that favors it over alternatives.
+Look for counterevidence and compare against baselines or controls.
 
-For a response offered as a stopping point, ask what sustains it if the original problem persists.
-Trace whether disappointing results prompt correction, tolerated failure, or stronger commitments that weaken recovery and feedback.
-An incentive to preserve a system does not establish the capacity to keep interventions selective.
-Repeated failure does not establish escalation.
-Identify what makes actors broaden their response rather than retreat, evade, or persist ineffectively.
+For labor-market claims, inspect changes in use, jobs, hours, and incomes before extrapolating to a year.
+Trace capability through production use, persistence, organizational diffusion, and labor reorganization.
+Aggregate employment is a late discriminator: material change can precede a large headline decline.
+Task exposure, benchmarks, training intentions, and isolated announcements cannot establish that whole progression.
 
-Look for epicycles: added explanations or interventions that protect the original theory from contrary evidence.
-Distinguish evidence-backed revisions from additions that make every outcome confirm the theory.
-Trace whether these additions improve results, merely preserve commitment, or create self-reinforcing failure.
-Apply this check to the forecast's own reasoning as well as to actors within the scenario.
+### Choose a claim the evidence supports
 
-### 4. Investigate only uncertainties that could change the answer
+Separate observations, inferred mechanisms, and speculative outcomes.
+State which causal links have evidence and which remain hypotheses.
 
-Identify the factual claims that most affect the forecast, including claims that limit its severity or likelihood.
-Check those claims against available evidence. Research unresolved links before assigning likelihoods.
-Do not investigate only the initiating threat; also check assumptions about propagation, containment, and recovery.
-Before treating a consequential mechanism as hypothetical or absent, check whether it already exists.
-Use the findings to revise the assessment. Then decide whether the evidence supports numerical probabilities under §5.
-If the check cannot be completed, state that limit rather than treating uninspected evidence as absent.
-Investigate only when the answer could change the conclusion.
-Distinguish “not found in the inspected evidence” from “not yet happening.”
-Choose the cheapest relevant evidence: measured behavior, a physical constraint, deployment records, or a historical comparison.
-If the requested assessment depends on unavailable evidence, state the unresolved dependency and offer a conditional answer.
-Do not replace missing evidence with more scenarios or stronger language.
+Use dates or probabilities only when evidence distinguishes their scale.
+A numerical answer should connect magnitudes and timing across supported stages, not project a headline percentage from task-exposure estimates or intuition.
+Show the method, inputs, and uncertainty; for conditional models, test sensitivity to disputed inputs.
+Do not multiply correlated event probabilities as if independent.
+Separate entry into a route, progression after entry, and consequence severity.
+With weak evidence, give conditional paths and uncertainties rather than a vivid number or unsupported likelihood ranking.
 
-Use historical analogues when they can test a disputed mechanism.
-Compare the initiating conditions, actors, response, dependencies, outcome, and differences limiting transfer.
-Reconstruct actors' information, available options, and competing demands at the time of consequential decisions.
-Do not treat knowledge of the eventual outcome as evidence that its warning signs or remedies were obvious beforehand.
-Seek contrary cases rather than selecting only successful examples.
-Cite original or strong scholarly sources with dates; do not treat an illustrative parallel as a base rate.
-For an anti-AI political scenario or AI/labor question, consult [the worked example](references/anti-ai-example.md) when those distinctions are needed.
-Its candidate mechanisms are hypotheses, not a mandatory checklist for other domains.
+When comparing actors, derive candidates from the mechanisms rather than only established officeholders or organizations.
+Find emerging organizers and coalitions, and who supplies their resources or narratives.
+Compare after discovery and state consequential exclusions.
 
-### 5. Express timing and likelihood only as well as the evidence allows
+For comparisons across cases, use the same outcome, criteria, and evidentiary standard.
+Explain any weighting by institutions, control, dependence, disagreement, or outcome evidence.
+Capability, intentions, sentiment, exposure, and observed outcomes are different kinds of evidence.
+Distinguish whose interests an outcome serves from how it occurs, and felt justification from plausibility.
 
-Establish causal ordering before assigning calendar dates.
-Use dependencies when timing is unknown; give dates or ranges only with an inspectable basis and relevant uncertainty.
-Distinguish an observed trend, a dated commitment, a conditional projection, and a prediction.
-A commitment establishes a stated plan, not that its target will be reached.
+Choose leading indicators for the uncertain links.
+For labor claims, inspect current primary evidence for the bridge into persistent production use and employment effects.
+Turn strong warning signs into conditional triggers: what observation would move an earlier, faster branch from plausible to better supported?
+A fair comparison needs a baseline, rate, denominator, or contrast where those are available.
 
-For a numerical forecast, show the method, inputs, assumptions, and uncertainty appropriate to the claim.
-A physical projection may use measured rates and constraints. A statistical forecast may use a justified reference class.
-A conditional scenario model must explain its conditional estimates and test sensitivity to disputed inputs.
-No single method is compulsory.
-Naming a method does not make unsupported inputs reliable.
-Do not multiply correlated event probabilities as if independent or present uncalibrated judgment as a measured likelihood.
-If the basis is inadequate, withhold the number and identify the unresolved transitions instead.
-Before ranking outcomes, compare their important routes, not only their most organized or deliberate forms.
-A route requiring fewer participants or less coordination does not establish a higher overall likelihood
-if another outcome can emerge through cumulative failures.
-Identify the consequential transition that supports the ranking and the evidence favoring progression, containment, or ineffective persistence.
-If the evidence establishes possible mechanisms but does not distinguish their likelihood, leave the outcomes unranked.
-Separate the chance of entering a route, progression to the specified outcome after entry, and the severity of its consequences.
-For comparative forecasts, apply the same outcome and criteria across cases.
-Explain what favors progression over containment or ineffective persistence.
-Do not substitute greater capability, more visible mobilization, or richer documentation for a higher likelihood of the outcome.
-State the inspected comparison set; a shortlist does not establish an exhaustive ranking.
+## Check the explanation
 
-### 6. Conclude with discriminating evidence
+For AI scenarios involving capability growth, public reaction, or labor displacement, read the [worked anti-AI example](references/anti-ai-example.md).
+It follows partial outcomes, backlash, containment, and labor evidence without selecting a single ending.
 
-Identify observations that would distinguish rival routes or materially change an important dependency.
-Inspect each proposed observation: if it could already have occurred, check the available evidence and research its status before answering.
-Distinguish what already exists from the unresolved change in frequency, scale, duration, or mechanism.
-Revise the forecast using the findings rather than presenting an unchecked observation as solely future evidence.
-When containment depends on actors responding to deterioration, ask whether they can detect it in time and still have options to recover.
-Distinguish evidence visible to the forecaster from feedback available to those actors.
-State which unresolved transitions matter most and why; allow several independent bottlenecks.
-Do not claim a single decisive bottleneck unless the important routes actually converge on it.
+Before presenting, check that the account supports the requested conclusion:
 
-Finish when the requested scope is addressed, the consequential dependencies and countermechanisms are explicit,
-and the remaining uncertainty has identifiable evidence that could reduce it—or a stated reason it cannot yet be resolved.
-For a short answer, include only the dependencies and qualifications that change the answer.
-For a researched assessment, include provenance, contrary evidence, and the limits of the inspected scope.
-Do not require a fixed report format or exhaustive historical search.
+- Does each claimed containment or failure follow from a mechanism, rather than intention, exposure, or sentiment?
+- Are relevant capabilities and early warning signs missing from the research?
+- Did a date or probability outrun the supported links, magnitudes, or rates?
+- Does the account make its main uncertainties and revision points visible?
 
-## Final check
-
-Revise the affected claim if any answer is yes:
-
-- Did I turn an accelerant into a prerequisite or one route into the entire event space?
-- Did I require shared intent, organization, or victory for an outcome that could emerge without them?
-- Did I assume accurate attribution, material self-interest, or desperation suffices to explain collective action?
-- Did I treat dependence as proof against rejection, or a possible bypass as proof of easy rejection?
-- Did I require ideological agreement for consequences that can spread through material dependencies?
-- Did I invent dates, numerical precision, independence assumptions, or a historical base rate?
-- Did I mistake capability, intentions, sentiment, or exposure for observed outcomes?
-- Did I use a model's result to dismiss a mechanism the model excludes?
-- Did I omit a countermechanism or relevant contrary case that could change the assessment?
-- Did I count an alternative as preventing the outcome without tracing what happens if it persists or fails?
-
-This check is textual validation, not evidence of predictive accuracy or measured compliance.
+Answer only as far as those links support.
+A concise conditional account or unranked alternatives can be more useful than another framework or a precise-looking forecast.
