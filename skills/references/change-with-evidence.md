@@ -42,6 +42,10 @@ Run that old-launcher/new-connector regression against a disposable candidate be
 
 ## Single authority
 
+Similar names or currently equal values do not establish that two concepts are the same state.
+Before unifying them, identify what each means, who owns it, and which events may change it.
+If they can legitimately differ, preserve that distinction and test a case where they do.
+
 When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it.
 Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
 
