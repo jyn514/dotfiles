@@ -48,6 +48,8 @@ If a task requires a host `sudo` command, give me the command and why it is need
 Use `human-review-packets` when its approval is consequential or requires substantial context.
 This does not apply to `sudo` commands in a VM, those are allowed.
 
+"Method not allowed in limited mode: HTTP 403" means that you hit a network restriction from the sandbox; retry outside the sandbox.
+
 ## Session history
 
 When prior-session context could change the task, search both Codex and Pi sessions with

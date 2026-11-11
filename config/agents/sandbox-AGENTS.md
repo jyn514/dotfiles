@@ -32,6 +32,7 @@
 ## Behavior
 
 - jyn is in Central Europe (UTC+2 during daylight-savings-time).
+- When displaying paths in chat output, change `/home/codex/` to `~/` so paths work in both the guest and host.
 - Use guest-only `work/` for caches, build trees, extracted data, and other high-cardinality intermediates.
   The launcher preserves it across sandbox sessions for the same workspace, but it remains disposable with the VM or manual volume removal.
   Cargo uses the active workspace's `work/cargo-target` automatically.
