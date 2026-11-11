@@ -469,6 +469,8 @@ class DockerHost(Host):
         return {
             service: ('[Unit]\nDescription=Reclaim VirtioFS cache under measured descriptor pressure\n\n'
                       '[Service]\nType=oneshot\nTimeoutStartSec=50s\n'
+                      'StandardOutput=null\nStandardError=journal\n'
+                      'SyslogLevel=err\nLogLevelMax=notice\n'
                       f'ExecStart={command_line}\n'),
             timer: ('[Unit]\nDescription=Measure sandbox VirtioFS descriptor pressure\n\n'
                     '[Timer]\nOnActiveSec=30s\nOnUnitInactiveSec=30s\nAccuracySec=1s\n'

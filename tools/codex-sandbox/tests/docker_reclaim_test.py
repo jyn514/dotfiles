@@ -130,6 +130,10 @@ class ReclaimTest(unittest.TestCase):
         timer = units['codex-sandbox-pressure-fixture.timer']
         self.assertIn('"--state" "/owned/state" "reclaim" "pressure"', service)
         self.assertIn('TimeoutStartSec=50s', service)
+        self.assertIn('StandardOutput=null', service)
+        self.assertIn('StandardError=journal', service)
+        self.assertIn('SyslogLevel=err', service)
+        self.assertIn('LogLevelMax=notice', service)
         self.assertIn('OnUnitInactiveSec=30s', timer)
         self.assertIn('Unit=codex-sandbox-pressure-fixture.service', timer)
 
