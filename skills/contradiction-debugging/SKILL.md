@@ -6,112 +6,100 @@ description: Investigate failures that seem impossible under the current model o
 # Debug apparent contradictions
 
 Find which premise fails before choosing a repair.
-Start with the specific disputed event; expand to related events only when they distinguish explanations.
+Start with the disputed event; include related events only when they distinguish explanations.
 Investigation alone does not authorize fixes, live reloads, messages to agents, or external replays.
 
 ## State the contradiction precisely
 
-Write the observation and the rule that appears to exclude it.
-Identify the evidence for each, including its time, process or session, and observation point.
-Use the original event or artifact when available; a summary can omit the distinction that matters.
+Write the observation and the rule that appears to exclude it, using the original event or artifact when available.
+Identify the evidence and observation point for each of three claims:
 
-Separate these claims:
-
-- The implementation cannot produce this result under stated conditions.
+- The implementation excludes this result under stated conditions.
 - Those conditions held during the failing event.
-- The observation accurately represents that result.
+- The observation accurately represents the result.
 
-Each needs evidence.
-An impossibility argument is conditional on its premises; an unlikely timing, fallback, or model choice remains possible.
-For nondeterministic systems, identical captured inputs need not produce identical outputs.
-Do not infer a hidden input change solely from different outputs.
+Retain the full scope of a multi-session or multi-process failure; explaining its easiest instance is not enough.
+The unsupported claim determines what to inspect next.
+An unlikely timing, fallback, or model choice remains possible; improbability does not establish an invariant.
+In a nondeterministic system, different outputs alone do not establish different inputs.
 
-For example, a process logs an old configuration value although the file contains the new value.
-That contradicts current-file loading only if this process loaded these bytes before that operation.
-Inspect the process's loaded value and reload boundary before treating either the file or the log as wrong.
-Track three separate times when configuration or code changes:
-when bytes appeared on disk, when the process loaded them, and when the new state became active after reload, restart, or reboot.
-A file installed during a long-running process does not explain behavior until that process crosses the relevant reload boundary.
-When several changes can become active at the same boundary, make a short ledger before ranking causes.
-Record each changed input, the boundary that made it effective, and the symptom it could directly explain.
-A shared reboot, restart, or relogin does not turn several hypotheses into one cause.
+Suppose a process logs an old configuration value while the file contains the new value.
+The file contradicts the log only if this process loaded those bytes and activated them before the operation.
+Track when the bytes reached disk, when the process loaded them, and when they became active after reload, restart, or reboot.
+Inspect the loaded value and activation boundary to distinguish stale process state from a bad file or log.
+Before ranking changes that share an activation boundary, list each input, the boundary that made it effective, and the symptom it could directly explain.
+A shared reboot does not make them one cause.
 
 ## Locate the first unsupported connection
 
-Trace the disputed value from its source to the consumer that acted on it.
-Mark transformations, persisted copies, caches, fallbacks, and exception handling along that path.
-Check the executable and configuration actually used by the failing process when retained evidence permits it.
-Current source and an installed version do not establish what a past process ran.
-Attribute each decisive fact to the process, machine or namespace, resource, and time it describes, as relevant.
-Do not use a guest installation, guest limit, or current file to rule out a failure in a different context.
-When two cases behave differently, locate the first branch or boundary where their execution differs.
-Start from the visible symptom, then find the earliest failed dependency that every later symptom depends on.
-A downstream failure can be real and still be too late to distinguish causes.
-Prefer the first failed load, bind, policy decision, handoff, or other prerequisite over the final user-visible breakage.
+Trace the disputed value from its source to the consumer that acted on it, including transformations, cached or persisted copies, fallbacks, and failure paths.
+Locate each decisive observation in its process or session, machine or namespace, resource, and time.
+Check the failing process's executable and configuration where retained evidence permits; today's installation cannot establish what it ran.
+Likewise, a guest installation or limit cannot rule out a failure elsewhere.
 
-For every observation, ask what it can actually see:
+Start at the visible symptom and work back to the earliest failed prerequisite on which later symptoms depend.
+When cases differ, find their first divergent branch or boundary.
+A failed load or bind can distinguish causes that the final user-visible breakage cannot.
+Read the producer and consumer around that boundary.
+
+Choose evidence by what its observer can see:
 
 - A stored transcript may precede runtime transformations.
-- A debug hook may run before later hooks or serialization change the value.
+- A debug hook may precede later hooks or serialization.
 - A rendered tool call may abbreviate an argument that differs in the raw record.
-- An agent's quotation of its instructions is a report, not a capture of the request it received.
+- An agent's quotation of its instructions is a report, not a capture of its received request.
 
-Preserve those reports as evidence without promoting them to direct observations or dismissing them as fabrication.
-Read the producer and consumer around the suspected boundary, including failure paths.
-Prefer a capture at the last observable boundary before consumption when intermediate observations disagree.
-Verify that the observer covers the relevant event, field, and ordering before interpreting an empty or successful capture.
+Keep reports as evidence with those limits, rather than treating them as direct captures or fabrication.
+When observations disagree, prefer a capture at the last observable boundary before consumption.
+Verify coverage of the relevant event, field, and ordering before interpreting an empty or successful capture.
+Pair input and action from the same operation where possible.
+A correct request in one operation and a bad action in another do not establish a correct-input/bad-action pair.
 
 ## Choose a check that separates explanations
 
-Keep a small set of competing mechanisms that fit the observed event.
-Include an incorrect premise or measurement, as well as a system defect, when each is plausible here.
+Keep a small set of mechanisms that fit the event, including a mistaken premise or measurement when plausible.
+Keep related defects separate until evidence connects them to the event.
 For each serious candidate, identify the cheapest observation that would contradict it.
-Do not keep adding speculative candidates when one available check separates the leading explanations.
-Use work-selection when another substantive diagnostic round needs justification.
-When two plausible changes happened before the failure, test an off-diagonal case before blaming either one.
-Think in terms of old and new inputs:
-old binary with new config, new binary with old config, or another cheap split that isolates one change.
-Run the smallest case that would falsify one explanation; do not infer from the timeline alone.
+Choose an available check that separates the leading explanations instead of extending the candidate list.
+Use work-selection before adding another substantive diagnostic round.
 
-Pair the input observation and resulting action from the same operation where possible.
-A correct request in one operation and a bad action in another do not establish a correct-input/bad-action pair.
-When the problem occurs in multiple sessions or processes, retain that scope instead of explaining only the easiest instance.
-Classify related defects separately unless evidence connects them to the disputed event.
+When two plausible changes precede failure, test an off-diagonal case before blaming either.
+For example, run the old binary with the new configuration rather than comparing only the old and new pairs.
+If it produces the same failure, the upgrade is not a necessary trigger; if it succeeds, the upgrade or an interaction remains plausible.
+The reverse pairing or another cheap split may separate the candidates better.
+Choose the smallest case whose outcomes would change which explanation survives.
 
-When tests pass while the reported failure persists, identify what the tests replace, omit, or assume at the disputed boundary.
-Passing component tests do not establish that their composition works, and a test written around a proposed fix does not by itself explain the incident.
-Trace the failing operation before extending the fix; reproduce the failure on the unchanged implementation when feasible.
+When tests pass but the failure persists, inspect what they replace, omit, or assume at the disputed boundary.
+Component success need not survive composition, and a test of a proposed fix need not explain the incident.
+Trace the failing operation before extending the fix; reproduce it on the unchanged implementation when feasible.
 
-Bound instrumentation by target, fields, event count or duration, and cleanup condition.
-Collect the distinguishing data rather than entire transcripts or credentials by default.
-Use disposable state for experiments; copied credentials can still rotate or invalidate a shared server-side grant.
-Check authorization for the actor, target, mutation, and external destination before a live probe or replay.
+Before a live probe or replay, check authorization for the actor, target, mutation, and external destination.
 Historical approval and another agent's permission do not grant new authority.
+Use disposable state; copied credentials can still rotate or invalidate a shared server-side grant.
+Bound instrumentation by target, fields, count or duration, and cleanup condition.
+Collect distinguishing data rather than entire transcripts or credentials by default.
 
 ## Interpret replays without rewriting history
 
 Distinguish an exact captured request from a reconstruction using historical messages and current machinery.
-List differences that could change the disputed behavior: instructions, versions, state, branch, context truncation, model, or serialization.
-Use the actual consumer interface when practical; a substitute can test a different contract while appearing equivalent.
-For agent requests, inspect the final instructions and proposed action together; quoting a path and trying to read it test different behavior.
+Identify differences that could affect the disputed behavior, such as instructions, versions, state, truncation, model, or serialization.
+Use the actual consumer interface when practical: a substitute may test a different contract.
+For agent requests, inspect final instructions and proposed action together; quoting a path and trying to read it test different behavior.
 
-A successful current probe establishes that the tested path works now.
-A successful reconstruction shows that the reconstructed conditions can succeed.
-Neither establishes the original cause, proves the report false, or demonstrates a fix without evidence of a relevant change.
+Current success establishes that the tested path works now; a successful reconstruction establishes that its reconstructed conditions can succeed.
+Neither establishes the historical cause, disproves the report, or demonstrates a fix without evidence of a relevant change.
 A synthetic failure establishes a possible mechanism; check whether its triggering conditions existed in the incident.
-Retain failed experiments and inspect their failures before replacing them with another setup.
+Retain failed experiments and inspect their failures before replacing the setup.
 
 ## Finish at the strongest supported conclusion
 
-Report the observed failure, eliminated explanations with their scope, and the remaining discriminating evidence.
-Use explicit outcomes: reproduced cause, supported but unconfirmed mechanism, current success with historical cause unresolved, or insufficient evidence.
-When evidence contradicts an earlier diagnosis, withdraw the dependent claim and reassess the next action.
-Do not replace it with another confident story merely because that story also fits.
-After applying a proposed fix or workaround, re-check the original symptom before carrying the diagnosis forward.
-If the symptom survives, demote that cause immediately and reopen the explanation from the remaining evidence.
-A partial improvement can identify one contributing factor without explaining the incident by itself.
+Report the observed failure, explanations eliminated within their tested scope, and remaining discriminating evidence.
+Distinguish a reproduced cause, a supported but unconfirmed mechanism, current success with historical cause unresolved, and insufficient evidence.
+Separate observations, textual reasoning, and untested hypotheses.
+Withdraw claims contradicted by new evidence and reassess the next action.
+After an authorized fix or workaround, re-check the original symptom before carrying the diagnosis forward.
+If it survives, demote that cause and reopen the explanation; partial improvement may identify a contributor without explaining the incident.
 
-If the original request, state, or timing is irrecoverable, stop trying to prove its contents from later success.
+When the original request, state, or timing is irrecoverable, stop trying to prove it from later success.
 Preserve useful findings in the project's established tracker and identify the smallest capture needed on recurrence.
-Remove temporary instrumentation and verify cleanup; do not leave a future capture armed without authorization.
-Distinguish textual reasoning, observed behavior, and untested hypotheses in the handoff.
+Remove temporary instrumentation and verify cleanup; leaving a future capture armed requires authorization.
