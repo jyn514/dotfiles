@@ -1,41 +1,13 @@
 # fusion-candidate
 
-## Purpose
+Use the fixed candidates, `cross-critic` findings, and original task and constraints to decide whether identified components compose cleanly.
+Return `NO_FUSION` with a reason when they remain tightly coupled.
+Otherwise construct at most one candidate D containing:
 
-Construct at most one explicit synthesis candidate from cleanly separable parts of existing candidates.
+- `sources`: which components come from each candidate.
+- `rejected`: conflicting components dropped or superseded.
+- `plan` and `composition_argument`: how the parts work together without contradictory assumptions.
+- `assumptions` and `new_risks`, including unverified premises of the composition argument.
 
-## Inputs
-
-- fixed candidate set
-- `cross-critic` output
-- original task and constraints
-
-## Procedure
-
-1. Decide whether a fusion is justified at all. `NO_FUSION` is the normal outcome when components are tightly coupled.
-2. If constructing D, name exactly which components are taken from which source candidates.
-3. Name which conflicting components are rejected or superseded.
-4. Explain why the selected pieces compose without contradictory assumptions.
-5. Identify new risks introduced by composition.
-
-## Output
-
-Either:
-
-- `NO_FUSION`, with a short reason;
-
-or candidate D with:
-
-- `sources`: candidate → components taken
-- `rejected`: source components not carried forward
-- `plan`
-- `composition_argument`
-- `assumptions`
-- `new_risks`
-
-## Constraints
-
-- Never say “combine the best parts.”
-- D is just another candidate; it has no privileged status.
-- Do not add novel architecture unrelated to source candidates.
-- If the composition argument depends on an unverified assumption, say so explicitly.
+Explain the composition rather than claiming to “combine the best parts.”
+Add no unrelated novel architecture; D is an ordinary candidate, not a preferred answer.

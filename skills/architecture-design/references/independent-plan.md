@@ -1,35 +1,9 @@
 # independent-plan
 
-## Purpose
+Develop the strongest coherent design for one brief using the original task, constraints, read-only repository access, and factual evidence shared by all planners.
+Inspect the repository independently; the scout may have missed an invariant or file.
+Take the brief seriously, but change untenable premises when repository evidence warrants it.
 
-Turn one design brief into the strongest coherent plan for that region without contamination from sibling proposals.
-
-## Inputs
-
-- original task and constraints
-- one scout brief
-- read-only repository access
-- optional factual evidence shared by all planners
-
-## Procedure
-
-1. Inspect the repository independently; do not assume the scout found every relevant file or invariant.
-2. Take the assigned brief seriously, but reject one of its premises if repository evidence makes it untenable.
-3. Produce a coherent end-to-end design rather than a menu of options.
-4. State the decisions the design depends on, its important assumptions, and its main risks.
-5. Prefer concrete repository-specific reasoning over generic architecture advice.
-
-## Output
-
-- `key_decisions`
-- `assumptions`
-- `plan`
-- `risks`
-- `brief_deviations`: any scout premise rejected or changed, with reason
-
-## Constraints
-
-- Do not see sibling plans.
-- Do not optimize for novelty for its own sake.
-- Do not edit the repository.
-- Do not hide uncertainty behind a polished plan.
+Return concrete repository-specific `key_decisions`, `assumptions`, an end-to-end `plan`, `risks`, and `brief_deviations` with reasons.
+Choose one coherent arrangement rather than a menu, and expose uncertainty rather than hiding it in polish.
+Do not see sibling plans, edit the repository, or pursue novelty for its own sake.

@@ -1,51 +1,44 @@
 # Independent design deliberation
 
-Use only when a demonstrated architectural fork needs independent elaboration and critique to resolve it.
-A local change, a single design to assess, or a choice settled by repository evidence does not need this workflow.
-Compare simpler alternatives directly using [Map design alternatives](alternatives.md).
-This procedure selects a design; it does not authorize implementation or expand the task.
+Use when a demonstrated architectural fork needs independent elaboration and critique.
+For a local change, a single design, or a choice repository evidence can settle, compare directly using [Map design alternatives](alternatives.md).
+This procedure selects a design; it authorizes neither implementation nor expanded scope.
 
-## Inputs
-
-Use the original design question, user constraints and non-goals, repository evidence, and existing candidates.
-Name the user-visible outcome, current baseline, and difference that would justify changing it.
+Establish the original question, constraints, non-goals, evidence, user-visible outcome, current baseline, and gain that would justify changing it.
 Work through one complete affected case before expanding comparison; keep the baseline among the candidates.
-Internal completeness or consistency supports the decision but does not replace the governing outcome.
-A worked case need not be a finished implementation or benchmark.
+Internal consistency supports a design but cannot replace the governing outcome.
+A worked case need not be an implementation or benchmark.
+Use history when it could change the choice.
 
-Use historical evidence when it could change the decision; do not require a history investigation for every comparison.
-If existing candidates cover the material choices, skip scouting.
-For one supplied design, do not manufacture alternatives unless an unresolved fork remains.
+## Compare the fork
 
-## Compare a genuine fork
+Read each reference on entering its phase.
+For delegation, supply the full phase text or resolved absolute path, shared inputs, and only that phase's candidate material.
+These references are not registered skills for subagent preloading.
+Use [delegation](../../delegation/SKILL.md) for responsibilities and permitted effects; organizers follow its [executive procedure](../../delegation/references/executive.md).
 
-Read each phase reference only when entering its phase.
-For a delegated phase, supply its full text or resolved absolute path, shared inputs, and only that phase's candidate material.
-These references are not registered skills or names for subagent preloading.
-Use [delegation](../../delegation/SKILL.md) for shared responsibility and permitted effects; organizers follow its [executive procedure](../../delegation/references/executive.md) for assignments.
+1. **Map uncovered options** with [alternatives](alternatives.md).
+   Skip scouting when existing candidates cover the material choices; do not manufacture competitors for one supplied design without an unresolved fork.
+2. **Elaborate independently** with one [independent-plan](independent-plan.md) per viable brief, parallel where practical.
+   Give each only its brief and shared inputs; assign stable opaque IDs outside plans.
+   Stop and report why if fewer than two viable plans survive.
+3. **Compare** using [cross-critic](cross-critic.md), without selecting or rewriting candidates.
+   Reveal scout rejections only after the first comparison.
+4. **Consider synthesis** using [fusion-candidate](fusion-candidate.md) only for cleanly separable components identified by critique.
+   No fusion is normal; a synthesis is an ordinary candidate with provenance and risks.
+5. **Judge the fixed set** using [council-review](council-review.md).
+   Freeze candidates, hide provider identity where practical, and ignore ordering.
+   Accept selection, equivalence, or abstention with its missing evidence and cheapest useful inquiry.
 
-1. **Map missing options:** use [alternatives](alternatives.md) only when material choices remain uncovered.
-2. **Elaborate independently:** assign one [independent-plan](independent-plan.md) per viable brief, in parallel when practical.
-   Each receives only its own brief plus shared task, constraints, and evidence.
-   Give candidates stable opaque IDs outside the plans.
-   If fewer than two viable plans survive, stop and report why.
-3. **Critique:** use [cross-critic](cross-critic.md) to compare the fixed plans without selecting or rewriting them.
-   Supply rejected scout forks only after its initial comparison.
-4. **Consider fusion:** use [fusion-candidate](fusion-candidate.md) only if critique identifies components that may compose cleanly.
-   No fusion is a normal result; any synthesis remains an ordinary candidate with stated provenance and risks.
-5. **Review a fixed set:** use [council-review](council-review.md) on the candidates and critique.
-   Do not add or rewrite candidates once review starts; hide candidate provider/identity where practical and ignore ordering.
-   Accept selection, equivalence, or abstention; abstention identifies missing evidence and the cheapest useful inquiry.
+Use at most three initial plans and one fusion candidate.
+Stop after equivalence or abstention without adding revision rounds, recursive debate, or forced agreement.
+Obtain further evidence only when needed to resolve a remaining choice.
+A heavier step needs an observed failure it would prevent.
+Prefer tests, type checks, static analysis, benchmarks, and repository evidence to more model votes; selection is not verification.
 
-## Stop and hand off
+## Hand off
 
-Use at most three initial plans and at most one fusion candidate.
-Do not add revision rounds, recursive debate, or forced agreement after equivalence or abstention.
-Add a heavier step only after observing a concrete failure it would prevent, not for a speculative omission.
-Prefer tests, type checks, static analysis, benchmarks, and repository evidence to additional model votes.
-A selected design is a hypothesis, not verification.
-Carry its existing boundary contract forward; revise only unresolved or changed contracts, without a new declaration phase.
+Report the selected candidate, equivalent set, or abstention; decisive reasons; uncertainty; whether fusion was considered; and next action.
+Omit intermediate transcripts unless requested.
+Carry the existing boundary contract forward, revising only unresolved or changed guarantees.
 Use [implementation-plan](../../implementation-plan/SKILL.md) only when a plan is requested.
-
-Report the selected candidate, equivalent set, or abstention; decisive reasons; important uncertainty; whether fusion was considered; and the next useful action.
-Keep intermediate transcripts out unless requested.

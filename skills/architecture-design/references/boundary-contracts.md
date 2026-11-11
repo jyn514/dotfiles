@@ -1,61 +1,58 @@
 # Boundary contracts
 
-Consult the applicable questions only when ownership, effects, representation, or lifecycle contracts remain unclear or change.
-Maintain one evolving contract in existing code or the selected design; do not start a separate declaration phase or repeat settled analysis at handoff.
-During review, assess the stated contract without treating these questions as permission to redesign.
-
-For a staged new-tool workflow, update the implementation specification's boundary section using approved requirements and the design contribution.
-Do not add product scope or observable behavior.
-For coupled-worker assignments, use [delegation's shared-contract check](../../delegation/references/shared-contracts.md) without starting an architecture workflow.
+Settle changed or unclear guarantees in one evolving contract in existing code or the selected design.
+Use applicable questions below and carry settled answers forward.
+During review, assess rather than redesign the contract.
+For staged new-tool work, update the implementation specification's boundary section against approved requirements without adding scope or observable behavior.
+For coupled-worker assignments, use [delegation's shared-contract check](../../delegation/references/shared-contracts.md) without starting architecture work.
 
 ## Procedure
 
-1. **State ownership.** Identify the sole owner and permitted writers of each mutable state.
-   Where calls overlap or results arrive late, state the invariant and how conflicting or stale updates are ordered or rejected, including ownership transfer.
-2. **Effects and publication.** Identify where side effects are permitted and which effects form one publication.
-   State the commit or visibility point and what observers may see before and after it; name any partial visibility intentionally allowed.
-   Name what each success signal establishes by locating its producer relative to the required decision or effect.
-   For example, a public health check can succeed before caller admission; retrying it cannot establish that admission succeeded.
-   Use an observation of the required stage instead, unless the earlier stage is itself the promised outcome.
-   For interactive changes, compare workflow separately from authority.
-   State where interaction occurs, which application receives input, and any changes in focus or interruption behavior.
-   A narrower authority boundary does not make a different workflow equivalent; identify which interactions must remain unchanged.
-3. **Representations and projections.** Identify authoritative raw representations and every derived, normalized, serialized, or displayed projection.
-   Validate before a projection can discard distinctions needed by later checks.
-   When layered inputs define overrides, resolve effective values by their source identities first.
-   Then translate the winning values into consumer effects, even when that translation changes their shape or names.
-   Otherwise a losing definition can leave effects that the winning projection no longer replaces.
-4. **Identity and authority.** Identify object identity independently of names and ambient state: filesystem identity, selected revision, provider, platform, and configuration scope where applicable.
-   Trace which namespace each receiver uses to resolve a name, including URI authority, filesystem root, and revision.
-   Treat dropping or re-resolving those components as a behavior change, not string cleanup.
-   When multiple effects must describe one selection, pass its identity with its data instead of resolving a mutable selector again.
-   At trust crossings, state whose authority permits the effect and where it is enforced, including alternate entry points.
-5. **Lifecycle and cancellation.** Identify lifecycle states, invalid transitions, deadlines, and cancellation owners.
-   Distinguish a live owner from the currently selected request or scheduled action.
-   Where only current work may act, check that dispatched callbacks still own their effects; cancellation alone may not revoke them.
-   Distinguish pending intent from effects already delivered.
-   Undoing local state does not itself reverse an external effect: correcting text need not undo a keyboard shortcut already sent.
-   State whether cancellation or correction prevents pending delivery or only changes bookkeeping.
-   If it reverses or compensates for a delivered effect, identify the supported operation and its authority.
-   State who owns outstanding work and resource cleanup after cancellation or shutdown, and whether failure can leave an effect committed, failed, or outcome-unknown.
-6. **Recovery.** For destructive or multi-step work, identify recovery authority and the evidence available after interruption, including durable state when needed.
-   Ensure required recovery evidence remains available if primary paths move or disappear.
-   State which effects can safely retry, how repeated requests are recognized if necessary, and what must be reconciled before retrying an unknown outcome.
-   Do not require persistence, deduplication, or compensation without a supported recovery need.
-7. **Cross-boundary contracts.** Identify APIs across which ownership, identity, representation, or lifecycle assumptions must not leak.
-   Name independently deployed or persisted contracts and their required compatibility using
-   [Change with evidence](../../references/change-with-evidence.md#compatibility).
-8. **Keep only applicable answers.** Keep the declaration short enough to review before coding.
-   Include only applicable contracts; reuse settled ones rather than inventing new policies or implementation machinery.
+### Ownership and publication
 
-## Output
+Name each mutable state's sole owner, permitted writers, and ownership transfers.
+For overlapping calls or late results, state the invariant and how updates are ordered or rejected.
+Containment does not establish ownership.
 
-Summarize the applicable answers in the existing contract, with explicit non-goals.
-Omit unaffected categories; this is not a required inventory or a request for a separate document.
+Locate permitted effects and their publication point: what can observers see before and after it, including partial visibility?
+Locate each success signal relative to the promised decision or effect.
+A health check before caller admission cannot establish successful admission, however often retried.
+Observe the promised stage and distinguish successful mutation from presentation.
 
-## Constraints
+For interactive changes, identify where interaction occurs, which application receives input, and required focus or interruption behavior.
+Assess workflow equivalence separately from a narrower authority boundary.
 
-- This is not an implementation plan.
-- Prefer falsifiable statements such as “X is the sole writer of Y” over vague principles.
-- Distinguish containment from ownership, successful mutation from successful presentation, and failure from unknown outcome.
-- If a boundary cannot yet be stated clearly, stop and surface the ambiguity before implementation expands around it.
+### Representations, identity, and authority
+
+Identify authoritative raw data and its derived projections.
+Validate before projection discards distinctions later checks need.
+Resolve layered overrides by source identity before translating winners into effects, so losing definitions leave no effects behind.
+
+Identify objects independently of names and ambient state.
+Trace each receiver's namespace, including URI authority, filesystem root, and revision where applicable.
+Dropping or re-resolving these components changes behavior.
+Pass selection identity with its data when effects must describe one selection, rather than resolving a mutable selector again.
+At trust crossings, locate the authority permitting each effect and its enforcement, including alternate entry points.
+
+### Lifecycle, cancellation, and recovery
+
+State lifecycle states, invalid transitions, deadlines, and cancellation owners.
+A live owner is not necessarily the currently selected request: dispatched callbacks must still own their effects when only current work may act.
+Cancellation alone may not revoke them.
+
+Distinguish pending intent from delivered effects.
+Correcting text need not undo a sent keyboard shortcut; resetting bookkeeping does not reverse it.
+Specify whether cancellation or correction prevents delivery, changes bookkeeping, or compensates through an authorized supported operation.
+Name owners of outstanding work and cleanup after cancellation or shutdown.
+Distinguish committed effects, failure, and unknown outcomes.
+
+For destructive or multi-step work, establish recovery authority and interruption evidence, durable when needed and accessible if primary paths move or disappear.
+State safe retry conditions, request recognition where necessary, and reconciliation before retrying unknown outcomes.
+Choose persistence, deduplication, or compensation only for a supported recovery need.
+
+### Record the contract
+
+Name APIs across which ownership, identity, representation, or lifecycle assumptions must not leak.
+Apply [Compatibility](../../references/change-with-evidence.md#compatibility) to independently deployed or persisted contracts.
+Prefer falsifiable guarantees such as “X is the sole writer of Y,” with applicable non-goals.
+Surface ambiguity before implementation expands around it; record the contract, not a separate inventory or plan.

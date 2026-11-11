@@ -1,44 +1,15 @@
 # cross-critic
 
-## Purpose
+Compare fixed, independently generated plans against the original task, constraints, and repository evidence before choosing or combining them.
+Ignore ordering and verbosity.
 
-Compare a fixed set of independently generated plans without collapsing them into one design too early.
+First compare without scout rejections:
 
-## Inputs
+- Each candidate's unique strengths, unsupported assumptions, hidden costs, missing requirements, and likely failures.
+- Decisive architectural differences rather than cosmetic ones.
+- Missing design regions and components that could compose cleanly.
+- Missing evidence that could change the ranking.
 
-- original task and constraints
-- candidate plans A/B/C
-- optional repository evidence
-- scout rejected forks, shown only after the first independent comparison pass
-
-## Procedure
-
-First pass, without scout rejections:
-
-1. Identify each candidate's unique strengths.
-2. Identify unsupported assumptions, hidden costs, missing requirements, and likely failure modes.
-3. Distinguish real architectural differences from cosmetic ones.
-4. Identify any important design region apparently missing from all candidates.
-5. Identify components that seem cleanly separable and potentially composable, but do not synthesize yet.
-
-Second pass, after seeing scout rejections:
-
-6. Review rejected forks skeptically; do not assume the scout was correct.
-7. Call out any rejection that looks premature or any missing region that should be reconsidered.
-
-## Output
-
-- per-candidate strengths
-- per-candidate problems
-- decisive comparisons
-- missing design regions
-- potentially composable components
-- missing evidence that could change the ranking
-- scout rejections worth reopening
-
-## Constraints
-
-- Do not choose a winner.
-- Do not rewrite the candidates.
-- Do not create a fusion plan; leave that to `fusion-candidate`.
-- Treat candidate ordering and verbosity as irrelevant.
+Then read scout rejections skeptically and name premature rejections or regions worth reopening.
+Return those comparisons and per-candidate findings.
+Leave selection to `council-review` and synthesis to `fusion-candidate`; do not choose, rewrite, or combine candidates here.
