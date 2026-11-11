@@ -5,84 +5,79 @@ description: Compare what the current normative specification promises with impl
 
 # Audit specification against implementation
 
-Use [evidence standards](../references/review-evidence.md) to support findings and state what each check establishes.
+Find both unfulfilled promises and intentional behavior the specification no longer describes.
+The mismatch establishes drift; evidence of project intent determines which side needs to change.
+Use [evidence standards](../references/review-evidence.md) when supporting findings and stating what checks establish.
 
 ## Establish scope and authority
 
-Read repository instructions and contributor documentation for the specification entry point, issue tracker, ownership map, and validation rules.
+Read repository instructions and contributor documentation for specification, ownership, tracker, and validation rules.
+Use the documented specification; otherwise start in `doc/` and identify current normative documents rather than design snapshots.
+Report a missing or ambiguous contract instead of inventing requirements.
 
-### Select the specification
+Start with the scope named in the request.
+For a named revision, inspect its changes first; use a specification change as the requirement delta and audit the current tree against the resulting contract.
 
-Use the documented specification.
-If it is not documented, start in `doc/` and identify the current normative documents, not obsolete design snapshots.
-If the specification is missing or ambiguous, report the limitation rather than inventing requirements.
+Consult issue history when evidence, authorized reconciliation, or filing needs it.
+Whole-spec audits require issue-history coverage and deduplication even without filing authority.
+A bounded findings-only comparison with sufficient contract, implementation, and test evidence needs no tracker lookup.
+Use the documented tracker; otherwise use TicGit (`ti`) and read the `ticgit` skill for commands.
+This fallback is independent of the specification fallback.
+If the needed tracker is unavailable, report the affected limitation and continue independent checks rather than switching trackers.
 
-### Consult the tracker when needed
+A review request authorizes findings only.
+Reconcile specification text or file issues only when requested, within that scope.
+Do not implement fixes.
 
-Select the tracker when issue history is needed as evidence, for whole-spec deduplication, or when authorized reconciliation or filing needs tracker work.
-A bounded findings-only comparison supported by the supplied contract, implementation, and tests needs no tracker lookup.
-Use the documented issue tracker; if none is documented, use TicGit (`ti`) and consult the `ticgit` skill for its commands.
-Select tracker and specification independently: neither documented owner overrides the other fallback.
-If a needed tracker is unavailable, report the affected evidence or filing limitation rather than silently switching trackers.
-Continue checks that do not depend on it.
+With no narrower scope, read [Whole-spec audit](references/whole-spec-audit.md) and audit the full current specification.
 
-### Choose bounded or whole-spec scope
+## Trace the disagreement in both directions
 
-Start with files, sections, symbols, tests, commands, or revisions named by the request.
-For a named revision, inspect its changes first; treat a spec-changing revision as the requirement delta and audit the current tree against the resulting specification.
-Only when the request gives no narrower scope, audit the current specification using [Whole-spec audit](references/whole-spec-audit.md).
-Use the current specification as the contract and relevant issue history as the gap ledger when the audit needs it.
-Whole-spec audits retain issue-history coverage and deduplication even when filing is not authorized.
+Read the relevant specification, implementation owners, and owning tests end to end.
+Follow calls across libraries and output boundaries, including adapters that transform or mask a producer's behavior.
+From each requirement, trace the path that should satisfy it.
+From implemented public behavior, look back for its specification contract and evidence of intent.
+Verify whether declarations such as “design only” and “partially implemented” remain current.
 
-A review-only request authorizes findings, not specification edits or issue writes.
-When asked to reconcile the specification or file bugs, perform those actions within the requested scope.
-Do not implement fixes as part of this skill.
+Suppose the contract promises diagnostic severity: the producer attaches it, but an output adapter drops it.
+The consumer path reveals partial implementation despite a passing producer test.
+Conversely, an approved additional output mode missing from the prose calls for a specification update.
+Establish intent from project decisions or other authoritative evidence, not implementation alone.
 
-## Audit
+For each candidate, retain the normative statement or missing contract, producing boundary, downstream transformations, and tests of current or superseded behavior.
+Widen searches repository-wide when claiming absence.
+Field absence alone cannot prove an adapter forbids a value; inspect its calls and return shapes.
+Confirm divergences with an implementation or test oracle; defer suspicions that lack one.
 
-1. Read the relevant specification, implementation owners, and owning tests end to end.
-   Follow calls across libraries and output boundaries.
-   For the full specification, use the temporary coverage ledger in the whole-spec procedure; status-marker searches do not establish coverage.
-2. Find declarations such as “design only” and “partially implemented” and verify that each remains current.
-3. For every candidate, identify the normative statement, producing implementation boundary, later adapters that mask or transform behavior, and tests asserting current or superseded behavior.
-   Gather repository-wide absence evidence when the claim depends on absence.
-4. Classify only confirmed divergences.
-   Defer suspicions without an implementation or test oracle.
-   Establish intent from project decisions or other authoritative evidence; implementation alone does not prove the specification is wrong.
-5. Resolve authorized findings as described below; otherwise report proposed actions.
+## Choose the disposition
 
-Useful signals include normative “must”/“shall” language, enumerated options, diagnostic contracts, executable examples, TODO/FIXME markers, and tests pinning contradicted behavior.
+- **Missing feature:** no implementation path satisfies the requirement.
+- **Partial implementation:** only some required branches, contexts, or boundaries exist.
+- **Undocumented behavior:** intentional public behavior lacks a specification contract.
+- **Spec lag:** implementation intentionally advances beyond the prose.
+- **Obsolete spec:** authoritative text describes behavior that should no longer exist.
 
-## Classify findings
-
-- **missing feature** — no implementation path satisfies the requirement.
-- **partial implementation** — only some required branches, contexts, or boundaries exist.
-- **undocumented behavior** — intentional public behavior lacks a specification contract.
-- **spec lag** — implementation is intentionally ahead of the prose.
-- **obsolete spec** — authoritative text describes behavior that should no longer exist.
-
-Report each finding as:
+Report each finding:
 
 ```text
 [TYPE] Short description
-  Spec: <file>:<line or stable label> — requirement
+  Spec: <file>:<line or stable label> — requirement or missing contract
   Impl: <owner>:<line> — actual behavior
   Tests: <owner>:<line> — current contract, if any
-  Impact: correctness | compatibility | diagnostics | documentation | cleanup
+  Impact: <consequence>
   Action: fix implementation | update spec | open issue | already tracked (<ID>) | defer
 ```
 
-## Resolve divergences
+With specification-edit authority, reconcile confirmed spec lag, obsolete spec, and undocumented intentional behavior in the owning specification.
+Run its required validation; do not file an issue merely to track that edit.
 
-When edits are authorized, update confirmed spec lag, obsolete spec, and undocumented intentional behavior in the owning specification and run its required validation.
-Do not file an issue merely to track an authorized specification edit.
+With filing authority, file issues for missing or partial implementation in the selected tracker under repository issue policy.
+Search related open and recently closed issues first: a new specification can supersede a closed issue's contract without duplicating it.
+Group by independently implementable ownership boundary and acceptance test.
+Requirements needing the same runtime change belong together; representation, diagnostics, and policy can be separate when each can land and verify independently.
+Include requirement, observed behavior, evidence, impact, and acceptance condition.
+Read back filed issues to verify IDs, bodies, and required labels.
+Without the relevant authority, report proposed actions.
 
-When filing is authorized, file issues for missing or partial implementation using the selected tracker and repository issue policy.
-Search related open and recently closed issues first: a new specification may supersede a closed issue's contract without duplicating it.
-Group issues by independently implementable ownership boundary and acceptance test, not by the number of specification statements.
-Combine requirements needing the same runtime change; separate representation, diagnostics, and policy when each can land and verify independently.
-Include the normative requirement, observed behavior, evidence, impact, and acceptance condition in each issue.
-Read back filed issues to verify their IDs, bodies, and required labels.
-
-Report verified filed IDs, existing IDs, specification edits, deferred suspicions, and checked scope.
-Identify excluded, skipped, and unexamined areas and unavailable validation; a bounded audit does not establish whole-runtime conformance.
+Report verified filed and existing IDs, specification edits, deferred suspicions, and checked scope.
+Name excluded, skipped, and unexamined areas and unavailable validation; bounded evidence does not establish whole-runtime conformance.

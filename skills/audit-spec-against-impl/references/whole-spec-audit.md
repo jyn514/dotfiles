@@ -1,59 +1,42 @@
 # Whole-spec audit
 
-Use this procedure when the request covers the full current specification.
-Use the specification and tracker selected in [the audit entry point](../SKILL.md#establish-scope-and-authority).
+For a full-specification audit, use the specification and tracker selected in [Establish scope and authority](../SKILL.md#establish-scope-and-authority).
 
-## Coverage ledger
+## Account for the full scope
 
-Create a temporary ledger outside tracked files; do not commit it as a second specification or ownership database.
+Create a temporary ledger outside tracked files, with one row per specification file.
+Enumerate from the specification entry point, following normative includes and links.
+Without an entry point, enumerate normative documents in the selected directory and state exclusions.
 
-1. Enumerate the full specification from its entry point, following local includes or links that define its normative scope.
-   If no entry point exists, enumerate the normative documents in the selected specification directory and state exclusions.
-2. Record one row per specification file.
-3. For each row, inspect normative prose, implementation owners, owning tests, generated artifacts, and relevant open and recently closed issues.
-4. Mark a row complete only after confirming its requirements or recording each divergence, existing issue, or deliberate deferral.
-5. Compare the final ledger against the enumerated scope and require no missing, extra, or pending rows.
+For each row, inspect normative prose, implementation owners, owning tests, generated artifacts, and relevant open and recently closed issues.
+Retain the [finding evidence](../SKILL.md#trace-the-disagreement-in-both-directions), including negative and failure-path tests, and the duplicate search.
+Record confirmed requirements and each divergence's disposition: specification edit, existing or new issue, proposed action, or deliberate deferral.
+A status-marker search or passing focused test does not establish file coverage.
 
-For each candidate divergence, retain:
+Before closing the ledger, compare it with the enumeration: every file needs a completed disposition, with no missing, extra, or pending rows.
+Explicit deferrals account for unfinished work; they do not verify it.
 
-- stable specification label or exact normative statement;
-- producing implementation boundary and downstream adapters;
-- owner tests, including negative and failure-path evidence;
-- repository-wide absence evidence when absence matters;
-- duplicate search across open and recently closed issues;
-- resulting specification edit, existing issue, new issue, proposed action, or explicit deferral.
+## If delegating
 
-Narrow searches locate owners; widen before claiming absence.
-Inspect calls and return shapes across dataflow boundaries: repository-wide field absence cannot prove that an adapter forbids a value.
-
-## Delegated audits
-
-Give each worker an explicit file list and an exact temporary report path.
-Workers may write scratch evidence and reports, but must not edit tracked files or mutate the issue store.
+Give each worker an explicit file list and exact temporary report path.
+Workers may write scratch evidence and reports, not tracked files or the issue store.
 The parent owns authorized specification edits, issue writes, deduplication, and ledger reconciliation.
 
-Require each worker to name its report path and provide one disposition row per assigned file:
+Require workers to return their report path and one disposition row per assigned file:
 
 - verified boundaries with source, test, or reproduction evidence;
 - confirmed divergences and proposed dispositions;
-- deferred or unexamined requirements, owners, and failure paths, with the reason and remaining check.
+- deferred or unexamined requirements, owners, and failure paths, with reasons and remaining checks.
 
-A finding or passing focused test does not establish whole-file coverage.
-If a worker stops after a bounded investigation, explicitly defer the remaining scope rather than leaving a row pending or calling it verified.
+Reconcile reports against assignments and merge them into the ledger.
+Explicitly defer unfinished scope and carry deferrals forward until evidence resolves them.
+A complete ledger is not a whole-runtime conformance claim.
 
-Reconcile reports against assigned file lists and merge dispositions into the ledger.
-Carry deferrals forward unless further evidence resolves them; a complete disposition ledger is not a whole-runtime conformance claim.
-
-## Durable output and closeout
+## Close out
 
 Keep current contracts in the specification and implementation deficits in the selected tracker.
-Use the project's existing requirement labels and implementation/test references where available; do not introduce a new metadata system for the audit.
-Do not commit dated matrices, issue inventories, command transcripts, or completion checklists.
+Reuse existing requirement labels and implementation/test references rather than creating audit metadata.
+Do not commit the ledger, dated matrices, issue inventories, command transcripts, or completion checklists.
 
-Before completion:
-
-- verify every enumerated file has a completed disposition row;
-- run format-specific validation and focused owner tests for changed surfaces;
-- read back filed issues and verify required labels;
-- inspect the owned diff without disturbing unrelated work;
-- report deferred and unexamined scope, unavailable tools, and checks not run.
+For changed surfaces, run format-specific validation and focused owner tests, then inspect the owned diff without disturbing unrelated work.
+Follow the main skill's [disposition and reporting requirements](../SKILL.md#choose-the-disposition), including issue readback and deferred, unexamined, or unvalidated scope.
