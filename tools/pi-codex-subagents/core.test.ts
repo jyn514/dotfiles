@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 // Short owned paths also keep Unix socket names below the platform limit.
@@ -365,6 +366,44 @@ function spawnParams(parentSessionId: string, task_name: string, message: string
     inheritedModelId: "fake",
   };
 }
+
+test("inherits runtime preloads for re-exec but not an explicit Pi executable", async () => {
+  const root = fs.mkdtempSync(path.join(TEST_AGENT_DIR, "runtime-launch-"));
+  const preload = path.join(root, "runtime preload.mjs");
+  const marker = path.join(root, "preloaded");
+  fs.writeFileSync(preload, `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "loaded");`);
+  const previous = {
+    execPath: process.execPath,
+    execArgv: process.execArgv,
+    argv: process.argv,
+    override: process.env.PI_SUBAGENT_PI_BIN,
+  };
+  const manager = new AgentManager();
+  try {
+    const node = Bun.which("node");
+    expect(node).not.toBeNull();
+    process.execPath = node!;
+    process.execArgv = ["--import", pathToFileURL(preload).href];
+    process.argv = [node!, FAKE_RPC_CHILD];
+    for (const override of [true, false]) {
+      fs.rmSync(marker, { force: true });
+      if (override) process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+      else delete process.env.PI_SUBAGENT_PI_BIN;
+      const parentSessionId = `runtime-launch-${override}`;
+      await manager.spawnAgent(spawnParams(parentSessionId, "worker", "work"));
+      await waitUntil(() => manager.getAgentInfo("worker", parentSessionId)?.status === "completed");
+      expect(fs.existsSync(marker)).toBe(!override);
+    }
+  } finally {
+    await manager.shutdown();
+    process.execPath = previous.execPath;
+    process.execArgv = previous.execArgv;
+    process.argv = previous.argv;
+    if (previous.override === undefined) delete process.env.PI_SUBAGENT_PI_BIN;
+    else process.env.PI_SUBAGENT_PI_BIN = previous.override;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe("spawn model and thinking resolution", () => {
   test("caller wins, then the template, then the inherited value, then the default", async () => {

@@ -1120,7 +1120,7 @@ function previewText(text: string | undefined, maxLength = 180): string | null {
 function getPiCommand(): { command: string; prefixArgs: string[] } {
   if (process.env.PI_SUBAGENT_PI_BIN) return { command: process.env.PI_SUBAGENT_PI_BIN, prefixArgs: [] };
   const currentEntry = process.argv[1];
-  if (currentEntry && fs.existsSync(currentEntry)) return { command: process.execPath, prefixArgs: [currentEntry] };
+  if (currentEntry && fs.existsSync(currentEntry)) return { command: process.execPath, prefixArgs: [...process.execArgv, currentEntry] };
   return { command: process.execPath, prefixArgs: [] };
 }
 
