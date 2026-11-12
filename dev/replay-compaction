@@ -8,7 +8,6 @@ import {
   buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS, ModelRegistry,
   ModelRuntime, parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import codexSidecar from "../config/pi-agent/pi-extensions/codex-sidecar.ts";
 import { COMPACTION_MODEL } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
 import { checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/checkpoint-capture.ts";
 
@@ -47,10 +46,7 @@ export function listCuts(text) {
 
 async function createReplayRegistry() {
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
-  const registry = new ModelRegistry(runtime);
-  // Use Pi's broker registration rather than discover credentials separately.
-  codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
-  return registry;
+  return new ModelRegistry(runtime);
 }
 
 const sha256 = text => createHash("sha256").update(text).digest("hex");
