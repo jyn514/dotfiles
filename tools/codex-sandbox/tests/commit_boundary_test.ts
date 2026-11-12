@@ -207,6 +207,21 @@ test("guest: writes without response captures or commit-boundary warnings", asyn
   } finally { await f.close(); }
 }, 60000);
 
+test("guest: nondefault cwd writes without captures or commit-boundary warnings", async () => {
+  const f = await fixture("guest", false, true);
+  try {
+    expect((await f.reorganize()).isError).not.toBe(true);
+    await f.hook("agent_settled", { aborted: false });
+    expect(f.record()).toBeNull();
+    expect((await f.extract()).isError).not.toBe(true);
+    expect(f.read("note.txt")).toBe(extracted);
+    expect(f.requests().filter(request => request.tool === "commit_boundary_checkpoint")).toHaveLength(0);
+    expect(existsSync(join(f.launchRepo, "target/jj-split/commit-boundary.json"))).toBe(false);
+    expect(existsSync(join(f.launchRepo, "note.txt"))).toBe(false);
+    expect(f.read("unrelated.txt")).toBe("formatting  \n");
+  } finally { await f.close(); }
+}, 60000);
+
 test("guest: stale checkpoint cannot interrupt write or edit, including after reload", async () => {
   const f = await fixture("guest");
   try {
