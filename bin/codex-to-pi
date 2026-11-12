@@ -241,11 +241,12 @@ def main():
         safe_cwd = "--" + str(cwd).lstrip("/\\").replace("/", "-").replace("\\", "-").replace(":", "-") + "--"
         agent_dir = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent"))
         stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        filename = f"{stamp.replace(':', '-')}_{payload.get('session_id', uuid.uuid4())}.jsonl"
+        session_id = payload.get('session_id', uuid.uuid4())
+        filename = f"{stamp.replace(':', '-')}_{session_id}.jsonl"
         destination = agent_dir / "sessions" / safe_cwd / filename
     count = convert(segments, destination, args.normalize, history.get("branches"))
     print(f"wrote {count} messages to {destination}")
-    print(f"pi --session {shlex.quote(str(destination.resolve()))}")
+    print(f"pi --session {session_id}")
 
 
 if __name__ == "__main__":
