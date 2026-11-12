@@ -25,7 +25,7 @@ When validation strategy is unclear, read [Testing with evidence](testing.md).
 
 Avoid shell scripts unless the code is trivial process spawning.
 Use Clojure, Rust, or TypeScript according to the domain.
-Use another language for a one-off script, or when the project needs a library or tool specific to that language ecosystem.
+Use another language when the project needs a library or tool specific to that language ecosystem.
 Use `uv`, not `venv` or direct `pip`, for Python projects.
 
 ## Configuration and daemons
