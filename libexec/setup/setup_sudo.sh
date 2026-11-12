@@ -150,7 +150,7 @@ install_device () {
 }
 
 install_security () {
-	if ! [ -n "$IS_DEB" ]; then
+	if [ -z "$IS_DEB" ]; then
 		return
 	fi
 
@@ -170,6 +170,65 @@ setup_pcscd() {
 		systemctl enable --now pcscd.socket || return
 	else
 		systemctl enable --now pcscd.service || return
+	fi
+}
+
+setup_browser_account() {
+	if [ "$(uname -s)" != Linux ]; then
+		return
+	fi
+
+	browser_login_shell=$(command -v nologin) || return
+	browser_owner_group=
+	browser_created=0
+	if [ -n "${SUDO_USER:-}" ]; then
+		browser_owner_group=$(id -gn "$SUDO_USER") || return
+	fi
+
+	if browser_entry=$(getent passwd browser); then
+		IFS=: read -r _browser_name _browser_password browser_uid _browser_gid _browser_gecos browser_home browser_shell <<EOF
+$browser_entry
+EOF
+		# Do not repurpose an unrelated account or change its existing files.
+		if [ "$browser_uid" = 0 ] \
+			|| [ "$(id -gn browser)" != browser ] \
+			|| [ "$browser_home" != /var/lib/browser ] \
+			|| [ "$browser_shell" != "$browser_login_shell" ]; then
+			fail "browser account already exists with incompatible settings; leaving it unchanged"
+		fi
+	else
+		browser_lookup_status=$?
+		if [ "$browser_lookup_status" != 2 ]; then
+			return "$browser_lookup_status"
+		fi
+		set --
+		if [ -n "$browser_owner_group" ]; then
+			set -- --groups "$browser_owner_group"
+		fi
+		useradd --system --user-group --create-home \
+			--home-dir /var/lib/browser --key HOME_MODE=0700 \
+			--shell "$browser_login_shell" "$@" browser || return
+		browser_uid=$(id -u browser) || return
+		browser_home=/var/lib/browser
+		browser_created=1
+	fi
+
+	# useradd can succeed without creating the home if that path already exists.
+	if [ "$(stat -c '%u:%a' "$browser_home")" != "$browser_uid:700" ]; then
+		fail "browser home must be owned by browser with mode 0700; leaving it unchanged"
+	fi
+	if [ "$browser_created" = 1 ]; then
+		printf 'Created browser account with private home /var/lib/browser\n'
+	fi
+
+	if [ -n "$browser_owner_group" ]; then
+		browser_groups=$(id -Gn browser) || return
+		case " $browser_groups " in
+			*" $browser_owner_group "*) ;;
+			*) usermod --append --groups "$browser_owner_group" browser || return;;
+		esac
+	else
+		printf 'No invoking user; browser account has no additional desktop group configured\n'
 	fi
 }
 
@@ -282,6 +341,7 @@ main() {
 		systemctl daemon-reload
 		systemctl enable linux-modules-cleanup.service
 	fi
+	setup_browser_account
 	install_security
 	install_device
 	set +x

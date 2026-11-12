@@ -32,6 +32,15 @@ It stops on missing or ambiguous controls and preserves existing draft text; use
 This depends on Google Voice's English UI and current form structure, rather than a supported SMS compose API.
 Reload Glide's configuration after installing the script.
 
+## Glide and 1Password on Linux
+
+`./setup dotfiles` links 1Password's existing Firefox native-messaging manifest into Glide's separate `~/.glide-browser/native-messaging-hosts/` directory.
+It leaves systems without that manifest alone and refuses to replace another local configuration.
+The link follows manifest updates made by 1Password; it does not copy credentials or browser profile data.
+Restart Glide after installing the link.
+This fixes connector discovery, not 1Password's browser authorization or communication across Unix accounts.
+For an unsupported-browser error, follow [1Password's additional-browser instructions](https://support.1password.com/additional-browsers/).
+
 ## Mise
 
 `mise.toml` sets `all_compile = false` on every platform so Alpine and NixOS do not implicitly force source builds.

@@ -7,8 +7,12 @@
 #define EPERM 1
 #define PTRACE_MODE_READ 0x01
 #define MAX_PARENT_HOPS 16
+#define MAX_SUPPLEMENTARY_GROUPS 65536
+#define GROUP_SEARCH_STEPS 17
 
 const volatile __u32 protected_uid = 0;
+/* An invalid kernel gid disables the optional trusted-reader exemption. */
+const volatile __u32 trusted_reader_gid = (__u32)-1;
 
 static __always_inline bool task_has_protected_uid(struct task_struct *task)
 {
@@ -53,6 +57,52 @@ static __always_inline bool current_is_ancestor_of(struct task_struct *task)
 	return false;
 }
 
+static __always_inline bool current_has_trusted_reader_group(struct task_struct *current)
+{
+	const struct cred *cred;
+	struct group_info *groups;
+	int left = 0;
+	int right;
+
+	if (trusted_reader_gid == (__u32)-1)
+		return false;
+	cred = BPF_CORE_READ(current, cred);
+	if (!cred)
+		return false;
+	/* Include saved credentials when a helper temporarily drops its group. */
+	if (BPF_CORE_READ(cred, gid.val) == trusted_reader_gid ||
+	    BPF_CORE_READ(cred, egid.val) == trusted_reader_gid ||
+	    BPF_CORE_READ(cred, sgid.val) == trusted_reader_gid ||
+	    BPF_CORE_READ(cred, fsgid.val) == trusted_reader_gid)
+		return true;
+
+	groups = BPF_CORE_READ(cred, group_info);
+	if (!groups)
+		return false;
+	right = BPF_CORE_READ(groups, ngroups);
+	if (right < 0 || right > MAX_SUPPLEMENTARY_GROUPS)
+		return false;
+	/* Kernel supplementary groups are sorted; 17 steps cover NGROUPS_MAX. */
+#pragma unroll
+	for (int step = 0; step < GROUP_SEARCH_STEPS; step++) {
+		kgid_t group;
+		int middle;
+
+		if (left >= right)
+			return false;
+		middle = left + (right - left) / 2;
+		if (bpf_core_read(&group, sizeof(group), &groups->gid[middle]) != 0)
+			return false;
+		if (group.val == trusted_reader_gid)
+			return true;
+		if (group.val < trusted_reader_gid)
+			left = middle + 1;
+		else
+			right = middle;
+	}
+	return false;
+}
+
 SEC("lsm/ptrace_access_check")
 int BPF_PROG(proc_read_guard, struct task_struct *child, unsigned int mode, int ret)
 {
@@ -67,6 +117,8 @@ int BPF_PROG(proc_read_guard, struct task_struct *child, unsigned int mode, int 
 	if (same_thread_group(current, child))
 		return 0;
 	if (current_is_ancestor_of(child))
+		return 0;
+	if (current_has_trusted_reader_group(current))
 		return 0;
 	return -EPERM;
 }

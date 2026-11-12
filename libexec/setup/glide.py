@@ -1,7 +1,8 @@
-"""Keep the native Glide package out of mise's active tool set."""
+"""Configure native Glide selection and Linux native messaging discovery."""
 
 import os
 from pathlib import Path
+import sys
 
 
 GLIDE_TOOL = "github:glide-browser/glide"
@@ -26,5 +27,32 @@ def configure_mise() -> str:
     return ""
 
 
+def configure_native_messaging() -> None:
+    """Expose 1Password's maintained Firefox manifest in Glide's search path.
+
+    The provider keeps ownership of the manifest contents. Leave an absent
+    installation alone and refuse to replace a different local configuration.
+    This does not authorize a browser in 1Password or bridge different uids.
+    """
+    if sys.platform != "linux":
+        return
+    home = Path.home()
+    source = home / ".mozilla/native-messaging-hosts/com.1password.1password.json"
+    destination = home / ".glide-browser/native-messaging-hosts" / source.name
+    if not source.is_file():
+        return
+    if destination.is_symlink() and destination.resolve() == source.resolve():
+        return
+    if destination.exists() or destination.is_symlink():
+        raise RuntimeError(f"refusing to overwrite native messaging configuration: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(source)
+
+
 if __name__ == "__main__":
-    print(configure_mise())
+    if sys.argv[1:] == ["native-messaging"]:
+        configure_native_messaging()
+    elif not sys.argv[1:]:
+        print(configure_mise())
+    else:
+        raise SystemExit("usage: glide.py [native-messaging]")

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -93,6 +94,127 @@ class SetupSudoTests(unittest.TestCase):
             self.command(mode), cwd=ROOT, env=self.environment,
             text=True, capture_output=True, timeout=10,
         )
+
+    def run_browser(self, *, mode="browser", **environment):
+        return subprocess.run(
+            self.command(mode), cwd=ROOT, env=self.environment | environment,
+            text=True, capture_output=True, timeout=10,
+        )
+
+    def browser_mutations(self):
+        if not self.log.exists():
+            return []
+        return [command for command in self.commands() if command[0] != "owner-group"]
+
+    def test_browser_account_creation_uses_private_home_and_invoking_users_group(self):
+        result = self.run_browser(FIXTURE_BROWSER_OWNER_GROUP="workstation-users")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(["owner-group", self.user], self.commands())
+        self.assertEqual([[
+            "useradd", "--system", "--user-group", "--create-home",
+            "--home-dir", "/var/lib/browser", "--key", "HOME_MODE=0700",
+            "--shell", shutil.which("nologin"),
+            "--groups", "workstation-users", "browser",
+        ]], self.browser_mutations())
+
+    def test_browser_account_creation_is_registered_in_global_setup(self):
+        result = self.run_browser(mode="browser-main")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["useradd"], [command[0] for command in self.browser_mutations()])
+
+    def test_browser_account_setup_can_run_twice_without_recreating_or_modifying_it(self):
+        result = self.run_browser(FIXTURE_BROWSER_REPEAT="1")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["useradd"], [command[0] for command in self.browser_mutations()])
+
+    def test_existing_browser_account_keeps_all_groups_and_adds_only_missing_owner_group(self):
+        result = self.run_browser(
+            FIXTURE_BROWSER_PRESENT="1", FIXTURE_BROWSER_REPEAT="1",
+            FIXTURE_BROWSER_GROUPS="browser existing-group",
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([
+            ["usermod", "--append", "--groups", "desktop-group", "browser"],
+        ], self.browser_mutations())
+
+    def test_existing_browser_account_with_owner_group_is_unchanged(self):
+        result = self.run_browser(
+            FIXTURE_BROWSER_PRESENT="1",
+            FIXTURE_BROWSER_GROUPS="browser desktop-group existing-group",
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([], self.browser_mutations())
+
+    def test_browser_account_creation_without_invoking_user_does_not_join_root_group(self):
+        result = self.run_browser(FIXTURE_BROWSER_INVOKER="")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        command, = self.browser_mutations()
+        self.assertEqual("useradd", command[0])
+        self.assertNotIn("--groups", command)
+        self.assertIn("No invoking user", result.stdout)
+
+    def test_browser_account_setup_leaves_macos_unchanged(self):
+        result = self.run_browser(FIXTURE_BROWSER_OS="Darwin")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_browser_account_collisions_are_refused_without_changing_existing_state(self):
+        cases = [
+            {"FIXTURE_BROWSER_UID": "0"},
+            {"FIXTURE_BROWSER_HOME": "/home/someone-else"},
+            {"FIXTURE_BROWSER_PRIMARY_GROUP": "shared"},
+            {"FIXTURE_BROWSER_SHELL": "/bin/sh"},
+            {"FIXTURE_BROWSER_HOME_STATE": "4321:755"},
+            {"FIXTURE_BROWSER_HOME_STATE": "1234:700"},
+        ]
+        for case in cases:
+            with self.subTest(case=case):
+                result = self.run_browser(FIXTURE_BROWSER_PRESENT="1", **case)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("leaving it unchanged", result.stderr)
+                self.assertEqual([], self.browser_mutations())
+
+    def test_successful_useradd_does_not_hide_an_unusable_preexisting_home(self):
+        result = self.run_browser(FIXTURE_BROWSER_HOME_STATE="0:755")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("leaving it unchanged", result.stderr)
+        self.assertNotIn("Created browser account with private home", result.stdout)
+        self.assertEqual(["useradd"], [command[0] for command in self.browser_mutations()])
+
+    def test_browser_account_lookup_errors_do_not_attempt_creation(self):
+        result = self.run_browser(FIXTURE_BROWSER_LOOKUP_FAILURE="7")
+
+        self.assertEqual(7, result.returncode, result.stderr)
+        self.assertEqual([], self.browser_mutations())
+
+    def test_invoking_user_group_lookup_failure_does_not_create_account(self):
+        result = self.run_browser(FIXTURE_BROWSER_GROUP_FAILURE="1")
+
+        self.assertEqual(17, result.returncode, result.stderr)
+        self.assertEqual([], self.browser_mutations())
+
+    def test_browser_creation_failure_stops_setup_without_group_changes(self):
+        result = self.run_browser(FIXTURE_BROWSER_USERADD_FAILURE="1")
+
+        self.assertEqual(19, result.returncode, result.stderr)
+        self.assertEqual(["useradd"], [command[0] for command in self.browser_mutations()])
+
+    def test_browser_group_update_failure_is_reported(self):
+        result = self.run_browser(
+            FIXTURE_BROWSER_PRESENT="1", FIXTURE_BROWSER_USERMOD_FAILURE="1",
+        )
+
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertEqual(["usermod"], [command[0] for command in self.browser_mutations()])
 
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]

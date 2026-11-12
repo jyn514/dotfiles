@@ -18,6 +18,10 @@ It retains the unencrypted backup unless the final confirmation reads `y` succes
 On Arch, global package setup installs `kernel-modules-hook` to preserve the running kernel's modules across upgrades.
 `./setup sudo` (also included in `./setup all`) enables cleanup of old modules on future boots.
 On Arch, it also installs age YubiKey tooling and enables `pcscd.socket` for on-demand smart-card access.
+On Linux, `./setup sudo` also provisions a `browser` system account with its own primary group, a private `0700` home at `/var/lib/browser`, and a `nologin` shell.
+When run through sudo or doas, it adds the invoking user's primary group without removing existing supplementary groups; direct root setup adds no desktop group.
+Rerunning setup reuses a matching account and refuses to alter an incompatible existing account or non-private home.
+This only provisions the account: it does not grant passwordless launch or desktop access, migrate browser profiles, or change macOS accounts.
 
 ### User services
 

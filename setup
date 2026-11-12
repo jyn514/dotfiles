@@ -207,6 +207,11 @@ setup_dotfiles () {
 		unset JJ_CONFIG_PATH
 		return "$result"
 	}
+	python3 libexec/setup/glide.py native-messaging || {
+		result=$?
+		unset JJ_CONFIG_PATH
+		return "$result"
+	}
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials || {

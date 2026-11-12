@@ -20,12 +20,14 @@ The attacker is arbitrary code already running under the same unprivileged uid a
 The live-state property is:
 
 ```text
-unrelated same-uid code must not be able to read sensitive live process state from another process
+unrelated same-uid code without the trusted-reader group must not be able to read sensitive live process state from another process
 ```
 
 That includes environment, memory-facing procfs files, and ptrace-class reads.
 The preferred scope is user-wide sibling isolation with the same parent-to-child exception that Yama already uses for ordinary attach-class access.
 Protecting only one named launcher tree is a fallback if the user-wide rule proves too disruptive.
+On 2026-11-12, jyn approved a `onepassword`-group exemption for trusted readers.
+This is a group-based exemption, not an executable allowlist or a parent-only exception.
 
 The investigation found a second exposure:
 
@@ -150,6 +152,13 @@ On this host, `strace systemctl --user status` showed reads of `/proc/1/root` an
 That proves ordinary inspection tools use procfs heavily.
 The rollout matrix below distinguishes expected breakage from regressions.
 
+On 2026-11-12, 1Password browser integration failed with `BrowserVerificationFailed` and `BrowserSignatureInvalid` while the guard was active.
+The installed connector was root-owned and setgid to `onepassword`, but ran under jyn's uid.
+A same-uid read of Glide's `/proc/$pid/exe` failed with permission denied.
+Stopping the guard restored browser integration, confirming a compatibility conflict.
+The approved group exemption addresses this without removing protection for ordinary same-uid readers.
+The new exemption has passed native policy tests and compiled against the host BTF; live kernel verification and a fresh 1Password connection still need validation.
+
 == Selected BPF design
 
 The production rule adds Yama's default parent-ancestry rule to the missing read-class operations.
@@ -165,10 +174,15 @@ if caller and target are in the same thread group:
     allow
 if caller's process leader appears in the target process leader's `real_parent` chain within 16 hops:
     allow
+if caller holds the configured onepassword group:
+    allow
 deny with EPERM
 ```
 
-This blocks sibling `/proc/$pid/environ`, `/proc/$pid/maps`, and other read-class procfs inspection.
+This blocks sibling `/proc/$pid/environ`, `/proc/$pid/maps`, and other read-class procfs inspection for readers without the trusted group.
+The exemption checks real, effective, saved, filesystem, and supplementary group credentials.
+It includes inherited group credentials and imposes no executable or target-ancestry requirement on trusted readers.
+Earlier security denials remain effective, and attach-class access stays with Yama.
 It keeps parent-to-child reads and post-hoc debugging for the normal shallow process trees on this host.
 The ancestry walk normalizes both sides to thread-group leaders before comparing, matching Yama's process-level semantics for multithreaded parents.
 The host probe observed a maximum same-uid ancestry depth of 7, so a 16-hop bound leaves headroom without an open-ended walk.
@@ -186,12 +200,16 @@ The setup path builds as the invoking user, snapshots the loader and unit bytes,
 That removes post-elevation checkout races, but it does not make an already-compromised uid a trusted build source before those bytes are snapshotted.
 A root-owned `proc-read-guard@UID.service` oneshot loads one program instance for one uid, pins the attached link at `/sys/fs/bpf/proc-read-guard/UID/link`, and exits.
 The loader resolves `%i` as the numeric uid and writes it into BPF `.rodata` before load.
+It also resolves the `onepassword` group and stores its numeric gid in `.rodata`.
+If that group is absent or lookup fails, the group exemption is disabled; lookup errors produce a warning while the ordinary guard remains available.
+The invalid kernel gid value disables the exemption, so gid zero remains distinguishable from a disabled configuration.
+Changing the group requires a reload to update an already-loaded rule.
 The loader refuses to attach unless `/proc/sys/kernel/yama/ptrace_scope` is `1`.
 Changing that sysctl after load is unsupported because it weakens attach-class protection that this program intentionally leaves to Yama.
 `ExecStop` reopens and unpins that link, which detaches the program when the last reference disappears.
 When `load` sees an existing pin, it reopens that link, verifies the stable program identity and protected uid, loads the replacement program, and swaps the link with `BPF_LINK_UPDATE`.
 That keeps the old rule attached unless the new program is ready.
-`status` verifies the current program name, program type, program tag, exact rodata map shape, and protected uid.
+`status` verifies the current program name, program type, program tag, exact rodata map shape, protected uid, and trusted-reader gid.
 `unload` verifies the stable program identity, a compatible rodata prefix, and protected uid, but does not require the current build to load successfully first.
 The stable recovery contract is one `.rodata` array map whose first field remains `protected_uid`; later fields and unrelated maps may be added without making old pins impossible to remove.
 Multiple protected users use multiple service instances.
@@ -205,7 +223,10 @@ The service status and the negative sibling-read probe are the health check.
 
 The first rollout is complete only when the real host shows all of these:
 
-+ an unrelated same-uid sibling cannot read `/proc/$pid/environ` or `/proc/$pid/maps`;
++ an unrelated same-uid sibling without the trusted group cannot read `/proc/$pid/environ` or `/proc/$pid/maps`;
++ a fresh 1Password native connection verifies the browser and follows desktop lock/unlock while the guard stays active;
++ real, effective, saved, filesystem, and supplementary `onepassword` group credentials receive the approved read exemption, including unrelated targets;
++ renaming an ordinary process does not grant the exemption, and an earlier security denial remains denied even for trusted readers;
 + sibling `/proc/$pid/mem`, `process_vm_readv`, `gdb -p`, and `strace -p` remain denied under Yama;
 + a parent can still read its child's `environ` and `maps` and can still attach with `gdb -p`;
 + `gdb ./prog` and `strace ./prog` still work;

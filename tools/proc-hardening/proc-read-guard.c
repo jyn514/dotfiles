@@ -1,6 +1,8 @@
 #include <errno.h>
+#include <grp.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +18,10 @@
 #define BPF_PIN_ROOT "/sys/fs/bpf/proc-read-guard"
 #define PROGRAM_NAME "proc_read_guard"
 #define YAMA_PTRACE_SCOPE "/proc/sys/kernel/yama/ptrace_scope"
+#define TRUSTED_READER_GROUP "onepassword"
+
+_Static_assert(offsetof(struct proc_read_guard_bpf__rodata, protected_uid) == 0,
+	       "protected_uid must remain the compatible recovery prefix");
 
 static void usage(FILE *stream)
 {
@@ -122,7 +128,31 @@ static void release_link_reference(struct bpf_link *link)
 			strerror(-error));
 }
 
-static int read_expected_prog_tag(__u32 uid, __u8 tag[BPF_TAG_SIZE])
+static __u32 read_trusted_reader_gid(void)
+{
+	struct group *group;
+
+	errno = 0;
+	group = getgrnam(TRUSTED_READER_GROUP);
+	if (!group) {
+		if (errno != 0 && errno != ENOENT && errno != ESRCH)
+			fprintf(stderr, "proc-read-guard: cannot resolve %s: %s; "
+				"group exemption disabled\n", TRUSTED_READER_GROUP,
+				strerror(errno));
+		return UINT32_MAX;
+	}
+	return (__u32)group->gr_gid;
+}
+
+static void configure_rodata(struct proc_read_guard_bpf *skel, __u32 uid,
+			     __u32 trusted_gid)
+{
+	skel->rodata->protected_uid = uid;
+	skel->rodata->trusted_reader_gid = trusted_gid;
+}
+
+static int read_expected_prog_tag(__u32 uid, __u32 trusted_gid,
+				  __u8 tag[BPF_TAG_SIZE])
 {
 	struct proc_read_guard_bpf *skel = NULL;
 	struct bpf_prog_info prog_info = {};
@@ -133,7 +163,7 @@ static int read_expected_prog_tag(__u32 uid, __u8 tag[BPF_TAG_SIZE])
 	skel = proc_read_guard_bpf__open();
 	if (!skel)
 		return report_errno("open expected BPF skeleton", errno ? errno : ENOMEM);
-	skel->rodata->protected_uid = uid;
+	configure_rodata(skel, uid, trusted_gid);
 	error = proc_read_guard_bpf__load(skel);
 	if (error != 0) {
 		proc_read_guard_bpf__destroy(skel);
@@ -171,7 +201,7 @@ static bool map_name_has_rodata(const char name[BPF_OBJ_NAME_LEN])
 }
 
 static int open_expected_link(const char *link_path, __u32 uid,
-			      enum link_validation_mode mode,
+			      enum link_validation_mode mode, __u32 trusted_gid,
 			      struct bpf_link **link_out, int *prog_fd_out)
 {
 	struct proc_read_guard_bpf__rodata rodata = {};
@@ -323,7 +353,12 @@ static int open_expected_link(const char *link_path, __u32 uid,
 		goto out;
 	}
 	if (mode == LINK_VALIDATE_CURRENT) {
-		if (read_expected_prog_tag(uid, expected_tag) != 0)
+		if (rodata.trusted_reader_gid != trusted_gid) {
+			error = report_unexpected_link(link_path, uid,
+						       "trusted-reader group changed; reload required");
+			goto out;
+		}
+		if (read_expected_prog_tag(uid, trusted_gid, expected_tag) != 0)
 			goto out;
 		if (memcmp(pinned_tag, expected_tag, sizeof(pinned_tag)) != 0) {
 			error = report_unexpected_link(link_path, uid,
@@ -406,6 +441,7 @@ static int load_guard(__u32 uid)
 	};
 	char uid_dir[PATH_MAX];
 	char link_path[PATH_MAX];
+	__u32 trusted_gid;
 	int old_prog_fd = -1;
 	int new_prog_fd;
 	int link_fd;
@@ -413,13 +449,14 @@ static int load_guard(__u32 uid)
 
 	if (require_yama_scope_one() != 0)
 		return 1;
+	trusted_gid = read_trusted_reader_gid();
 	if (!format_paths(uid, uid_dir, sizeof(uid_dir), link_path, sizeof(link_path))) {
 		fprintf(stderr, "proc-read-guard: pin path is too long\n");
 		return 1;
 	}
 	if (path_exists(link_path)) {
 		if (open_expected_link(link_path, uid, LINK_VALIDATE_COMPATIBLE,
-				       &link, &old_prog_fd) != 0)
+				       trusted_gid, &link, &old_prog_fd) != 0)
 			return 1;
 		skel = proc_read_guard_bpf__open();
 		if (!skel) {
@@ -427,7 +464,7 @@ static int load_guard(__u32 uid)
 			release_link_reference(link);
 			return report_errno("open BPF skeleton", errno ? errno : ENOMEM);
 		}
-		skel->rodata->protected_uid = uid;
+		configure_rodata(skel, uid, trusted_gid);
 		error = proc_read_guard_bpf__load(skel);
 		if (error != 0) {
 			proc_read_guard_bpf__destroy(skel);
@@ -467,7 +504,7 @@ static int load_guard(__u32 uid)
 	skel = proc_read_guard_bpf__open();
 	if (!skel)
 		return report_errno("open BPF skeleton", errno ? errno : ENOMEM);
-	skel->rodata->protected_uid = uid;
+	configure_rodata(skel, uid, trusted_gid);
 	error = proc_read_guard_bpf__load(skel);
 	if (error != 0) {
 		proc_read_guard_bpf__destroy(skel);
@@ -513,7 +550,7 @@ static int unload_guard(__u32 uid)
 		return 0;
 	}
 	if (open_expected_link(link_path, uid, LINK_VALIDATE_COMPATIBLE,
-			       &link, NULL) != 0)
+			       UINT32_MAX, &link, NULL) != 0)
 		return 1;
 	error = bpf_link__unpin(link);
 	if (error != 0) {
@@ -535,6 +572,7 @@ static int status_guard(__u32 uid)
 	char uid_dir[PATH_MAX];
 	char link_path[PATH_MAX];
 	unsigned int scope;
+	__u32 trusted_gid;
 	bool loaded;
 
 	if (!format_paths(uid, uid_dir, sizeof(uid_dir), link_path, sizeof(link_path))) {
@@ -543,15 +581,21 @@ static int status_guard(__u32 uid)
 	}
 	if (read_yama_scope(&scope) != 0)
 		return 1;
+	trusted_gid = read_trusted_reader_gid();
 	loaded = path_exists(link_path);
 	if (loaded) {
 		if (open_expected_link(link_path, uid, LINK_VALIDATE_CURRENT,
-				       &link, NULL) != 0)
+				       trusted_gid, &link, NULL) != 0)
 			return 1;
 		release_link_reference(link);
 	}
-	printf("proc-read-guard: uid=%u loaded=%s yama_ptrace_scope=%u pin=%s\n",
-	       uid, loaded ? "yes" : "no", scope, link_path);
+	printf("proc-read-guard: uid=%u loaded=%s yama_ptrace_scope=%u pin=%s "
+	       "trusted_reader_group=%s trusted_reader_gid=",
+	       uid, loaded ? "yes" : "no", scope, link_path, TRUSTED_READER_GROUP);
+	if (trusted_gid == UINT32_MAX)
+		puts("disabled");
+	else
+		printf("%u\n", trusted_gid);
 	return loaded && scope == 1 ? 0 : 1;
 }
 
