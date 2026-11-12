@@ -29,7 +29,7 @@ merge-tool-edits-conflict-markers = true
 private-commits = "private()"
 
 [revsets]
-bookmark-advance-to = "@- ~ private()::"
+bookmark-advance-to = "heads(::@- ~ private()::)"
 # i use a bunch of emails; easier to just track author name
 log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
 
