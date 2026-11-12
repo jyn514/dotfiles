@@ -10,9 +10,21 @@ This skill owns human-facing framing; leave investigation and design selection w
 It grants no implementation or approval authority.
 Ask simple preferences, routine confirmations, and missing-fact questions directly.
 
+## Privileged commands must be understandable at the prompt
+
 Do not ever ask me to run unknown or unreviewed scripts with escalated privileges.
 Your review doesn't count.
 Find another approach, or simplify the script enough that I can easily understand it just by looking at it.
+
+Make the target account and privileged operation visible in the command jyn directly invokes.
+The shell must invoke `sudo -u ACCOUNT -- COMMAND` directly, not pass it as arguments to a script that decides what to execute.
+A script that calls sudo internally still requires trusting the script to know which account the password prompt authorizes.
+Naming the account in prose, printing the intended command, or adding an account argument does not fix that.
+Running as a non-root account does not make an unknown script acceptable.
+
+Prefer direct, familiar commands whose effects jyn can understand from the command line.
+For example, `tar -cf - SOURCE | sudo -u browser -- tar -C DESTINATION -xf -` visibly reads as the current user and extracts as browser.
+`python migrate.py -- sudo -u browser` does not: the script still controls the privilege change and operation.
 
 ## Find the judgment that remains
 
