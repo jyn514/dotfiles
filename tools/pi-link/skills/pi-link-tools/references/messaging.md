@@ -33,7 +33,6 @@ Roots broadcast general clarifications to the current group:
   ```
 
 The hub selects connected roots once, excluding your root context, and preserves one UUID plus a broadcast marker.
-An ungrouped broadcast can interrupt unrelated sessions; agree on a named group first.
 Late joiners receive no replay.
 
 **Worker delivery requires the supported manager/child bridge:** it selects active own workers; without it, worker inclusion reports unsupported.

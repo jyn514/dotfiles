@@ -53,8 +53,8 @@ Hold only the conflicting operation, release it with the resulting revision IDs,
 
 ## Before assigning a worker
 
-If you are a root agent, use your `pi-link-tools` to ensure you have a semantic `link-name` set *before* you spawn your first subagent.
-Once you have set a name, do not change it again.
+If you are a root agent, use your `pi-link-tools` to ensure you have a semantic `link-name` and link group set *before* you spawn your first subagent.
+Once you have set a name and group, do not change them again.
 
 Add a worker only for concrete expected value: a useful independent output, required independent evidence, or useful parallelism after handoff costs.
 Neither multiple steps nor multiple files justify staffing a team; preserve independence jyn requests and responsibilities already assigned.
