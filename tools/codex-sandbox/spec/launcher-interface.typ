@@ -57,13 +57,20 @@ Installation alone does not authorize a host handler. Host code and executable
 configuration must remain inaccessible to guest writes through every mount alias.
 
 An execution attachment binds one interactive host Pi and its ordinary children
-to a guest worker and directory. Human-created `/split` panes have separate
+to a guest worker and launch-selected resource mappings. Human-created `/split` panes have separate
 attachments to that worker, not separate containers. Pi conversation files remain
 on the host.
 At startup, derive the connector operation from the admitted runtime and selected worker.
 Stage its self-contained host connector in launcher-owned host-only scratch, outside guest-writable mounts, until final attachment release.
 Each tool call opens an independent channel using that fixed operation; it does not rediscover or readmit a runtime.
 Preserve per-call cancellation and model/session snapshots, and report worker loss without replay or fallback.
+Each new tool request also snapshots the invoking Pi cwd through the attachment’s host-to-guest mappings, including an ordinary child’s cwd override.
+Use that directory for structured tools and human shell commands without changing worker-global cwd; concurrent calls may use different directories.
+Explicit cwd must name an existing absolute guest directory; invalid values fail before tool execution rather than selecting the launch directory.
+Omission retains the worker launch directory for already-running older host attachments.
+Omit the field when the mapped directory equals the launch-selected guest cwd, preserving updated-host/older-worker calls there.
+Older workers reject nondefault cwd requests; update both endpoints before using directory overrides.
+Mapped absolute `spawn_agent.cwd` inputs translate back to host paths before host-side launch; relative inputs remain parent-relative.
 Extension reload rebinds the same launch-selected connector; `/cd` obtains a fresh attachment through ordinary startup.
 Already-running attachments that still name the live source connector retain their old launch interface until they close.
 The launcher selects the active repository and guest mounts; repository tool arguments use guest paths.

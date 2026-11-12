@@ -214,7 +214,8 @@ def run_case(root, pi, package, close_source_first):
                                CODEX_SANDBOX_TOOL_CONNECT=str(HERE / "side_pi_fixture.py"),
                                CODEX_SANDBOX_TOOL_CONTAINER="local-test-worker-not-container",
                                CODEX_SANDBOX_TOOL_SOCKET=str(runtime / "worker.sock"),
-                               CODEX_SANDBOX_GUEST_CWD=str(guest))
+                               CODEX_SANDBOX_GUEST_CWD=str(guest),
+                               CODEX_SANDBOX_PI_RESOURCE_PATHS=json.dumps({str(host): str(guest)}))
         source_extensions = HERE.parents[2] / "config/pi-agent/pi-extensions"
         result = subprocess.run([
             "node", str(HERE / "side_pi_sdk_fixture.mjs"), str(public_sdk(package)),

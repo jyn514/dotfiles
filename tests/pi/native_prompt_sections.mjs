@@ -388,7 +388,7 @@ for (const guest of [false, true]) {
       process.env.CODEX_SANDBOX_TOOL_CONTAINER = "offline-fixture-not-contacted";
       process.env.CODEX_SANDBOX_GUEST_CWD = "/guest/project";
       process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
-        "/host/policy.md": "/guest/policy.md", [includePath]: "/guest/rules.md",
+        "/host/policy.md": "/guest/policy.md", [includePath]: "/guest/rules.md", [cwd]: "/guest/project",
       });
     }
     const baseUrl = "http://pi-native-prompt-viewers.invalid/v1";

@@ -119,7 +119,7 @@ export interface AgentInfo {
   extensions?: string[];
   extensionPaths?: string[];
   disabledExtensions?: string[];
-  /** Parent's resolved decision for this same cwd, retained on worker recreation. */
+  /** Parent's resolved trust decision, retained even with a cwd override and on worker recreation. */
   projectTrusted?: boolean;
   cwd: string;
   sessionFile: string;

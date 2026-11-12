@@ -1,11 +1,12 @@
 import { test, expect, mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
+import { once } from "node:events";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  rewritePiResourcePaths, sessionToolInputToHost, sessionToolMetadataToGuest, sessionToolTextToGuest,
+  rewritePiResourcePaths, guestToolInputToHost, sessionToolMetadataToGuest, sessionToolTextToGuest,
 } from "../../../config/pi-agent/pi-extensions/guest-tools-core.ts";
 
 test("host Pi resource paths are rewritten to guest paths", () => {
@@ -49,10 +50,13 @@ const sessionPaths = {
   "/host/project": "/home/codex/src/project",
 };
 
-test("session calls translate guest selectors without rewriting queries, cursors, or unrelated tools", () => {
+test("host tool calls translate guest selectors without rewriting queries, cursors, or unrelated tools", () => {
   for (const [tool, field, guest, host] of [
     ["read_session", "sessionFile", "/guest/subagents/parent/child.jsonl", "/host/subagents/parent/child.jsonl"],
     ["search_sessions", "cwd", "/home/codex/src/project/subdir", "/host/project/subdir"],
+    ["spawn_agent", "cwd", "/home/codex/src/project/subdir", "/host/project/subdir"],
+    ["spawn_agent", "cwd", "relative/child", "relative/child"],
+    ["spawn_agent", "cwd", "/unmapped/child", "/unmapped/child"],
     ["read_session", "sessionFile", "relative/session.jsonl", "relative/session.jsonl"],
     ["read_session", "sessionFile", "/guest/subagents-old/child.jsonl", "/guest/subagents-old/child.jsonl"],
     ["read_session", "sessionFile", "/host/sessions/file.jsonl", "/host/sessions/file.jsonl"],
@@ -61,14 +65,14 @@ test("session calls translate guest selectors without rewriting queries, cursors
     ["read", "path", "/guest/sessions/file.jsonl", "/guest/sessions/file.jsonl"],
   ]) {
     const input = { [field]: guest, query: "/guest/subagents/needle", after: "opaque-cursor" };
-    sessionToolInputToHost(tool, input, sessionPaths);
+    guestToolInputToHost(tool, input, sessionPaths);
     expect(input).toEqual({ [field]: host, query: "/guest/subagents/needle", after: "opaque-cursor" });
   }
   const nested = { sessionFile: "/guest/subagents/nested/file.jsonl" };
-  sessionToolInputToHost("read_session", nested, { ...sessionPaths, "/special/store": "/guest/subagents/nested" });
+  guestToolInputToHost("read_session", nested, { ...sessionPaths, "/special/store": "/guest/subagents/nested" });
   expect(nested.sessionFile).toBe("/special/store/file.jsonl");
   const overlapping = { sessionFile: "/home/codex/src/project/child.jsonl" };
-  sessionToolInputToHost("read_session", overlapping, {
+  guestToolInputToHost("read_session", overlapping, {
     "/home/user/src": "/home/codex/src", "/home/user/src/project": "/home/codex/src/project",
   });
   expect(overlapping.sessionFile).toBe("/home/user/src/project/child.jsonl");
@@ -153,7 +157,7 @@ test("guest routing projects session-tool results at request time and reverses t
       { role: "toolResult", toolName: "read", content: [{ type: "text", text: "/host/project" }] },
     ];
     const original = structuredClone(messages);
-    const projected = (await hooks.get("context_with_system")!({ messages })).messages;
+    const projected = (await hooks.get("context_with_system")!({ messages }, { cwd: "/host/project" })).messages;
     expect(JSON.parse(projected[0].content[0].text).hits[0].sessionFile).toBe("/guest/subagents/parent/child.jsonl");
     expect(projected[1].details.sessionFile).toBe("/guest/subagents/parent/child.jsonl");
     expect(projected[1].details.nextCursor).toBe("opaque");
@@ -293,6 +297,96 @@ test("guest startup waits for private worker readiness without polling", async (
   }
 });
 
+test("child cwd reaches the native guest worker through the bound connector", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "pi-guest-cwd-")));
+  const guest = join(dir, "guest");
+  const child = join(guest, "child project");
+  const socket = join(dir, "worker.sock");
+  mkdirSync(child, { recursive: true });
+  writeFileSync(join(guest, "sample.txt"), "parent-only\n");
+  writeFileSync(join(child, "sample.txt"), "child-needle\n");
+  const env = {
+    CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+    CODEX_SANDBOX_TOOL_CONNECT: join(import.meta.dir, "../sandbox-tool-connect-bound"),
+    CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify([process.execPath, join(import.meta.dir, "../image/tool-connect.mjs")]),
+    CODEX_SANDBOX_TOOL_SOCKET: socket,
+    CODEX_SANDBOX_GUEST_CWD: guest,
+    CODEX_SANDBOX_GUEST_REPO: guest,
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/project": guest }),
+  };
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  const worker = childProcess.spawn(process.execPath, [join(import.meta.dir, "../image/tool-worker.mjs")], {
+    cwd: guest,
+    env: { ...process.env, CODEX_SANDBOX_TOOL_SOCKET: socket,
+      CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(resolve(packageDir, publicEntry)).href,
+      SANDBOX_PROXY_DIR: "", SANDBOX_PROXY_DEFAULT_DIR: join(dir, "no-proxies") },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let errors = "";
+  worker.stderr!.on("data", chunk => { errors += chunk; });
+  Object.assign(process.env, env);
+  try {
+    await eventually(() => existsSync(socket) || worker.exitCode !== null);
+    expect(worker.exitCode, errors).toBeNull();
+    const tools = new Map<string, any>();
+    const hooks = new Map<string, any>();
+    guestTools({ registerTool: (tool: any) => tools.set(tool.name, tool),
+      on: (name: string, hook: any) => hooks.set(name, hook) } as any);
+    const spawnInput = { cwd: child };
+    hooks.get("tool_call")({ toolName: "spawn_agent", input: spawnInput });
+    expect(spawnInput.cwd).toBe("/host/project/child project");
+    const ctx = { cwd: spawnInput.cwd, model: undefined,
+      sessionManager: { getSessionId: () => "child", getSessionFile: () => undefined } };
+    async function call(name: string, params: any) {
+      const result = await tools.get(name).execute(name, params, undefined, undefined, ctx);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      return result.content.map((block: any) => block.text ?? "").join("");
+    }
+    expect((await call("bash", { command: "pwd" })).trim()).toBe(child);
+    expect(await call("read", { path: "sample.txt" })).toContain("child-needle");
+    await call("write", { path: "new.txt", content: "new-child\n" });
+    await call("edit", { path: "sample.txt", edits: [{ oldText: "child-needle", newText: "edited-child" }] });
+    expect(readFileSync(join(child, "new.txt"), "utf8")).toBe("new-child\n");
+    expect(readFileSync(join(child, "sample.txt"), "utf8")).toBe("edited-child\n");
+    expect(existsSync(join(guest, "new.txt"))).toBe(false);
+    expect(readFileSync(join(guest, "sample.txt"), "utf8")).toBe("parent-only\n");
+    expect(await call("grep", { pattern: "edited-child" })).toContain("sample.txt");
+    expect(await call("find", { pattern: "*.txt" })).toContain("new.txt");
+    expect(await call("ls", {})).toContain("new.txt");
+    writeFileSync(join(child, "SKILL.md"), "---\nname: child-skill\ndescription: Child directory fixture.\n---\n");
+    const attachment = createGuestAttachment(process.env)!;
+    const launchContext = attachment.context({ ...ctx, cwd: "/host/project" } as any);
+    expect(launchContext).not.toHaveProperty("cwd");
+    const launchResult = await attachment.call("bash", { command: "pwd" }, launchContext);
+    expect(launchResult.content[0].text.trim()).toBe(guest);
+    const skill = await attachment.call("validate_skill", { path: "@SKILL.md" }, attachment.context(ctx as any));
+    expect(skill).toMatchObject({ loaded: true, name: "child-skill", diagnostics: [] });
+    let output = "";
+    const human = hooks.get("user_bash")({}, ctx);
+    expect((await human.operations.exec("pwd", guest, {
+      onData: (data: Buffer) => { output += data.toString(); },
+    })).exitCode).toBe(0);
+    expect(output.trim()).toBe(child);
+    const messages = [{ role: "system", content: "Current working directory: /host/project",
+      sections: { cwd: "<cwd>\n/host/project\n</cwd>" } }];
+    const projected = await hooks.get("context_with_system")({ messages }, ctx);
+    expect(projected.messages[0].content).toBe(`Current working directory: ${child}`);
+    expect(projected.messages[0].sections.cwd).toBe(`<cwd>\n${child}\n</cwd>`);
+    // No explicit cwd is sent by an already-loaded older attachment.
+    const legacy = createGuestAttachment(process.env)!;
+    const legacyResult = await legacy.call("bash", { command: "pwd" }, { model: null, session: null });
+    expect(legacyResult.content[0].text.trim()).toBe(guest);
+  } finally {
+    worker.kill();
+    if (worker.exitCode === null && worker.signalCode === null) await once(worker, "exit");
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("registered tools and human bash snapshot their own public invocation context", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-guest-metadata-"));
   // A holds its transport open while B changes the context and executes.
@@ -306,6 +400,7 @@ test("registered tools and human bash snapshot their own public invocation conte
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
       "/host/sessions": "/guest/sessions",
       "/host/subagent-runs": "/guest/subagent-runs",
+      "/host/project": dir,
     }),
     CODEX_GUEST_CALL_TEST_DIR: dir,
     PI_CALL_MODEL: "stale-env",
@@ -321,7 +416,7 @@ test("registered tools and human bash snapshot their own public invocation conte
       on: (name: string, hook: any) => hooks.set(name, hook) } as any);
     let sessionId = "session-a";
     let sessionFile: string | undefined = "/host/sessions/a.jsonl";
-    const ctx = { model: { provider: "provider-a", id: "model-a" }, sessionManager: {
+    const ctx = { cwd: "/host/project/child-a", model: { provider: "provider-a", id: "model-a" }, sessionManager: {
       getSessionId: () => sessionId, getSessionFile: () => sessionFile,
     } };
     const params = { command: "pause", model: "model-selected-parameter" };
@@ -330,10 +425,12 @@ test("registered tools and human bash snapshot their own public invocation conte
     // Mutate the actual model object, not just the context reference.
     ctx.model.provider = "provider-b";
     ctx.model.id = "model-b";
+    ctx.cwd = "/host/project/child-b";
     // Another environment selection must not split the already-registered
     // tools' transport, prompt paths, and per-invocation session projection.
     process.env.CODEX_SANDBOX_TOOL_CONNECT = join(dir, "not-a-connector");
     process.env.CODEX_SANDBOX_TOOL_CONTAINER = "another-worker";
+    process.env.CODEX_SANDBOX_GUEST_CWD = join(dir, "child-b");
     process.env.CODEX_SANDBOX_TOOL_COMMAND = JSON.stringify(["/bin/false"]);
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = "not-json";
     sessionId = "session-b";
@@ -341,19 +438,20 @@ test("registered tools and human bash snapshot their own public invocation conte
     const b = await tools.get("bash").execute("b", { command: "b" }, undefined, undefined, ctx);
     writeFileSync(join(dir, "release"), "");
     const aResult = await a;
-    expect(b).toEqual({ tool: "bash", params: { command: "b" },
+    expect(b).toEqual({ tool: "bash", params: { command: "b" }, cwd: join(dir, "child-b"),
       model: { provider: "provider-b", modelId: "model-b" },
       session: { id: "session-b", file: "/guest/sessions/b.jsonl" } });
-    expect(aResult).toEqual({ tool: "bash", params,
+    expect(aResult).toEqual({ tool: "bash", params, cwd: join(dir, "child-a"),
       model: { provider: "provider-a", modelId: "model-a" },
       session: { id: "session-a", file: "/guest/sessions/a.jsonl" } });
 
     const human = hooks.get("user_bash")({ command: "human" }, ctx);
     ctx.model.id = "later-model";
+    ctx.cwd = "/host/project/later";
     sessionId = "later-session";
     sessionFile = undefined;
     expect(await human.operations.exec("human", dir, { onData() {} })).toEqual({
-      tool: "user_bash", params: { command: "human" },
+      tool: "user_bash", params: { command: "human" }, cwd: join(dir, "child-b"),
       model: { provider: "provider-b", modelId: "model-b" },
       session: { id: "session-b", file: "/guest/sessions/b.jsonl" },
     });

@@ -43,11 +43,13 @@ async function eventually(predicate: () => boolean, detail: () => string = () =>
   throw new Error(`commit-boundary fixture did not become ready: ${detail()}`);
 }
 
-async function fixture(mode: "guest" | "native", checkerBarrier = false) {
+async function fixture(mode: "guest" | "native", checkerBarrier = false, separateLaunch = false) {
   const directory = mkdtempSync(join(realpathSync(tmpdir()), "pi-commit-boundary-"));
   const repo = join(directory, "repo");
   const bin = join(directory, "bin");
   mkdirSync(repo); mkdirSync(bin);
+  const launchRepo = separateLaunch ? join(directory, "launch-repo") : repo;
+  if (separateLaunch) mkdirSync(launchRepo);
   // Only select the public bb dispatcher; retain dev/test-environment's real
   // local jj and private HOME. No proxy endpoint or host repository is used.
   symlinkSync(checkerBarrier
@@ -62,8 +64,8 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
     // SIGTERM closes its actual socket and reaches the worker AbortController.
     CODEX_SANDBOX_TOOL_CONNECT: join(import.meta.dir, checkerBarrier
       ? "fixtures/local-tool-connect.py" : "fixtures/commit-boundary-connect.py"),
-    CODEX_SANDBOX_GUEST_CWD: repo,
-    CODEX_SANDBOX_GUEST_REPO: repo,
+    CODEX_SANDBOX_GUEST_CWD: launchRepo,
+    CODEX_SANDBOX_GUEST_REPO: launchRepo,
     CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
     CODEX_SANDBOX_TOOL_SOCKET: join(directory, "worker.sock"),
     CODEX_SANDBOX_PI_TOOL_MODULE: sdkURL,
@@ -114,6 +116,7 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
     jj("git", "init", "--colocate");
     jj("config", "set", "--repo", "user.name", "Commit boundary regression");
     jj("config", "set", "--repo", "user.email", "boundary@example.invalid");
+    if (separateLaunch) jj("git", "init", "--colocate", launchRepo);
     writeFileSync(file(".gitignore"), "/target/jj-split/\n");
     writeFileSync(file("note.txt"), base);
     writeFileSync(file("unrelated.txt"), "formatting\n");
@@ -125,7 +128,7 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
     writeFileSync(file("unrelated.txt"), "formatting  \n");
     if (mode === "guest") {
       worker = spawn("bun", [join(root, "tools/codex-sandbox/image/tool-worker.mjs")], {
-        cwd: repo, env: process.env, stdio: ["ignore", "ignore", "pipe"],
+        cwd: launchRepo, env: process.env, stdio: ["ignore", "ignore", "pipe"],
       });
       worker.stderr!.on("data", data => { workerErrors += data.toString(); });
       await eventually(() => existsSync(updates.CODEX_SANDBOX_TOOL_SOCKET!), () => workerErrors);
@@ -152,7 +155,7 @@ async function fixture(mode: "guest" | "native", checkerBarrier = false) {
     const execute = (name: "edit" | "write", params: any, signal?: AbortSignal) => tools.get(name).execute(
       `boundary-${++calls}`, params, signal, undefined, ctx,
     );
-    return { directory, repo, file, read, jj, tools, hook, execute, requests, replies, close, record, recordPath,
+    return { directory, repo, launchRepo, file, read, jj, tools, hook, execute, requests, replies, close, record, recordPath,
       reconstruct: async () => {
         await hook("session_shutdown");
         session += "-fresh";

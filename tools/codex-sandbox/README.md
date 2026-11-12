@@ -68,6 +68,7 @@ their host paths.
 `link_list` cwd lines use the same guest mappings in model requests, without changing terminal identities or host UI metadata.
 `search_sessions` and `read_session` project mapped path metadata to guest paths in model requests.
 Absolute file selectors and cwd filters translate back to host paths before those tools execute.
+`spawn_agent.cwd` also translates mapped absolute guest paths back to host paths; relative paths remain relative to the parent Pi directory.
 Historical transcript text, snippets, version previews, opaque cursors, and stored results remain unchanged.
 Unmapped directories remain unchanged rather than implying a guest mount.
 Reload existing host Pi sessions with `/reload` to apply this extension change.
@@ -77,6 +78,14 @@ Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy rem
 Host `~/.pi/agent/sessions` and the default subagent store `~/.pi/agent/pi-codex-subagents/runs` are mounted read-only
 at their matching paths under `/home/codex/.pi/agent` so guest tools can read main and subagent conversations.
 Pi continues to write sessions on the host.
+
+Guest tool requests snapshot the invoking Pi’s current directory through the launch-selected host-to-guest mappings.
+Structured tools and `!` commands use that directory, including a child’s `spawn_agent.cwd`, without changing the shared worker’s process cwd.
+Prompt projection advertises the same per-invocation directory; the accepted repository, mounts, backend, and project-trust decision remain unchanged.
+An explicit cwd that is malformed, names a missing path, or is not a directory fails rather than falling back to the worker’s launch directory.
+Older host attachments omit the request’s `cwd` field and retain launch-directory behavior with the updated worker.
+Launch-directory calls omit `cwd`, so updated host extensions still work with older workers in that directory.
+Older workers reject requests containing a different `cwd`; update the guest worker before using per-call directory overrides.
 
 Guest `jj` calls snapshot the invoking Pi's model at dispatch, including in side
 panes and ordinary subagents; later model changes cannot alter in-flight

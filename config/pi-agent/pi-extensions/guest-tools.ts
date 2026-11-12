@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
-  parsePiResourcePaths, rewritePiResourcePaths, sessionToolInputToHost,
+  parsePiResourcePaths, resourcePath, rewritePiResourcePaths, guestToolInputToHost,
   sessionToolMetadataToGuest, sessionToolTextToGuest,
 } from "./guest-tools-core.ts";
 import type { BoundaryMetadata } from "./commit-boundary.ts";
@@ -19,15 +19,20 @@ import type { BoundaryMetadata } from "./commit-boundary.ts";
 type CallModel = { provider: string; modelId: string } | null;
 
 type CallContext = {
+  cwd?: string;
   model: CallModel;
   session: { id: string; file: string | null } | null;
 };
 
-function callContext(ctx: ExtensionContext, resourcePaths: Record<string, string>): CallContext {
+function callContext(ctx: ExtensionContext, resourcePaths: Record<string, string>, launchCwd: string | undefined): CallContext {
   const model = ctx.model;
   const id = ctx.sessionManager.getSessionId();
   const file = ctx.sessionManager.getSessionFile();
+  const cwd = resourcePath(ctx.cwd, resourcePaths);
   return {
+    // Old workers reject unknown fields. Keep their launch-directory request
+    // shape until a caller actually needs per-call cwd support.
+    ...(cwd === launchCwd ? {} : { cwd }),
     model: model ? { provider: model.provider, modelId: model.id } : null,
     session: id ? { id, file: file ? rewritePiResourcePaths(file, resourcePaths) : null } : null,
   };
@@ -167,7 +172,7 @@ function callGuest(
 }
 
 /** Bind only launch-selected resources, once per extension initialization/reload.
- * Model/session identity is still copied from Pi at each invocation, never here.
+ * Cwd and model/session identity are copied from Pi at each invocation, never here.
  */
 export function createGuestAttachment(env: NodeJS.ProcessEnv) {
   const container = env.CODEX_SANDBOX_TOOL_CONTAINER;
@@ -179,12 +184,14 @@ export function createGuestAttachment(env: NodeJS.ProcessEnv) {
   };
   const resourcePaths = parsePiResourcePaths(env.CODEX_SANDBOX_PI_RESOURCE_PATHS);
   const readyPath = env.CODEX_SANDBOX_TOOL_READY_HOST;
+  const launchCwd = env.CODEX_SANDBOX_GUEST_CWD;
   return {
-    cwd: env.CODEX_SANDBOX_GUEST_CWD,
+    cwd: launchCwd,
     repository: env.CODEX_SANDBOX_GUEST_REPO,
     previousCwd: env.CODEX_SANDBOX_PREVIOUS_CWD,
     resourcePaths,
-    context: (ctx: ExtensionContext) => callContext(ctx, resourcePaths),
+    workingDirectory: (ctx: Pick<ExtensionContext, "cwd">) => resourcePath(ctx.cwd, resourcePaths),
+    context: (ctx: ExtensionContext) => callContext(ctx, resourcePaths, launchCwd),
     ready: () => waitForGuestToolReady(readyPath),
     call: callGuest.bind(undefined, transport),
   };
@@ -205,9 +212,9 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!repository) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
-  // The session tools run on the host. Accept paths advertised by the guest
-  // view without changing transcript contents or decoding their cursors.
-  pi.on("tool_call", (event) => sessionToolInputToHost(event.toolName, event.input, resourcePaths));
+  // Session tools and subagent launch run on the host. Translate their path
+  // inputs without changing transcript contents or decoding opaque cursors.
+  pi.on("tool_call", (event) => guestToolInputToHost(event.toolName, event.input, resourcePaths));
   const hostRepository = Object.entries(resourcePaths)
     .find(([, guestPath]) => guestPath === repository)?.[0];
   const instructionFiles = [
@@ -216,6 +223,7 @@ export default function guestTools(pi: ExtensionAPI) {
   ];
   const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
   pi.on("session_start", (event, ctx) => {
+    const cwd = attachment.workingDirectory(ctx);
     if (event.reason !== "startup" && event.reason !== "reload") return;
     if (!previousGuestCwd || previousGuestCwd === cwd) return;
     // A cross-directory resume first restarts in the selected session's directory.
@@ -270,7 +278,8 @@ export default function guestTools(pi: ExtensionAPI) {
       },
     };
   });
-  pi.on("context_with_system", async (event) => {
+  pi.on("context_with_system", async (event, ctx) => {
+    const cwd = attachment.workingDirectory(ctx);
     const instructions: string[] = [];
     for (const path of instructionFiles) {
       if (existsSync(path)) instructions.push(await expandInstructionFile(path));

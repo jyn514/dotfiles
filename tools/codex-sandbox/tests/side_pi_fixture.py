@@ -29,6 +29,7 @@ def owner_main(arguments, bootstrap):
                        CODEX_SANDBOX_TOOL_CONTAINER="local-test-worker-not-container",
                        CODEX_SANDBOX_TOOL_SOCKET=str(runtime / "worker.sock"),
                        CODEX_SANDBOX_GUEST_CWD=config["guest_cwd"],
+                       CODEX_SANDBOX_PI_RESOURCE_PATHS=json.dumps({os.getcwd(): config["guest_cwd"]}),
                        CODEX_SANDBOX_PI_TOOL_MODULE=config["tool_module"])
     # Deliberately shared legacy publication across source, side and worker.
     # Per-call attribution must win even after B overwrites this file while A waits.

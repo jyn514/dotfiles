@@ -108,7 +108,7 @@ test("startup listens before loading the Pi tool module", async () => {
     stdio: ["ignore", "ignore", "ignore"],
   });
   try {
-    await eventually(() => existsSync(lazySocket));
+    await eventually(() => existsSync(lazyReady));
     assert.equal(lazyWorker.exitCode, null);
     assert.equal((await stat(lazyReady)).mode & 0o777, 0o600);
     const socket = await connect({ tool: "read", params: { path: "file.txt" } }, lazySocket);
@@ -199,6 +199,39 @@ test("overlapping SDK bash calls keep their invocation models", async () => {
   } }, nativeSocket);
   assert.equal(output(await frames(b)), "model-b");
   assert.equal(output(await aFrames), "model-a");
+});
+
+test("overlapping SDK shell calls keep their working directories", async () => {
+  for (const tool of ["bash", "user_bash"]) {
+    const aCwd = join(directory, `cwd-${tool}-a`);
+    const bCwd = join(directory, `cwd-${tool}-b`);
+    await mkdir(aCwd);
+    await mkdir(bCwd);
+    const release = join(bCwd, "release");
+    const a = await connect({ tool, cwd: aCwd, params: {
+      command: `touch started; while [ ! -f '${release}' ]; do sleep 0.02; done; pwd`,
+    } }, nativeSocket);
+    const aFrames = frames(a);
+    await eventually(() => existsSync(join(aCwd, "started")));
+    const b = await connect({ tool, cwd: bCwd, params: { command: "pwd; touch release" } }, nativeSocket);
+    const shellOutput = records => tool === "bash" ? output(records)
+      : records.filter(frame => frame.kind === "data")
+        .map(frame => Buffer.from(frame.data, "base64").toString()).join("");
+    assert.equal(shellOutput(await frames(b)).trim(), bCwd);
+    assert.equal(shellOutput(await aFrames).trim(), aCwd);
+  }
+  // An old caller omits cwd and must still get the original worker directory.
+  const original = await connect({ tool: "bash", params: { command: "pwd" } }, nativeSocket);
+  assert.equal(output(await frames(original)).trim(), directory);
+});
+
+test("invalid explicit working directories never fall back to the worker root", async () => {
+  for (const cwd of [null, "", "relative", 123, {}, "/bad\0path", join(directory, "missing"), join(directory, "model.json")]) {
+    const socket = await connect({ tool: "bash", cwd, params: { command: "touch invalid-cwd-executed" } }, nativeSocket);
+    const result = await frames(socket);
+    assert.equal(result[0].kind, "error", JSON.stringify({ cwd, result }));
+  }
+  assert.equal(existsSync(join(directory, "invalid-cwd-executed")), false);
 });
 
 test("overlapping SDK calls keep session ID and file in both shell paths", async () => {

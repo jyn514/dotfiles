@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import * as path from "node:path";
 import type { ExtensionAPI, MessageRenderer, SessionShutdownEvent, Theme } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
@@ -267,6 +268,7 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
   interface SpawnFromContextRequest {
     taskName: string;
     message: string;
+    cwd?: string;
     agentType?: string;
     skills?: string[];
     loadedSkillPaths?: Record<string, string>;
@@ -299,7 +301,7 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
       agent_type: request.agentType,
       skills: requestedSkills,
       loadedSkillPaths,
-      cwd: ctx.cwd,
+      cwd: path.resolve(ctx.cwd, request.cwd ?? "."),
       parentSessionId: parentSessionId(ctx),
       parentSessionFile: ctx.sessionManager.getSessionFile?.(),
       inheritedProvider: currentModel.provider,
@@ -338,6 +340,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
       return Type.Object({
         task_name: Type.String({ description: "Task name for the new agent. Use letters, digits, underscores, dashes, and optional slash path separators." }),
         message: Type.String({ description: "Required initial task, appended after any retained fork context." }),
+        cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory for the child. Defaults to the parent directory; relative paths resolve against it. The child retains the parent's project-trust decision." })),
         fork_from: Type.Optional(Type.Object({
           session_id: Type.String({ minLength: 1, description: "Exact native source session ID." }),
           through_entry_id: Type.String({ minLength: 1, description: "Inclusive final entry on the source branch." }),
@@ -358,6 +361,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
           admittedToolCallId: _toolCallId,
           taskName: params.task_name,
           message: params.message,
+          cwd: params.cwd,
           forkFrom: params.fork_from,
           agentType: params.agent_type,
           skills: params.skills,

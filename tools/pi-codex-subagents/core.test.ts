@@ -1468,6 +1468,29 @@ describe("extension completion delivery and TUI", () => {
         target: "missing-steering-target", message: "work",
       }, undefined, undefined, ctx)).rejects.toThrow("steer_subagent failed:");
 
+      // Directory overrides must reach the process, without changing inherited trust.
+      const childCwd = path.join(TEST_AGENT_DIR, "child project");
+      fs.mkdirSync(childCwd, { recursive: true });
+      for (const trusted of [true, false]) {
+        projectTrusted = trusted;
+        for (const [kind, cwd, expectedCwd] of [
+          ["default", undefined, TEST_AGENT_DIR],
+          ["absolute", childCwd, childCwd],
+          ["relative", "child project", childCwd],
+        ] as const) {
+          const taskName = `cwd-${kind}-${trusted}`;
+          await tools.get("spawn_agent").execute(taskName, {
+            task_name: taskName, message: "check working directory", ...(cwd === undefined ? {} : { cwd }),
+          }, undefined, undefined, ctx);
+          const agent = getAgent(taskName, parentSessionId)!;
+          expect(agent).toMatchObject({ cwd: expectedCwd, projectTrusted: trusted });
+          const entries = fs.readFileSync(agent.sessionFile, "utf8").trim().split("\n").map(line => JSON.parse(line));
+          expect(entries.find(entry => entry.type === "started")?.cwd).toBe(fs.realpathSync(expectedCwd));
+          await waitUntil(() => getAgent(taskName, parentSessionId)?.status === "completed");
+        }
+      }
+      expect(ctx.cwd).toBe(TEST_AGENT_DIR);
+
       // A new session refreshes advice without a matching tool or caller edit.
       fs.writeFileSync(configFile, JSON.stringify({ modelGuidance: "REPLACED_SELECTION_ADVICE" }));
       await emit("session_start", { reason: "restart" });

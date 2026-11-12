@@ -25,7 +25,7 @@ export function rewritePiResourcePaths(
     }, prompt);
 }
 
-function resourcePath(value: string, paths: PathMappings): string {
+export function resourcePath(value: string, paths: PathMappings): string {
   // Translate once. A host path such as /home/user/src can itself contain
   // the guest prefix /home/codex/src; repeated text replacement would corrupt it.
   for (const [from, to] of Object.entries(paths).sort(([left], [right]) => right.length - left.length)) {
@@ -34,10 +34,11 @@ function resourcePath(value: string, paths: PathMappings): string {
   return value;
 }
 
-export function sessionToolInputToHost(
+export function guestToolInputToHost(
   tool: string, input: Record<string, unknown>, paths: PathMappings,
 ): void {
-  const field = tool === "read_session" ? "sessionFile" : tool === "search_sessions" ? "cwd" : undefined;
+  const field = tool === "read_session" ? "sessionFile"
+    : tool === "search_sessions" || tool === "spawn_agent" ? "cwd" : undefined;
   if (!field || typeof input[field] !== "string" || !input[field].startsWith("/")) return;
   const inverse = Object.fromEntries(Object.entries(paths).map(([host, guest]) => [guest, host]));
   input[field] = resourcePath(input[field], inverse);

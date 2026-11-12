@@ -28,6 +28,7 @@ test("guest context rewrites expanded skills in history without changing stored 
     delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
       "/home/jyn/.agents/skills": "/home/codex/.agents/skills",
+      [directory]: "/home/codex/src/repository",
     });
     const loaded = await discoverAndLoadExtensions([
       join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
@@ -198,6 +199,8 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     "---\nname: ready-workqueue\ndescription: offline queue fixture\n---\nRead the queue.");
   const guestRepository = "/home/codex/src/renamed-project";
   const guestCwd = `${guestRepository}/nested`;
+  const sessionCwd = join(cwd, "nested");
+  mkdirSync(sessionCwd);
   Object.assign(process.env, {
     HOME: home,
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
@@ -238,7 +241,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     allowModelNetwork: false, refreshOnCreate: false,
   });
   const loader = new DefaultResourceLoader({
-    cwd, agentDir, settingsManager,
+    cwd: sessionCwd, agentDir, settingsManager,
     noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
     additionalSkillPaths: [skillDir],
     additionalExtensionPaths: [join(root, "config/pi-agent/pi-extensions/guest-tools.ts")],
@@ -253,8 +256,8 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   });
   await loader.reload();
   assert.deepEqual(loader.getExtensions().errors, []);
-  const sessionManager = SessionManager.inMemory(cwd);
-  const options = { cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+  const sessionManager = SessionManager.inMemory(sessionCwd);
+  const options = { cwd: sessionCwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
     sessionManager, model: faux.getModel(), tools: ["read", "context_probe"] };
   const { session, extensionsResult } = await createAgentSession(options);
   assert.deepEqual(extensionsResult.errors, []);
@@ -499,7 +502,9 @@ test("handoff notice survives real Codex request conversion with later directory
     CODEX_SANDBOX_GUEST_CWD: "/home/codex/src/destination/nested",
     CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/destination",
     CODEX_SANDBOX_PREVIOUS_CWD: "/host/origin",
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/origin": "/home/codex/src/origin" }),
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
+      "/host/origin": "/home/codex/src/origin", [directory]: "/home/codex/src/destination/nested",
+    }),
   });
   const loaded = await discoverAndLoadExtensions([
     join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
@@ -574,6 +579,7 @@ test("recorded handoffs preserve history and do not repeat on reload or ordinary
       CODEX_SANDBOX_GUEST_REPO: "/home/codex/src/current",
       CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
         "/host/origin": "/home/codex/src/origin", "/host/current": "/home/codex/src/current",
+        [directory]: "/home/codex/src/current",
       }),
     });
     const cases = [

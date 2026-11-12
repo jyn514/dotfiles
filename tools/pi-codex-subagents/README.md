@@ -47,6 +47,10 @@ Children still use the resource-discovery rules described under [Agent templates
 
 Agent names are unique within their parent session. The same task name can exist safely in different Pi sessions. Read and control tools are always scoped to the current parent session; only `list_agents(include_all: true)` crosses session boundaries, and that view is read-only.
 
+`spawn_agent.cwd` sets the child’s working directory; it defaults to the parent’s directory.
+Relative paths resolve against the parent’s directory.
+The child retains the parent’s resolved project-trust decision, including when the directory differs.
+
 `spawn_agent.skills` adds model-invocable skills currently loaded in the parent by
 name. The tool lists permitted names without repeating descriptions from Pi's
 parent skill catalog. Disabled or unloaded skills are refused; refreshing the
@@ -134,7 +138,7 @@ These explicit package additions are resolved from project-local packages first 
 Pi's normal discovery handles packages configured in its own settings.
 
 Children discover configured and local extensions, skills, and prompt templates through Pi's native resource discovery.
-They run in the parent's `ctx.cwd` and retain its resolved project-trust decision for that directory, including after recreation.
+They run in `spawn_agent.cwd` (the parent's `ctx.cwd` by default) and retain the parent's resolved project-trust decision, including after recreation.
 Declining project trust prevents protected project resources from loading; user resources remain available.
 If an older parent or saved worker supplies no trust decision, the child does not grant project trust.
 Fresh children can use discovered extension tools even when they were not active in the parent.

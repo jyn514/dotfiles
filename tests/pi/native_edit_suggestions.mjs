@@ -329,7 +329,7 @@ test("guest proxy reaches the packaged suggested edit without host-local mutatio
     CODEX_SANDBOX_TOOL_CONNECT: join(repository, "tools/codex-sandbox/tests/fixtures/local-tool-connect.py"),
     CODEX_SANDBOX_GUEST_CWD: cwd,
     CODEX_SANDBOX_GUEST_REPO: cwd,
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [host]: cwd }),
     CODEX_SANDBOX_TOOL_SOCKET: socket,
     CODEX_SANDBOX_PI_TOOL_MODULE: forkEntry,
   };

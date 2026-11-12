@@ -1,5 +1,7 @@
 import { createServer } from "node:net";
 import { writeFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { createEditSuggestionsTool } from "./edit-suggestions-core.ts";
 
 const startupStarted = performance.now();
@@ -48,6 +50,17 @@ function parseCallSession(session) {
   return { id: session.id, file: session.file };
 }
 
+async function parseCallCwd(request) {
+  // Existing host attachments omit cwd. Their calls retain the launch directory.
+  if (!Object.hasOwn(request, "cwd")) return process.cwd();
+  const cwd = request.cwd;
+  if (typeof cwd !== "string" || !isAbsolute(cwd) || cwd.includes("\0")) {
+    throw new Error("invalid call working directory");
+  }
+  if (!(await stat(cwd)).isDirectory()) throw new Error("call working directory is not a directory");
+  return cwd;
+}
+
 function send(socket, message) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
@@ -93,11 +106,12 @@ const server = createServer((socket) => {
         if (!request || typeof request !== "object" ||
             typeof request.tool !== "string" || !request.params ||
             typeof request.params !== "object" || Array.isArray(request.params) ||
-            Object.keys(request).some(key => !["tool", "params", "model", "session", "id"].includes(key))) {
+            Object.keys(request).some(key => !["tool", "params", "model", "session", "cwd", "id"].includes(key))) {
           throw new Error("invalid tool request");
         }
         const model = parseCallModel(request.model);
         const session = parseCallSession(request.session);
+        const cwd = await parseCallCwd(request);
         // Each request owns its environment; never publish session state globally.
         const callEnv = (base) => {
           const env = { ...base, PI_CALL_MODEL: model?.modelId ?? "" };
@@ -122,7 +136,7 @@ const server = createServer((socket) => {
             throw new Error("invalid skill path request");
           }
           const { skills, diagnostics } = loadSkills({
-            cwd: process.cwd(),
+            cwd,
             agentDir: getAgentDir(),
             skillPaths: [request.params.path.replace(/^@/, "")],
             includeDefaults: false,
@@ -132,7 +146,7 @@ const server = createServer((socket) => {
           const { createLocalBashOperations } = await loadToolModule();
           if (typeof request.params.command !== "string") throw new Error("invalid bash command");
           result = await createLocalBashOperations().exec(
-            request.params.command, process.cwd(), {
+            request.params.command, cwd, {
               env: callEnv(process.env),
               signal: controller.signal,
               timeout: request.params.timeout,
@@ -157,7 +171,7 @@ const server = createServer((socket) => {
           if (!Object.hasOwn(toolFactories, request.tool)) throw new Error("unknown tool");
           const shellOptions = request.tool === "bash" || request.tool === "powershell"
             ? { spawnHook } : undefined;
-          const tool = guarded?.tool ?? toolFactories[request.tool](process.cwd(), shellOptions);
+          const tool = guarded?.tool ?? toolFactories[request.tool](cwd, shellOptions);
           result = await tool.execute(
             request.id ?? "guest-tool", request.params, controller.signal,
             (partialResult) => send(socket, { kind: "update", result: partialResult }),

@@ -99,6 +99,7 @@ test("native validation routes guest paths through the worker, without host fall
   await eventually(() => fs.existsSync(ready), worker, () => errors);
   setEnvironment(t, {
     CODEX_SANDBOX_TOOL_CONTAINER: "local-test-worker-not-container",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [host]: guest }),
     CODEX_SANDBOX_TOOL_CONNECT: connector,
     CODEX_SANDBOX_TOOL_COMMAND: JSON.stringify([
       "/usr/bin/env", `CODEX_SANDBOX_TOOL_SOCKET=${socket}`, process.execPath,
@@ -107,7 +108,7 @@ test("native validation routes guest paths through the worker, without host fall
   });
   const tool = await loadTool(host);
 
-  await t.test("relative paths use worker cwd, not host session cwd", async () => {
+  await t.test("relative paths use mapped session cwd inside the worker", async () => {
     assert.deepEqual(await check(tool, host, "SKILL.md"), {
       loaded: true, name: "guest-skill", diagnostics: [],
     });
