@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import pwd
+import shlex
 import shutil
 import stat
 import subprocess
@@ -27,6 +28,12 @@ ELEVATORS = (Path("/usr/bin/sudo"), Path("/usr/bin/doas"))
 
 def command(*args: object, input_data: bytes | None = None) -> None:
     subprocess.run([str(arg) for arg in args], input=input_data, check=True)
+
+
+def elevated_command(*args: object, input_data: bytes | None = None) -> None:
+    argv = [str(arg) for arg in args]
+    print(f"setup: elevated command: {shlex.join(argv)}", file=sys.stderr)
+    command(*argv, input_data=input_data)
 
 
 def require_command(name: str) -> None:
@@ -88,7 +95,7 @@ def find_elevator() -> Path:
 
 
 def publish(elevator: Path, contents: bytes, destination: Path, mode: int) -> None:
-    command(
+    elevated_command(
         elevator,
         INSTALL_BIN,
         "-D",
@@ -101,7 +108,7 @@ def publish(elevator: Path, contents: bytes, destination: Path, mode: int) -> No
 
 
 def systemctl(elevator: Path, *args: str) -> None:
-    command(elevator, SYSTEMCTL_BIN, *args)
+    elevated_command(elevator, SYSTEMCTL_BIN, *args)
 
 
 def install(owner: str, loader: bytes, unit_source: bytes) -> None:
