@@ -384,6 +384,17 @@ Structural validity does not prove scope completeness, feasibility or implementa
 Challenge closure with a previously excluded item, a missing fixture, an allowed alternative route, an interaction failure and a routine update where applicable.
 Could every listed ticket close while the promised outcome still fails?
 If yes, repair the acceptance or missing work rather than adding vague “review everything” tickets.
+
+Also ask which tickets or groups of tickets could be omitted while still credibly achieving the governing outcome.
+Relevance alone does not establish necessity: state what part of the governing outcome or its required evidence would remain unmet without the work.
+Distinguish required outcomes, prerequisites of the chosen approach and useful extras.
+For approach-specific prerequisites, check whether a cheaper credible route avoids the whole group; a valid dependency does not make its parent mechanism necessary.
+For example, a representation rewrite may require migration, adapters, cache changes and tests.
+Each child can contribute through the rewrite without establishing that the rewrite is needed to achieve the goal.
+Remove unnecessary work from the required graph or make it explicitly optional, updating affected dependencies without discarding governing requirements.
+Retain additional work when its expected benefit justifies its cost against the remaining deadline, using §4's route comparison.
+Do not demand a mathematically minimal graph or treat required quality, verification and maintenance as optional merely because they do not add features.
+
 Use independent review when consequential scope or dependency judgment remains uncertain, not as a mandatory ceremony for a small obvious graph.
 Check that the planned closeout rejects an omitted criterion, stale issue body, mismatched revision and a closed-but-unmet prerequisite.
 Review reporting obligations in shared contracts as well as individual tickets.
