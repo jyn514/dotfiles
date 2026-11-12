@@ -50,6 +50,9 @@ mode = "limited"
 "static.crates.io" = "allow"
 "sum.golang.org" = "allow"
 
+[shell_environment_policy]
+exclude = ["CODEX_ACCESS_TOKEN"]
+
 [features]
 network_proxy = true
 
