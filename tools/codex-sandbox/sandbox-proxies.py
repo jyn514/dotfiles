@@ -45,6 +45,7 @@ from caddy_foundation import (
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 from source_view import check_mount_destinations, source_mounts
 from workspace_layout import jj_repository_path, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY
+from work_storage import volume_admission, cleanup_work_storage
 
 OUTER_RUNTIME = ContainerRuntime()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -662,6 +663,7 @@ def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> No
     if state is not None:
         try:
             stop_state(state)
+            cleanup_session_work_storage(metadata, state)
         except BaseException:
             if metadata.get("version") == 4:
                 for role, service in metadata["services"].items():
@@ -679,6 +681,24 @@ def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> No
             raise
     metadata_path.unlink(missing_ok=True)
     (runtime / "idle-cleanup.lease").unlink(missing_ok=True)
+
+
+def cleanup_session_work_storage(metadata, state):
+    # Historical recovery records do not establish an admitted maintenance image.
+    if metadata.get("version") != 4:
+        return
+    jj = next((proxy for proxy in state.get("proxies", []) if proxy.get("name") == "jj"), None)
+    if jj is None or "workspaces" not in jj:
+        return
+    records = workspace_records(jj["workspaces"])
+    image = metadata["accepted"]["images"]["agent"]
+    _proxy_image_reference(image)
+    # Recovery alone permits resource removal, never starting new processes.
+    # Maintenance must pass ordinary runtime admission for the recorded engine.
+    runtime = state_runtime(state)
+    scratch = runtime.host.state / "scratch" if isinstance(runtime, VMRuntime) else None
+    cleanup_work_storage(runtime, workspace_layouts(records), image,
+                         lambda staging: shared_workspace_mount_args(records, staging, runtime=runtime), scratch)
 
 
 def workspace_records(value: Any, *, recovery: bool = False) -> list[dict[str, str]]:
@@ -1338,7 +1358,8 @@ def proxy_logs(container: str) -> str:
     return result.stdout.strip()
 
 
-def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path) -> list[str]:
+def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path, *, runtime=None) -> list[str]:
+    runtime = runtime or OUTER_RUNTIME
     layouts = workspace_layouts(records)
     host_src = Path.home() / "src"
     if not host_src.is_dir():
@@ -1356,7 +1377,7 @@ def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path) ->
                 raise ConfigError(f"conflicting workspace mount destination: {target}")
             continue
         mounts[target] = source
-        arguments += ["--mount", f"type=bind,src={source},dst={target},{OUTER_RUNTIME.nonrecursive_bind}"]
+        arguments += ["--mount", f"type=bind,src={source},dst={target},{runtime.nonrecursive_bind}"]
     for item in layouts:
         volume, _ = workspace_work_volume(item)
         arguments += ["--mount", f"type=volume,src={volume},dst={item.guest_root / WORK_DIRECTORY}"]
@@ -1775,7 +1796,8 @@ def start_one_proxy(
         proxy["resource-status"]["container"] = "intended"; persist()
         try:
             with service_timing(name, "container-run"):
-                _docker(*docker_args)
+                with volume_admission(workspace_layouts(workspaces) if workspaces else []):
+                    _docker(*docker_args)
         except BaseException:
             proxy["resource-status"]["container"] = "unknown"; persist(); raise
         proxy["resource-status"]["container"] = "created"; persist()

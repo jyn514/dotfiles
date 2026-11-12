@@ -126,6 +126,11 @@ Ordinary filesets retain invocation-cwd semantics even with `-R`; only author ho
 Outside `work/`, writable files are shared host files, not isolated branches or permission to include another contributor's changes.
 The launcher mounts each writable checkout's existing `codex-work-*` volume at its primary guest path's `work/` in both the agent and JJ proxy.
 Use that path for guest-only caches, build outputs, and linked JJ workspaces; the same volume survives replacement of either consumer.
+After the last agent or trusted proxy using a volume exits, the launcher snapshots its registered JJ workspaces and removes ignored files within them.
+Tracked files, JJ metadata, workspace registrations, and unclassified files elsewhere in the volume survive.
+Ignored local data is deleted too; keep anything that must survive tracked or outside these guest-only workspaces.
+Idle proxies retain their existing five-minute timeout, so cleanup follows their teardown rather than the last Pi pane closing.
+Deferred cleanup diagnostics stay in `~/.cache/codex-sandbox-proxies/<repository-identity>/cleanup.log`; failures retain session recovery metadata.
 Repository aliases retain their existing host-backed views and guest read-only modes; use the selected primary guest path for `work/` operations.
 Host `work/` stays empty, and startup refuses to hide pre-existing host files there rather than deleting or migrating them.
 A linked workspace under `work/` registers in the shared JJ store, so ordinary host `status`, `log`, `new`, and history edits still work from the main checkout.

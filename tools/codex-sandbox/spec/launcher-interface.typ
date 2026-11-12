@@ -37,6 +37,24 @@ Keep ordinary launches quiet and avoid BuildKit solves when images are reusable.
 Simple repositories should declare builds without cache code; projects with an
 existing image lifecycle retain ownership of it.
 
+== Guest work storage cleanup <guest-work-cleanup>
+
+*Status:* Implemented; native JJ and Linux Lima-Docker maintenance acceptance verified.
+Other runtime acceptance remains unverified.
+The launcher preserves tracked workspace files and JJ metadata in each guest-only `work/` volume across sandbox exits.
+After the last consumer of a volume exits, it snapshots every tracked JJ workspace within that volume before removing ignored files within those workspaces.
+Snapshotting must preserve pending tracked changes without committing them or changing their authorship.
+Files outside the guest-only volume, including host-backed working files, are outside cleanup scope.
+The volume itself and workspace registrations remain intact.
+
+Consumer lifetime is per volume, including agents and trusted proxies across distinct sandbox sessions that share a checkout.
+Cleanup must exclude new consumers until snapshotting and deletion finish; one session's final attachment release is insufficient when another session still uses the volume.
+Do not follow symlinks or cross nested mounts to delete files outside the volume.
+Preserve tracked files even if an ignore rule matches them, and preserve JJ metadata regardless of ignore rules.
+If workspace discovery, snapshotting, or exclusive ownership cannot be established, retain the affected files and report incomplete cleanup.
+Ignored files may contain local data as well as caches; their deletion after final sandbox exit is intentional.
+Files elsewhere in the volume that cannot be classified as ignored files of a tracked workspace remain untouched.
+
 == Host Pi and guest execution <host-pi-execution>
 
 The proposed #link("remote-frontend.typ")[remote frontend contract] separates

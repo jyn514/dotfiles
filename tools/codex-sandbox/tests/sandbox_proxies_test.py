@@ -209,12 +209,14 @@ class NativeMetadataConsumerTest(unittest.TestCase):
             with self.subTest(selectors=selectors), mock.patch.dict(os.environ, selectors):
                 with mock.patch.object(owner, 'HELPER', self.helper), \
                         mock.patch.object(owner, 'IDLE_SECONDS', 0), \
-                        mock.patch.object(subprocess, "Popen") as spawn:
+                        mock.patch.object(subprocess, "Popen", side_effect=lambda *args, **kwargs:
+                            kwargs["stderr"].write(b"deferred cleanup diagnostic\n")) as spawn:
                     self.assertTrue(session._defer_cleanup())
                 argv = spawn.call_args.args[0]
                 self.assertNotIn("env", spawn.call_args.kwargs)
                 self.assertTrue(spawn.call_args.kwargs["start_new_session"])
-                self.assertEqual(subprocess.DEVNULL, spawn.call_args.kwargs["stderr"])
+                self.assertIn(b"deferred cleanup diagnostic\n", (runtime / "cleanup.log").read_bytes())
+                self.assertEqual(0o600, (runtime / "cleanup.log").stat().st_mode & 0o777)
                 lease = runtime / "idle-cleanup.lease"
                 self.assertTrue(lease.exists())
                 # No recoverable service state: cleanup may only remove these files.

@@ -15,6 +15,19 @@ The launcher keeps service ordering and concurrency, while `TicBrokerLaunch` kee
 Import the host owner from the sandbox tool directory; it has no standalone CLI.
 Owner-specific tests live in `tests/host_gateway_test.py`; launcher composition and real-stream tests remain in their existing integration suites.
 
+## Guest work cleanup acceptance
+
+The default pytest discovery includes `tests/work_cleanup_test.py` for native JJ preservation, volume admission, and failed-cleanup recovery.
+Run the Docker maintenance boundary check against an admitted engine and an existing agent image:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/work_cleanup_integration.py --state STATE_DIRECTORY --image AGENT_IMAGE
+```
+
+The check creates disposable repositories in the engine's shared scratch directory and owns every container and volume it mutates.
+It verifies that an existing mounted consumer prevents deletion, then invokes the session maintenance entrypoint and reopens the preserved workspace.
+Linux Lima-Docker acceptance is verified; Podman and macOS runtime acceptance remain unverified.
+
 ## Nested Docker acceptance
 
 The nested Docker wrapper owns one foreground SSH master per Docker invocation.

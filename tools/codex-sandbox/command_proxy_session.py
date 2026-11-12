@@ -195,11 +195,14 @@ class CommandProxySession:
         self._backend.write_atomic(lease_path, lease)
         os.chmod(lease_path, 0o600)
         try:
-            subprocess.Popen(
-                [str(HELPER), "idle-cleanup", "--repo", str(self.repository),
-                 "--delay", str(IDLE_SECONDS), "--lease", lease],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                close_fds=True, start_new_session=True)
+            # Deferred cleanup has no terminal; retain its maintenance diagnostics.
+            with (self.directory / "cleanup.log").open("ab") as log:
+                os.chmod(log.name, 0o600)
+                subprocess.Popen(
+                    [str(HELPER), "idle-cleanup", "--repo", str(self.repository),
+                     "--delay", str(IDLE_SECONDS), "--lease", lease],
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                    close_fds=True, start_new_session=True)
         except OSError:
             try:
                 if lease_path.read_text(encoding="utf-8") == lease:
