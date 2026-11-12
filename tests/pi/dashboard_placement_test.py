@@ -140,9 +140,11 @@ while True: time.sleep(1)
     def selections(self):
         return self.tmux("list-sessions", "-F", "#{session_id}:#{window_id}:#{pane_id}")
 
-    def spawn(self, token="browser-token", browser=True, session="pi-dashboard"):
+    def spawn(self, token="browser-token", browser=True, session="pi-dashboard", new_session=False):
         record = self.root / (token + ".json")
-        arguments = ["new-window", "-d", "-t", "=" + session, "-P", "-F", "#{pane_id}|#{window_id}"]
+        arguments = (["new-session", "-d", "-s", session] if new_session else
+                     ["new-window", "-d", "-t", "=" + session])
+        arguments += ["-P", "-F", "#{pane_id}|#{window_id}"]
         command = ["exec", "env", "PATH=" + str(self.bin) + ":" + os.environ["PATH"]]
         if browser:
             command += ["PI_DASHBOARD_SPAWN_TOKEN=" + token]
@@ -153,7 +155,7 @@ while True: time.sleep(1)
         data = json.loads(self.wait_file(record))
         return pane, window, data
 
-    def test_links_same_window_and_process_to_mru_without_changing_selection(self):
+    def test_moves_same_window_and_process_to_mru_without_changing_selection(self):
         self.session("work")
         self.session("pi-dashboard-prefix")  # eligible despite backing-name prefix
         self.session("work-created-last")
@@ -179,16 +181,15 @@ while True: time.sleep(1)
         self.assertEqual(before, self.selections())
         self.assertEqual(clients_before, self.tmux("list-clients", "-F", "#{client_name}:#{session_id}:#{window_id}:#{pane_id}"))
         self.assertIn(window, self.windows("pi-dashboard-prefix"))
-        self.assertIn(window, self.windows("pi-dashboard"))
+        self.assertNotIn(window, self.windows("pi-dashboard"))
         self.assertNotIn(window, self.windows("work-created-last"))
         self.assertNotIn(window, self.windows("work"))
         self.assertEqual(str(data["pid"]), self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}"))
         self.assertEqual("browser-token", data["token"])  # bridge still needs it
         self.assertEqual(pane, self.tmux("list-panes", "-t", window, "-F", "#{pane_id}"))
-        self.assertEqual(2, self.tmux("list-windows", "-a", "-F", "#{window_id}").splitlines().count(window))
-        # A later CLI descendant cannot re-place a pane after the first choice.
-        self.tmux("unlink-window", "-t", self.tmux("display-message", "-p", "-t", "=pi-dashboard-prefix", "#{session_id}") + ":" +
-                  self.tmux("display-message", "-p", "-t", "=pi-dashboard-prefix:" + window, "#{window_index}"))
+        self.assertEqual(1, self.tmux("list-windows", "-a", "-F", "#{window_id}").splitlines().count(window))
+        # Even if moved back manually, a later CLI descendant cannot re-place it.
+        self.tmux("move-window", "-d", "-s", window, "-t", "pi-dashboard:")
         subprocess.run([sys.executable, str(HELPER)], env={**self.env, "TMUX": self.socket + ",0,0",
             "TMUX_PANE": pane, "PI_DASHBOARD_SPAWN_TOKEN": "browser-token"}, check=True)
         self.assertNotIn(window, self.windows("pi-dashboard-prefix"))
@@ -233,7 +234,7 @@ while True: time.sleep(1)
         self.tmux("kill-pane", "-t", pane)
         self.assertEqual("cleaned", self.wait_file(cleaned))
 
-    def test_concurrent_spawns_link_distinct_original_windows_with_bridge_tokens_intact(self):
+    def test_concurrent_spawns_move_distinct_original_windows_with_bridge_tokens_intact(self):
         self.session("eligible")
         self.session("pi-dashboard")
         before = self.selections()
@@ -245,8 +246,25 @@ while True: time.sleep(1)
         for token, (pane, window, data) in zip(("first", "second"), results):
             self.assertEqual(token, data["token"])
             self.assertIn(window, self.windows("eligible"))
-            self.assertIn(window, self.windows("pi-dashboard"))
+            self.assertNotIn(window, self.windows("pi-dashboard"))
             self.assertEqual(str(data["pid"]), self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}"))
+
+    def test_last_window_removes_backing_session_and_later_spawn_recreates_it(self):
+        self.session("eligible")
+        before = self.selections()
+        for token in ("first", "second"):
+            with self.subTest(token=token):
+                pane, window, data = self.spawn(token=token, new_session=True)
+                self.assertEqual(before, self.selections())
+                self.assertIn(window, self.windows("eligible"))
+                self.assertEqual(1, self.tmux("list-windows", "-a", "-F", "#{window_id}").splitlines().count(window))
+                self.assertEqual(str(data["pid"]), self.tmux("display-message", "-p", "-t", pane, "#{pane_pid}"))
+                self.assertEqual(token, data["token"])
+                self.assertNotIn("pi-dashboard", self.tmux("list-sessions", "-F", "#{session_name}").splitlines())
+                # Dashboard's failure monitor still addresses the original pane.
+                self.tmux("set-option", "-p", "-t", pane, "remain-on-exit", "off")
+                self.tmux("kill-pane", "-t", pane)
+                self.assertNotIn(window, self.windows("eligible"))
 
     def test_no_eligible_destination_leaves_backing_only_and_cli_does_not_relocate(self):
         self.session("background", "background")

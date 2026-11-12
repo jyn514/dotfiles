@@ -223,11 +223,12 @@ Create, continue, and fork use the normal sandbox launcher in a tmux TUI, not Da
 A missing tmux reports an error rather than silently selecting RPC.
 The existing launcher still requires a Git repository and retains project-trust and worker ownership rules.
 
-Dashboard keeps its `pi-dashboard` backing session.
-Before the new Pi starts, the wrapper links its window into the most recently active existing tmux session containing a live foreground Pi job.
+Dashboard initially creates each window in its `pi-dashboard` backing session.
+Before the new Pi starts, the wrapper moves its window into the most recently active existing tmux session containing a live foreground Pi job.
 Pane directories do not affect placement.
-The linked window shares the same pane and process; placement does not select a window or change desktop focus.
-Without an eligible session, the window stays only in the backing session.
+The move preserves window and pane IDs and the running process; placement does not select a destination window or change desktop focus.
+When its last window moves out, the backing session disappears; Dashboard recreates it for the next browser-created session.
+Without an eligible session, the window stays in the backing session.
 
 The existing asynchronous `ask_user` queue owns browser and terminal answers.
 Dashboard does not register a competing tool or persist a second queue.

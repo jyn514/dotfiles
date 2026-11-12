@@ -15,7 +15,7 @@ case "$#:${1:-}" in
 		;;
 esac
 if [ -n "${PI_DASHBOARD_SPAWN_TOKEN:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]; then
-	# Dashboard has already created the backing window. Link it before the new
+	# Dashboard has already created the backing window. Move it before the new
 	# Pi can influence destination eligibility; ordinary CLI calls stay unchanged.
 	script=$(realpath -- "$0") || exit
 	root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit

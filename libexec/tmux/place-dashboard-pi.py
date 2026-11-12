@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Expose a newly spawned Dashboard TUI in the most recently used Pi session.
+"""Move a newly spawned Dashboard TUI into the most recently used Pi session.
 
 This runs before the launcher: the new Pi must not participate in choosing its
-own destination. Dashboard retains its backing window and all process ownership.
+own destination. Window/pane IDs and Dashboard process ownership stay unchanged.
 """
 
 from __future__ import annotations
@@ -116,9 +116,10 @@ def place(environment: dict[str, str]) -> None:
             eligible.add((int(activity), session))
     if eligible:
         _, destination = max(eligible)
-        # IDs avoid tmux's name-prefix matching. -d leaves all selections alone;
-        # link-window shares the original window/panes rather than moving them.
-        tmux("link-window", "-d", "-s", source[3], "-t", destination + ":")
+        # IDs avoid tmux's name-prefix matching; -d preserves destination focus.
+        # Moving preserves pane IDs used by Dashboard's startup monitor and
+        # removes the backing session automatically when its last window leaves.
+        tmux("move-window", "-d", "-s", source[3], "-t", destination + ":")
 
 
 def main() -> int:
@@ -126,7 +127,7 @@ def main() -> int:
         place(dict(os.environ))
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         # Placement is cosmetic; a disappearing candidate must not prevent the
-        # authoritative launcher/bridge from starting in Dashboard's window.
+        # authoritative launcher/bridge from starting in the original pane.
         print(f"Pi Dashboard window placement skipped: {error}", file=sys.stderr)
     return 0
 
