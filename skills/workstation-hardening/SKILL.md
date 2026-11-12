@@ -2,8 +2,9 @@
 name: workstation-hardening
 description: >-
   Assess and improve a developer workstation or local host that stores or invokes sensitive credentials or capabilities.
-  Use for same-uid process isolation, launcher secret handling, hardware-token workflows, PAM or sudo trade-offs,
-  SSH key posture, Secure Boot, encrypted-disk limits, and other host hardening choices driven by a concrete attacker path.
+  Use for broad workstation-hardening requests, same-uid process isolation, launcher secret handling,
+  hardware-token workflows, PAM or sudo trade-offs, SSH key posture, Secure Boot, encrypted-disk limits,
+  and other host hardening choices. For broad requests, establish a concrete local threat model before choosing controls.
   Not for web application review, network perimeter design, incident response, or a generic checklist with no named asset.
 ---
 
@@ -11,9 +12,21 @@ description: >-
 
 Reduce the path by which the named attacker can reach the named local capability.
 
-## Start with the asset and attacker
+## Require a threat model before acting
 
-Name what access matters, where it appears in the system, and which attacker matters now.
+Do not recommend or apply a hardening control until you can state:
+
+- the local asset or capability at risk;
+- the plausible attacker and what makes that attacker plausible here;
+- the concrete path from attacker to asset;
+- why that path matters under the user's goals;
+- the friction or recovery constraint that could change the choice.
+
+If the user asks for general hardening, narrow it into one or more concrete threat models first.
+Read-only inventory that helps form the model is fine.
+Do not turn that inventory into a checklist of controls to apply by default.
+If the model cannot be inferred from the request and available evidence, ask focused questions.
+Pause only the dependent hardening work.
 Do not collapse same-uid code execution, password replay, remote login, physical access, and hardware-token loss into “local attacker.”
 If the user corrects the credential source or access path, discard conclusions built on the old path and inspect the new one.
 
@@ -62,14 +75,18 @@ Do not present a target-specific confinement mechanism as a user-wide boundary u
 Before a broad host control such as a `/proc` mount option, login or session-root policy, or user-wide LSM rule, verify the exact attacker action first.
 If the candidate does not block that read, trace, login, or boot path in a representative case, stop before accepting its broader host cost.
 
+When several mechanisms remain plausible, record the current goal, observed facts, unknowns, candidate mechanisms, and rejected mechanisms before continuing.
+Do the same when a failed candidate starts to expand the search.
+Use that record to compare the next option against the original threat model rather than against the last failure.
+
 When the user rejects the stronger boundary, state the residual exposure precisely and continue with the best remaining option.
 Use [work-selection](../work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or hardening layer.
 Use [human-review-packets](../human-review-packets/SKILL.md) before asking the user to approve a lockout-prone auth change or firmware-key enrollment.
 
 ## Keep public and private state separate
 
-Public configuration can track generic hardware-token support, generic launcher plumbing, and reusable host policy.
-Keep machine-local secret names, ciphertext, serial numbers, service names, recovery data, and admin paths in local state unless the user explicitly wants them published.
+Public configuration can track generic hardware-token support, generic launcher plumbing, reusable policy names, generic service names, and operator docs.
+Keep machine-local secret names, ciphertext, serial numbers, secret-specific service names, recovery data, and admin URLs or paths in local state unless the user explicitly wants them published.
 Document local rotation and recovery beside the local state that needs it.
 
 ## Verify the boundary
@@ -79,6 +96,11 @@ For same-uid isolation, test the actual sibling read or trace path from the real
 For LSM or service changes, confirm the kernel or service loaded the policy after the required reboot, reload, or relogin.
 For PAM or hardware-token changes, inspect the real stack order and confirm a recovery path before removing a fallback.
 For Secure Boot, verify firmware state and the signed boot artifact that will actually run.
+If the threat model includes a person with firmware setup access, treat a firmware admin password and external-boot settings as separate controls.
+Secure Boot being enabled does not prove it is hard to disable.
+
+For a broad host control, also test representative allowed behavior and rollback.
+A rule that blocks the attacker path can still break login, parent debugging, session services, ssh, tmux, or reboot recovery.
 
 Do not claim a control works when only the configuration step is complete.
 State what remains unverified until the reload boundary has happened.
@@ -104,6 +126,8 @@ Before removing password fallback, count enrolled recovery paths and make the lo
 If `/boot` is outside the encrypted volume, an attacker with physical access can replace code that runs before the disk unlock prompt.
 Use Secure Boot only with the signed artifact that contains the kernel, initramfs, and command line that will actually boot.
 Check the current boot loader and artifact layout before choosing the enrollment path.
+If the attacker can open firmware setup, decide separately whether Secure Boot must also be hard to disable.
+That may require a firmware admin password and external-boot restrictions.
 
 ## Finish
 
