@@ -105,7 +105,9 @@
       "$HOME/.config/zsh/": {
         "glob": true,
         "path": "config/zsh/.*"
-      }
+      },
+      "$HOME/.config/rofi/themes/grid.rasi": "config/grid.rasi",
+      "$HOME/.config/rofimoji.rc": "config/rofimoji.rc"
     }
   },
   {
