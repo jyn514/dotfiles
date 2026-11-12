@@ -44,6 +44,8 @@ A target-specific boundary can attach to one launcher, executable, or service.
 A user-wide sibling rule must cover the full set of processes and peer operations that the chosen mechanism uses to decide access.
 Transition-based confinement usually has to cover the relevant launch paths.
 Operation-based mediation usually has to cover the relevant read or trace hooks.
+For AppArmor specifically, a target-only profile does not block ordinary unconfined same-uid readers because AppArmor skips the ptrace cross-check for an unconfined tracer.
+Do not treat that shape as a target boundary unless the reader side is also confined.
 For a user-wide sibling rule, prefer operation-based mediation when the kernel hook can express the denied read or trace directly.
 Treat launch-tree allowlists as fragile.
 If the design names trusted session roots, such as `user@.service`, ssh, mosh, or a display manager, inspect the live session tree before rollout and show that every required root is covered.
