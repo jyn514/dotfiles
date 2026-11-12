@@ -25,6 +25,7 @@ setup_install_global() { record global; }
 setup_kde() { record kde; }
 setup_sandbox() { record sandbox; }
 setup_services() { record services; }
+setup_proc_hardening() { record proc-hardening; }
 """
         source = (ROOT / "setup").read_text()
         marker = 'if ! [ $# = 0 ]; then\n'
@@ -43,6 +44,8 @@ setup_services() { record services; }
             "10": ["sandbox"],
             "11": ["services"],
             "services": ["services"],
+            "12": ["proc-hardening"],
+            "proc-hardening": ["proc-hardening"],
         }
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -228,7 +231,8 @@ setup_services() { record services; }
             )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("[services|11]", result.stdout)
-        self.assertIn("Please enter a number 0-11", result.stdout)
+        self.assertIn("[proc|12]", result.stdout)
+        self.assertIn("Please enter a number 0-12", result.stdout)
 
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -399,6 +403,7 @@ esac
         self.assertEqual(126, result.returncode, result.stderr)
         self.assertEqual([], effects)
         self.assertIn("[services|11]", result.stdout)
+        self.assertIn("[proc|12]", result.stdout)
 
     def test_services_configures_dashboard_after_existing_services_without_startup(self):
         for option in ("services", "11"):

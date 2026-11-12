@@ -25,6 +25,7 @@ Keep this index current when adding, renaming, or removing a helper.
 - [`analyze-agent-permissions`](../bin/analyze-agent-permissions) analyzes Claude permission usage; implementation and policy live in [agent-permissions](agent-permissions/).
 - [`agent-permissions`](agent-permissions/) defines agent command policy, renders Codex rules or Claude settings, and audits Claude command history against generated Bash permissions. Policy changes alter agent authority.
 - [`codex-config`](codex-config/) moves Codex-generated project trust, model-availability, and hook-state tables from the tracked dotfiles profile into the untracked user config before launch and after exit.
+- [`proc-hardening`](proc-hardening/) builds and installs a BPF LSM rule that blocks unrelated same-uid proc reads while keeping parent-to-child reads. Use `./setup proc-hardening`; see the [operator guide](proc-hardening/README.md).
 
 ### Sessions and coordination
 

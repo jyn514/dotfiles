@@ -378,6 +378,10 @@ setup_backup () {
 	python3 tools/backup/install.py
 }
 
+setup_proc_hardening () {
+	python3 tools/proc-hardening/install.py
+}
+
 setup_services () {
 	setup_dotfiles || return
 	if [ "$(uname -s)" = Linux ]; then
@@ -528,6 +532,7 @@ message () {
 [all|9] all
 [sandbox|10] provision Lima-Docker sandbox VM
 [services|11] configure local user services
+[proc|12] install proc read guard
 Choose setup to run: "
 }
 
@@ -557,6 +562,7 @@ run() {
 		kde*|8) setup_kde;;
 		sandbox*|10) setup_sandbox;;
 		services|11) setup_services;;
+		proc*|12) setup_proc_hardening;;
 		all|9) setup_all;;
 		*) return 126;;
 	esac
@@ -579,7 +585,7 @@ else
 	message
 	while read -r choice; do
 		if ! run "$choice"; then
-			echo "Please enter a number 0-11: "
+			echo "Please enter a number 0-12: "
 		fi
 		message
 	done

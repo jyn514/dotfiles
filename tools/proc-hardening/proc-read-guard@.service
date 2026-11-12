@@ -1,0 +1,14 @@
+[Unit]
+Description=Block same-uid sibling proc reads for uid %i
+After=systemd-sysctl.service
+Before=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/proc-read-guard load %i
+ExecReload=/usr/local/libexec/proc-read-guard load %i
+ExecStop=/usr/local/libexec/proc-read-guard unload %i
+RemainAfterExit=yes
+
+[Install]
+WantedBy=systemd-user-sessions.service
