@@ -38,6 +38,9 @@ Late joiners receive no replay.
 **Worker delivery requires the supported manager/child bridge:** it selects active own workers; without it, worker inclusion reports unsupported.
 Do not claim workers received a root broadcast or invent an automatic parent-forwarding rule.
 
+Avoid broadcasts in most cases.
+They should only be used by executives and coordinators.
+
 ## Keep replies private
 
 Keep task-specific answers private through `link_send` with `to: { authorOf: messageId }` to the received message.
