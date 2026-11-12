@@ -654,6 +654,10 @@ Saved descriptive session titles remain available in Pi's session picker and his
 
 **Name normalization:** Link names are normalized — leading/trailing whitespace removed and internal whitespace runs collapsed to a single space. `/link-name "build   lead"` saves and shows as `build lead`.
 
+Dashboard-created sessions use `t-dashboard-<four-random-hex>` instead of `t-<four-random-hex>` as their generated default.
+This remains agent-renamable and persists on resume; it does not replace explicit or saved names.
+The configured package order loads pi-link before Dashboard so it can observe the spawn token before Dashboard consumes it.
+
 **Name precedence:** `pi --link-name` > `pi-link <name>` > saved link identity > Pi session name > generated default. _(The `pi-link` wrapper itself does not accept `--link-name`; pick one or the other.)_
 
 Root defaults are random names such as `t-a3f9`.

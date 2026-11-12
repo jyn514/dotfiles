@@ -1128,6 +1128,28 @@ test("installed root bridge discovers per operation and transports worker replie
   assert.ok(!providerText(author).includes("must not retry on endpoint"));
 });
 
+test("Dashboard root default uses the spawn marker before bridge scrubbing without overriding names", () => {
+  const childFixture = fileURLToPath(new URL("./identity-child.mjs", import.meta.url));
+  for (const [token, explicit, expected] of [
+    ["browser-token", undefined, /^t-dashboard-[0-9a-f]{4}$/],
+    ["", undefined, /^t-[0-9a-f]{4}$/],
+    [undefined, undefined, /^t-[0-9a-f]{4}$/],
+    ["browser-token", "chosen", /^chosen$/],
+  ]) {
+    const env = { ...process.env };
+    for (const key of ["PI_LINK_NAME", "PI_LINK_PARENT_IDENTITY", "PI_SUBAGENT_PARENT_SESSION_ID",
+      "PI_SUBAGENT_OWNER_TOKEN", "PI_SUBAGENT_TASK_NAME", "PI_DASHBOARD_SPAWN_TOKEN"]) delete env[key];
+    if (token !== undefined) env.PI_DASHBOARD_SPAWN_TOKEN = token;
+    if (explicit !== undefined) env.PI_LINK_NAME = explicit;
+    const result = spawnSync(process.execPath, [childFixture, sourcePath], { encoding: "utf8", timeout: 15_000, env });
+    assert.equal(result.status, 0, result.stderr);
+    const details = JSON.parse(result.stdout.trim().split("\n").at(-1));
+    assert.match(details.preferred.name, expected);
+    assert.equal(details.preferred.nameOrigin, explicit ? "user" : "generated");
+    assert.equal(details.sessionName, details.preferred.name);
+  }
+});
+
 test("managed child inherits the assigned parent name across a real process boundary", async (t) => {
   const previous = process.env.PI_LINK_PARENT_IDENTITY;
   t.after(() => {

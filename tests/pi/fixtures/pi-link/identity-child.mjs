@@ -24,6 +24,9 @@ try {
     additionalExtensionPaths: [process.argv[2]], systemPrompt: "Offline identity fixture." });
   await loader.reload();
   assert.deepEqual(loader.getExtensions().errors, []);
+  // Dashboard activates after pi-link in configured package order and scrubs
+  // this token before session_start. Naming must capture it during activation.
+  delete process.env.PI_DASHBOARD_SPAWN_TOKEN;
   const sessionManager = SessionManager.inMemory(directory);
   sessionManager.appendCustomEntry("link-active", { active: false });
   ({ session } = await createAgentSession({ cwd: directory, agentDir, settingsManager, modelRuntime,

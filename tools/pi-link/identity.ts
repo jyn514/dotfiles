@@ -85,9 +85,13 @@ export function applyAgentIdentity(
  * The manager inherits this snapshot and supplies PI_SUBAGENT_PARENT_SESSION_ID.
  * Match that ID so an ordinary nested terminal cannot inherit a worker default.
  * Missing, stale, or malformed handoffs keep the independent random default.
+ * Dashboard spawns distinguish that default without overriding a valid parent.
  */
-export function generatedName(suffix: string, parentSessionId?: string, parentIdentity?: string, taskName?: string): string {
-  const fallback = `t-${suffix}`;
+export function generatedName(
+  suffix: string, parentSessionId?: string, parentIdentity?: string, taskName?: string,
+  dashboardSpawned = false,
+): string {
+  const fallback = dashboardSpawned ? `t-dashboard-${suffix}` : `t-${suffix}`;
   if (!parentSessionId || !parentIdentity) return fallback;
   let value: unknown;
   try { value = JSON.parse(parentIdentity); } catch { return fallback; }

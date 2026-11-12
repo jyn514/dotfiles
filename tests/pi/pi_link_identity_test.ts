@@ -148,6 +148,29 @@ describe("parent-derived generated names", () => {
   });
 });
 
+describe("Dashboard-generated names", () => {
+  test("marks only Dashboard root defaults and keeps managed parent naming", () => {
+    expect(generatedName("256f", undefined, undefined, undefined, true)).toBe("t-dashboard-256f");
+    expect(generatedName("256f", undefined, undefined, undefined, false)).toBe("t-256f");
+    const parent = JSON.stringify({ version: 1, sessionId: "parent", name: "t-dashboard-256f@review" });
+    expect(generatedName("abcd", "parent", parent, "qa", true)).toBe("t-dashboard-256f-qa@review");
+    expect(generatedName("abcd", "other", parent, "qa", true)).toBe("t-dashboard-abcd");
+  });
+
+  test("stays generated, survives resume without the token, and yields to chosen names", () => {
+    const generated = generatedName("256f", undefined, undefined, undefined, true);
+    const first = initialIdentity({ generatedName: generated, entries: [] });
+    expect(first).toEqual({ name: "t-dashboard-256f", group: "", nameOrigin: "generated", groupOrigin: "generated" });
+    expect(initialIdentity({ generatedName: generatedName("abcd"), entries: [saved(first)] })).toEqual(first);
+    for (const override of [{ cliName: "chosen" }, { envName: "chosen" }, { sessionName: "chosen" },
+      { entries: [legacy("chosen")] }]) {
+      expect(fullName(initialIdentity({ generatedName: generated, entries: [], ...override }))).toBe("chosen");
+    }
+    expect(initialIdentity({ generatedName: generated, entries: [saved(chosen)] })).toEqual(chosen);
+    expect(accepted(first, { name: "reviewer" }).nameOrigin).toBe("agent");
+  });
+});
+
 describe("manual ownership", () => {
   test("same-value manual assignments claim explicit fields, repeatedly", () => {
     const localOnly = applyUserIdentity(fresh(), "t-a1b2");

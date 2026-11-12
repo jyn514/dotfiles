@@ -10,6 +10,7 @@ This changelog is based on the git history from `2026-03-21` (initial commit) th
 
 ### Added
 
+- Dashboard-created sessions default to `t-dashboard-<four-random-hex>` without overriding explicit or saved names or managed-child naming.
 - `link_set_identity` changes this root session's preferred local name and/or group without replacing user-owned fields.
   Per-field origins survive reload and resume, unknown legacy ownership stays protected, and offline updates do not reconnect.
   Preferred identities remain distinct from hub-assigned collision suffixes; explicit user empty-`@` spelling is preserved.
