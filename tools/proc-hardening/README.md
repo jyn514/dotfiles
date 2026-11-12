@@ -86,6 +86,26 @@ They check group credentials and supplementary membership, unchanged parent and
 sibling behavior, and preservation of prior security denials.
 They do not replace kernel-verifier acceptance or a fresh live 1Password connection.
 
+The native skeleton regressions need the build dependencies and host BTF, but
+not root:
+
+```sh
+dev/test-environment python3 tools/proc-hardening/tests/skeleton_failure_test.py
+```
+
+They use the generated skeleton and installed libbpf, inject failure into each
+constructor allocation, and force cleanup to overwrite `errno` during an update.
+BPF loading, attachment, pin changes, and filesystem mutation are blocked in the
+modeled update path.
+
+The loader keeps an allocation-failure compatibility shim around generated
+cleanup: libbpf 1.8.0 can dereference a missing program array when its count is
+already set. The shim clears that count only when the array is absent, then uses
+the public libbpf destructor. Generated headers remain unchanged, and normal
+allocated arrays receive normal cleanup.
+The loader also preserves the original skeleton-open error before releasing
+old link and program references, so cleanup cannot replace the primary diagnostic.
+
 ## Build
 
 ```sh

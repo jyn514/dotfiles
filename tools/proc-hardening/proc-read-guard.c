@@ -13,7 +13,21 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
+static void destroy_partial_skeleton(struct bpf_object_skeleton *skeleton)
+{
+	/* The generator sets prog_cnt before calloc. libbpf 1.8.0 cleanup
+	 * indexes that array even when allocation failed. Normalize only
+	 * the absent array; allocated programs still receive normal cleanup.
+	 */
+	if (skeleton && !skeleton->progs)
+		skeleton->prog_cnt = 0;
+	bpf_object__destroy_skeleton(skeleton);
+}
+
+/* Keep the compatibility fix in its owning source, not generated output. */
+#define bpf_object__destroy_skeleton destroy_partial_skeleton
 #include "proc-read-guard.skel.h"
+#undef bpf_object__destroy_skeleton
 
 #define BPF_PIN_ROOT "/sys/fs/bpf/proc-read-guard"
 #define PROGRAM_NAME "proc_read_guard"
@@ -460,9 +474,11 @@ static int load_guard(__u32 uid)
 			return 1;
 		skel = proc_read_guard_bpf__open();
 		if (!skel) {
+			int open_error = errno ? errno : ENOMEM;
+
 			close_bpf_fd(old_prog_fd, "program fd");
 			release_link_reference(link);
-			return report_errno("open BPF skeleton", errno ? errno : ENOMEM);
+			return report_errno("open BPF skeleton", open_error);
 		}
 		configure_rodata(skel, uid, trusted_gid);
 		error = proc_read_guard_bpf__load(skel);

@@ -26,4 +26,5 @@ tools/fork-github/tests/fork_github_cli_test.py
 tools/git-autosquash/tests/git_autosquash_native_test.py
 tools/git-hooks/tests/test_pre_commit.py
 tools/lapwing-prototype/generate_model_test.py
+tools/proc-hardening/tests/skeleton_failure_test.py
 tools/remote-git-url/tests/test_literal_resources.py
