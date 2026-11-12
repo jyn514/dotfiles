@@ -108,6 +108,12 @@ primary listener and gateway; it does not silently drop loopback. Normal stop
 also closes loopback's idle and upgraded sockets. A fresh server can reopen both
 addresses at the same port, and proofs predating that listener are rejected.
 
+## Investigating behavior
+
+For desktop window placement, start with [`place-dashboard-pi.py`](../../tmux/place-dashboard-pi.py).
+For Dashboard behavior, inspect the pinned upstream source with our source patch applied; [Rebuild and regenerate](#rebuild-and-regenerate) describes how to prepare that checkout.
+Prefer searches in the relevant source files over broad searches through the runtime patch, which includes minified browser assets that can overwhelm search output.
+
 ## Installation dependencies
 
 The mise declaration pins the root release but does not fully lock its transitive graph.
