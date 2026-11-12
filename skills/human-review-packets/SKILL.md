@@ -10,6 +10,10 @@ This skill owns human-facing framing; leave investigation and design selection w
 It grants no implementation or approval authority.
 Ask simple preferences, routine confirmations, and missing-fact questions directly.
 
+Do not ever ask me to run unknown or unreviewed scripts with escalated privileges.
+Your review doesn't count.
+Find another approach, or simplify the script enough that I can easily understand it just by looking at it.
+
 ## Find the judgment that remains
 
 Read the request, previous answers, authoritative sources, and affected examples.
