@@ -150,8 +150,10 @@ For other mechanisms, distinguish persisted state from live client refresh and v
 Report only new information not already apparent from tool output or earlier messages:
 
 - blockers or required work left unfinished;
+- usefulness of docs, skills, and tooling;
 - required or recommended follow-ups;
 - material benefits and costs of the process, including steps to omit, narrow, or replace in future work, or why costly steps were justified;
+- whether you believe the work done was, as a whole, an improvement compared to the baseline before your changes;
 - anything else that would be hard for another agent to recover without reading the session log.
 
 Do not report commits or successful verification unless the user explicitly asks.
