@@ -21,9 +21,11 @@ accessing Lima or Docker. In a Git repository without Jujutsu, it runs
 `jj git init --colocate` at the Git root, including when launched from a subdirectory.
 The launcher also initializes its Git-only dotfiles checkout on the host when JJ metadata is absent.
 It coordinates concurrent initialization and never replaces malformed existing metadata; startup reports the affected checkout instead.
-Host mode requires the Pi installation at
+Host mode normally requires the Pi installation at
 `~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
-current sandbox image. `./setup local` builds `jyn514/pi` from upstream main
+current sandbox image.
+`CODEX_SANDBOX_HOST_PI` can select an absolute host Pi executable instead, including a source-tree launcher.
+The guest worker and its image revision still come from the installed Pi; compatibility with an overridden host Pi is not established automatically. `./setup local` builds `jyn514/pi` from upstream main
 checkout and installs that package at this path; `./setup all` includes it.
 To repeat just this step, run `mise run pi-install` from this repository.
 Guest Pi builds use the installed host commit recorded in

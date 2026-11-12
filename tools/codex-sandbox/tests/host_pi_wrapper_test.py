@@ -91,6 +91,32 @@ class HostPiWrapperTest(unittest.TestCase):
         native = json.loads(result.stdout)
         self.assertEqual(["--offline", "--version"], native["arguments"])
 
+    def test_explicit_host_pi_overrides_installed_cli(self) -> None:
+        override = self.home / "source pi"
+        override.symlink_to(TOOL / "tests/fixtures/host_pi_wrapper.py")
+        (self.home / ".local/share/pi/node/node_modules/.bin/pi").unlink()
+        result = self.run_wrapper("--mode", "rpc", CODEX_SANDBOX_HOST_PI=str(override))
+        self.assertEqual(0, result.returncode, result.stderr)
+        native = json.loads(result.stdout)
+        self.assertEqual(["--mode", "rpc"], native["arguments"][-2:])
+
+    def test_dotfiles_pi_entrypoint_passes_override_for_version(self) -> None:
+        override = self.home / "source pi"
+        override.symlink_to(TOOL / "tests/fixtures/host_pi_wrapper.py")
+        result = subprocess.run(
+            [str(ROOT / "bin/pi"), "--version"],
+            env={**self.environment, "CODEX_SANDBOX_HOST_PI": str(override)},
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["--offline", "--version"], json.loads(result.stdout)["arguments"])
+
+    def test_invalid_override_does_not_fall_back_to_installed_cli(self) -> None:
+        result = self.run_wrapper(CODEX_SANDBOX_HOST_PI=str(self.home / "missing"))
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("Host Pi executable is unavailable", result.stderr)
+
     def test_native_child_exit_status_is_preserved(self) -> None:
         result = self.run_wrapper("--mode", "rpc", HOST_PI_FIXTURE_EXIT="17")
         self.assertEqual(17, result.returncode, result.stderr)

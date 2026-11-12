@@ -268,8 +268,9 @@ class HostPiOwner:
             # never tmux command argv (including its failure diagnostics).
             launch_environment = {"CODEX_SANDBOX_PI_OWNER": self.path,
                                   "CODEX_SANDBOX_PI_ATTACHMENT": item.token}
-            if "HOME" in self.environment:
-                launch_environment["HOME"] = self.environment["HOME"]
+            for key in ("HOME", "CODEX_SANDBOX_HOST_PI"):
+                if key in self.environment:
+                    launch_environment[key] = self.environment[key]
             command = shlex.join(["env", *(f"{k}={v}" for k, v in launch_environment.items()), *spec["argv"]])
             result = subprocess.run(["tmux", "split-window", "-P", "-F", "#{pane_id}",
                                      "-t", source.pane or self.environment["TMUX_PANE"], "-c", self.cwd, command],

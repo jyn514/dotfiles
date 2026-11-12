@@ -18,9 +18,10 @@ def main() -> int:
                     "CODEX_SANDBOX_PI_CONTROL", "CODEX_SANDBOX_PREVIOUS_CWD"):
             os.environ.pop(key, None)
     home = Path.home()
-    pi_cli = home / ".local/share/pi/node/node_modules/.bin/pi"
-    if not pi_cli.is_file():
-        raise SystemExit(f"Host Pi is not installed at {pi_cli}")
+    override = os.environ.get("CODEX_SANDBOX_HOST_PI")
+    pi_cli = Path(override) if override else home / ".local/share/pi/node/node_modules/.bin/pi"
+    if not pi_cli.is_absolute() or not pi_cli.is_file() or not os.access(pi_cli, os.X_OK):
+        raise SystemExit(f"Host Pi executable is unavailable: {pi_cli}")
     if len(arguments) == 1 and arguments[0] in ("--version", "-v"):
         os.execv(pi_cli, [str(pi_cli), "--offline", *arguments])
     if arguments[:1] == ["--export"]:
