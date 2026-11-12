@@ -99,7 +99,8 @@ Distinguish a deliberately skipped check from one blocked by missing access or i
 Give the reason when it changes the conclusion or next action.
 Limit claims about unperformed checks to the investigation whose records you have.
 
-For task-oriented prose, make an aggressive deletion pass once the explanation works.
+Make an aggressive deletion pass once the explanation works.
+Edit like you are a chainsaw-wielding maniac that just discovered the sentences are young adults who came to the lake at summer camp after sunset.
 Cut repeated claims, investigation narration, defensive qualifications, announcements, and paraphrases with no further purpose.
 Keep the request, concrete motivation, decisive evidence, and qualifications that change the conclusion or next action.
 Keep rationale, rejected alternatives, and examples that guide a future choice or prevent a likely mistake.
