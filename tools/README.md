@@ -264,7 +264,7 @@ Homebrew installs `gdu-go`; macOS local setup provides the `gdu` alias.
 
 | Task | Helper and important effects |
 | --- | --- |
-| Browse local files and rendered documents | [`view`](../bin/view) opens pinned Metabrowser with the local [reStructuredText plugin](view/README.md); first use populates uv's cache. |
+| Browse local files and rendered documents | [`view`](../bin/view) opens pinned Metabrowser with the local [view plugins](view/README.md); first use populates uv's cache. |
 | Preview a Graphviz graph | [`view_dot`](../bin/view_dot) writes a sibling `.preview.svg` and opens it; replaces only its own marked previews. |
 | Preview Markdown | [`view_markdown`](../bin/view_markdown) writes a sibling `.preview.html` and opens it; replaces only its own marked previews. |
 

@@ -12,3 +12,13 @@ The renderer disables raw HTML and file-including directives so a viewed documen
 
 The Markdown plugin keeps Metabrowser's built-in KPress renderer and upgrades fenced `mermaid` blocks into diagrams with vendored Mermaid 11.12.1.
 It only runs in trusted rendered Markdown views; `--untrusted` and `--no-active-content` keep Mermaid blocks as source code.
+
+## Development checks
+
+After changing a plugin manifest, packaged asset, or entry point, run a fresh plugin discovery check from the repository root:
+
+```sh
+uvx --no-cache --from metabrowser==0.12.0 --with tools/view metab --doctor
+```
+
+The `--no-cache` flag matters for uncommitted local edits because uvx can otherwise reuse an older wheel for the same local package version.
