@@ -36,6 +36,8 @@ It helps choose a control class without turning the task into a baseline checkli
 ## Inspect the real path
 
 Inspect the launcher, secret source, file modes, process environment, service state, PAM stack, SSH configuration, boot chain, and enrolled hardware keys that actually participate in the path.
+Include session copies and offline caches that expose the named asset.
+Revoking a credential or protecting one browser profile does not remove mail or attachments cached elsewhere.
 Use the smallest read-only probe that can distinguish the live behavior from a plausible alternative.
 For host services, EFI state, or other facts hidden by sandboxing, request an unsandboxed read-only check before drawing a conclusion.
 
@@ -113,6 +115,24 @@ If the concern is same-uid malware, a locked secret store and `0600` files stop 
 Inspect whether a sibling can read or trace that process.
 If it can, prefer a real same-uid boundary first.
 If the user keeps one account, use the best supported mediation available, shorten secret lifetime where practical, disable avoidable dumps, and keep the residual exposure to the target process explicit.
+
+### A trusted app needs private on-disk data
+
+A trusted browser needs its cookies, but unrelated same-uid programs must not read them.
+The goal is to protect the browser's data from those readers, not to restrict its legitimate desktop and file access.
+Peer authentication or file ownership may depend on the existing uid and primary gid.
+Changing them can break integrations even when a smaller file-access boundary would suffice.
+
+On Linux, one option is a root-owned parent directory that grants traversal only to an app-private group.
+The contained data can remain owned by the ordinary user while the browser receives that group as a supplementary group.
+Grant it only through a trusted launch path, such as a fixed service; keep it out of both the account's persistent groups and the login session.
+If process-read exceptions trust ancestors, the untrusted launch requester must not become a trusted ancestor of the browser.
+
+The directory boundary does not by itself block reads through memory, open file descriptors, or `/proc`.
+Verify those paths independently from the ordinary session, and check that the real credential and desktop integrations still work.
+Direct children inherit the group unless a later launch boundary changes credentials.
+State whether those children are trusted or remain an accepted exposure.
+Choose this combination only when it fits the named attacker path and interoperability constraints, not as a default hardening layer.
 
 ### A user wants fresh hardware presence for sudo
 
