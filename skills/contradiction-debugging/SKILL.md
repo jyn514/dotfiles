@@ -27,6 +27,7 @@ Suppose a process logs an old configuration value while the file contains the ne
 The file contradicts the log only if this process loaded those bytes and activated them before the operation.
 Track when the bytes reached disk, when the process loaded them, and when they became active after reload, restart, or reboot.
 Inspect the loaded value and activation boundary to distinguish stale process state from a bad file or log.
+A session summary or metadata file may lag the active runtime; verify the live value at the failing boundary before using it as a premise.
 Before ranking changes that share an activation boundary, list each input, the boundary that made it effective, and the symptom it could directly explain.
 A shared reboot does not make them one cause.
 
