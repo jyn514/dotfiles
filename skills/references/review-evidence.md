@@ -12,6 +12,15 @@ Report exclusions, deferrals, and unavailable validation; silence does not estab
 Loading this reference grants no permission to repair artifacts or write issues.
 Apply task-specific permissions and stopping conditions from the applicable skill.
 
+## Review the defect pattern
+
+When reviewing a change, identify applicable defect patterns and search the reviewed scope for their other instances.
+For example, follow cleanup through early returns and failures, inspect callers of a changed helper, and check other mutation paths that update derived state.
+Do not stop at the first example of a pattern.
+Report the search scope and relevant instances checked; distinguish a complete scoped search from a sample.
+When reviewing a fix, check both sibling instances and whether the fix introduces the same defect on another path.
+These checks do not authorize repairs or expand a bounded review into a whole-repository audit.
+
 ## What checks establish
 
 [Testing](testing.md) owns test construction.
