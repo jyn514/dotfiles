@@ -59,7 +59,7 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/extract-chat/extract-chat',
                        'libexec/chat-history.clj',
                        'libexec/codex-history.mjs', 'libexec/codex-client.mjs',
-                       'bin/codex-to-pi',
+                       'bin/codex-to-pi', 'tools/codex-to-pi/chatgpt_export.py',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj',
                        'libexec/sandbox-wrappers/docker',

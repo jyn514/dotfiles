@@ -256,7 +256,7 @@ Homebrew installs `gdu-go`; macOS local setup provides the `gdu` alias.
 ### Agent session exports and imports
 
 - [`extract-chat`](extract-chat/README.md) exports local agent conversations to Markdown or HTML; exports may expose private text and replace existing output files.
-- [`codex-to-pi`](codex-to-pi/README.md) converts a Codex conversation or share URL to Pi JSONL; writes a session file without resuming it.
+- [`codex-to-pi`](codex-to-pi/README.md) converts Codex conversations, share URLs, or ChatGPT account exports to Pi JSONL; writes sessions without resuming them.
 - [`pi-to-codex`](pi-to-codex/README.md) creates a resumable Codex thread from a Pi session through unstable Codex interfaces; the source stays unchanged.
 - [`extract-chat-share`](extract-chat-share/README.md) extracts shared ChatGPT/Claude conversations; URL inputs access the network and Claude uses Safari automation.
 

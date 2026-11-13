@@ -427,7 +427,8 @@ class SharedChatHistoryTests(unittest.TestCase):
         image = self.root / "image"
         layout = image / "tools/chat-export"
         for relative in ("tools/extract-chat/extract-chat", "libexec/chat-history.clj",
-                         "libexec/codex-history.mjs", "libexec/codex-client.mjs", "bin/codex-to-pi"):
+                         "libexec/codex-history.mjs", "libexec/codex-client.mjs", "bin/codex-to-pi",
+                         "tools/codex-to-pi/chatgpt_export.py"):
             target = layout / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["cp", str(ROOT / relative), str(target)], check=True)
