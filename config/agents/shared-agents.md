@@ -157,6 +157,10 @@ Existing tools, reviewer suggestions, and possible future failures do not expand
 Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
 Establish scope before routing to specialized skills.
 
+Treat “read this guidance” as satisfied when its relevant contents are already available in context.
+Reread only when they changed, are missing or incomplete, or an instruction explicitly requires a fresh read.
+Reassess applicability for each task without automatically reloading the text.
+
 ## Commands and permissions
 
 ### Sandbox escalation
