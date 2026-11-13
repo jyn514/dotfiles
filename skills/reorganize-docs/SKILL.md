@@ -89,6 +89,10 @@ Do not normalize unrelated names or headings merely for visual uniformity.
 9. Update repository references in the same change, including agent instructions, skills, specifications, and generated owners.
 10. Remove empty directories and disposable platform debris only within scope.
 
+Move pending verification, unresolved investigations, and follow-up work into the project's issue tracker, not READMEs or usage guides.
+Preserve their evidence and completion conditions in issues before removing the pending-work text.
+Keep operative procedures and safety constraints in the docs; distinguish routine user checks from unfinished project verification.
+
 Do not archive unresolved work unless another active owner or issue preserves its obligation.
 Do not turn a historical decision into current policy without verifying that it still governs the repository.
 
