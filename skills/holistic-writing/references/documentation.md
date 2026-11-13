@@ -16,6 +16,11 @@ Choose a form that serves the task:
 - **How-to:** state the task, prerequisites, expected result, and hazards for a competent reader.
 - **Reference:** organize accurate, neutral facts for lookup; state the system, version, scope, and notation.
 - **Explanation:** develop understanding through reasons, examples, and consequences.
+- **Troubleshooting:** organize entries by observable symptoms or error strings, so readers can find help before knowing the cause.
+
+For troubleshooting, distinguish symptoms from confirmed causes and give the applicable check or recovery action.
+When a tempting but incorrect approach matters, preserve the wrong-way → right-way contrast and explain when the correction applies.
+Verify commands, paths, and diagnosis against current authoritative sources; session memories and repeated advice are leads, not confirmation.
 
 Separate mixed needs within a page rather than imposing one template.
 For an already selected design or implementation spec, read [design documents](design-documents.md); this does not authorize selecting a design or writing a human-owned brief.
