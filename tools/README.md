@@ -175,6 +175,8 @@ These specialized Git helpers can change Git history or metadata directly.
 
 ### Desktop settings and devices
 
+- [`glide-bin`](../bin/glide-bin) and [`1password`](../bin/1password) use the supplementary-group desktop launcher after installation; see [cookie storage and desktop launch](proc-hardening/README.md#browser-cookies-and-desktop-launch).
+
 | Task | Helper and important effects |
 | --- | --- |
 | Change volume or media playback | [`audio`](../bin/audio) controls ALSA/cmus and sends desktop notifications unless `--quiet` is supplied. |

@@ -6,6 +6,7 @@ tests/nvim/nvim_test.py
 tests/pi/dashboard_placement_test.py
 tests/setup/glide_test.py
 tests/setup/native_suites_test.py
+tests/setup/private_desktop_test.py
 tests/setup/python_libraries_test.py
 tests/tmux/attach_session_test.py
 tests/tmux/keybindings_test.py
@@ -26,5 +27,7 @@ tools/fork-github/tests/fork_github_cli_test.py
 tools/git-autosquash/tests/git_autosquash_native_test.py
 tools/git-hooks/tests/test_pre_commit.py
 tools/lapwing-prototype/generate_model_test.py
+tools/proc-hardening/tests/desktop_test.py
+tools/proc-hardening/tests/prepare_desktop_test.py
 tools/proc-hardening/tests/skeleton_failure_test.py
 tools/remote-git-url/tests/test_literal_resources.py

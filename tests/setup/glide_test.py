@@ -90,7 +90,8 @@ class GlideTests(unittest.TestCase):
             mimetypes.glide_desktop(False)
         desktop = self.data / "applications" / native.name
         self.assertEqual(content, native.read_text())
-        self.assertIn("Exec=/usr/bin/glide-bin %u\n", desktop.read_text())
+        launcher = str(ROOT / "bin/glide-bin")
+        self.assertIn(f"Exec={launcher} %u\n", desktop.read_text())
         self.assertEqual(1, desktop.read_text().count("Comment="))
         self.assertIn("Comment=last\n", desktop.read_text())
         if validator := shutil.which("desktop-file-validate"):
@@ -111,7 +112,7 @@ class GlideTests(unittest.TestCase):
             query_desktop.parent.mkdir()
             subprocess.run(["cp", str(desktop), str(query_desktop)], check=True)
             subprocess.run(["cmp", str(desktop), str(query_desktop)], check=True)
-            repaired = query_desktop.read_text().replace("/usr/bin/glide-bin", str(executable))
+            repaired = query_desktop.read_text().replace(launcher, str(executable))
             environment = dict(os.environ, XDG_DATA_HOME=str(data),
                                XDG_CURRENT_DESKTOP="X-Generic")
             for command, expected in ((f'{data}/"glide-bin"', ""),
@@ -126,7 +127,7 @@ class GlideTests(unittest.TestCase):
         native.write_text(content.replace('Exec=/usr/bin/"glide-bin" %u', 'Exec=/usr/bin/glide-bin --new-window %u'))
         with mock.patch.object(mimetypes, "command_exists", side_effect=lambda name: name == "glide-bin"):
             mimetypes.glide_desktop(False)
-        self.assertIn("Exec=/usr/bin/glide-bin --new-window %u", desktop.read_text())
+        self.assertIn(f"Exec={launcher} --new-window %u", desktop.read_text())
 
     def test_fallback_desktop_launches_without_shell_activation(self):
         mise = self.directory / "mise"
