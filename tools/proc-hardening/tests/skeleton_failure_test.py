@@ -14,6 +14,7 @@ SOURCE = HERE.parent
 WRAPPED = (
     "calloc", "close", "strerror", "access", "fopen", "mkdir", "rmdir",
     "bpf_object__load_skeleton", "bpf_object__attach_skeleton", "bpf_link_update",
+    "bpf_object__destroy_skeleton", "bpf_program__fd", "rename",
     "bpf_link__pin", "bpf_link__unpin",
     "bpf_link__open", "bpf_link__fd", "bpf_link__disconnect", "bpf_link__destroy",
     "bpf_link_get_info_by_fd", "bpf_prog_get_fd_by_id", "bpf_prog_get_info_by_fd",
@@ -72,6 +73,18 @@ class SkeletonFailureTests(unittest.TestCase):
                 failed = self.run_case("allocation", allocation)
                 self.assertEqual(0, failed.returncode, failed.stderr)
                 self.assertEqual(allocation, int(failed.stdout))
+
+    def test_reload_preserves_protection_and_publishes_replacement(self):
+        for stage in ("success", "load", "attach", "pin", "publish", "stale", "wrong", "orphan", "restore-fail"):
+            with self.subTest(stage=stage):
+                result = self.run_case("reload", stage)
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_unload_recovers_pending_guard_without_removing_foreign_pin(self):
+        for stage in ("stale", "wrong"):
+            with self.subTest(stage=stage):
+                result = self.run_case("unload", stage)
+                self.assertEqual(0, result.returncode, result.stderr)
 
     def test_update_failure_preserves_primary_errno_across_cleanup(self):
         # Fail the first constructor allocation after validating the old pin.

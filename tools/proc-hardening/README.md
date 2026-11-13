@@ -37,8 +37,10 @@ The installer builds the CO-RE object as the invoking user, snapshots the
 loader and unit bytes, streams them through root-owned `/usr/bin/install`, and
 enables the current uid as a want of `systemd-user-sessions.service`.
 It starts the instance immediately.
-Later installs use `ExecReload=` to replace the pinned program in place, so
-the old rule stays attached unless the new one is ready.
+Later installs use `ExecReload=` to attach a replacement before atomically
+replacing the stable pin.
+The old rule stays attached until the replacement is published; a failed reload
+keeps the old protection.
 
 ## Verify and operate
 
@@ -62,7 +64,12 @@ After creating or changing the `onepassword` group, reload the unit to resolve
 its current gid; an already-loaded rule keeps its previous configuration until
 reloaded or restarted.
 
-Stop the unit to restore the old behavior immediately:
+Stopping the guard also stops Glide and 1Password instances launched through
+the private desktop services below.
+Do not stop/restart it to recover from a failed reload: the old rule stays active.
+After correcting the reload failure, retry with `systemctl reload`.
+
+To deliberately remove the guard:
 
 ```sh
 sudo systemctl stop "proc-read-guard@$(id -u).service"

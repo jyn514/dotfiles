@@ -135,7 +135,7 @@ static void release_link_reference(struct bpf_link *link)
 
 	if (!link)
 		return;
-	bpf_link__disconnect(link);
+	/* Opened kernel links detach by closing this reference, not the pin. */
 	error = bpf_link__destroy(link);
 	if (error != 0)
 		fprintf(stderr, "proc-read-guard: close pinned BPF link: %s\n",
@@ -445,20 +445,36 @@ static int require_yama_scope_one(void)
 	return 0;
 }
 
+/* Remove only a validated guard left by an interrupted reload. */
+static int remove_pending_link(const char *path, __u32 uid)
+{
+	struct bpf_link *pending = NULL;
+	int error;
+
+	if (!path_exists(path))
+		return 0;
+	if (open_expected_link(path, uid, LINK_VALIDATE_COMPATIBLE,
+			       UINT32_MAX, &pending, NULL) != 0)
+		return 1;
+	error = bpf_link__unpin(pending);
+	if (error != 0) {
+		release_link_reference(pending);
+		return report_libbpf_error("unpin pending BPF link", error);
+	}
+	release_link_reference(pending);
+	return 0;
+}
+
 static int load_guard(__u32 uid)
 {
 	struct bpf_link *link = NULL;
 	struct proc_read_guard_bpf *skel = NULL;
-	struct bpf_link_update_opts update_opts = {
-		.sz = sizeof(update_opts),
-		.flags = BPF_F_REPLACE,
-	};
 	char uid_dir[PATH_MAX];
 	char link_path[PATH_MAX];
 	__u32 trusted_gid;
 	int old_prog_fd = -1;
-	int new_prog_fd;
-	int link_fd;
+	char pending_path[PATH_MAX];
+	int written;
 	int error;
 
 	if (require_yama_scope_one() != 0)
@@ -468,10 +484,34 @@ static int load_guard(__u32 uid)
 		fprintf(stderr, "proc-read-guard: pin path is too long\n");
 		return 1;
 	}
+	written = snprintf(pending_path, sizeof(pending_path), "%s/link-next", uid_dir);
+	if (written < 0 || (size_t)written >= sizeof(pending_path)) {
+		fprintf(stderr, "proc-read-guard: pending pin path is too long\n");
+		return 1;
+	}
+	/* If only the pending pin survived, publish it before attempting reload. */
+	if (!path_exists(link_path) && path_exists(pending_path)) {
+		if (open_expected_link(pending_path, uid, LINK_VALIDATE_COMPATIBLE,
+				       trusted_gid, &link, NULL) != 0)
+			return 1;
+		if (rename(pending_path, link_path) != 0) {
+			int saved_errno = errno;
+
+			release_link_reference(link);
+			return report_errno("restore pending BPF link", saved_errno);
+		}
+		release_link_reference(link);
+		link = NULL;
+	}
 	if (path_exists(link_path)) {
 		if (open_expected_link(link_path, uid, LINK_VALIDATE_COMPATIBLE,
 				       trusted_gid, &link, &old_prog_fd) != 0)
 			return 1;
+		if (remove_pending_link(pending_path, uid) != 0) {
+			close_bpf_fd(old_prog_fd, "program fd");
+			release_link_reference(link);
+			return 1;
+		}
 		skel = proc_read_guard_bpf__open();
 		if (!skel) {
 			int open_error = errno ? errno : ENOMEM;
@@ -488,29 +528,34 @@ static int load_guard(__u32 uid)
 			release_link_reference(link);
 			return report_libbpf_error("load BPF program", error);
 		}
-		new_prog_fd = bpf_program__fd(skel->progs.proc_read_guard);
-		if (new_prog_fd < 0) {
-			error = report_libbpf_error("get BPF program fd", new_prog_fd);
-			proc_read_guard_bpf__destroy(skel);
-			close_bpf_fd(old_prog_fd, "program fd");
-			release_link_reference(link);
-			return error;
+		error = proc_read_guard_bpf__attach(skel);
+		if (error != 0) {
+			error = report_libbpf_error("attach BPF program", error);
+			goto reload_out;
 		}
-		link_fd = bpf_link__fd(link);
-		if (link_fd < 0) {
-			error = report_libbpf_error("get pinned BPF link fd", link_fd);
-			proc_read_guard_bpf__destroy(skel);
-			close_bpf_fd(old_prog_fd, "program fd");
-			release_link_reference(link);
-			return error;
+		error = bpf_link__pin(skel->links.proc_read_guard, pending_path);
+		if (error != 0) {
+			error = report_libbpf_error("pin replacement BPF link", error);
+			goto reload_out;
 		}
-		update_opts.old_prog_fd = old_prog_fd;
-		error = bpf_link_update(link_fd, new_prog_fd, &update_opts);
+		/* Both links remain attached until the replacement is published. */
+		if (rename(pending_path, link_path) != 0) {
+			int saved_errno = errno;
+			int cleanup_error = bpf_link__unpin(skel->links.proc_read_guard);
+
+			if (cleanup_error != 0)
+				fprintf(stderr, "proc-read-guard: unpin %s: %s\n",
+					pending_path, strerror(-cleanup_error));
+			error = report_errno("publish replacement BPF link", saved_errno);
+			goto reload_out;
+		}
+		error = 0;
+reload_out:
 		proc_read_guard_bpf__destroy(skel);
 		close_bpf_fd(old_prog_fd, "program fd");
 		release_link_reference(link);
 		if (error != 0)
-			return report_libbpf_error("update pinned BPF link", error);
+			return error;
 		printf("proc-read-guard: updated for uid %u at %s\n", uid, link_path);
 		return 0;
 	}
@@ -553,13 +598,22 @@ static int unload_guard(__u32 uid)
 	struct bpf_link *link = NULL;
 	char uid_dir[PATH_MAX];
 	char link_path[PATH_MAX];
+	char pending_path[PATH_MAX];
 	int error;
+	int written;
 
 	if (!format_paths(uid, uid_dir, sizeof(uid_dir), link_path, sizeof(link_path))) {
 		fprintf(stderr, "proc-read-guard: pin path is too long\n");
 		return 1;
 	}
+	written = snprintf(pending_path, sizeof(pending_path), "%s/link-next", uid_dir);
+	if (written < 0 || (size_t)written >= sizeof(pending_path)) {
+		fprintf(stderr, "proc-read-guard: pending pin path is too long\n");
+		return 1;
+	}
 	if (!path_exists(link_path)) {
+		if (remove_pending_link(pending_path, uid) != 0)
+			return 1;
 		printf("proc-read-guard: not loaded for uid %u\n", uid);
 		remove_empty_directory(uid_dir);
 		remove_empty_directory(BPF_PIN_ROOT);
@@ -568,6 +622,10 @@ static int unload_guard(__u32 uid)
 	if (open_expected_link(link_path, uid, LINK_VALIDATE_COMPATIBLE,
 			       UINT32_MAX, &link, NULL) != 0)
 		return 1;
+	if (remove_pending_link(pending_path, uid) != 0) {
+		release_link_reference(link);
+		return 1;
+	}
 	error = bpf_link__unpin(link);
 	if (error != 0) {
 		release_link_reference(link);
