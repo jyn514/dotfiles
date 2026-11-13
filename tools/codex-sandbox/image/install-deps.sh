@@ -20,6 +20,7 @@ if command -v apt-get >/dev/null; then
         lsof \
         openssh-client \
         passwd \
+        patch \
         procps \
         python3 \
         ripgrep \
@@ -51,6 +52,7 @@ elif command -v apk >/dev/null; then
         jq \
         lsof \
         openssh-client-default \
+        patch \
         procps \
         python3 \
         ripgrep \
@@ -73,6 +75,7 @@ elif command -v microdnf >/dev/null; then
         jq \
         lsof \
         openssh-clients \
+        patch \
         procps-ng \
         python3 \
         ripgrep \
@@ -93,5 +96,6 @@ fi
 
 fd --version
 jq --version
+patch --version
 shellcheck --version
 socat -V
