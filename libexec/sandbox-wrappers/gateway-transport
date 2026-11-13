@@ -81,8 +81,12 @@ def main(argv: list[str]) -> int:
     parsed = urlsplit(value)
     if (parsed.scheme != "ssh" or parsed.hostname is None or parsed.port is None
             or parsed.username is None or parsed.path not in ("", "/")):
-        print("docker: nested build service is unavailable; run tools/agent-docker/vm.py setup on the host",
-              file=sys.stderr)
+        problem = ("nested Docker access is not configured (DOCKER_HOST is unset)"
+                   if not value else "invalid DOCKER_HOST; expected ssh://user@host:port")
+        print(f"docker: {problem}.\n"
+              'On the host, check "nested-containers" in .agents/sandbox/proxy-commands.json.\n'
+              "Check the build VM with python3 tools/agent-docker/vm.py doctor on the host.\n"
+              "Then restart the sandbox after correcting the configuration.", file=sys.stderr)
         return 125
     with tempfile.TemporaryDirectory(prefix="gateway-ssh-") as directory:
         home = Path(directory)

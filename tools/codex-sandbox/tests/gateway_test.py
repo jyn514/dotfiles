@@ -22,9 +22,35 @@ TRANSPORT = runpy.run_path(str(Path(__file__).resolve().parents[3] / "libexec/sa
 
 
 class GatewayTransportTest(unittest.TestCase):
-    def test_absent_build_service_never_executes_a_local_client(self):
-        with patch.dict(os.environ, {"DOCKER_HOST": ""}), patch("sys.stderr", new_callable=io.StringIO):
-            self.assertEqual(125, TRANSPORT["main"](["/nonexistent/docker", "info"]))
+    def test_missing_connection_explains_policy_and_host_checks(self):
+        for environment in ({}, {"DOCKER_HOST": ""}):
+            with self.subTest(environment=environment), \
+                    patch.dict(os.environ, environment, clear=True), \
+                    patch("sys.stderr", new_callable=io.StringIO) as stderr, \
+                    patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+                    patch("subprocess.Popen") as spawn:
+                self.assertEqual(125, TRANSPORT["main"](["/nonexistent/docker", "info"]))
+                self.assertIn("DOCKER_HOST is unset", stderr.getvalue())
+                self.assertIn('"nested-containers"', stderr.getvalue())
+                self.assertIn(".agents/sandbox/proxy-commands.json", stderr.getvalue())
+                self.assertIn("tools/agent-docker/vm.py doctor", stderr.getvalue())
+                self.assertIn("restart the sandbox", stderr.getvalue())
+                self.assertNotIn("vm.py setup", stderr.getvalue())
+                self.assertEqual("", stdout.getvalue())
+                spawn.assert_not_called()
+
+    def test_invalid_connection_identifies_the_expected_endpoint(self):
+        for endpoint in ("unix:///var/run/docker.sock", "tcp://host:2375",
+                         "ssh://host:2222", "ssh://user@host", "ssh://user@host:2222/path"):
+            with self.subTest(endpoint=endpoint), \
+                    patch.dict(os.environ, {"DOCKER_HOST": endpoint}, clear=True), \
+                    patch("sys.stderr", new_callable=io.StringIO) as stderr, \
+                    patch("subprocess.Popen") as spawn:
+                self.assertEqual(125, TRANSPORT["main"](["/nonexistent/docker", "info"]))
+                self.assertIn("invalid DOCKER_HOST", stderr.getvalue())
+                self.assertIn("ssh://user@host:port", stderr.getvalue())
+                self.assertNotIn("vm.py setup", stderr.getvalue())
+                spawn.assert_not_called()
 
     def run_transport(self, client, environment, *, master_failure=False, master_hangs=False,
                       cancel_during_master_start=False):
