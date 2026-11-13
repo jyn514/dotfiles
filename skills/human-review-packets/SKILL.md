@@ -17,7 +17,7 @@ Find another approach, or simplify the script enough that I can easily understan
 ## Find the judgment that remains
 
 Read the request, previous answers, authoritative sources, and affected examples.
-Separate open, settled, and deferred decisions.
+Separate open, settled, and deferred decisions, and identify decisions that are no longer applicable.
 Resolve factual and procedural questions from records and tools you can access before asking for human judgment.
 When a decision depends on how a rule or category applies, follow [Rule scope and applicability](references/rule-scope.md).
 
@@ -59,7 +59,7 @@ For a new packet, develop:
 2. **Example:** the actual case or alternatives, showing what changes.
 3. **Recommendation:** the smallest justified next action and its reason; label inferred premises where used.
    If evidence supports no recommendation, identify what is missing.
-4. **Question, if one remains:** the human judgment needed, with short meaningful answers, a defer option, and ordinary-language replies accepted.
+1. **Question, if one remains:** the human judgment needed, with short meaningful answers and ordinary-language replies accepted. Include an option for "This question does not make sense as stated."
    Otherwise, state that no decision is needed now.
 
 For example: “Both forms collect the same information. A fits on one page; B uses two pages with larger text.
