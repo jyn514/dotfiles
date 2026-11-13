@@ -125,17 +125,26 @@ jj -R /home/codex/src/dotfiles commit 'root:skills/example' -m 'Improve example 
 ```
 
 Ordinary filesets retain invocation-cwd semantics even with `-R`; only author hooks target the resolved repository.
-Outside `work/`, writable files are shared host files, not isolated branches or permission to include another contributor's changes.
-The launcher mounts each writable checkout's existing `codex-work-*` volume at its primary guest path's `work/` in both the agent and JJ proxy.
-Use that path for guest-only caches, build outputs, and linked JJ workspaces; the same volume survives replacement of either consumer.
+Writable checkout files are shared host files, not isolated branches or permission to include another contributor's changes.
+The launcher mounts each writable checkout's existing `codex-work-*` volume at `/work/<checkout-name>-<short-id>/` in both the agent and JJ proxy.
+The name uses the canonical checkout directory's basename plus a deterministic six-digit suffix, such as `/work/dotfiles-988384`.
+Names depend only on that checkout's canonical host path, never launch order, other checkouts, or a name registry.
+If two distinct checkouts would share a mount name in one launch, the launcher reports a collision instead of renumbering them.
+The underlying volume identity still derives from the canonical host checkout path, so readable names do not replace or empty existing volumes.
+`SANDBOX_WORK` names the active checkout's directory in the guest environment.
+Use `$SANDBOX_WORK` for guest-only caches, build outputs, and linked JJ workspaces; the same volume survives replacement of either consumer.
 After the last agent or trusted proxy using a volume exits, the launcher snapshots its registered JJ workspaces and removes ignored files within them.
 Tracked files, JJ metadata, workspace registrations, and unclassified files elsewhere in the volume survive.
 Ignored local data is deleted too; keep anything that must survive tracked or outside these guest-only workspaces.
 Idle proxies retain their existing five-minute timeout, so cleanup follows their teardown rather than the last Pi pane closing.
 Deferred cleanup diagnostics stay in `~/.cache/codex-sandbox-proxies/<repository-identity>/cleanup.log`; failures retain session recovery metadata.
-Repository aliases retain their existing host-backed views and guest read-only modes; use the selected primary guest path for `work/` operations.
-Host `work/` stays empty, and startup refuses to hide pre-existing host files there rather than deleting or migrating them.
-A linked workspace under `work/` registers in the shared JJ store, so ordinary host `status`, `log`, `new`, and history edits still work from the main checkout.
+Repository aliases retain their existing host-backed views and guest read-only modes; guest work storage stays outside all checkout aliases.
+`./work` is ordinary host-backed storage; the launcher neither creates it nor mounts over it, and its contents cannot block startup.
+Existing volume contents remain intact, but linked Git/JJ workspaces from the previous checkout-local mount layout need a one-off relocation of their metadata before use.
+Startup does not rewrite their metadata or create old-path aliases.
+Existing workers keep their mounts and environment, including hash-named `/work` paths from earlier launches; close them and start fresh to apply readable names.
+Linked Git/JJ workspaces registered at an older mount path need the same one-off metadata relocation before use at the new path.
+A linked workspace under `/work/<checkout-name>-<short-id>/` registers in the shared JJ store, so ordinary host `status`, `log`, `new`, and history edits still work from the main checkout.
 The host sees its last snapshot, not its working files; operations requiring that directory, such as removing the workspace from disk, need the guest/proxy view.
 Use `target/` instead when host tools or jyn need direct file access.
 Distinct proxies serialize all mutation-mode requests, including author hooks, with one persistent lock per JJ backing repository.

@@ -5,7 +5,8 @@ import subprocess
 import sys
 
 root = Path.cwd()
-workspace = root / 'work/child'
+volume = Path(os.environ['SANDBOX_WORK'])
+workspace = volume / 'child'
 jj = os.environ['JJ_REAL']
 
 def run(*arguments, cwd=workspace):
@@ -23,7 +24,7 @@ elif sys.argv[1] == 'seed':
     (workspace / 'out.tmp').write_text('ignored output')
     (workspace / 'cache').mkdir()
     (workspace / 'cache/large').write_bytes(b'x' * 1024 * 1024)
-    (root / 'work/unclassified').write_text('keep outside registered workspace')
+    (volume / 'unclassified').write_text('keep outside registered workspace')
     (root / 'host-canary.tmp').write_text('host-backed canary')
     (workspace / 'escape.tmp').symlink_to(root / 'host-canary.tmp')
 else:
@@ -32,7 +33,7 @@ else:
     assert (workspace / 'keep').read_text() == 'pending work'
     assert run('file', 'show', '--ignore-working-copy', 'keep') == 'pending work'
     assert (workspace / '.jj').is_dir()
-    assert (root / 'work/unclassified').exists()
+    assert (volume / 'unclassified').exists()
     assert (root / 'host-canary.tmp').read_text() == 'host-backed canary'
     assert not (workspace / 'escape.tmp').is_symlink()
     assert (workspace / 'cache/mounted/keep.tmp').read_text() == 'nested bind canary'

@@ -104,7 +104,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 repository=repository, git_repository=repository,
                 container_repository=Path("/home/codex/src/repo"), home=root / "home",
                 host_working_directory=subdirectory, skills_tmp=root / "skills",
-                image="agent-image", codex_container="worker-container",
+                image="agent-image", codex_container="worker-container", workspaces=[],
                 codex_arguments=[], pi_model_session_id="test-session",
                 handoff_origin=None,
             )

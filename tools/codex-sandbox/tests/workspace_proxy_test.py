@@ -131,7 +131,7 @@ class WorkspaceProxyTest(unittest.TestCase):
 
     def test_live_authority_rejects_changed_environment_and_mount_permissions(self):
         expected = self.snapshot()
-        for mutation in ("environment", "readonly", "missing", "extra"):
+        for mutation in ("environment", "readonly", "missing", "extra", "extra-work"):
             snapshot = deepcopy(expected)
             if mutation == "environment":
                 snapshot["Config"]["Env"] = ["JJ_PROXY_WORKSPACES=[]"]
@@ -140,7 +140,8 @@ class WorkspaceProxyTest(unittest.TestCase):
             elif mutation == "missing":
                 snapshot["Mounts"] = [item for item in snapshot["Mounts"] if item["Destination"] != "/home/codex/src/dotfiles-2"]
             else:
-                snapshot["Mounts"].append({"Source": "/outside", "Destination": "/home/codex/src/unlisted", "RW": True})
+                destination = "/work/unlisted" if mutation == "extra-work" else "/home/codex/src/unlisted"
+                snapshot["Mounts"].append({"Source": "/outside", "Destination": destination, "RW": True})
             with self.subTest(mutation=mutation), self.assertRaises(helpers.ConfigError):
                 helpers.validate_workspace_snapshot(self.proxy(), snapshot)
 
@@ -149,9 +150,9 @@ class WorkspaceProxyTest(unittest.TestCase):
         # Omitting the overlay recreates the original successful-but-invisible write.
         # Wrong names/types, RO and duplicates are distinct invalid reuse states.
         for record in self.records:
-            for mutation in ("missing", "name", "bind", "readonly", "duplicate"):
+            for mutation in ("missing", "name", "bind", "readonly", "duplicate", "old-layout"):
                 snapshot = deepcopy(expected)
-                target = record["guest_root"] + "/work"
+                target = str(helpers.workspace_work_root(helpers.workspace_layouts([record])[0]))
                 work = next(item for item in snapshot["Mounts"] if item["Destination"] == target)
                 if mutation == "missing":
                     snapshot["Mounts"].remove(work)
@@ -161,6 +162,8 @@ class WorkspaceProxyTest(unittest.TestCase):
                     work.update(Type="bind", Source=record["host_root"] + "/work")
                 elif mutation == "readonly":
                     work["RW"] = False
+                elif mutation == "old-layout":
+                    work["Destination"] = record["guest_root"] + "/work"
                 else:
                     snapshot["Mounts"].append(deepcopy(work))
                 with self.subTest(target=target, mutation=mutation), self.assertRaisesRegex(

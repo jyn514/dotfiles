@@ -83,7 +83,6 @@ def probe_jj_mounts(image: str) -> None:
                 arguments = [jj, *arguments[1:]]
             return subprocess.run(arguments, cwd=cwd, check=True, text=True, capture_output=capture)
 
-        (repo / 'work').mkdir()
         layout = discover_workspace(repo, container_repo, root, runner=native)
         ensure_request_lock(layout)
         records = [layout.to_dict()]
@@ -195,6 +194,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='Build and check the JJ proxy and Pi runtime images.')
     parser.add_argument('--jj-only', action='store_true', help='build and probe only the JJ proxy image')
     parser.add_argument('--expected-revision', help='expected Pi commit in the built images; required unless --jj-only')
+    parser.add_argument('--cleanup-image', help='existing Python-capable agent image for mounted cleanup checks')
     args = parser.parse_args()
     if not args.jj_only and not args.expected_revision:
         parser.error('--expected-revision is required unless --jj-only is selected')
@@ -212,8 +212,9 @@ def main() -> None:
     try:
         build_images(args.expected_revision, tags)
         probe_jj_mounts(jj_image)
-        probe_shared_workspaces(jj_image)
-        probe_shared_workspaces(jj_image, linked=True)
+        cleanup_image = args.cleanup_image or (tags['pi-alpine'][0] if 'pi-alpine' in tags else None)
+        probe_shared_workspaces(jj_image, cleanup_image=cleanup_image)
+        probe_shared_workspaces(jj_image, linked=True, cleanup_image=cleanup_image)
         if not args.jj_only:
             check_labels([tags['pi-alpine'][0], tags['pi-debian'][0]], args.expected_revision)
         # Leaving the executor waits for every probe, including on failure,

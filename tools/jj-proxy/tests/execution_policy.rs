@@ -65,7 +65,7 @@ fn authority_grants_both_roots_but_inspection_removes_all_writes() {
         }
         fs::create_dir(source.join("unlisted")).unwrap();
         execution_policy::install_workspaces_with_paths(&workspaces, &PolicyPaths {
-            source: &source, trusted: &trusted, trusted_bin: &trusted_bin, config: &config, socket: &socket,
+            source: &source, work: None, trusted: &trusted, trusted_bin: &trusted_bin, config: &config, socket: &socket,
         }, mode == "mutate").unwrap();
         for workspace in &workspaces {
             for path in [Path::new(&workspace.root).join("ordinary"), Path::new(&workspace.git_dir).join("metadata"),
@@ -99,13 +99,14 @@ fn linked_scope_survives_pointer_metadata_and_root_swaps() {
     if let Ok(mode) = env::var("JJ_PROXY_LINKED_POLICY_CHILD") {
         let root = std::path::PathBuf::from(env::var_os("JJ_PROXY_LINKED_POLICY_ROOT").unwrap());
         let source = root.join("src");
+        let work = root.join("work");
         let trusted = root.join("trusted");
         let trusted_bin = trusted.join("bin");
         let config = root.join("config");
         let socket = root.join("socket");
-        for path in [&source, &trusted_bin, &config, &socket] { fs::create_dir_all(path).unwrap(); }
+        for path in [&source, &work, &trusted_bin, &config, &socket] { fs::create_dir_all(path).unwrap(); }
         let paths = PolicyPaths {
-            source: &source, trusted: &trusted, trusted_bin: &trusted_bin, config: &config, socket: &socket,
+            source: &source, work: Some(&work), trusted: &trusted, trusted_bin: &trusted_bin, config: &config, socket: &socket,
         };
         let mut workspaces = Vec::new();
         for name in ["selected", "independent"] {
@@ -122,7 +123,7 @@ fn linked_scope_survives_pointer_metadata_and_root_swaps() {
         }
         let selected = &workspaces[0];
         let independent = &workspaces[1];
-        let linked = Path::new(&selected.root).join("linked");
+        let linked = work.join("linked");
         fs::create_dir_all(linked.join(".jj/working_copy")).unwrap();
         fs::write(linked.join(".jj/repo"), &selected.jj_repo).unwrap();
         let pinned: OwnedFd = fs::File::open(&linked).unwrap().into();
@@ -138,7 +139,7 @@ fn linked_scope_survives_pointer_metadata_and_root_swaps() {
         let other_store_file = Path::new(&independent.jj_repo).join("metadata");
         fs::write(&other_store_file, "server-owned").unwrap();
         let original = if mode == "root" {
-            let original = Path::new(&selected.root).join("pinned-original");
+            let original = work.join("pinned-original");
             fs::rename(&linked, &original).unwrap();
             symlink(&independent.root, &linked).unwrap();
             original
@@ -151,6 +152,7 @@ fn linked_scope_survives_pointer_metadata_and_root_swaps() {
             }
             linked.clone()
         };
+        fs::write(work.join("other-volume-file"), "server-owned").unwrap();
         execution_policy::install_linked_workspace_with_paths(&scoped, &pinned, &paths).unwrap();
         if mode == "inspect" {
             execution_policy::install_workspaces_with_paths(&workspaces, &paths, false).unwrap();
@@ -163,7 +165,7 @@ fn linked_scope_survives_pointer_metadata_and_root_swaps() {
             } else { result.unwrap(); }
         }
         for path in [&other_store_file, &Path::new(&independent.git_dir).join("metadata"),
-            &Path::new(&independent.root).join("ordinary"), &Path::new(&selected.root).join("outside-linked")] {
+            &Path::new(&independent.root).join("ordinary"), &Path::new(&selected.root).join("outside-linked"), &work.join("other-volume-file")] {
             assert_eq!(ErrorKind::PermissionDenied, fs::write(path, "wrong-store").unwrap_err().kind(), "{}", path.display());
         }
         let redirected = if mode == "pointer" || mode == "inspect" {

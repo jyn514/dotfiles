@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 from pathlib import Path
 import socket
 import struct
@@ -9,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,6 +28,27 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
 
 
 class JjProxyClientTest(unittest.TestCase):
+    def test_work_cwd_reaches_transport_and_lookalike_is_rejected(self) -> None:
+        client = runpy.run_path(str(CLIENT))
+        response = json.dumps({"version": 3, "exit": 0, "stdout": "", "stderr": ""}).encode()
+        connection = mock.MagicMock()
+        connection.__enter__.return_value = connection
+        connection.recv.side_effect = [struct.pack(">I", len(response)), response, b""]
+        current = mock.Mock()
+        current.resolve.return_value = Path("/work/123/linked")
+        with mock.patch.object(Path, "cwd", return_value=current), \
+                mock.patch.dict(os.environ, {"SANDBOX_PROXY_DIR": "/tmp/proxy"}), \
+                mock.patch("socket.socket", return_value=connection), \
+                mock.patch("sys.argv", [str(CLIENT), "status"]):
+            self.assertEqual(0, client["main"]())
+        frame = connection.sendall.call_args.args[0]
+        self.assertEqual("/work/123/linked", json.loads(frame[4:])["cwd"])
+        current.resolve.return_value = Path("/work-other/123/linked")
+        with mock.patch.object(Path, "cwd", return_value=current), \
+                mock.patch.dict(os.environ, {"SANDBOX_PROXY_DIR": "/tmp/proxy"}):
+            with self.assertRaisesRegex(RuntimeError, "outside"):
+                client["main"]()
+
     def run_client(self, arguments: list[str], *, files: dict[str, str] | None = None,
                    location="active", inspect=False, response_version=3,
                    symlink=False) -> tuple[subprocess.CompletedProcess[str], dict]:

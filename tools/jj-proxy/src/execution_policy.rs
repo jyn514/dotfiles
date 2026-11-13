@@ -1,4 +1,4 @@
-use crate::SOURCE_ROOT;
+use crate::{SOURCE_ROOT, WORK_ROOT};
 use color_eyre::eyre::Result;
 use std::path::Path;
 
@@ -15,6 +15,7 @@ use landlock::{
 
 pub struct PolicyPaths<'a> {
     pub source: &'a Path,
+    pub work: Option<&'a Path>,
     pub trusted: &'a Path,
     pub trusted_bin: &'a Path,
     pub config: &'a Path,
@@ -26,7 +27,7 @@ pub fn install(repo: &str) -> Result<()> {
     install_with_paths(
         repo,
         &PolicyPaths {
-            source: Path::new(SOURCE_ROOT),
+            source: Path::new(SOURCE_ROOT), work: Some(Path::new(WORK_ROOT)),
             trusted: Path::new("/trusted"),
             trusted_bin: Path::new("/trusted/bin"),
             config: Path::new("/tmp/jj-config"),
@@ -45,7 +46,7 @@ pub fn install_inspect(repo: &str) -> Result<()> {
     install_inspect_with_paths(
         repo,
         &PolicyPaths {
-            source: Path::new(SOURCE_ROOT),
+            source: Path::new(SOURCE_ROOT), work: Some(Path::new(WORK_ROOT)),
             trusted: Path::new("/trusted"),
             trusted_bin: Path::new("/trusted/bin"),
             config: Path::new("/tmp/jj-config"),
@@ -140,6 +141,12 @@ fn install_scoped_with_paths(repo: &str, paths: &PolicyPaths<'_>, writable: bool
         // Alpine Git reads /dev/urandom when creating temporary object files.
         .add_rule(PathBeneath::new(random, AccessFs::ReadFile))
         .wrap_err("cannot add random-device read rule")?;
+    if let Some(work) = paths.work {
+        // The launcher mounts only its authorized volumes here; the ancestor is read-only.
+        // Linked children receive only their pinned root for writes.
+        let access = if writable && linked_root.is_none() { read_access | write_access } else { read_access };
+        ruleset = ruleset.add_rule(PathBeneath::new(PathFd::new(work)?, access))?;
+    }
     for grant in grants {
         ruleset = ruleset.add_rule(PathBeneath::new(grant, repository_access))?;
     }
@@ -204,7 +211,7 @@ pub fn install_linked_workspace_with_paths(_: &crate::workspaces::Workspace,
 #[cfg(target_os = "linux")]
 pub fn install_workspaces(workspaces: &[crate::workspaces::Workspace], writable: bool) -> Result<()> {
     install_workspaces_with_paths(workspaces, &PolicyPaths {
-        source: Path::new("/home/codex/src"), trusted: Path::new("/trusted"),
+        source: Path::new("/home/codex/src"), work: Some(Path::new(WORK_ROOT)), trusted: Path::new("/trusted"),
         trusted_bin: Path::new("/trusted/bin"), config: Path::new("/tmp/jj-config"),
         socket: Path::new("/run/sandbox-proxy"),
     }, writable)

@@ -1,7 +1,7 @@
 #[path = "../../../libexec/bounded-process.rs"]
 mod bounded_process;
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
-use jj_proxy::{execution_policy, policy, workspaces::{self, Workspace}, SOURCE_ROOT};
+use jj_proxy::{execution_policy, policy, workspaces::{self, Workspace}, SOURCE_ROOT, WORK_ROOT};
 #[allow(deprecated)]
 use nix::fcntl::{flock, FlockArg};
 use serde::{Deserialize, Serialize};
@@ -160,7 +160,7 @@ fn prepare_inspection_config_deadline(workspace: &Path, jj: &Path, trusted_confi
 
 fn open_cwd(root: RawFd, path: &str, source: &Path) -> Result<OwnedFd> {
     if path.contains('\0') || !Path::new(path).starts_with(source) {
-        bail!("cwd is outside the protected /home/codex/src workspace");
+        bail!("cwd is outside the mounted workspace roots");
     }
     // Protocol v3 carries canonical absolute paths, not a mode-dependent namespace.
     if Path::new(path).components().any(|part| matches!(part, std::path::Component::ParentDir | std::path::Component::CurDir))
@@ -196,15 +196,16 @@ fn workspace_for(path: &Path) -> Option<&Path> {
     path.ancestors().find(|ancestor| ancestor.join(".jj").is_dir())
 }
 
-fn select_repository<'a>(request: &Request, workspaces: &'a [Workspace], source_root: &Path, selector: Option<&str>) -> Result<(PathBuf, Option<&'a Workspace>)> {
+fn select_repository<'a>(request: &Request, workspaces: &'a [Workspace], source_root: &Path, work_root: Option<&Path>, selector: Option<&str>) -> Result<(PathBuf, Option<&'a Workspace>)> {
     let invocation = Path::new(&request.cwd);
     let target = match selector {
         Some(value) => fs::canonicalize(invocation.join(value)).wrap_err("cannot resolve repository selector")?,
         None => invocation.to_path_buf(),
     };
-    if !target.starts_with(source_root) { bail!("repository selector is outside /home/codex/src"); }
+    let admitted = |path: &Path| path.starts_with(source_root) || work_root.is_some_and(|root| path.starts_with(root));
+    if !admitted(&target) { bail!("repository selector is outside the mounted workspace roots"); }
     let workspace = workspace_for(&target).ok_or_else(|| eyre!("repository selector is not inside a Jujutsu workspace"))?;
-    if !workspace.starts_with(source_root) { bail!("repository workspace is outside /home/codex/src"); }
+    if !admitted(workspace) { bail!("repository workspace is outside the mounted workspace roots"); }
     let authority = if matches!(request.mode, RequestMode::Inspect) { None }
         else { workspaces::authority_for(workspace, workspaces)? };
     Ok((workspace.to_path_buf(), authority))
@@ -333,6 +334,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
 
 struct Runtime<'a> {
     source: &'a Path,
+    work: Option<&'a Path>,
     mounts: &'a [workspaces::MountPoint],
     jj: &'a Path,
     config: &'a Path,
@@ -343,7 +345,7 @@ struct Runtime<'a> {
 
 impl Runtime<'_> {
     fn trusted() -> Runtime<'static> {
-        Runtime { source: Path::new(SOURCE_ROOT), mounts: &[], jj: Path::new("/trusted/bin/jj"), config: Path::new(TRUSTED_JJ_CONFIG), config_home: Path::new(CONFIG_HOME),
+        Runtime { source: Path::new(SOURCE_ROOT), work: Some(Path::new(WORK_ROOT)), mounts: &[], jj: Path::new("/trusted/bin/jj"), config: Path::new(TRUSTED_JJ_CONFIG), config_home: Path::new(CONFIG_HOME),
             #[cfg(test)]
             after_author_update: None,
         }
@@ -449,11 +451,17 @@ fn execute_with_runtime(
             return failure("invalid agent split request".into());
         }
     }
-    let cwd = match open_cwd(root, &request.cwd, runtime.source) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+    let open_path = |path: &str| -> Result<OwnedFd> {
+        if Path::new(path).starts_with(runtime.source) { return open_cwd(root, path, runtime.source); }
+        let work = runtime.work.ok_or_else(|| eyre!("cwd is outside the mounted workspace roots"))?;
+        let fd = File::open(work).wrap_err("cannot open work root")?;
+        open_cwd(fd.as_raw_fd(), path, work)
+    };
+    let cwd = match open_path(&request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
     if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
         return Response { version: PROTOCOL_VERSION, exit: 0, stdout: String::new(), stderr: String::new() };
     }
-    let (workspace, authority) = match select_repository(request, workspaces, runtime.source, repository_selector.as_deref()) {
+    let (workspace, authority) = match select_repository(request, workspaces, runtime.source, runtime.work, repository_selector.as_deref()) {
         Ok(selection) => selection,
         Err(error) => return failure(error.to_string()),
     };
@@ -470,7 +478,7 @@ fn execute_with_runtime(
     let inspect = inspect || decision.as_ref().is_some_and(|decision| decision.read_only);
     let authority = authority.filter(|_| !inspect);
     let linked_root = if let Some(authority) = authority.filter(|entry| Path::new(&entry.root) != workspace) {
-        let fd = match open_cwd(root, workspace.to_str().unwrap(), runtime.source) {
+        let fd = match open_path(workspace.to_str().unwrap()) {
             Ok(fd) => fd, Err(error) => return failure(error.to_string()),
         };
         if let Err(error) = workspaces::validate_linked_scope(&fd, authority, workspaces, runtime.mounts) {
@@ -645,7 +653,7 @@ fn serve() -> Result<()> {
 
 fn client(args: Vec<String>) -> Result<i32> {
     let cwd = fs::canonicalize(env::current_dir().wrap_err("cannot read current directory")?).wrap_err("cannot resolve current directory")?;
-    if !cwd.starts_with(SOURCE_ROOT) { bail!("current directory is outside {SOURCE_ROOT}"); }
+    if !cwd.starts_with(SOURCE_ROOT) && !cwd.starts_with(WORK_ROOT) { bail!("current directory is outside the mounted workspace roots"); }
     let inspect = env::var_os("JJ_PROXY_INSPECT").is_some();
     let cwd = cwd.to_str().ok_or_else(|| eyre!("non-UTF-8 current directory"))?.to_owned();
     let request = Request {
@@ -714,7 +722,7 @@ fn mutate_jj(args: &[String]) -> Result<i32> {
     let root = unsafe { OwnedFd::from_raw_fd(fd) };
     let identity: Option<(String, String)> = serde_json::from_str(&args[2])?;
     execution_policy::install_linked_workspace_with_paths(&authority, &root, &execution_policy::PolicyPaths {
-        source: Path::new(SOURCE_ROOT), trusted: Path::new("/trusted"), trusted_bin: Path::new("/trusted/bin"),
+        source: Path::new(SOURCE_ROOT), work: Some(Path::new(WORK_ROOT)), trusted: Path::new("/trusted"), trusted_bin: Path::new("/trusted/bin"),
         config: Path::new(CONFIG_HOME), socket: Path::new("/run/sandbox-proxy"),
     })?;
     // Do not leak the workspace capability to JJ or its helpers.
@@ -888,7 +896,7 @@ mod tests {
             argv: vec!["status".into()], agent_split: None, user: None, email: None,
         };
         let select = |request: &Request, authority: &[Workspace], source: &Path, selector: Option<&str>| {
-            select_repository(request, authority, source, selector).map(|(root, authority)| (root, authority.is_none()))
+            select_repository(request, authority, source, None, selector).map(|(root, authority)| (root, authority.is_none()))
         };
         let authority = vec![test_authority(&source, "selected")];
         assert_eq!((selected.clone(), false), select(&request, &authority, &source, Some(".")).unwrap());
@@ -1016,7 +1024,7 @@ mod tests {
         fs::write(&config, include_str!("../jj.toml")).unwrap();
         let config_home = root.join("config");
         fs::create_dir_all(&config_home).unwrap();
-        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config,
+        let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config,
             config_home: &config_home, after_author_update: None };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let before = native(&jj, &root, &["-R", project.to_str().unwrap(), "--ignore-working-copy",
@@ -1057,6 +1065,49 @@ mod tests {
     }
 
     #[test]
+    fn work_root_linked_workspace_and_rejections() {
+        let Some(jj) = real_jj() else { eprintln!("SKIP work root sequence: no real JJ"); return; };
+        let root = env::temp_dir().join(format!("jj-proxy-work-root-{}", std::process::id()));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("work/volume")).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let src = root.join("src");
+        let work = root.join("work");
+        native(&jj, &root, &["git", "init", "--no-colocate", src.join("project").to_str().unwrap()]);
+        fs::write(src.join("project.lock"), "").unwrap();
+        let workspaces = vec![test_authority(&src, "project")];
+        let source = File::open(&src).unwrap();
+        let config = root.join("trusted.toml");
+        fs::write(&config, include_str!("../jj.toml")).unwrap();
+        let config_home = root.join("config");
+        fs::create_dir_all(&config_home).unwrap();
+        let runtime = Runtime { source: &src, work: Some(&work), mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
+        let run = |cwd: &Path, args: &[&str]| {
+            let request = Request { version: PROTOCOL_VERSION, mode: RequestMode::Mutate, cwd: cwd.to_str().unwrap().into(),
+                argv: args.iter().map(|s| (*s).into()).collect(), agent_split: None, user: None, email: None };
+            execute_with_runtime(&request, &policy, source.as_raw_fd(), &workspaces,
+                root.to_str().unwrap(), &runtime, Instant::now() + Duration::from_secs(10), None)
+        };
+        let linked = work.join("volume/linked");
+        let response = run(&src.join("project"), &["workspace", "add", "--no-colocate", "--name", "linked", linked.to_str().unwrap()]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        fs::write(linked.join("edited"), "volume edit\n").unwrap();
+        let response = run(&linked, &["commit", "-m", "Record volume edit"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        assert_eq!("volume edit\n", native(&jj, &root, &["-R", linked.to_str().unwrap(), "file", "show", "-r", "@-", "root:edited"]));
+        let response = run(&src.join("project"), &["-R", linked.to_str().unwrap(), "status"]);
+        assert_eq!(0, response.exit, "{}", response.stderr);
+        std::os::unix::fs::symlink(&linked, work.join("alias")).unwrap();
+        assert_eq!(2, run(&work.join("alias"), &["status"]).exit);
+        assert_eq!(2, run(&root, &["status"]).exit);
+        let independent = work.join("volume/independent");
+        native(&jj, &root, &["git", "init", independent.to_str().unwrap()]);
+        assert_eq!(2, run(&independent, &["commit", "-m", "Denied"]).exit);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn real_jj_linked_workspace_create_edit_and_record() {
         let Some(jj) = real_jj() else { eprintln!("SKIP linked workspace sequence: no real JJ"); return; };
         let root = env::temp_dir().join(format!("jj-proxy-linked-{}", std::process::id()));
@@ -1070,7 +1121,7 @@ mod tests {
         let config = root.join("trusted.toml");
         let config_home = root.join("config");
         fs::create_dir_all(&config_home).unwrap();
-        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let run = |cwd: &str, args: &[&str]| {
             let request = Request { version: PROTOCOL_VERSION, mode: RequestMode::Mutate,
@@ -1128,7 +1179,7 @@ mod tests {
         fs::write(&config, include_str!("../jj.toml")).unwrap();
         let config_home = root.join("config");
         fs::create_dir_all(&config_home).unwrap();
-        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config,
+        let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config,
             config_home: &config_home, after_author_update: None };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let source = File::open(&root).unwrap();
@@ -1167,7 +1218,7 @@ mod tests {
                 fs::write(root.join("paused"), "author hook complete").unwrap();
                 while !root.join("release").exists() { thread::sleep(Duration::from_millis(10)); }
             };
-            let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
+            let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
                 after_author_update: if role == "A" { Some(&pause) } else { None } };
             let argv: Vec<String> = match role.as_str() {
                 "A" => ["-R", "../relocated", "commit", "root:selected", "-m", "A commit"].into_iter().map(str::to_owned).collect(),
@@ -1199,7 +1250,7 @@ mod tests {
         let config = root.join("trusted.toml");
         let config_home = root.join("config");
         fs::create_dir_all(&config_home).unwrap();
-        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
+        let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config, config_home: &config_home, after_author_update: None };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let request_for = |cwd: &str, args: &[&str]| Request { version: PROTOCOL_VERSION, mode: RequestMode::Mutate,
             cwd: root.join(cwd).to_str().unwrap().into(), argv: args.iter().map(|arg| (*arg).into()).collect(),
@@ -1442,7 +1493,7 @@ mod tests {
                 require_eof(&mut server).unwrap();
                 let source = File::open(&worker_root).unwrap();
                 let config = worker_root.join("trusted.toml"); let config_home = worker_root.join("config");
-                let runtime = Runtime { source: &worker_root, mounts: &[], jj: &worker_jj, config: &config, config_home: &config_home, after_author_update: None };
+                let runtime = Runtime { source: &worker_root, work: None, mounts: &[], jj: &worker_jj, config: &config, config_home: &config_home, after_author_update: None };
                 let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
                 // The complete half-closed request is decoded while another
                 // owner holds the target lock. No JJ mutation can yet be admitted.
@@ -1479,7 +1530,7 @@ mod tests {
         let disconnect_after_hook = || { drop(client.borrow_mut().take()); };
         let source = File::open(&root).unwrap();
         let config = root.join("trusted.toml"); let config_home = root.join("config");
-        let runtime = Runtime { source: &root, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
+        let runtime = Runtime { source: &root, work: None, mounts: &[], jj: &jj, config: &config, config_home: &config_home,
             after_author_update: Some(&disconnect_after_hook) };
         let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let started = Request { version: PROTOCOL_VERSION, mode: RequestMode::Mutate, cwd: repo.to_str().unwrap().into(),

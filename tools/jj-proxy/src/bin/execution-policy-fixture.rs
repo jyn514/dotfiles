@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env::set_var("JJ_PROXY_COMMON_DIR", &git);
     env::set_var("JJ_PROXY_JJ_REPO", &jj_repo);
     let paths = execution_policy::PolicyPaths {
-        source: &root,
+        source: &root, work: None,
         trusted: &trusted,
         trusted_bin: &trusted_bin,
         config: &config,

@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import subprocess
 import tarfile
@@ -83,9 +84,10 @@ def prepare_fixture_work_volumes(run, image: str, arguments: list[str], prefix: 
     return names
 
 
-def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
+def probe_shared_workspaces(image: str, *, linked: bool = False, cleanup_image: str | None = None) -> None:
     from docker_runtime import Docker
-    from workspace_layout import discover_workspace, ensure_request_lock
+    from workspace_layout import discover_workspace, ensure_request_lock, workspace_work_root
+    from work_storage import assign_work_roots
 
     module = runpy.run_path(str(DIRECTORY.parent / "sandbox-proxies.py"))
     launcher = runpy.run_path(str(DIRECTORY.parent / "codex-sandbox"))
@@ -145,6 +147,9 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
         (home / "src").mkdir(parents=True)
         project = home / "src/project"
         dotfiles = root / "external-dotfiles"
+        (root / "work-cleanup.py").write_bytes((DIRECTORY.parent / "work_cleanup_guest.py").read_bytes())
+        (root / "protected").mkdir()
+        (root / "protected/keep.tmp").write_text("nested bind canary\n")
         (root / "jj-shim").write_bytes((DIRECTORY / "fixtures/shared-workspace-jj.sh").read_bytes())
         (root / "jj-shim").chmod(0o755)
         try:
@@ -187,10 +192,15 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
 
             layouts = [discover_workspace(project, Path("/home/codex/src/project"), home, runner=metadata_runner),
                        discover_workspace(dotfiles, Path("/home/codex/src/dotfiles"), home, runner=metadata_runner)]
+            layouts = assign_work_roots(layouts)
+            for item, basename in zip(layouts, ('project', 'external-dotfiles')):
+                if not re.fullmatch('/work/' + basename + r'-[0-9]{6}', str(workspace_work_root(item))):
+                    raise RuntimeError('fixture did not select deterministic readable work roots')
             for layout in layouts:
                 ensure_request_lock(layout)
-                # The launcher prepares empty host mountpoints before either consumer starts.
+                # Host-owned artifacts must neither block startup nor be hidden.
                 (layout.host_root / "work").mkdir()
+                (layout.host_root / "work/host-canary").write_text("host-owned\n")
             staging = root / "proxy-staging"
             staging.mkdir()
             records = [layout.to_dict() for layout in layouts]
@@ -316,8 +326,9 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
                     raise RuntimeError(f"linked workspace committed wrong content: {child}: {recorded!r}")
 
             commit_child_edit("/home/codex/src/project/preexisting-child", "Preexisting linked child")
+            work_roots = {layout.guest_root.name: workspace_work_root(layout) for layout in layouts}
             for repo in ("project", "dotfiles"):
-                work_child = f"/home/codex/src/{repo}/work/consumer-child"
+                work_child = str(work_roots[repo] / "consumer-child")
                 name = repo + "-work-child"
                 finish(request(guest, "Pi-D", "-R", f"/home/codex/src/{repo}", "workspace", "add", "--name", name, work_child))
                 run("docker", "exec", guest, "/trusted/bin/busybox", "test", "-f", work_child + "/.jj/repo")
@@ -343,14 +354,14 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             else:
                 raise RuntimeError(f"recreated proxy not ready: {ready.stderr}")
             for repo in ("project", "dotfiles"):
-                work_child = f"/home/codex/src/{repo}/work/consumer-child"
+                work_child = str(work_roots[repo] / "consumer-child")
                 finish(request(guest, "Pi-D", "status", cwd=work_child))
                 content = run("docker", "exec", guest, "/trusted/bin/busybox", "cat", work_child + "/acceptance.txt").stdout
                 if content != repo + " work linked child disk content\n":
                     raise RuntimeError(f"recreated consumers lost work content: {repo}: {content!r}")
 
             # Native host-equivalent view mounts only the host fixture, not guest work volumes.
-            # Registered /home/codex/src/.../work children are inaccessible here; ordinary main JJ still works.
+            # Registered /work/... children are inaccessible here; ordinary main JJ still works.
             host = [*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/jj", image,
                     "--config-file", "/trusted/jj.toml"]
             for args in (("status",), ("log",), ("workspace", "list"),
@@ -364,9 +375,9 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             for layout in layouts:
                 result = run(*fixture_jj_container(volume, root, project),
                              "--entrypoint", "/trusted/bin/busybox", image,
-                             "ls", "-A", str(layout.host_root / "work"))
-                if result.stdout:
-                    raise RuntimeError(f"proxy wrote hidden host work files: {result.stdout}")
+                             "cat", str(layout.host_root / "work/host-canary"))
+                if result.stdout != "host-owned\n":
+                    raise RuntimeError(f"proxy changed host work files: {result.stdout}")
             run(*fixture_jj_container(volume, root, project), "--entrypoint", "/trusted/bin/busybox", image,
                 "test", "-f", str(project / "target/consumer-child/acceptance.txt"))
             child = "/home/codex/src/project/runtime-child"
@@ -439,10 +450,41 @@ def probe_shared_workspaces(image: str, *, linked: bool = False) -> None:
             result = run("docker", "exec", "--interactive", guest, "/trusted/bin/sh", input=shell.read_text())
             if result.stdout != "shared-workspace-guest-ok\n":
                 raise RuntimeError(f"unexpected guest workspace result: {result.stdout}\n{result.stderr}")
+            if cleanup_image is not None:
+                child = str(work_roots['project'] / 'consumer-child')
+                for filename, content in (('.gitignore', '*.tmp\ncache/\n'),
+                                          ('out.tmp', 'ignored output\n'),
+                                          ('acceptance.txt', 'pending tracked edit\n')):
+                    run('docker', 'exec', '--interactive', guest, '/trusted/bin/busybox', 'tee',
+                        child + '/' + filename, input=content)
+                run('docker', 'exec', guest, '/trusted/bin/busybox', 'mkdir', '-p', child + '/cache')
+                run('docker', 'exec', guest, '/trusted/bin/busybox', 'touch', child + '/cache/large')
+                # Maintenance starts only after every real consumer has stopped.
+                for container in containers:
+                    run('docker', 'rm', '-f', container)
+                containers.clear()
+                cleanup_authority = [dict(item.proxy_authority(), volume=str(workspace_work_root(item)))
+                                     for item in layouts]
+                cleanup_mounts = relocate([*mounts, '--mount',
+                    f'type=bind,src={root / "jj-real"},dst=/trusted/bin/jj-real,readonly',
+                    '--mount', f'type=bind,src={root / "work-cleanup.py"},dst=/work-cleanup.py,readonly',
+                    '--mount', f'type=bind,src={root / "protected"},dst={child}/cache/mounted'])
+                cleanup_options = ['--network', 'none', '--user', '65532:65532', '--cap-drop=ALL',
+                                   '--security-opt=no-new-privileges', '--read-only',
+                                   '--tmpfs', '/tmp:mode=1777', *cleanup_mounts,
+                                   '--env', 'JJ_REAL=/trusted/bin/jj-real',
+                                   '--env', 'HOME=/tmp/home', '--env', 'XDG_CONFIG_HOME=/tmp/config',
+                                   '--env', 'XDG_CACHE_HOME=/tmp/cache',
+                                   '--env', f'SANDBOX_WORK={work_roots["project"]}']
+                run('docker', 'run', '--rm', *cleanup_options, '--entrypoint', 'python3', cleanup_image,
+                    '/work-cleanup.py', json.dumps(cleanup_authority))
+                run('docker', 'run', '--rm', *cleanup_options, '--entrypoint', '/bin/sh', cleanup_image,
+                    '-s', input=(DIRECTORY / 'fixtures/shared-workspace-cleanup-check.sh').read_text())
+                print('PASS: /work cleanup snapshots pending work, deletes ignored output, preserves nested mounts', flush=True)
             layout = "linked absolute-pointer bind aliases" if linked else "ordinary metadata"
             print(f"PASS: {layout}; linked child disk edits/commits, shared-store cross-proxy locking, "
                   "scoped filesets, independent repository denial, explicit inspection, guest protection; "
-                  "work/ guest transport/create/edit/record/recreate, empty host work, native host JJ, target/", flush=True)
+                  "/work guest transport/create/edit/record/recreate, preserved host work, native host JJ, target/", flush=True)
         except BaseException:
             for service in containers:
                 logs = run("docker", "logs", service, check=False)

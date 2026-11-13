@@ -17,7 +17,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from workspace_layout import (
     WorkspaceError, WorkspaceLayout, discover_repository_metadata, discover_workspace,
-    ensure_request_lock, workspace_guest_root,
+    ensure_request_lock, workspace_guest_root, workspace_work_root, workspace_work_volume,
 )
 
 LAUNCHER = Path(__file__).resolve().parents[1] / "codex-sandbox"
@@ -47,6 +47,18 @@ class WorkspaceLayoutTest(unittest.TestCase):
         self.home = Path(self.temporary.name).resolve() / "home"
         (self.home / "src").mkdir(parents=True)
         self.main = git_fixture(self.home / "src/team/main")
+
+    def test_guest_storage_identity_survives_guest_relocation_without_merging_host_roots(self):
+        from dataclasses import replace
+        import hashlib
+        layout = discover_workspace(self.main, Path('/home/codex/src/team/main'), self.home)
+        identity = hashlib.sha256(os.fsencode(self.main)).hexdigest()[:32]
+        self.assertEqual(Path('/work') / identity, workspace_work_root(layout))
+        self.assertEqual('codex-work-' + identity, workspace_work_volume(layout)[0])
+        relocated = replace(layout, guest_root=Path('/home/codex/src/renamed'))
+        self.assertEqual(workspace_work_root(layout), workspace_work_root(relocated))
+        self.assertNotEqual(workspace_work_root(layout), workspace_work_root(
+            replace(layout, host_root=self.home / 'other')))
 
     def test_native_layouts_keep_pointer_targets_and_share_backing_lock_identity(self):
         linked_git = self.home / "src/team/git-linked"
@@ -193,6 +205,8 @@ class WorkspaceLayoutTest(unittest.TestCase):
             function(state)
             self.assertEqual(before, Path.cwd())
             self.assertEqual([self.main, dotfiles], [item.host_root for item in state.workspaces])
+            for item, basename in zip(state.workspaces, ('main', 'dotfiles')):
+                self.assertRegex(str(workspace_work_root(item)), '/work/' + basename + r'-[0-9]{6}$')
             metadata = (dotfiles / ".jj/repo").stat().st_ino
             launcher["initialize_dotfiles"](dotfiles)
             self.assertEqual(metadata, (dotfiles / ".jj/repo").stat().st_ino)

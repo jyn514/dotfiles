@@ -33,16 +33,18 @@
 
 - jyn is in Central Europe (UTC+2 during daylight-savings-time).
 - When displaying paths in chat output, change `/home/codex/` to `~/` so paths work in both the guest and host.
-- Use guest-only `work/` for caches, build trees, extracted data, and other high-cardinality intermediates.
-  The launcher preserves it across sandbox sessions for the same workspace, but it remains disposable with the VM or manual volume removal.
-  Cargo uses the active workspace's `work/cargo-target` automatically.
-  Python bytecode, mypy, and Ruff use the active workspace's `work/cache` automatically.
+- Use guest-only `/work/<checkout-name>-<short-id>/` for caches, build trees, extracted data, and other high-cardinality intermediates.
+  Names use the checkout directory's basename plus a stable six-digit suffix, such as `/work/dotfiles-988384`.
+  `$SANDBOX_WORK` names the active workspace's directory; use it instead of `./work`, which is host-backed.
+  The launcher preserves the volume across sandbox sessions for the same workspace, but it remains disposable with the VM or manual volume removal.
+  Cargo uses `$SANDBOX_WORK/cargo-target` automatically.
+  Python bytecode, mypy, and Ruff use `$SANDBOX_WORK/cache` automatically.
 - User-wide tool caches under `/home/codex/.cache` persist across workspaces and sandbox sessions in the same VM.
   Treat them as disposable cache data, not as storage for configuration, credentials, or required artifacts.
 - Use host-backed `target/` only for artifacts that host tools, other agents, or jyn must inspect.
 - Record unresolved findings and follow-up work in the project's issue tracker, including missing documentation.
   Do not use `notes/` as a durable record or handoff.
-- Never leave the only evidence for a reported result in `work/`.
+- Never leave the only evidence for a reported result in `/work/`.
   Preserve the decisive facts in the ticket or maintained documentation; use `target/` for supplementary artifacts that need inspection.
 - When a tool needed for authorized work or validation is missing, install it in the disposable sandbox and retry the blocked command.
   A guest-only tool installation is not a new host prerequisite and does not require separate approval.

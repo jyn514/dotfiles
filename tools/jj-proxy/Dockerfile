@@ -43,7 +43,7 @@ RUN case "${TARGETARCH}" in \
     && cp /jj/jj /jj-bin \
     && /jj-bin --version \
     && rm -rf /jj /jj.tar.gz
-RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy /image-root/etc/ssl \
+RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/work /image-root/run/sandbox-proxy /image-root/etc/ssl \
     && ln -s certs/ca-certificates.crt /image-root/etc/ssl/cert.pem
 
 FROM build AS verified

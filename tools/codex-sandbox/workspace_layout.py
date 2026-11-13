@@ -8,12 +8,13 @@ from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 
 
 SOURCE_ROOT = Path("/home/codex/src")
-WORK_DIRECTORY = "work"
+WORK_ROOT = Path("/work")
 
 
 class WorkspaceError(ValueError):
@@ -34,22 +35,30 @@ class WorkspaceLayout:
     common_dir: Path
     jj_repo: Path
     lock_file: Path
+    work_root: Path | None = None
 
     def __post_init__(self):
         for path in (self.host_root, self.guest_root, self.git_dir,
                      self.common_dir, self.jj_repo, self.lock_file):
             _safe_path(path)
+        if self.work_root is not None:
+            _safe_path(self.work_root)
+            if self.work_root.parent != WORK_ROOT:
+                raise WorkspaceError(f"Work storage must be directly below {WORK_ROOT}: {self.work_root}")
         if self.guest_root == SOURCE_ROOT or not self.guest_root.is_relative_to(SOURCE_ROOT):
             raise WorkspaceError(f"Workspace guest root must be below {SOURCE_ROOT}: {self.guest_root}")
 
     def to_dict(self) -> dict[str, str]:
-        return {key: str(getattr(self, key)) for key in (
+        result = {key: str(getattr(self, key)) for key in (
             "host_root", "guest_root", "git_dir", "common_dir", "jj_repo", "lock_file")}
+        if self.work_root is not None:
+            result["work_root"] = str(self.work_root)
+        return result
 
     @classmethod
     def from_dict(cls, value: dict[str, str]) -> "WorkspaceLayout":
         keys = {"host_root", "guest_root", "git_dir", "common_dir", "jj_repo", "lock_file"}
-        if not isinstance(value, dict) or set(value) != keys or any(
+        if not isinstance(value, dict) or set(value) not in (keys, keys | {"work_root"}) or any(
                 not isinstance(item, str) for item in value.values()):
             raise WorkspaceError("Invalid workspace description")
         return cls(**{key: Path(item) for key, item in value.items()})
@@ -99,11 +108,32 @@ class WorkspaceLayout:
 def workspace_work_volume(workspace: WorkspaceLayout) -> tuple[str, str]:
     """Stable launcher-owned storage shared by the guest and trusted JJ proxy.
 
-    Only the launcher prepares or owns this volume. Proxy mounts at the primary
-    guest root must reuse it rather than create a second storage owner.
+    Only the launcher prepares or owns this volume. Every consumer must reuse
+    its identity rather than create a second storage owner.
     """
     identity = hashlib.sha256(os.fsencode(workspace.host_root)).hexdigest()
     return "codex-work-" + identity[:32], "codex-workspace:" + identity
+
+
+def named_work_root(workspace: WorkspaceLayout) -> Path:
+    """Readable path derived only from canonical checkout identity, never peers."""
+    _, owner = workspace_work_volume(workspace)
+    identity = owner.removeprefix("codex-workspace:")
+    suffix = f"-{int(identity, 16) % 1_000_000:06d}"
+    basename = re.sub(r"[^A-Za-z0-9_.-]+", "-", workspace.host_root.name).lstrip(".-") or "repository"
+    return WORK_ROOT / (basename[:255 - len(suffix)] + suffix)
+
+
+def workspace_work_root(workspace: WorkspaceLayout) -> Path:
+    """Use the launch-selected name; old persisted sessions retain their hash path.
+
+    Keeping the destination in the workspace record lets independently loaded
+    proxies and final maintenance honor the original consumer's mount layout.
+    """
+    if workspace.work_root is not None:
+        return workspace.work_root
+    name, _ = workspace_work_volume(workspace)
+    return WORK_ROOT / name.removeprefix("codex-work-")
 
 
 @dataclass(frozen=True)

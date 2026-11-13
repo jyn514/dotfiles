@@ -39,9 +39,25 @@ existing image lifecycle retain ownership of it.
 
 == Guest work storage cleanup <guest-work-cleanup>
 
-*Status:* Implemented; native JJ and Linux Lima-Docker maintenance acceptance verified.
-Other runtime acceptance remains unverified.
-The launcher preserves tracked workspace files and JJ metadata in each guest-only `work/` volume across sandbox exits.
+*Status:* Implemented; native JJ preservation and real Docker `/work` mount, linked-workspace, consumer-recreation, and nested-mount cleanup checks pass.
+Host-runtime maintenance admission and non-Docker runtime acceptance remain unverified.
+Each writable checkout has one launcher-owned guest-only volume mounted at `/work/<checkout-name>-<short-id>/` in the agent, trusted JJ proxy, and maintenance consumer.
+Choose the canonical checkout directory's basename, replacing mount-unsafe name characters with hyphens.
+Always append a six-digit decimal suffix: the existing canonical-host-path SHA-256 identity modulo 1,000,000, padded with leading zeros.
+Shorten a maximum-length basename as needed to keep the suffixed component within 255 bytes.
+The name must depend only on that checkout's identity, without allocation state or launch-order dependence.
+Reject colliding names for distinct checkouts mounted in one launch rather than renumbering them.
+Persist the selected mount path in each session's workspace description so proxies and maintenance reuse the launch-selected layout.
+Older session descriptions without a selected path retain their hash-based mount layout.
+The underlying `codex-work-*` volume identity remains derived from the canonical host checkout path.
+Changing the guest source path must not change storage identity or create a second volume.
+The guest environment exposes the active checkout's directory as `SANDBOX_WORK`; Cargo output and Python bytecode, mypy, and Ruff caches use it.
+Agent instructions direct guest-only caches, build trees, extracted data, and linked JJ workspaces there, not to `./work`.
+Host-backed checkout paths, including any `work` file, directory, or symlink, remain untouched by storage preparation and must not block startup.
+Existing volumes retain their identities and contents; relocating pre-existing linked Git/JJ workspaces is a one-off operator action, not startup migration.
+Do not mount compatibility aliases over checkout-local `work` paths.
+Host-visible artifacts belong in the checkout's `target/`, not guest-only storage.
+The launcher preserves tracked workspace files and JJ metadata in each guest-only volume across sandbox exits.
 After the last consumer of a volume exits, it snapshots every tracked JJ workspace within that volume before removing ignored files within those workspaces.
 Snapshotting must preserve pending tracked changes without committing them or changing their authorship.
 Files outside the guest-only volume, including host-backed working files, are outside cleanup scope.

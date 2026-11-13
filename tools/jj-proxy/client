@@ -31,8 +31,8 @@ def main() -> int:
     if not proxy_dir:
         raise RuntimeError("sandbox proxy directory is not configured")
     current = Path.cwd().resolve(strict=True)
-    if current != Path("/home/codex/src") and Path("/home/codex/src") not in current.parents:
-        raise RuntimeError("current directory is outside the protected source tree; run from the mounted workspace")
+    if not any(current.is_relative_to(root) for root in (Path("/home/codex/src"), Path("/work"))):
+        raise RuntimeError("current directory is outside the mounted workspace roots; run from the mounted workspace")
     # Cwd addresses the invocation, not its permission or selected repository.
     # Keep selectors/filesets unchanged; only the server's launch authority can
     # authorize mutation or demote an unlisted sibling to inspection.

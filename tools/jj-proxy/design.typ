@@ -137,9 +137,11 @@ The launcher supplies `JJ_PROXY_REPO` as the active guest root.
 Trusted `JJ_PROXY_WORKSPACES` is a JSON array of entries with exactly `root`, `git_dir`, `common_dir`, `jj_repo`, and `lock`.
 Each entry binds an exact guest workspace root, its resolved metadata paths, and a persistent request-lock path.
 Validate all entries and prepare secure configuration for both workspaces before readiness.
-The launcher shares each checkout's existing launcher-owned work volume at its primary guest root's `work/` in the agent and JJ proxy.
+The launcher shares each checkout's existing launcher-owned work volume at `/work/<checkout-name>-<short-id>` in the agent and JJ proxy.
+The `/work` ancestor belongs to the read-only container root filesystem; only the launcher-mounted volumes are writable.
+The server grants access there for workspace creation, while a linked mutation child receives writes only to its pinned workspace and authorized metadata.
 Repository aliases retain their existing host-backed views and guest read-only modes.
-Linked workspaces under the shared primary `work/` path can snapshot and commit through the proxy; their registrations and history remain host-visible, but their working files do not.
+Linked workspaces under the shared `/work/<checkout-name>-<short-id>` path can snapshot and commit through the proxy; their registrations and history remain host-visible, but their working files do not.
 Host main-checkout status, log, new, and history edits remain supported; host operations that require those guest-only working files are not.
 Accepted-session authority binds the exact set, metadata layouts, lock mounts, shared work-volume names and writable modes, and live trusted environment.
 Guest request fields cannot add entries or backing repositories.
@@ -180,8 +182,8 @@ Responses contain the exit status and captured streams:
 
 Set explicit request and response size limits. Reject malformed UTF-8, unknown
 fields, embedded NUL bytes, excessive argument counts, and oversized messages.
-Protocol version 3 requires a physical absolute `cwd` beneath `/home/codex/src` in both mutation and inspection modes.
-Resolve it through checked filesystem traversal from an already-open `/home/codex/src` descriptor without magic links or escape.
+Protocol version 3 requires a physical absolute `cwd` beneath `/home/codex/src` or `/work` in both mutation and inspection modes.
+Resolve it through checked filesystem traversal from an open descriptor for the corresponding root without magic links or escape.
 Retain the resulting descriptor and enter it with `fchdir`.
 String canonicalization followed by unchecked `chdir` is insufficient because working-tree paths can change between those operations.
 Resolve a single `-R` or `--repository` selector relative to this checked invocation cwd and pass the resolved repository to JJ.
@@ -225,15 +227,13 @@ These restrictions prevent mutable child pointers from obtaining writes to anoth
 They do not freeze workspace selection across phases or protect newly created workspace-local metadata from direct guest edits.
 Only mutation mode may snapshot a working copy or change repository state.
 
-The launcher admits repositories by mounting the host source tree read-only at
-`/home/codex/src` in both containers. An inspection request identifies a directory beneath
-that mount. The proxy opens its `cwd` components without following symlinks, requires
+The launcher mounts the host source tree read-only at `/home/codex/src` and shares its work volumes under `/work` in both containers.
+An inspection request identifies a directory beneath either root. The proxy opens its `cwd` components without following symlinks, requires
 an ancestor with a `.jj` directory, and runs Jujutsu in a child process with a
-second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces
-whose metadata is outside the mounted tree are not admitted by this mechanism.
+second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces whose metadata is not visible to the proxy are not admitted by this mechanism.
 The trusted proxy may also resolve a single `-R` or `--repository` selector
 against the invocation directory. It canonicalizes the target, requires a
-workspace under `/home/codex/src`, and derives mutation permission from backing-repository filesystem identity, not a path prefix.
+workspace under `/home/codex/src` or `/work`, and derives mutation permission from backing-repository filesystem identity, not a path prefix.
 A client may request stricter inspection, including for an authorized root, but cannot grant additional mutation access.
 Inspection requests are restricted to commands whose reviewed grammar has no
 repository mutation path, initially `status`, `diff`, `log`, `show`,
@@ -245,7 +245,7 @@ their write authority.
 Read-only classification is an enforced command-policy property, not a label
 in the client. The proxy must reject commands that can snapshot, update stores,
 write configuration, invoke helpers, or access credentials even when their
-usual invocation appears observational. The `/home/codex/src` mount defines inspection
+usual invocation appears observational. The `/home/codex/src` and `/work` roots define inspection
 admission; mutation requires a backing repository authorized at startup.
 
 == Mutation ownership across proxies
@@ -290,7 +290,7 @@ global configuration installed from `config/jj.toml`; execution retains the
 original argv and cwd. A read-only clone source does not make the destination
 host-backed. A guest workspace sharing a protected store routes to the proxy,
 but a cwd in private tmpfs or an unshared guest volume remains outside the server namespace and is rejected without changing cwd or enlarging admission.
-The launcher's primary `work/` path is shared with the proxy and does not have this restriction.
+The launcher's `/work/<checkout-name>-<short-id>` path is shared with the proxy and does not have this restriction.
 
 The shared router returns checked JSON containing backend, physical workspace,
 bootstrap destination, expanded command prefix, and whether native author hooks
@@ -407,7 +407,7 @@ surfaces:
 - configuration mutation and all command-line configuration overrides;
 - alternate workspace or config paths; a repository selector is accepted only
   when it resolves to a workspace of an authorized backing repository or an inspection workspace
-  beneath the read-only `/home/codex/src` mount;
+  beneath `/home/codex/src` or `/work`;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
 - irreversible recovery deletion such as operation abandonment or garbage
@@ -541,9 +541,9 @@ Existing accepted sessions without workspace authority reject new joins without 
   trusted interpreters or tools cannot be selected to interpret working-tree
   content.
 - Shell metacharacters in commit messages remain literal data.
-- Config overrides, repositories outside the `/home/codex/src` mount, external tools, and
+- Config overrides, repositories outside `/home/codex/src` and `/work`, external tools, and
   `util exec` are rejected.
-- Inspection requests can read only repositories under `/home/codex/src` and cannot
+- Inspection requests can read only repositories under `/home/codex/src` or `/work` and cannot
   mutate their working trees, Jujutsu stores, Git metadata, configuration, or
   credentials.
 - Git fetch uses host-configured remotes, requests cannot change remote configuration,

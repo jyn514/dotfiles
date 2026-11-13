@@ -46,9 +46,9 @@ from host_gateway import (
 from source_view import check_mount_destinations, source_mounts
 from workspace_layout import (
     WorkspaceLayout, WorkspaceError, discover_repository_metadata, discover_workspace,
-    ensure_request_lock, workspace_guest_root, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY,
+    ensure_request_lock, workspace_guest_root, workspace_work_volume, workspace_work_root, SOURCE_ROOT,
 )
-from work_storage import volume_admission
+from work_storage import volume_admission, assign_work_roots
 from keychain_bridge import HostKeychainBridge
 from tic_broker import POLICY_VERSION as TIC_POLICY_VERSION, InstalledTicBuild, TicBrokerLaunch
 from image_resolver import prepare_launch_images
@@ -607,6 +607,8 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
         with validation_timing("workspace request locks"):
             for workspace in workspaces:
                 ensure_request_lock(workspace)
+        workspaces = assign_work_roots(workspaces)
+        active = workspaces[0]
     except WorkspaceError as error:
         raise LauncherError(str(error)) from error
     state.repository = repository
@@ -1378,16 +1380,7 @@ def prepare_workspace_work_volumes(state: State) -> None:
 
 
 def _prepare_workspace_work_volumes(state: State) -> None:
-    for index, workspace in enumerate(state.workspaces):
-        role = "active workspace" if index == 0 else "launcher dotfiles workspace"
-        mountpoint = workspace.host_root / WORK_DIRECTORY
-        if mountpoint.is_symlink() or (mountpoint.exists() and not mountpoint.is_dir()):
-            raise LauncherError(
-                f"Work mountpoint for {role} is not a directory: {mountpoint}")
-        mountpoint.mkdir(mode=0o700, exist_ok=True)
-        if any(mountpoint.iterdir()):
-            raise LauncherError(
-                f"Refusing to hide non-empty host work directory for {role}: {mountpoint}")
+    for workspace in state.workspaces:
         name, owner = workspace_work_volume(workspace)
         OUTER_RUNTIME.create_owned_volume(
             name, state.uid, state.gid, owner, role="workspace-work",
@@ -1426,7 +1419,7 @@ def agent_repository_mounts(state: State) -> list[str]:
             volume, _ = workspace_work_volume(workspace)
             result += [
                 "--mount",
-                f"type=volume,src={volume},dst={workspace.guest_root / WORK_DIRECTORY}",
+                f"type=volume,src={volume},dst={workspace_work_root(workspace)}",
             ]
         check_mount_destinations(result)
         state.repository_mount_arguments = result
@@ -1483,7 +1476,7 @@ def build_agent_command(
     pi_extensions: Path,
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
-    project_work = state.container_repository / WORK_DIRECTORY
+    project_work = workspace_work_root(state.workspaces[0])
     user_cache = USER_CACHE_PATH
     command = [
         "docker", "run", "--name", state.codex_container,
@@ -1496,6 +1489,7 @@ def build_agent_command(
         "--env", "JJ_AGENT=pi",
         "--env", "CODEX_SANDBOX_TOOL_WORKER=1",
         "--env", "CODEX_SANDBOX_TOOL_READY=/home/codex/.pi/agent/tool-worker-ready",
+        "--env", f"SANDBOX_WORK={project_work}",
         "--env", f"CARGO_TARGET_DIR={project_work / 'cargo-target'}",
         "--env", f"MYPY_CACHE_DIR={project_work / 'cache/mypy'}",
         "--env", f"PYTHONPYCACHEPREFIX={project_work / 'cache/python-bytecode'}",

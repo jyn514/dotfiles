@@ -14,8 +14,8 @@ import uuid
 DIRECTORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DIRECTORY))
 from docker_runtime import Docker
-from workspace_layout import discover_workspace, ensure_request_lock, workspace_work_volume
-from work_storage import cleanup_work_storage
+from workspace_layout import discover_workspace, ensure_request_lock, workspace_work_volume, workspace_work_root
+from work_storage import cleanup_work_storage, assign_work_roots
 from sandbox_runtime import runtime_identity
 
 
@@ -34,8 +34,7 @@ def main():
         root = Path(directory)
         repo = root / 'repo'
         subprocess.run([jj, 'git', 'init', '--colocate', str(repo)], check=True)
-        (repo / 'work').mkdir()
-        layout = discover_workspace(repo, Path('/home/codex/src/fixture'), root)
+        layout = assign_work_roots([discover_workspace(repo, Path('/home/codex/src/fixture'), root)])[0]
         ensure_request_lock(layout)
         volume, owner = workspace_work_volume(layout)
         runtime.create_owned_volume(volume, os.getuid(), os.getgid(), owner, role='workspace-work')
@@ -47,7 +46,7 @@ def main():
             def mounts(staging):
                 arguments = helpers.shared_workspace_mount_args([layout.to_dict()], staging, runtime=runtime)
                 if nested_mount:
-                    arguments += ['--mount', f'type=bind,src={protected},dst={layout.guest_root}/work/child/cache/mounted']
+                    arguments += ['--mount', f'type=bind,src={protected},dst={workspace_work_root(layout)}/child/cache/mounted']
                 return arguments
             for mode in ('seed', 'check'):
                 if mode == 'check':
@@ -65,6 +64,7 @@ def main():
                 options = ['--network', 'none', '--user', f'{os.getuid()}:{os.getgid()}',
                            '--cap-drop=ALL', '--read-only', '--mount', f'type=bind,src={staging / "tmp"},dst=/tmp',
                            '--env', 'XDG_CONFIG_HOME=/tmp/config', '--env', 'XDG_CACHE_HOME=/tmp/cache',
+                           '--env', f'SANDBOX_WORK={workspace_work_root(layout)}',
                            '--entrypoint', 'python3', '--workdir', str(layout.guest_root),
                            '--mount', f'type=bind,src={probe},dst=/probe.py,readonly', *mounts(staging)]
                 with runtime.workload(image, 'work-cleanup-fixture-' + uuid.uuid4().hex[:12],

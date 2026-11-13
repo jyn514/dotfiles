@@ -5,6 +5,7 @@ not session lifetime. Runtime mounts are the consumer registry, including idle
 proxies and containers created before this protocol existed. Never unlink locks.
 """
 from contextlib import contextmanager, ExitStack
+from dataclasses import replace
 import fcntl
 import json
 import os
@@ -12,7 +13,25 @@ from pathlib import Path
 import tempfile
 import uuid
 
-from workspace_layout import workspace_work_volume, WORK_DIRECTORY
+from workspace_layout import workspace_work_volume, workspace_work_root, named_work_root, WorkspaceError
+
+
+def assign_work_roots(workspaces):
+    """Select deterministic readable roots; reject co-mounted name collisions.
+
+    Each checkout gets the same root in every launch, without host state or
+    allocation order. Persist the selection for old-session recovery.
+    """
+    result = []
+    owners = {}
+    for workspace in workspaces:
+        root = named_work_root(workspace)
+        previous = owners.setdefault(root, workspace.host_root)
+        if previous != workspace.host_root:
+            raise WorkspaceError(
+                f"Work storage name collision at {root}: {previous} and {workspace.host_root}")
+        result.append(replace(workspace, work_root=root))
+    return result
 
 
 @contextmanager
@@ -56,7 +75,7 @@ def cleanup_work_storage(runtime, workspaces, image, mount_arguments, scratch):
         authority = []
         for workspace in idle:
             record = workspace.proxy_authority()
-            record["volume"] = str(workspace.guest_root / WORK_DIRECTORY)
+            record["volume"] = str(workspace_work_root(workspace))
             authority.append(record)
         with tempfile.TemporaryDirectory(prefix="work-maintenance-", dir=scratch) as staging:
             temporary = Path(staging) / 'tmp'

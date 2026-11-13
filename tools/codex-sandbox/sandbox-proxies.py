@@ -44,7 +44,7 @@ from caddy_foundation import (
 )
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 from source_view import check_mount_destinations, source_mounts
-from workspace_layout import jj_repository_path, workspace_work_volume, SOURCE_ROOT, WORK_DIRECTORY
+from workspace_layout import jj_repository_path, workspace_work_volume, workspace_work_root, SOURCE_ROOT, WORK_ROOT
 from work_storage import volume_admission, cleanup_work_storage
 
 OUTER_RUNTIME = ContainerRuntime()
@@ -709,14 +709,16 @@ def workspace_records(value: Any, *, recovery: bool = False) -> list[dict[str, s
     try:
         if recovery:
             keys = {"host_root", "guest_root", "git_dir", "common_dir", "jj_repo", "lock_file"}
-            if any(not isinstance(item, dict) or set(item) != keys or
+            if any(not isinstance(item, dict) or set(item) not in (keys, keys | {"work_root"}) or
                    any(not isinstance(path, str) for path in item.values()) for item in value):
                 raise ValueError("Invalid workspace description")
-            paths = [[Path(item[key]) for key in keys] for item in value]
+            paths = [[Path(path) for path in item.values()] for item in value]
             if any(not path.is_absolute() or str(path).startswith("//") or ".." in path.parts or
                    any(char in str(path) for char in (",", "\0", "\n", "\r"))
                    for item in paths for path in item):
                 raise ValueError("Unsafe workspace mount path")
+            if any("work_root" in item and Path(item["work_root"]).parent != WORK_ROOT for item in value):
+                raise ValueError("Work storage must be directly below /work")
             layouts = value
         else:
             layouts = [WorkspaceLayout.from_dict(item) for item in value]
@@ -1380,7 +1382,7 @@ def shared_workspace_mount_args(records: list[dict[str, str]], staging: Path, *,
         arguments += ["--mount", f"type=bind,src={source},dst={target},{runtime.nonrecursive_bind}"]
     for item in layouts:
         volume, _ = workspace_work_volume(item)
-        arguments += ["--mount", f"type=volume,src={volume},dst={item.guest_root / WORK_DIRECTORY}"]
+        arguments += ["--mount", f"type=volume,src={volume},dst={workspace_work_root(item)}"]
     locks: dict[Path, Path] = {}
     for item in layouts:
         target = Path(item.proxy_authority()["lock"])
@@ -2677,7 +2679,7 @@ def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any])
     work_volumes: dict[str, str] = {}
     for item in workspace_layouts(records):
         volume, _ = workspace_work_volume(item)
-        work_volumes[str(item.guest_root / WORK_DIRECTORY)] = volume
+        work_volumes[str(workspace_work_root(item))] = volume
         for source, target in [(item.host_root, item.guest_root), *item.metadata_mounts(),
                                *((item.host_root, alias) for alias in item.repository_aliases()),
                                (item.lock_file, Path(item.proxy_authority()["lock"]))]:
@@ -2695,7 +2697,8 @@ def validate_workspace_snapshot(proxy: dict[str, Any], snapshot: dict[str, Any])
     for mount in mounts:
         target = mount.get("Destination", "")
         if (mount.get("RW") is True and
-                (target == str(SOURCE_ROOT) or target.startswith(f"{SOURCE_ROOT}/") or target.startswith("/run/jj-locks/")) and
+                (target == str(SOURCE_ROOT) or target.startswith(f"{SOURCE_ROOT}/") or target.startswith("/run/jj-locks/") or
+                 target == str(WORK_ROOT) or target.startswith(f"{WORK_ROOT}/")) and
                 target not in expected and target not in work_volumes):
             raise ConfigError(f"unexpected writable JJ workspace mount: {target}")
 

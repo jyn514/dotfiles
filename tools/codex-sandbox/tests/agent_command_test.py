@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import runpy
 from types import SimpleNamespace
@@ -115,6 +116,8 @@ class AgentCommandTest(unittest.TestCase):
                 launcher["discover_workspace"](state.repository, state.container_repository, state.home),
                 launcher["discover_workspace"](dotfiles, Path("/home/codex/src/shared-dotfiles"), state.home),
             ]
+            state.workspaces = launcher["assign_work_roots"](state.workspaces)
+            state.workspaces[0] = replace(state.workspaces[0], work_root=Path('/work/repository-482193'))
             extensions = root / "pi-extensions"
             extensions.mkdir()
 
@@ -147,12 +150,16 @@ class AgentCommandTest(unittest.TestCase):
                     guest_working_directory=Path("/home/codex/src/repository"), pi_extensions=extensions,
                 )
             self.assertEqual("fixture-runtime", selected[selected.index("--entrypoint") + 1])
+            project_work = Path('/work/repository-482193')
+            self.assertIn(f"SANDBOX_WORK={project_work}", command)
+            self.assertIn(f"CARGO_TARGET_DIR={project_work}/cargo-target", command)
+            self.assertIn(f"MYPY_CACHE_DIR={project_work}/cache/mypy", command)
+            self.assertIn(f"PYTHONPYCACHEPREFIX={project_work}/cache/python-bytecode", command)
+            self.assertIn(f"RUFF_CACHE_DIR={project_work}/cache/ruff", command)
             self.assertIn(
-                "CARGO_TARGET_DIR=/home/codex/src/repository/work/cargo-target", command)
-            self.assertIn("MYPY_CACHE_DIR=/home/codex/src/repository/work/cache/mypy", command)
-            self.assertIn(
-                "PYTHONPYCACHEPREFIX=/home/codex/src/repository/work/cache/python-bytecode", command)
-            self.assertIn("RUFF_CACHE_DIR=/home/codex/src/repository/work/cache/ruff", command)
+                f"type=volume,src={launcher['workspace_work_volume'](state.workspaces[0])[0]},dst={project_work}",
+                command,
+            )
             self.assertIn("BUN_INSTALL_CACHE_DIR=/home/codex/.cache/bun", command)
             self.assertIn("GOCACHE=/home/codex/.cache/go-build", command)
             self.assertIn("GOMODCACHE=/home/codex/.cache/go-mod", command)

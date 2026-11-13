@@ -143,7 +143,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                             "work sharing must not change alias topology or guest read-only modes")
                     volume, _ = launcher["workspace_work_volume"](workspace)
                     self.assertIn(
-                        f"type=volume,src={volume},dst={workspace.guest_root}/work",
+                        f"type=volume,src={volume},dst={launcher['workspace_work_root'](workspace)}",
                         command,
                     )
                 self.assertFalse((home / "src/dotfiles-2").exists(), "scaffolding must not mutate host sources")
@@ -201,7 +201,7 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                     records)
                 self.assertFalse(any("dst=/home/codex/src/dotfiles-1" in item for item in command))
 
-    def test_workspace_work_volume_is_stable_guest_storage_and_refuses_hidden_host_data(self):
+    def test_workspace_work_volume_is_stable_guest_storage_and_ignores_host_work(self):
         from workspace_layout_test import git_fixture
         from workspace_layout import discover_workspace
         with tempfile.TemporaryDirectory() as directory:
@@ -227,16 +227,16 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
                 mock.call(volume, 501, 20, owner, role="workspace-work"),
                 runtime.create_owned_volume.call_args,
             )
-            self.assertEqual([], list((repo / "work").iterdir()))
+            self.assertFalse((repo / "work").exists())
 
+            (repo / "work").mkdir()
             (repo / "work/host-artifact").write_text("keep")
             with mock.patch.dict(
                     launcher["prepare_workspace_work_volumes"].__globals__,
-                    OUTER_RUNTIME=runtime), self.assertRaisesRegex(
-                        launcher["LauncherError"],
-                        "non-empty host work directory for active workspace"):
+                    OUTER_RUNTIME=runtime):
                 launcher["prepare_workspace_work_volumes"](state)
-            self.assertEqual(1, runtime.create_owned_volume.call_count)
+            self.assertEqual(2, runtime.create_owned_volume.call_count)
+            self.assertEqual("keep", (repo / "work/host-artifact").read_text())
 
             dotfiles = git_fixture(home / "src/dotfiles")
             dotfiles_workspace = discover_workspace(
@@ -244,13 +244,26 @@ class SharedWorkspaceMountsTest(unittest.TestCase):
             (dotfiles / "work").mkdir()
             (dotfiles / "work/host-artifact").write_text("keep")
             state.workspaces = [workspace, dotfiles_workspace]
-            (repo / "work/host-artifact").unlink()
             with mock.patch.dict(
                     launcher["prepare_workspace_work_volumes"].__globals__,
-                    OUTER_RUNTIME=runtime), self.assertRaisesRegex(
-                        launcher["LauncherError"],
-                        "non-empty host work directory for launcher dotfiles workspace"):
+                    OUTER_RUNTIME=runtime):
                 launcher["prepare_workspace_work_volumes"](state)
+            self.assertEqual("keep", (dotfiles / "work/host-artifact").read_text())
+            for item in state.workspaces:
+                destination = launcher["workspace_work_root"](item)
+                self.assertEqual(Path("/work"), destination.parent)
+                self.assertFalse(destination.is_relative_to(item.guest_root))
+            # Even a host file or symlink named work is unrelated to guest storage.
+            (repo / "work/host-artifact").unlink()
+            (repo / "work").rmdir()
+            (repo / "work").write_text("host file")
+            with mock.patch.dict(
+                    launcher["prepare_workspace_work_volumes"].__globals__, OUTER_RUNTIME=runtime):
+                launcher["prepare_workspace_work_volumes"](state)
+                (repo / "work").unlink()
+                (repo / "work").symlink_to(dotfiles / "work", target_is_directory=True)
+                launcher["prepare_workspace_work_volumes"](state)
+            self.assertEqual("keep", (dotfiles / "work/host-artifact").read_text())
 
     def test_one_authority_deduplicates_active_dotfiles_mounts(self):
         from workspace_layout_test import git_fixture

@@ -68,7 +68,7 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             else:
                 self.assertEqual('volume', values['type'])
                 self.assertIn(values['src'], created_volumes)
-                self.assertEqual(authority['root'] + '/work', values['dst'])
+                self.assertEqual('/work', str(Path(values['dst']).parent))
         self.assertEqual(created_volumes, removed_volumes)
         self.assertEqual(2, len(created_volumes), 'host fixture and shared work storage are distinct')
         for key in ('root', 'git_dir', 'jj_repo', 'lock'):
@@ -247,7 +247,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             self.assertIsInstance(errors[0], expected)
         self.assertTrue(cleaned.is_set())
         mount_probe.assert_called_once_with(tags['jj'][0])
-        self.assertEqual([mock.call(tags['jj'][0]), mock.call(tags['jj'][0], linked=True)],
+        self.assertEqual([mock.call(tags['jj'][0], cleanup_image=tags['pi-alpine'][0]),
+                          mock.call(tags['jj'][0], linked=True, cleanup_image=tags['pi-alpine'][0])],
                          shared_probe.call_args_list)
 
     def test_bake_preserves_revisions_aliases_and_the_shared_jj_dependency(self):
@@ -313,8 +314,10 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             build(None, tags)
 
     def test_jj_only_runs_without_pi_revision_and_cleans_only_its_own_alias(self):
-        for failure in (None, 'build', 'mounts', 'probe', 'output'):
-            with self.subTest(failure=failure):
+        cases = [(failure, image) for failure in (None, 'build', 'mounts', 'probe', 'output')
+                 for image in (None, 'existing-agent')]
+        for failure, cleanup_image in cases:
+            with self.subTest(failure=failure, cleanup_image=cleanup_image):
                 main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
                 tags = {}
                 error = subprocess.CalledProcessError(17, ['docker'])
@@ -345,7 +348,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
                                                        'probe_jj_mounts': mount_probe,
                                                        'probe_shared_workspaces': shared_probe}), \
-                        mock.patch('sys.argv', ['integration', '--jj-only']), \
+                        mock.patch('sys.argv', ['integration', '--jj-only',
+                            *(['--cleanup-image', cleanup_image] if cleanup_image else [])]), \
                         mock.patch('subprocess.run') as cleanup:
                     if failure is None:
                         main()
@@ -363,7 +367,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 if failure in ('build', 'mounts'):
                     shared_probe.assert_not_called()
                 else:
-                    self.assertEqual([mock.call(tags['jj'][0]), mock.call(tags['jj'][0], linked=True)],
+                    self.assertEqual([mock.call(tags['jj'][0], cleanup_image=cleanup_image),
+                                      mock.call(tags['jj'][0], linked=True, cleanup_image=cleanup_image)],
                                      shared_probe.call_args_list)
 
     def test_full_mode_still_requires_revision_before_any_docker_operation(self):

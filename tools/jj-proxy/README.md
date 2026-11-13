@@ -46,14 +46,14 @@ Dotfiles normally maps to `/home/codex/src/dotfiles`, but the launcher retains a
 A manually started proxy without the validated mounts and authority is not protected.
 
 The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/home/codex/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
-Protocol version 3 always carries a physical absolute invocation cwd under `/home/codex/src`; cwd addressing does not grant write permission.
+Protocol version 3 always carries a physical absolute invocation cwd under `/home/codex/src` or `/work`; cwd addressing does not grant write permission.
 The server grants mutation access to workspaces whose resolved JJ backing repository has the same filesystem identity as a trusted startup repository.
 When startup roots share a backing repository, selecting either root uses its own authority entry regardless of entry order.
 Only an unlisted linked root needs the additional pinned-directory restriction.
 Existing and newly created linked workspaces inherit that repository's request lock; nesting alone grants no access.
 Independent host-backed Jujutsu repositories under `/home/codex/src` permit inspection only.
 Linked access does not widen mounts: workspaces on the read-only source view still cannot snapshot or update files.
-The sandbox launcher shares its existing per-checkout `work/` volume with JJ at each authorized primary guest root.
+The sandbox launcher shares each existing per-checkout volume at `/work/<checkout-name>-<short-id>` with JJ.
 Linked workspaces beneath that path support create/edit/snapshot/commit while their working files stay invisible on the host.
 Their registrations and history remain shared, and ordinary host JJ operations from the main checkout remain usable.
 Use `target/` for host-visible working files; see [sandbox workspace access](../codex-sandbox/README.md#execution-model-and-workspace-access) for storage and alias behavior.
@@ -70,13 +70,13 @@ the inspected repository's `.jj` metadata; the inspection child can only read
 that cache.
 Use `jj -R /home/codex/src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
-`--repository` is equivalent. A selector outside `/home/codex/src` is refused, and mutation
+`--repository` is equivalent. A selector outside `/home/codex/src` and `/work` is refused, and mutation
 access follows the selected workspace's authorized backing repository.
 One existing JJ service per active shared session knows both roots; other command proxies, services, and credentials remain active-project scoped.
 
 ## Independent container-local repositories
 
-Ordinary `jj` uses native JJ for independent guest repositories, including `/tmp`, private tmpfs, and guest-created volumes, even with the proxy mounted. The read-only router resolves repository selectors, symlinks, linked JJ stores, and Git indirections against effective mounts. A `/tmp` workspace sharing a host store still needs the proxy; unlike the launcher-shared `work/` volume, its guest-only cwd is not admitted by the server. Run protected commands from the mounted workspace instead. The wrapper never changes cwd or retries a failed proxy command natively.
+Ordinary `jj` uses native JJ for independent guest repositories, including `/tmp`, private tmpfs, and guest-created volumes, even with the proxy mounted. The read-only router resolves repository selectors, symlinks, linked JJ stores, and Git indirections against effective mounts. A `/tmp` workspace sharing a host store still needs the proxy; unlike the launcher-shared `/work/<checkout-name>-<short-id>` volume, its guest-only cwd is not admitted by the server. Run protected commands from the mounted workspace instead. The wrapper never changes cwd or retries a failed proxy command natively.
 
 Bootstrap routing follows the destination rather than the invoking repository:
 

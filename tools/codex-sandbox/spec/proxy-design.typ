@@ -657,7 +657,7 @@ Linked workspaces inherit the matched backing repository's authority and request
 A fail-closed Landlock policy admits the authorized worktrees, resolved metadata, request locks, private configuration, socket directory, and trusted runtime files.
 Mutation execution may write ordinary files and metadata in the authorized workspaces.
 Inspection children apply a separate read-only policy and `--ignore-working-copy`, even for explicit inspection of an authorized root.
-Protocol version 3 carries a physical absolute invocation cwd under `/home/codex/src` in both modes.
+Protocol version 3 carries a physical absolute invocation cwd under `/home/codex/src` or the launcher-shared `/work` volumes in both modes.
 The server derives mutation authority from the resolved backing repository's device and inode, not cwd spelling or path-prefix membership.
 Linked mutation children restrict writes to a pinned workspace directory and its matched backing/Git metadata; mutable workspace pointers cannot enlarge those grants.
 Scopes containing nested mount aliases or another protected repository's metadata are rejected.

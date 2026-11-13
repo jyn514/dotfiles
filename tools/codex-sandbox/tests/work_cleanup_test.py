@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from work_cleanup_guest import clean_volume
 from work_storage import volume_admission, idle_workspaces, cleanup_work_storage
-from workspace_layout import discover_workspace, ensure_request_lock, workspace_work_volume
+from workspace_layout import discover_workspace, ensure_request_lock, workspace_work_volume, workspace_work_root
 
 
 class ResetCleanupTest(unittest.TestCase):
@@ -57,7 +57,7 @@ class WorkCleanupTest(unittest.TestCase):
         self.run_jj("git", "init", "--colocate", str(self.root), cwd=self.directory)
         self.run_jj("config", "set", "--repo", "user.name", "Fixture")
         self.run_jj("config", "set", "--repo", "user.email", "fixture@example.invalid")
-        self.volume = self.root / "work"
+        self.volume = self.directory / "guest-work"
         self.volume.mkdir()
         self.other = self.volume / "other"
         self.run_jj("workspace", "add", "--no-colocate", str(self.other))
@@ -205,6 +205,30 @@ class WorkCleanupTest(unittest.TestCase):
                                        if args[0] == "volume" else "old-container\n")
         self.assertEqual(idle_workspaces(Runtime(), [self.layout]), [])
         cleanup_work_storage(Runtime(), [self.layout], "unused", lambda staging: [], None)
+
+    def test_maintenance_receives_the_same_out_of_checkout_volume_path(self):
+        from contextlib import contextmanager
+        _, owner = workspace_work_volume(self.layout)
+        launches = []
+        @contextmanager
+        def workload(image, name, options, arguments):
+            launches.append((options, json.loads(arguments[1])))
+            yield SimpleNamespace(wait=lambda: 0)
+        runtime = SimpleNamespace(
+            resource_owner_label=lambda kind: 'owner',
+            run=lambda args, **kwargs: SimpleNamespace(stdout=(
+                json.dumps([{'Labels': {'owner': owner}}]) if args[0] == 'volume' else '')),
+            inspect_image=lambda image: image,
+            workload=workload,
+        )
+        destination = workspace_work_root(self.layout)
+        mounts = ['--mount', f'type=volume,src=owned,dst={destination}']
+        cleanup_work_storage(runtime, [self.layout], 'fixture-image', lambda staging: mounts, self.directory)
+        options, authority = launches[0]
+        self.assertIn(mounts[1], options)
+        self.assertEqual(str(destination), authority[0]['volume'])
+        self.assertEqual(str(self.layout.guest_root), authority[0]['root'])
+        self.assertFalse(destination.is_relative_to(self.layout.guest_root))
 
     def test_wrong_volume_owner_prevents_maintenance(self):
         runtime = SimpleNamespace(

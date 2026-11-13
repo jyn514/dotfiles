@@ -26,7 +26,16 @@ dev/test-environment python3 tools/codex-sandbox/tests/work_cleanup_integration.
 
 The check creates disposable repositories in the engine's shared scratch directory and owns every container and volume it mutates.
 It verifies that an existing mounted consumer prevents deletion, then invokes the session maintenance entrypoint and reopens the preserved workspace.
-Linux Lima-Docker acceptance is verified; Podman and macOS runtime acceptance remain unverified.
+Linux Lima-Docker acceptance for the earlier mount layout is verified; Podman and macOS runtime acceptance remain unverified.
+To check the `/work` layout from inside a sandbox with Docker access but without host Lima state, reuse an existing Python-capable agent image:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/image_runtime_integration.py --jj-only --cleanup-image AGENT_IMAGE
+```
+
+This builds the current JJ proxy and uses disposable volumes for guest/proxy recreation and production cleanup with nested mount canaries.
+It verifies the actual mount and deletion boundary, not host runtime admission.
+The full image-runtime check selects its newly built Alpine agent image for this maintenance check automatically.
 
 ## Nested Docker acceptance
 
@@ -393,7 +402,7 @@ For shared-workspace fixtures, generate repository metadata and run JJ discovery
 Do not substitute host JJ unless the test explicitly covers cross-version compatibility.
 The shared-workspace probe mounts separate disposable work volumes selected by the production guest and proxy planners, with fixture-only names and ownership.
 Its guest writes and invokes the proxy client across a read-only socket mount, then checks snapshots and recorded file contents.
-A host-equivalent container mounts only the host fixture: `work/` must stay empty while native main-checkout status/log/new/history edits still work.
+A host-equivalent container mounts only the host fixture: existing host `work/` artifacts must remain unchanged while native main-checkout status/log/new/history edits still work.
 The probe also replaces guest and proxy containers to check work-volume reuse, retains the host-visible `target/` workflow, and checks metadata, source-sibling, and policy protection.
 
 For the full run, use the host commit recorded in `~/.local/share/pi/node/.source-revision`.
