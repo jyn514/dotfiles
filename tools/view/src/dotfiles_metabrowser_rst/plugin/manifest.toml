@@ -1,0 +1,35 @@
+[plugin]
+name = "rst"
+display_name = "reStructuredText"
+version = "0.1.0"
+sdk_version = "0.7"
+extra_styles = ["styles.css"]
+
+[[kind]]
+id = "rst"
+match = { ext = ".rst" }
+priority = 100
+
+[[view]]
+kind = "rst"
+id = "rendered"
+label = "Document"
+default = true
+container_class = "content-body md-body mb-rst-body"
+printable = true
+print_profile = "document"
+render_runtime = "server"
+
+[[view]]
+kind = "rst"
+id = "source"
+label = "Source"
+container_class = "content-body metabrowser-source-host"
+printable = true
+print_profile = "source"
+render_runtime = "client"
+
+[[data_hook]]
+route = "rendered"
+sidekick = "dotfiles_metabrowser_rst.sidekick:rendered_handler"
+methods = ["GET"]

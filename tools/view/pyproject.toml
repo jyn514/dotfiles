@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dotfiles-metabrowser-rst"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "docutils==0.23",
+    "metabrowser==0.12.0",
+]
+
+[project.entry-points."metabrowser.plugins"]
+dotfiles-rst = "dotfiles_metabrowser_rst:plugin_dir"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dotfiles_metabrowser_rst = ["plugin/*"]

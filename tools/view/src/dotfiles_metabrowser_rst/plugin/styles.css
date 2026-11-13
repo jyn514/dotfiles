@@ -1,0 +1,105 @@
+.mb-rst-body {
+  max-width: none;
+}
+
+.mb-rst-document {
+  color: var(--text);
+  max-width: 78ch;
+}
+
+.mb-rst-document > main,
+.mb-rst-document > .document {
+  max-width: 100%;
+}
+
+.mb-rst-document img {
+  max-width: 100%;
+}
+
+.mb-rst-document table.docutils {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mb-rst-document table.docutils th,
+.mb-rst-document table.docutils td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.mb-rst-document .admonition,
+.mb-rst-document .system-message {
+  background: var(--hover-bg);
+  border-inline-start: 3px solid var(--link);
+  margin-block: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.mb-rst-document .admonition-title,
+.mb-rst-document .system-message-title {
+  font-weight: var(--weight-bold);
+  margin-block: 0 0.5rem;
+}
+
+.mb-rst-document .literal-block,
+.mb-rst-document .code {
+  overflow-x: auto;
+}
+
+.mb-rst-document .code .k,
+.mb-rst-document .code .kd,
+.mb-rst-document .code .kn,
+.mb-rst-document .code .kp,
+.mb-rst-document .code .kr,
+.mb-rst-document .code .kt {
+  color: var(--color-syntax-keyword);
+}
+
+.mb-rst-document .code .c,
+.mb-rst-document .code .c1,
+.mb-rst-document .code .cm,
+.mb-rst-document .code .cp {
+  color: var(--color-syntax-comment);
+}
+
+.mb-rst-document .code .s,
+.mb-rst-document .code .s1,
+.mb-rst-document .code .s2,
+.mb-rst-document .code .sa,
+.mb-rst-document .code .sb,
+.mb-rst-document .code .sc,
+.mb-rst-document .code .sd,
+.mb-rst-document .code .se,
+.mb-rst-document .code .sh,
+.mb-rst-document .code .si,
+.mb-rst-document .code .sr,
+.mb-rst-document .code .ss,
+.mb-rst-document .code .sx {
+  color: var(--color-syntax-string);
+}
+
+.mb-rst-document .code .m,
+.mb-rst-document .code .mf,
+.mb-rst-document .code .mh,
+.mb-rst-document .code .mi,
+.mb-rst-document .code .mo {
+  color: var(--color-syntax-number);
+}
+
+.mb-rst-document .code .na,
+.mb-rst-document .code .nb,
+.mb-rst-document .code .nc,
+.mb-rst-document .code .nd,
+.mb-rst-document .code .ne,
+.mb-rst-document .code .nf,
+.mb-rst-document .code .ni,
+.mb-rst-document .code .nl,
+.mb-rst-document .code .nn,
+.mb-rst-document .code .nt,
+.mb-rst-document .code .nv {
+  color: var(--color-syntax-title);
+}

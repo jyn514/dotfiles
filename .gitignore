@@ -10,3 +10,6 @@ target/
 tools/plover-reconnect/build/
 tools/plover-reconnect/dist/
 tools/plover-reconnect/*.egg-info/
+tools/view/build/
+tools/view/dist/
+tools/view/src/*.egg-info/
