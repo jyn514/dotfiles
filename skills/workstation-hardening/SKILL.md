@@ -128,6 +128,9 @@ The contained data can remain owned by the ordinary user while the browser recei
 Grant it only through a trusted launch path, such as a fixed service; keep it out of both the account's persistent groups and the login session.
 If process-read exceptions trust ancestors, the untrusted launch requester must not become a trusted ancestor of the browser.
 
+Verify the launch routes actually used, including URL/MIME handlers—not just the CLI and desktop icon.
+Inspect the selected handler's `Exec`, then confirm that the resulting process uses the intended credentials and profile.
+
 The directory boundary does not by itself block reads through memory, open file descriptors, or `/proc`.
 Verify those paths independently from the ordinary session, and check that the real credential and desktop integrations still work.
 Direct children inherit the group unless a later launch boundary changes credentials.
