@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dotfiles-metabrowser-rst"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
 dependencies = [
     "docutils==0.23",
@@ -12,7 +12,8 @@ dependencies = [
 ]
 
 [project.entry-points."metabrowser.plugins"]
-dotfiles-rst = "dotfiles_metabrowser_rst:plugin_dir"
+dotfiles-rst = "dotfiles_metabrowser_rst:rst_plugin_dir"
+dotfiles-markdown-mermaid = "dotfiles_metabrowser_rst:markdown_mermaid_plugin_dir"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -22,4 +23,8 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-dotfiles_metabrowser_rst = ["plugin/*"]
+dotfiles_metabrowser_rst = [
+    "plugin/*",
+    "markdown_mermaid_plugin/*",
+    "markdown_mermaid_plugin/vendor/*",
+]

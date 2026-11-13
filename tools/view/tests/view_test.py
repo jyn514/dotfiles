@@ -116,16 +116,50 @@ class PluginPackageTests(unittest.TestCase):
             pyproject["project"]["dependencies"],
         )
         self.assertEqual(
-            "dotfiles_metabrowser_rst:plugin_dir",
+            "dotfiles_metabrowser_rst:rst_plugin_dir",
             pyproject["project"]["entry-points"]["metabrowser.plugins"]["dotfiles-rst"],
         )
+        self.assertEqual(
+            "dotfiles_metabrowser_rst:markdown_mermaid_plugin_dir",
+            pyproject["project"]["entry-points"]["metabrowser.plugins"][
+                "dotfiles-markdown-mermaid"
+            ],
+        )
 
-    def test_entry_point_returns_packaged_plugin_directory(self) -> None:
+    def test_markdown_mermaid_manifest_overrides_rendered_markdown_view(self) -> None:
+        with (
+            TOOL / "src/dotfiles_metabrowser_rst/markdown_mermaid_plugin/manifest.toml"
+        ).open("rb") as file:
+            manifest = tomllib.load(file)
+
+        self.assertEqual("markdown-mermaid", manifest["plugin"]["name"])
+        self.assertEqual(["mermaid.min.js"], manifest["plugin"]["extra_scripts"])
+        self.assertEqual(
+            [("markdown", "rendered", True)],
+            [
+                (view["kind"], view["id"], view.get("default"))
+                for view in manifest["view"]
+            ],
+        )
+
+    def test_entry_points_return_packaged_plugin_directories(self) -> None:
         sys.path.insert(0, str(TOOL / "src"))
         self.addCleanup(lambda: sys.path.remove(str(TOOL / "src")))
         module = importlib.import_module("dotfiles_metabrowser_rst")
 
-        self.assertEqual(TOOL / "src/dotfiles_metabrowser_rst/plugin", module.plugin_dir())
+        self.assertEqual(TOOL / "src/dotfiles_metabrowser_rst/plugin", module.rst_plugin_dir())
+        self.assertEqual(
+            TOOL / "src/dotfiles_metabrowser_rst/markdown_mermaid_plugin",
+            module.markdown_mermaid_plugin_dir(),
+        )
+        self.assertEqual(module.rst_plugin_dir(), module.plugin_dir())
+
+    def test_vendored_mermaid_bundle_and_license_are_packaged(self) -> None:
+        plugin = TOOL / "src/dotfiles_metabrowser_rst/markdown_mermaid_plugin"
+        vendor = plugin / "vendor"
+
+        self.assertTrue((plugin / "mermaid.min.js").is_file())
+        self.assertTrue((vendor / "LICENSE").is_file())
 
 
 if __name__ == "__main__":

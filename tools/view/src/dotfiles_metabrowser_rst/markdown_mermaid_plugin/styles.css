@@ -1,0 +1,19 @@
+.mb-mermaid-diagram {
+  margin-block: 1.25rem;
+  overflow-x: auto;
+}
+
+.mb-mermaid-diagram svg {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-width: 100%;
+}
+
+.mb-mermaid-error {
+  margin-block: 0.75rem 1rem;
+}
+
+.mb-mermaid-error pre {
+  white-space: pre-wrap;
+}

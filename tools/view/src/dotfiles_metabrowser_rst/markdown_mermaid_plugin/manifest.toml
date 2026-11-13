@@ -1,0 +1,16 @@
+[plugin]
+name = "markdown-mermaid"
+display_name = "Markdown Mermaid"
+version = "0.1.0"
+sdk_version = "0.7"
+extra_scripts = ["mermaid.min.js"]
+
+[[view]]
+kind = "markdown"
+id = "rendered"
+label = "Document"
+default = true
+container_class = "content-body metabrowser-kpress-host md-body"
+printable = true
+print_profile = "document"
+render_runtime = "kpress"
