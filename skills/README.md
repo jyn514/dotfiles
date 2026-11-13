@@ -41,6 +41,10 @@ It distinguishes actual actions from reasoning alone and preserves the last setu
 It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
 Use it to critique a proposed architecture or abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
 
+[UI design](ui-design/SKILL.md) designs or reviews frontend screens and interactions using the existing product and matched real-component comparisons.
+It distinguishes public guidance, human choices, observed behavior, product conventions, and unvalidated proposals.
+Use it for mockups, redesigns, and usability reviews, not trivial styling corrections or backend architecture.
+
 [Creative inquiry](creative-inquiry/SKILL.md) questions the framing of the task itself.
 Use it when exploring possibilities, examining assumptions, or asking whether the current approach solves the right problem.
 [Work selection](work-selection/SKILL.md) makes a more immediate comparison: whether another investigation, workaround, or prerequisite
@@ -96,6 +100,8 @@ It does not turn an ordinary request into an autonomous run.
 
 [Specification review](spec-review/SKILL.md) audits a specification's contract for consistency, requirement traceability, unsupported restrictions, and stage-appropriate completeness.
 [Specification/implementation audit](audit-spec-against-impl/SKILL.md) finds disagreements between the specification, implementation, and tests.
+It also recovers descriptive specifications and business rules from existing code for understanding or a rewrite,
+keeping current behavior distinct from requirements and preservation decisions.
 [Completion audit](completion-audit/SKILL.md) checks completed substantial owned work against the requested outcome and acceptance conditions.
 They share [evidence standards](references/review-evidence.md), not a mandatory sequence of reviews.
 For a small, localized edit, a diff review and the appropriate native check can be enough.
@@ -113,6 +119,7 @@ before committing the session's work and ending it.
 | Create, edit, or review Dockerfiles and Docker Bake builds | [Dockerfiles](dockerfiles/SKILL.md) |
 | Review a proposed dependency addition or update | [Dependency review](dependency-review/SKILL.md) |
 | Investigate slow execution or benchmark a change | [Performance investigation](performance-investigation/SKILL.md) |
+| Add or review logging, metrics, tracing, and alerts | [Observability and instrumentation](observability-instrumentation/SKILL.md) |
 | Diagnose native-process crashes, hangs, or missing symbols | [Process debugging](process-debugging/SKILL.md) |
 | Harden a workstation around local credentials, hardware tokens, and boot integrity | [Workstation hardening](workstation-hardening/SKILL.md) |
 | Inspect or reshape Jujutsu history | [JJ workflow](jj-workflow/SKILL.md) |
@@ -230,6 +237,8 @@ Repository-owned skills are under Unlicense.
 [Property-based testing](property-based-testing/README.md) and [mutation testing](mutation-testing/README.md)
 are adapted from Trail of Bits under CC-BY-SA-4.0.
 The property-based testing skill also incorporates MIT-licensed Hegel review guidance.
+[UI design](ui-design/SKILL.md) and [observability and instrumentation](observability-instrumentation/SKILL.md)
+are adapted from BlackBeltTechnology/pi-agent-dashboard under MIT, with upstream attribution retained in each skill.
 Keep their attribution notices and bundled license files when copying them.
 
 [Creative inquiry](creative-inquiry/SKILL.md) is imported from
