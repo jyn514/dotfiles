@@ -163,6 +163,8 @@ Reassess applicability for each task without automatically reloading the text.
 
 ## Commands and permissions
 
+Identifiers starting with "t-..." are another Pi agent and can be found through `link_list`.
+
 ### Sandbox escalation
 
 When a command needed for the task fails because of sandbox restrictions, retry it promptly using the harness's escalation mechanism.
