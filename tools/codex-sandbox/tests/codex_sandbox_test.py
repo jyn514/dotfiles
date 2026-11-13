@@ -2150,7 +2150,7 @@ class CodexSandboxTest(unittest.TestCase):
         respawn = next(call for call in calls if call[:2] == ["tmux", "respawn-pane"])
         self.assertEqual(
             shlex.join(["cd", str(self.repo)]) + " && " + shlex.join(["pi", "--session", registrations[0]["session"]]),
-            respawn[-1],
+            respawn[5],
         )
         self.assertFalse(any(call[-1:] in (["C-c"], ["Enter"]) for call in calls))
         self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
@@ -2323,7 +2323,9 @@ class CodexSandboxTest(unittest.TestCase):
                             if arguments[1:2] == ["prepare-cd"]:
                                 return subprocess.CompletedProcess(arguments, 0, stdout="")
                             if failure == "respawn" and arguments[:2] == ["tmux", "respawn-pane"]:
-                                raise subprocess.CalledProcessError(1, arguments)
+                                # Fail inside tmux's queue, not before dispatch:
+                                # the following exit-policy change must not run.
+                                arguments = [*arguments[:4], "%999999", *arguments[5:]]
                             return real_run(arguments, **kwargs)
 
                         helper = mock.Mock()
@@ -2336,6 +2338,8 @@ class CodexSandboxTest(unittest.TestCase):
                         remaining = launcher["tmux_registrations"]()
                         self.assertEqual(1, len(remaining))
                         self.assertTrue(remaining[0]["dead"])
+                        self.assertEqual("on", tmux("show-options", "-p", "-v", "-t", pane,
+                                                    "remain-on-exit").stdout.strip())
                         self.assertNotEqual(original["token"], remaining[0]["token"])
                         self.assertEqual(saved, {**{key: remaining[0][key] for key in saved},
                                                  "token": original["token"]})
@@ -2348,8 +2352,8 @@ class CodexSandboxTest(unittest.TestCase):
                             if arguments[:2] == ["tmux", "respawn-pane"]:
                                 expected = shlex.join(["cd", saved["cwd"]]) + " && " + \
                                            shlex.join(["pi", "--session", saved["session"]])
-                                self.assertEqual(expected, arguments[-1])
-                                arguments = [*arguments[:-1], "sleep 30"]
+                                self.assertEqual(expected, arguments[5])
+                                arguments = [*arguments[:5], "sleep 30", *arguments[6:]]
                             return real_run(arguments, **kwargs)
 
                         with mock.patch.dict(launcher["main"].__globals__, reset_proxies=mock.Mock(), run=resume), \
@@ -2358,6 +2362,107 @@ class CodexSandboxTest(unittest.TestCase):
                         self.assertFalse(launcher["tmux_registrations"]()[0]["dead"])
                 finally:
                     subprocess.run([*prefix, "kill-server"], capture_output=True, timeout=10)
+
+    @unittest.skipUnless(NATIVE_TMUX, "tmux is required")
+    def test_restart_retains_exiting_old_pane_and_applies_replacement_exit_policy(self) -> None:
+        for original_policy in ("off", "on", "failed"):
+            for replacement_status in (0, 23):
+                with self.subTest(original_policy=original_policy, replacement_status=replacement_status):
+                    launcher = runpy.run_path(str(LAUNCHER))
+                    real_run = launcher["run"]
+                    label = f"{original_policy}-{replacement_status}"
+                    socket_path = self.root / f"restart-exit-{label}.sock"
+                    prefix = [NATIVE_TMUX, "-S", str(socket_path)]
+                    release = self.root / f"release-{label}"
+                    old_process = self.root / f"old-process-{label}.py"
+                    old_process.write_text(
+                        "import pathlib, sys, time\n"
+                        "while not pathlib.Path(sys.argv[1]).exists():\n"
+                        "    time.sleep(0.01)\n"
+                    )
+
+                    def tmux(*arguments):
+                        return subprocess.run([*prefix, *arguments], check=True,
+                                              capture_output=True, text=True, timeout=5)
+
+                    def pane_status():
+                        lines = tmux("list-panes", "-a", "-F",
+                                     "#{pane_id}:#{pane_dead}:#{pane_dead_status}").stdout.splitlines()
+                        return next((line.split(":")[1:] for line in lines
+                                     if line.startswith(pane + ":")), None)
+
+                    try:
+                        tmux("-f", "/dev/null", "new-session", "-d", "-s", "keepalive", "sleep 30")
+                        pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}",
+                                    "-t", "keepalive", shlex.join([
+                                        sys.executable, str(old_process), str(release),
+                                    ])).stdout.strip()
+                        tmux("set-option", "-p", "-t", pane, "remain-on-exit", original_policy)
+                        registration = self.restart_registration(
+                            pane=pane, session_id=f"exiting-{label}",
+                            control=self.root / f"closed-control-{label}.sock",
+                        )
+                        fields = ("version", "pane", "repository", "session", "cwd", "token", "control")
+                        payload = {key: registration[key] for key in fields}
+                        encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+                        tmux("set-option", "-p", "-t", pane, "@codex_sandbox_restart", encoded)
+                        new_control = self.root / f"new-control-{label}.sock"
+                        with socket.socket(socket.AF_UNIX) as controller:
+                            controller.bind(str(new_control))
+
+                            def run(arguments, **kwargs):
+                                if arguments[1:2] == ["prepare-cd"]:
+                                    return subprocess.CompletedProcess(arguments, 0, stdout="")
+                                if arguments[:2] != ["tmux", "respawn-pane"]:
+                                    return real_run(arguments, **kwargs)
+                                # Pi control has closed but its frontend still runs.
+                                # Let it exit successfully immediately before replacement.
+                                self.assertEqual(["0", ""], pane_status())
+                                release.touch()
+                                deadline = time.monotonic() + 5
+                                while time.monotonic() < deadline:
+                                    status = pane_status()
+                                    self.assertIsNotNone(status, "restart deleted the old pane before respawn")
+                                    if status == ["1", "0"]:
+                                        break
+                                    time.sleep(0.01)
+                                else:
+                                    self.fail("old frontend did not exit")
+                                # Exercise an immediately exiting replacement without
+                                # launching Pi, retaining any queued tmux commands.
+                                arguments = [*arguments[:5], f"exit {replacement_status}", *arguments[6:]]
+                                return real_run(arguments, **kwargs)
+
+                            # Controller readiness is independent of the terminal
+                            # exit policy: immediate-exit children have no controller.
+                            discover = launcher["tmux_registrations"]
+                            def discover_ready():
+                                if release.exists():
+                                    return [{**registration, "dead": False, "control": str(new_control)}]
+                                return discover()
+
+                            with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0"}), \
+                                    mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
+                                        "run": run, "reset_proxies": mock.Mock(),
+                                        "request_restart_control": mock.Mock(),
+                                        "tmux_registrations": discover_ready,
+                                    }):
+                                self.assertEqual(0, launcher["restart_tmux_sessions"](self.repo))
+                        deadline = time.monotonic() + 5
+                        while time.monotonic() < deadline:
+                            status = pane_status()
+                            if original_policy != "on" and replacement_status == 0:
+                                if status is None:
+                                    break
+                            elif status == ["1", str(replacement_status)]:
+                                self.assertEqual("on" if original_policy == "on" else "failed",
+                                    tmux("show-options", "-p", "-v", "-t", pane, "remain-on-exit").stdout.strip())
+                                break
+                            time.sleep(0.01)
+                        else:
+                            self.fail(f"replacement exit policy was not applied: {status}")
+                    finally:
+                        subprocess.run([*prefix, "kill-server"], capture_output=True, timeout=5)
 
     def test_restart_repo_leaves_other_repositories_running(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -2391,7 +2496,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(
             [shlex.join(["cd", item["cwd"]]) + " && " + shlex.join(["pi", "--session", item["session"]])
              for item in selected],
-            [call[-1] for call in respawns],
+            [call[5] for call in respawns],
         )
         self.assertFalse(any("%5" in call for call in calls))
 

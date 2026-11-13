@@ -2461,11 +2461,15 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
             + " && "
             + shlex.join(["pi", "--session", registration["session"]])
         )
+        # The old frontend can still exit after its control socket and owner
+        # locks close. Keep it retained until respawn; apply the replacement's
+        # policy in the same tmux command queue before its exit is processed.
+        # If respawn fails, tmux skips set-option and retains the retry record.
         run([
-            "tmux", "set-option", "-p", "-t", registration["pane"],
+            "tmux", "respawn-pane", "-k", "-t", registration["pane"], command,
+            ";", "set-option", "-p", "-t", registration["pane"],
             "remain-on-exit", registration["remain_on_exit"],
         ])
-        run(["tmux", "respawn-pane", "-k", "-t", registration["pane"], command])
     if resumed_controls:
         old_controls = {str(registration["pane"]): str(registration["control"])
                         for registration in resumed_controls}
