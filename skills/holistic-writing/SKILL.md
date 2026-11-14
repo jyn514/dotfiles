@@ -1,6 +1,6 @@
 ---
 name: holistic-writing
-description: Write, substantially revise, or editorially review standalone prose, including documentation usability and correctness. Covers explanatory development, reading experience, voice, and factual fidelity. When a dedicated skill owns the requested writing or review, start there and follow its editorial-pass route. Not for contract, conformance, or completion audits alone, documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing.
+description: Write, substantially revise, or editorially review prose as a whole, including documentation and CLI --help text. Covers usability, correctness, explanatory development, reading experience, voice, and factual fidelity. When a dedicated skill owns the requested writing or review, start there and follow its editorial-pass route. Not for merely running --help to inspect a command, contract, conformance, or completion audits alone, documentation placement or tree restructuring, design selection, human-owned product briefs, or bounded local polishing (use tighten-prose).
 ---
 
 # Holistic writing
