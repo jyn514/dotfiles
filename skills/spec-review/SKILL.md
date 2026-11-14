@@ -40,6 +40,13 @@ If both sections require incompatible results, report a contradiction.
 If neither says who decides, report the missing ownership or cancellation rule at the depth this artifact needs.
 The finding concerns the promised behavior; it does not require choosing a new worker architecture.
 
+Turn a material promise into a concrete acceptance scenario before judging a proposed mechanism.
+For example, if an exporter promises resumable downloads with configurable batch sizes,
+consider a download interrupted after a saved page and resumed with a smaller batch.
+Acceptance means the resumed result contains the same records as an uninterrupted download, without skipped or duplicate records.
+Check that the specification supports this expected result; an agent-proposed scenario cannot add a requirement the governing decisions omit.
+The scenario tests the outcome without requiring a particular storage format or checkpoint implementation.
+
 For a concrete lifecycle, effect, or failure question, consult the relevant [design-risk check](../architecture-design/references/design-risks.md#applicability).
 Match it to the contract and maturity; do not start a separate design workflow.
 For requirements and implementation specifications, apply the [non-narrowing check](references/non-narrowing.md): downstream agreement can conceal a shared restriction unsupported upstream.
@@ -58,6 +65,20 @@ Flag contradictory ownership or precedence, not multiple names alone.
 Preserve intentional language bindings, aliases, shorthands, and scoped overrides with documented precedence.
 Distinguish principle violations from deliberate, explained tradeoffs.
 Retain rationale, historical constraints, and rejected alternatives that explain decisions or prevent known failures; cut obsolete comparisons.
+
+## Check comprehension when context may hide ambiguity
+
+Consider a fresh-reader check when a specification depends on substantial conversation context or has undergone repeated clarification.
+Use it to resolve a material uncertainty about what the document communicates, not as a required second-agent review.
+If delegating the check, provide the specification and its referenced sources without the author's conversational explanation.
+
+Ask the reader to explain concrete cases before asking for criticism: “What happens after an interrupted refresh?”
+Compare its answers with the governing decisions and locate the text that supports each reading.
+A plausible divergent answer is evidence of ambiguity, not automatically reader error.
+If the reader overlooked an explicit rule, distinguish that miss from wording that permits incompatible outcomes.
+
+Agreement shows that the document communicates a decision; it does not establish that the decision is correct or authorized.
+Do not demand a criticism quota or treat a clean comprehension result as a substitute for contract review.
 
 ## Return findings
 
