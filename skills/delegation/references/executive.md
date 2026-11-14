@@ -19,11 +19,6 @@ Organize agents around work that can proceed independently, not one agent per ro
 Use multiple builders or QA agents when that avoids unnecessary waiting.
 Do not commission roles merely to fill the catalog.
 
-Start a fresh agent with fresh context for every new task.
-A different outcome or review question is a new task, even when the subsystem and artifacts are the same.
-Do not repurpose an existing worker or fork its previous task's transcript for that task.
-Resume an existing worker only to continue or correct its original assignment, including its outstanding verification.
-
 Question the scheduling frame: which work really depends on which result, who needs to resolve a disagreement, and what can proceed independently?
 Check that consequential questions and obligations after first success have owners, and that findings reach their actual consumers.
 Notice when the division of work adds handoffs, conflicting ownership, or unacknowledged work for someone else.

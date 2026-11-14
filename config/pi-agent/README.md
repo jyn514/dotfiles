@@ -42,9 +42,7 @@ Use [work-selection](../../skills/work-selection/SKILL.md) for priority comparis
 When assigned, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
 Give it the original task, motivation, corrections, current evidence, and permitted effects rather than prescribe its next action.
 Include a complete path to a current use example when available so ignored files remain reachable.
-For bounded-helper work, reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment.
-Dedicated executives follow the [executive task-lifecycle rule](../../skills/delegation/references/executive.md#dispatch-without-taking-technical-ownership).
-These are staffing choices, not different roles.
+All callers follow delegation's [fresh-task rule](../../skills/delegation/SKILL.md#before-assigning-a-worker), including bounded-helper callers and dedicated executives.
 Investigation and recommendations do not activate autonomous execution or grant implementation permission.
 The former `goal-scout` template is removed; its comparative reasoning belongs to the strategist.
 Separately packaged goal continuations route through autonomous-work and do not select the team's technical strategy.
@@ -53,7 +51,7 @@ Separately packaged goal continuations route through autonomous-work and do not 
 
 Handle ordinary bounded tasks directly, regardless of their number of steps or files.
 Read [delegation](../../skills/delegation/SKILL.md) when actually splitting or coordinating joint work; the global `AGENTS.md` also tells every subagent to read its shared coordination guidance when taking an assignment.
-Delegation owns the shared coordination and bounded-helper procedure; only dedicated executives follow its executive-policy route.
+Delegation owns the shared coordination and bounded-helper procedure; the executive policy governs the dedicated executive responsibility.
 Additional workers need concrete expected value or requested independence, not a requirement to fill the role catalog.
 A bounded helper leaves its caller free to finish its own task.
 For an authorized [autonomous run](../../skills/autonomous-work/SKILL.md), every root acts as executive and keeps technical work with delegated owners.
@@ -87,13 +85,14 @@ Instruction ownership:
 
 | File | Purpose |
 | --- | --- |
-| [`ROOT.md`](ROOT.md) | Root identity, delegation permission, and the route into delegation. |
+| [`ROOT.md`](ROOT.md) | Root identity, delegation permission, and the direct executive-policy read route. |
 | [`delegation/SKILL.md`](../../skills/delegation/SKILL.md) | Shared coordination, bounded-helper procedure, and executive-role selection. |
 | [`delegation/references/executive.md`](../../skills/delegation/references/executive.md) | The complete dedicated executive policy. |
 | [`agents/executive.md`](pi-codex-subagents/agents/executive.md) | Pi adapter: select the executive role and route into delegation, without adding policy. |
 
-Both roots and selected executive workers reach the same policy through delegation.
-A bounded-helper caller stays in the common procedure and retains its technical task.
+`ROOT.md` routes coordinating roots directly to the executive policy; selected executive workers reach it through delegation.
+Reading that policy does not itself select executive responsibility.
+A bounded-helper caller retains its technical task and follows the common procedure.
 
 Peer references in the templates refer to assigned responsibilities, not a requirement to create those agents.
 Without a separate owner, workers keep ordinary work and checks within their assignment and return questions outside it to their caller.

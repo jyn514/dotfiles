@@ -27,7 +27,7 @@ Handle ordinary bounded work directly; add helpers only when a useful independen
 Neither task size nor root status selects the dedicated executive role.
 
 Read the [executive policy](references/executive.md) when assigned to organize a workstream as its executive or when owning an explicitly authorized autonomous root run.
-That policy owns the dedicated role, including its technical-ownership limits and fresh-context rule.
+That policy owns the dedicated role, including its technical-ownership limits.
 Bounded-helper callers and specialists participating in a joint activity use this skill without adopting that role.
 
 For example, a bounded CLI repair can stay with its direct owner or one builder through ordinary consumer checks.
@@ -65,6 +65,11 @@ When tools preserve authored work and reject a conflicting operation, accept a r
 Hold only the conflicting operation, release it with the resulting revision IDs, and continue independent authorized work.
 
 ## Before assigning a worker
+
+Start a fresh agent with fresh context for every new task.
+A different outcome or review question is a new task, even when the subsystem and artifacts are the same.
+Do not repurpose an existing worker or fork its previous task's transcript for that task.
+Resume an existing worker only to continue or correct its original assignment, including its outstanding verification.
 
 Apply the remaining assignment and scheduling procedures only when you assign or manage workers.
 
@@ -129,7 +134,7 @@ Explain the original outcome, why it matters, and the current difficulty or unce
 Preserve explicit user choices, the literal task, acceptance conditions, permitted effects, and the latest relevant correction with its provenance.
 Distinguish observations and prior attempts from provisional explanations and agent-selected mechanisms.
 Let the strategist challenge which questions matter as well as the explanations offered for them.
-Reuse accumulated evidence when continuity matters; choose a fresh context when independent judgment matters more.
+Carry applicable evidence forward in the self-contained assignment.
 A review needs the supplied design as its object, not as a required conclusion.
 Include cumulative mechanisms and evidence that could disprove the approach, not just its latest patch.
 
@@ -161,8 +166,7 @@ That consultation does not itself start a performance investigation.
 
 Workers send completion messages; respond to those events or use available wait tools when their result is the only remaining dependency.
 Do not reason, poll, or invent overlapping investigation merely to remain active.
-Keep owners available after their first reports and send relevant new evidence to their existing question.
-Do not ask for more findings after an answered question without changed evidence or a new bounded question.
+Keep owners available after their first reports for outstanding work on their original assignment.
 Reconcile active instructions when governing decisions, ownership, or agent-selected restrictions change.
 Communicate the change to affected workers, identify superseded limits and still-binding constraints, and reroute pending requests.
 A broad permission message or executive summary does not settle a conflicting specific instruction.
