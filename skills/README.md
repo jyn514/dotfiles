@@ -41,6 +41,11 @@ It distinguishes actual actions from reasoning alone and preserves the last setu
 It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
 Use it to critique a proposed architecture or abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
 
+[Operational lifecycle](operational-lifecycle/SKILL.md) establishes how someone sets up, runs, updates, and recovers an installed system.
+Use it when one-time installation, recurring data refresh, publication, code updates, or reboot behavior need to be distinguished or designed.
+It traces existing commands and state before adding deployment machinery; settled workflows only needing explanation belong to the writing skills.
+Architecture design handles structural or authority choices the operating workflow exposes, while new-tool development handles development stages.
+
 [UI design](ui-design/SKILL.md) designs or reviews frontend screens and interactions using the existing product and matched real-component comparisons.
 It distinguishes public guidance, human choices, observed behavior, product conventions, and unvalidated proposals.
 Use it for mockups, redesigns, and usability reviews, not trivial styling corrections or backend architecture.

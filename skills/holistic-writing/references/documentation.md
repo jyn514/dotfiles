@@ -3,6 +3,8 @@
 Use these checks for documentation authoring or usability and correctness review, within the caller's established task.
 Routine additions need checks of the changed text and links, not a whole-artifact pass.
 Use `readme-writing` for introductory READMEs, `reorganize-docs` for page splits or navigation redesign, and [documentation placement](../../references/documentation-placement.md) for placement alone.
+If writing requires choosing installation, recurring update, startup, or recovery behavior, use [operational lifecycle](../../operational-lifecycle/SKILL.md) to settle that behavior rather than inventing it in prose.
+Explain already-settled operating workflows here without restarting design.
 
 ## What does the reader need?
 

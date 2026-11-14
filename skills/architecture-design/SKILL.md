@@ -1,6 +1,6 @@
 ---
 name: architecture-design
-description: "Design, critique, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect and lifecycle contracts, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Use also when authoring or revising a design/specification requires choosing an approach or introducing or changing guarantees, supported cases, or failure behavior, even when the request is framed as updating documentation. Trace the existing path first; optional references support genuine alternatives and independent deliberation. Reuse settled contracts. Not for broad project discovery, implementation planning, recording already-settled decisions, prose-only edits, routine local edits with settled boundaries, or current-change review."
+description: "Design, critique, or choose a bounded software architecture: subsystem ownership, dependency direction, data/effect contracts, resource lifetimes, API shape, maintainability gain, and churn. Use for architecture documents, extraction candidates, unresolved architecture choices, or whether a split/refactor is worth doing. Also use when design/specification work requires choosing an approach or changing guarantees, supported cases, or failure behavior, even if framed as documentation. Trace the existing path first and reuse settled contracts. Use operational-lifecycle for operator workflows such as installation, startup, updates, and recovery; use architecture when those expose structural or cross-boundary decisions. Not for broad discovery, implementation planning, recording settled decisions, prose-only edits, routine local edits with settled boundaries, or current-change review."
 ---
 
 # Architecture design
@@ -8,6 +8,9 @@ description: "Design, critique, or choose a bounded software architecture: subsy
 Choose responsibilities that meet the required outcome and earn their implementation and maintenance cost.
 Start with a caller-to-result path, not a proposed component diagram.
 For critique, report supported findings, consequences, and the smallest useful corrections; a review request does not authorize edits or require a replacement design.
+
+Use [operational lifecycle](../operational-lifecycle/SKILL.md) to establish installation, recurring operation, startup, update, and recovery workflows.
+Use architecture design for unresolved subsystem, interface, or authority boundaries those workflows expose; do not require a decomposition exercise for an operator task.
 
 ## Establish the outcome and authority
 
@@ -95,6 +98,7 @@ Line count, symmetry, and hypothetical reuse do not establish a payoff.
 Consider deleting obsolete or lossy APIs rather than preserving facades that discard diagnostics, provenance, lifecycle state, or results.
 
 Use [boundary contracts](references/boundary-contracts.md) for changed or unresolved guarantees and [design-risk checks](references/design-risks.md#applicability) for the actual subsystem and boundary.
+For independently deployed components or persisted state, use the shared [deployment and evolution checks](../references/deployment-and-evolution.md).
 Carry settled contracts forward.
 Run the cheapest check that could disprove the seam: a dependency trace, load check, effect inventory, or focused caller/test probe.
 
