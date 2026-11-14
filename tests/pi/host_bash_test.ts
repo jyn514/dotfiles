@@ -214,6 +214,42 @@ export function hostHarness(entries: any[] = []) {
   return { pi, ctx, hooks, commands, tools, statuses };
 }
 
+test("host results distinguish the selected sandbox workspace from the execution directory", async () => {
+  const keys = ["PI_HOST_CODEX_BIN", "DOTFILES_TEST_HOST_EXIT_CODE", "PI_HOST_BASH_WORKSPACE", "PI_HOST_BASH_AUTHORITY_CONTEXT"];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  const workspace = mkdtempSync(join(tmpdir(), "host-output-"));
+  const elsewhere = mkdtempSync(join(tmpdir(), "host-execution-"));
+  process.env.PI_HOST_CODEX_BIN = fileURLToPath(new URL("./fixtures/host-bash-server.mjs", import.meta.url));
+  const h = hostHarness();
+  h.ctx.cwd = workspace;
+  try {
+    await h.hooks.get("session_start")!({ reason: "startup" }, h.ctx);
+    await h.commands.get("host").handler("on", h.ctx);
+    for (const [cwd, exitCode] of [[undefined, 0], [elsewhere, 0], [elsewhere, 1]] as const) {
+      process.env.DOTFILES_TEST_HOST_EXIT_CODE = String(exitCode);
+      const executionDirectory = cwd ?? workspace;
+      const result = await h.tools.get("host_bash").execute("output", {
+        command: "fixture command", ...(cwd ? { cwd } : {}),
+      }, undefined, undefined, h.ctx);
+      expect(result.content[0].text).toContain(`Host sandbox workspace: ${workspace}\nHost execution directory: ${executionDirectory}\n`);
+      expect(result.content[0].text).toContain("Execution: sandbox");
+      expect(result.content[0].text).toContain("fixture output");
+      expect(result.content[0].text).toContain(`Exit code: ${exitCode}`);
+      if (exitCode) expect(result.content[0].text).toContain("permission denied");
+      expect(result.isError).toBe(exitCode !== 0);
+      expect(result.details).toMatchObject({ workspace, cwd: executionDirectory, exitCode, execution: "sandbox" });
+    }
+  } finally {
+    await h.hooks.get("session_shutdown")!({}, h.ctx);
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
 test("human toggle only adds host tool; reload/resume and other sessions revoke access", async () => {
   const h = hostHarness();
   const tool = h.tools.get("host_bash");

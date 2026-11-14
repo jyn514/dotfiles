@@ -3,7 +3,7 @@
 ## Differences between guest and host
 
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
-- The active workspace and launcher dotfiles checkout are the two writable checkouts under `/home/codex/src`; ordinary files in both are writable. The launcher-selected dotfiles checkout is normally `/home/codex/src/dotfiles`; relocated checkouts or name collisions can use another path.
+- For guest tools, the active workspace and launcher dotfiles checkout are the two writable checkouts under `/home/codex/src`; ordinary files in both are writable. The launcher-selected dotfiles checkout is normally `/home/codex/src/dotfiles`; relocated checkouts or name collisions can use another path.
   Other `/home/codex/src` repositories are inspection-only; use `/cd` before editing them. This does not apply to the launcher dotfiles checkout.
   Writable access does not authorize unrelated edits or taking ownership of another contributor's changes.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.

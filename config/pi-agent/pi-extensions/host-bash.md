@@ -25,7 +25,9 @@ The required `justification` describes the failed attempt, the restriction, and 
 Ordinary command errors do not justify escalation.
 Policy or Guardian denial stops the operation; native exec policy rejects forbidden commands before invoking Guardian.
 Paths refer to the host; the default directory is Pi's host working directory.
-The writable workspace stays bound to Pi's host working directory; selecting another `cwd` does not grant write access there.
+The writable workspace is selected when `/host` is enabled and inherited by managed children; selecting another `cwd` does not grant write access there.
+Guest write permissions, including the launcher dotfiles exception, do not apply to host commands.
+The result reports both the host sandbox workspace and the execution directory, plus whether execution used the sandbox or full host access.
 For an alternate directory, the same guarded `cd` command is presented to both policy review and execution while both native permission resolutions remain at Pi's host workspace.
 Execution uses `/bin/bash -c` without login-shell initialization.
 Ordinary `bash`, `read`, `edit`, and `write` retain their existing guest routing.
@@ -56,7 +58,6 @@ If policy skips approval, that API returns `null` without invoking Guardian.
 Explicit command rules can still require review for a sandboxed command; approving such a rule does not remove its sandbox.
 Default execution uses the sandbox profile selected by the review thread.
 Only an explicit `require_escalated` request, allowed by Guardian or exec policy, runs through `command/exec` with full host access.
-The result identifies whether execution used the sandbox or full host access.
 Denial, review cancellation or timeout, malformed responses, and unavailable APIs prevent starting the command; the extension never retries automatically.
 Cancelling an executing command or reaching its execution timeout interrupts it but cannot undo effects it already performed.
 The app-server supplies process execution and the extension enforces the returned assessment.

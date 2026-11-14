@@ -134,7 +134,7 @@ export default function hostBash(pi: ExtensionAPI): void {
   });
   pi.registerTool({
     name: "host_bash", label: "host bash", defaultActive: false,
-    description: "Run Bash on the host in Codex's workspace sandbox. Use host paths. Escalate only after a failed sandboxed attempt shows that broader access would resolve a sandbox restriction. Stop on policy or Guardian denial.",
+    description: "Run Bash on the host in Codex's workspace sandbox. Use host paths. Guest write permissions—including the launcher dotfiles exception—do not apply. Host sandbox writes remain scoped to the selected host workspace. Escalate only after a failed sandboxed attempt shows that broader access would resolve a sandbox restriction. Stop on policy or Guardian denial.",
     promptSnippet: "Run host Bash in Codex's sandbox, with Guardian review for escalation",
     parameters,
     async execute(_id, params, signal, _onUpdate, ctx) {
@@ -168,9 +168,9 @@ export default function hostBash(pi: ExtensionAPI): void {
           sandbox_permissions: params.sandbox_permissions,
         });
         return {
-          content: [{ type: "text", text: `Host working directory: ${cwd}\nExecution: ${result.execution}\n${result.stdout}${result.stderr}\nExit code: ${result.exitCode}\nGuardian: ${result.review?.rationale ?? "not required by exec policy"}` }],
+          content: [{ type: "text", text: `Host sandbox workspace: ${hostWorkspace}\nHost execution directory: ${cwd}\nExecution: ${result.execution}\n${result.stdout}${result.stderr}\nExit code: ${result.exitCode}\nGuardian: ${result.review?.rationale ?? "not required by exec policy"}` }],
           isError: result.exitCode !== 0,
-          details: { cwd, exitCode: result.exitCode, review: result.review, execution: result.execution },
+          details: { workspace: hostWorkspace, cwd, exitCode: result.exitCode, review: result.review, execution: result.execution },
         };
       } catch (error) {
         failed = true;
