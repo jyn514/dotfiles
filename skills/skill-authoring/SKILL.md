@@ -23,6 +23,10 @@ Use history in the conversation and past sessions, using `jj-workflow` for file 
 Separate what had to be achieved from the failure that prompted the rule and the particular solution chosen.
 For example, “leave the live checkout usable” is a requirement; a separate workspace is one way to meet it.
 
+Before creating or substantively revising a skill, turn material inclusion/exclusion decisions into observable criteria for the finished artifact.
+For each decision, state what must appear, must be absent, or must be handled by another owner.
+Keep these criteria in the task's working context, not as a history of corrections in the skill.
+
 ### When correcting a failure
 
 Read the recorded decision, the instructions available then, and the alternatives the agent rejected.
@@ -187,5 +191,14 @@ Check affected commands, run checks for changed bundled code, and review how the
 Reload an active session before using its behavior as evidence of edited instructions.
 
 After creation or substantial rewriting, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md).
+For creation or substantive revision, compare the finished main file and affected references with the inclusion/exclusion criteria.
+Check actual content, not just drafting intention or mechanical validity.
+
+For creation or substantive revision, obtain an independent artifact review from a fresh reviewer.
+Provide the governing task, criteria, and finished files without the drafter's rationale.
+Ask the reviewer to check that the criteria follow the task and identify violations in the finished text.
+Address supported findings before declaring the change finished.
+If no independent reviewer is available, report that check as unperformed; self-review is not independent review.
+
 Report findings or changed files, checks performed or reused, and what remains unresolved.
 Separate textual review, successful loading, discovery, and observed behavior in the report.
