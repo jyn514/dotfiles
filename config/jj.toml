@@ -31,7 +31,7 @@ private-commits = "private()"
 [revsets]
 bookmark-advance-to = "heads(::@- ~ private()::)"
 # i use a bunch of emails; easier to just track author name
-log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
+log = '@ | trunk()..author(substring:"jyn" | "325577925+one-esk-nineteen@users.noreply.github.com") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
 
 [[--rust]]
 --when.repositories = ["~/work"]
@@ -98,6 +98,8 @@ recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--templa
 conflicts = ["log", "--no-graph", "-T", "show_conflicts", "-r", "with_conflicts"]
 
 [templates]
+'commit_timestamp(commit)' = 'commit.author().timestamp()'
+
 draft_commit_description = '''
 concat(
 builtin_draft_commit_description,
