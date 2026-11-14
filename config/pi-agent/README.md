@@ -42,7 +42,8 @@ Use [work-selection](../../skills/work-selection/SKILL.md) for priority comparis
 When assigned, the [strategist](pi-codex-subagents/agents/strategist.md) owns overall next-work priority.
 Give it the original task, motivation, corrections, current evidence, and permitted effects rather than prescribe its next action.
 Include a complete path to a current use example when available so ignored files remain reachable.
-Reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment.
+For bounded-helper work, reuse an investigator or choose a fresh context according to the need for accumulated evidence or independent judgment.
+Dedicated executives follow the [executive task-lifecycle rule](../../skills/delegation/references/executive.md#dispatch-without-taking-technical-ownership).
 These are staffing choices, not different roles.
 Investigation and recommendations do not activate autonomous execution or grant implementation permission.
 The former `goal-scout` template is removed; its comparative reasoning belongs to the strategist.
@@ -52,7 +53,7 @@ Separately packaged goal continuations route through autonomous-work and do not 
 
 Handle ordinary bounded tasks directly, regardless of their number of steps or files.
 Read [delegation](../../skills/delegation/SKILL.md) when actually splitting or coordinating joint work; the global `AGENTS.md` also tells every subagent to read its shared coordination guidance when taking an assignment.
-Organizers follow its on-demand executive route; specialists do not load executive guidance simply to participate.
+Delegation owns the shared coordination and bounded-helper procedure; only dedicated executives follow its executive-policy route.
 Additional workers need concrete expected value or requested independence, not a requirement to fill the role catalog.
 A bounded helper leaves its caller free to finish its own task.
 For an authorized [autonomous run](../../skills/autonomous-work/SKILL.md), every root acts as executive and keeps technical work with delegated owners.
@@ -68,7 +69,7 @@ The specialized templates are:
 - [`builder`](pi-codex-subagents/agents/builder.md): creation and integration, questioning unnecessary implementation assumptions and restrictions.
 - [`archivist`](pi-codex-subagents/agents/archivist.md): sourced reconciliation of current instructions, decisions, ownership, status, and evidence; not policy selection or technical acceptance.
 
-Use the [self-contained assignment procedure](../../skills/delegation/references/executive.md#give-a-self-contained-assignment) for common packet requirements; each advertised role hint names its specific inputs.
+Use the [self-contained assignment procedure](../../skills/delegation/SKILL.md#give-a-self-contained-assignment) for common packet requirements; each advertised role hint names its specific inputs.
 The templates supply stable procedures.
 Select the named `agent_type` explicitly rather than rely on generic or skill-based routing.
 These role templates omit model and thinking defaults, so omitted caller settings inherit from the parent.
@@ -82,10 +83,17 @@ All templates, including `parent`, `luna`, and `archivist`, allow bounded suppor
 Delegation's [shared procedure](../../skills/delegation/SKILL.md#before-assigning-a-worker) governs helper selection and coordination.
 The caller retains its assigned judgment, integration, and acceptance; helper permission neither selects the executive role nor requires helpers.
 For example, a builder can give Luna a caller inventory while keeping implementation and consumer checks.
-Root status alone does not imply executive responsibility; explicit autonomous-root authority does.
-`ROOT.md` supplies the conditional delegation route, not executive or common-skill body includes.
-Selected executive workers receive their role template; a root taking executive responsibility reads that same installed role body through delegation's conditional route.
-Outside autonomous-root mode, a bounded-helper caller reads only the organizer procedure and retains its own task, without adopting the dedicated executive role.
+Instruction ownership:
+
+| File | Purpose |
+| --- | --- |
+| [`ROOT.md`](ROOT.md) | Root identity, delegation permission, and the route into delegation. |
+| [`delegation/SKILL.md`](../../skills/delegation/SKILL.md) | Shared coordination, bounded-helper procedure, and executive-role selection. |
+| [`delegation/references/executive.md`](../../skills/delegation/references/executive.md) | The complete dedicated executive policy. |
+| [`agents/executive.md`](pi-codex-subagents/agents/executive.md) | Pi adapter: select the executive role and route into delegation, without adding policy. |
+
+Both roots and selected executive workers reach the same policy through delegation.
+A bounded-helper caller stays in the common procedure and retains its technical task.
 
 Peer references in the templates refer to assigned responsibilities, not a requirement to create those agents.
 Without a separate owner, workers keep ordinary work and checks within their assignment and return questions outside it to their caller.

@@ -15,11 +15,7 @@ An inactive goal is saved state, not permission to continue.
 ## Establish the run owner
 
 Every autonomous root is an executive.
-For a root run, read [delegation](../delegation/SKILL.md), its [executive procedure](../delegation/references/executive.md), and the installed executive role body through delegation's root-executive route before organizing the run.
-The root keeps technical creation, investigation, method selection, and verification with delegated technical owners.
-It does not retain direct technical ownership by calling the task bounded or omitting other roles.
-Use existing assigned owners or assign the technical work within the root run's authority and resource limits.
-If those limits prevent required delegation, return that staffing dependency rather than taking over the technical task.
+For a root run, read [delegation](../delegation/SKILL.md) and follow its executive route before organizing the run.
 
 An ordinary delegated assignment does not inherit the root's autonomous mode and needs no autonomous-work read merely because its parent runs autonomously.
 A delegated worker reads this skill only when its own task has explicit autonomous-run authority or an active user-authorized goal.
@@ -28,11 +24,7 @@ It applies continuity and acceptance rules within its assignment without becomin
 This skill owns run authority, persistence, required acceptance order, resumable state, and stopping.
 [Work-selection](../work-selection/SKILL.md) owns next-action selection, dependency justification, reassessment, and scouting within the authorized task.
 Activity-specific skills own their procedures; goal tools own status changes and budgets.
-Where these responsibilities are assigned, apply acceptance duties through their owners: the builder integrates, QA independently verifies and investigates failures, and the strategist decides overall next-work priority.
-A delegated technical owner performs ordinary implementation and checks without separately staffing QA, a strategist, or a designer.
-The autonomous root remains executive even when one technical owner can complete the task.
-The executive preserves scope, dispatches work, coordinates dependencies, and ratifies alignment; it does not perform a parent technical pass.
-Use delegation's shared responsibility guidance when evidence or a proposal is inadequate.
+Use delegation for shared responsibilities and the executive policy for staffing, technical-ownership limits, and ratification.
 Autonomy authorizes persistence within the task, not a different activity or additional effects.
 
 u got this buddy <3 i believe in u
@@ -145,19 +137,22 @@ Record user decisions before dependent delegation and reconcile superseded holds
 Do not rely on compaction to retain everything needed to resume.
 When assigning archivist source recovery, select the `archivist` template on Pi; on other harnesses, assign an equivalent bounded source-recovery role.
 
-### When compaction risks losing track
+### Reconcile uncertain run state
 
-Before compacting a complex run, check whether authority, acceptance, ownership, or evidence applicability is becoming hard to track.
-When it is, use [delegation](../delegation/SKILL.md) to spawn a bounded archivist subagent while you can still name the uncertain points.
-Give it those points, the current objective and permitted activity, existing task-state locations, and transcript, evidence and worker references.
+For delegated coordination, apply the [archivist staffing rule](../delegation/SKILL.md#delegate-coordination) from the start.
+If conflicting or apparently superseded records make an active assignment's authority or current disposition unclear, use an archivist.
+Use [delegation](../delegation/SKILL.md) to assign bounded source recovery before choosing dependent actions.
+Use the same route before compacting a complex run when authority, acceptance, ownership, or evidence applicability is becoming hard to track.
+Give the archivist the uncertain points, the current objective and permitted activity, existing task-state locations, and transcript, evidence and worker references.
+Continue independent authorized work while it reconciles the records.
 Treat your account as claims to check, not the archivist's authority.
 Ask it to reconcile duplicate or conflicting status claims against original records and identify superseded instructions with their replacement sources.
 Require current dispositions, source references, and explicit unresolved contradictions, not another chronological summary or a whole-project audit.
 The archivist reconciles records; it does not grant authority, certify technical acceptance, delete original evidence, or rerun acceptance checks.
-Have the responsible owners resolve substantive contradictions in its result and incorporate supported corrections into the existing permitted task-state surface before preparing the checkpoint.
+Have the responsible owners resolve substantive contradictions in its result and incorporate supported corrections into the existing permitted task-state surface before resuming dependent work or preparing the checkpoint.
 Do not create a parallel status ledger or treat the archivist's inference as a user decision.
 If delegation is unavailable or compaction cannot wait, preserve the uncertain claims and recovery references explicitly rather than resolving them by assumption.
-A coherent current record needs no archivist pass.
+A coherent current record needs no additional reconciliation pass.
 
 ### Preserve state and resume
 

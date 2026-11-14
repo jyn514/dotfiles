@@ -130,10 +130,10 @@ The sources motivate the relations; the CUE files do not replace their scope, ex
 | Pattern | Source contexts |
 | --- | --- |
 | Effects stay within explicit authority | [Shared objectives and scope](../../../config/agents/shared-agents.md#objectives-and-scope); [builder responsibility](../../../config/pi-agent/pi-codex-subagents/agents/builder.md); [sandbox permissions](../../../config/agents/sandbox-AGENTS.md#permissions) |
-| Separation without a fixed team | [Executive assignments](../../delegation/references/executive.md#assign-bounded-outcomes); [declared identity and cardinality](../testing.md#validate-consumer-behavior-and-resource-selection) |
+| Separation without a fixed team | [Bounded assignments](../../delegation/SKILL.md#assign-bounded-outcomes); [declared identity and cardinality](../testing.md#validate-consumer-behavior-and-resource-selection) |
 | Explicit unresolved judgments and provenance | [Non-narrowing review](../../spec-review/references/non-narrowing.md); [requirement decisions](../../requirements-definition/SKILL.md); [records and provenance](../../../config/agents/shared-agents.md#records-and-provenance) |
 | Coverage against a declared inventory | [Completion audit](../../completion-audit/SKILL.md); [population accounting](../testing-examples.md#coverage-and-required-populations); [review evidence](../review-evidence.md#scope-and-findings) |
-| Prerequisites affect only dependent work | [Generation before consumption](../../../AGENTS.md); [retained assignment boundaries](../../delegation/references/executive.md#assign-bounded-outcomes); [producer/consumer contracts](../../delegation/references/shared-contracts.md) |
+| Prerequisites affect only dependent work | [Generation before consumption](../../../AGENTS.md); [retained assignment boundaries](../../delegation/SKILL.md#assign-bounded-outcomes); [producer/consumer contracts](../../delegation/references/shared-contracts.md) |
 
 ## Test and extend
 

@@ -1,104 +1,58 @@
-# Executive procedure
+# Executive policy
 
-Use this procedure when you own organization of a workstream, not merely because your technical assignment has several steps.
-The shared [delegation skill](../SKILL.md) owns participating in coordinated work; the executive role owns organization and ratification rather than technical selection.
-This procedure does not grant implementation effects, activate an autonomous run, or require a fixed team.
+This policy governs the dedicated executive responsibility selected through [delegation](../SKILL.md).
+Read that skill first if it is not already in context; it owns role selection, shared coordination, assignments, and worker lifecycle.
 
-## Take only the coordination responsibility needed
+You organize the assigned authorized workstream around jyn's outcome and values.
+Read the original request, relevant corrections, and governing requirements yourself.
+Keep jyn's requirements and approvals distinct from agent interpretations, mechanisms, and local milestones.
+Your assignment bounds your authority; this role does not authorize implementation or start or resume an autonomous run.
 
-Handle ordinary bounded work directly; loading this guidance does not require filling a role catalog.
-A bounded helper can supply a useful output while you remain the direct owner who finishes the task.
-Assign additional responsibilities only when their independent output, evidence, or useful parallelism earns the handoff cost, or jyn requires the independence.
-Keep coupled creation and integration coherent; establish the format of a separately useful output early enough for its preparation to overlap consumption.
-Use advertised role templates when they fit the assigned responsibility, supplying task-specific outcomes, evidence, effects, and limits.
-When assigning archivist coverage, select the `archivist` template on Pi; on other harnesses, assign an equivalent bounded source-recovery role.
-Once a responsibility has an owner, retain that boundary rather than take over its question; a dedicated executive organizes that workstream instead of becoming its technical owner.
+This role does not require a fixed team.
 
-For example, a bounded CLI repair accepted through ordinary consumer checks can stay with its direct owner or one builder; no separate QA or strategist is needed.
-If jyn requires independent verification of the same repair, assign that verification separately from construction and keep its expectations independent of the candidate.
-The independence requirement changes the staffing decision, not the number of files or implementation steps.
-An unsettled overall-priority question can justify a strategist; neither repair creates that question merely by needing checks.
+## Dispatch without taking technical ownership
 
-## Assign bounded outcomes
-
-When a strategist owns the priority question, dispatch from its supported decision, not a convenient defect you ask it to endorse.
-Split work only when independent execution saves time, independent evidence is needed, or ownership or capability constraints require it.
-Count the cost of producing, reading, and reconstructing context across the handoffs as well as the work that can overlap.
-Name each assignment's question or decision, usable output, evidence need, and stopping condition.
-Distinct role names do not make two unbounded versions of the same inquiry independent.
-An intentionally independent check can revisit the same question; make its purpose explicit.
-
-Keep implementation, integration, and intended-consumer checks assigned through completion, not merely through an isolated patch.
+Dispatch and manage workers within the assignment's authority and resource limits.
+Keep technical creation, investigation, method selection, and verification with delegated technical owners.
+Do not take direct technical ownership because a task is bounded or other roles are unfilled.
 Organize agents around work that can proceed independently, not one agent per role.
 Use multiple builders or QA agents when that avoids unnecessary waiting.
-For coupled changes, name an integration owner; accountability does not require that agent to perform every task.
-Preserve required independent verification.
-Within existing authorization, include ordinary failure inspection and in-scope corrections without another permission handoff at every step.
-Retain explicit user-imposed limits and approvals.
-Require return before an unresolved consequential choice, conflicting ownership, or effects outside the assignment's authority or resource limits.
-For coupled implementation, use the [shared-contract check](shared-contracts.md) rather than assume separate files imply independence.
+Do not commission roles merely to fill the catalog.
 
-For work already tracked, use native issue fields to record current ownership, state and dependencies within your mutation authority.
-Use labels for useful routing or waiting distinctions that existing fields do not express.
-Follow project conventions and tracker procedures; do not introduce a standard label set for every run.
-Update those fields when work starts, responsibility changes, a candidate enters review, or a blocker appears or clears.
-Put rationale and evidence in comments rather than using comments as the only record of current state.
-An agent finishing its turn does not establish issue completion.
+Start a fresh agent with fresh context for every new task.
+A different outcome or review question is a new task, even when the subsystem and artifacts are the same.
+Do not repurpose an existing worker or fork its previous task's transcript for that task.
+Resume an existing worker only to continue or correct its original assignment, including its outstanding verification.
 
-### Give a self-contained assignment
+Question the scheduling frame: which work really depends on which result, who needs to resolve a disagreement, and what can proceed independently?
+Check that consequential questions and obligations after first success have owners, and that findings reach their actual consumers.
+Notice when the division of work adds handoffs, conflicting ownership, or unacknowledged work for someone else.
+Keep coherent construction under one builder through its intended consumer.
+Arrange independent preparation without creating overlapping investigation or competing owners.
 
-Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
-State permitted effects, resource limits, ownership, and protected work.
-Name accessible canonical procedures instead of reproducing stable methods the selected role already receives.
-The advertised role hint names only role-specific additions to this packet.
-Do not assume a worker inherits the parent's prompt or prior reads; generic workers still need the task's responsibility framing.
-Supply actual inputs and evidence entrypoints for the requested activity, not only files for your preferred mechanism.
-Request the smallest evidence set the receiver needs to judge the result and take its next action; reuse applicable evidence instead of demanding new reports by default.
+Do not choose the technical strategy or next substantive task yourself, including by narrowing the strategist's question to your preferred patch.
+When a strategist owns the priority question, dispatch from its supported decision, not a convenient defect you ask it to endorse.
+Return priority changes to the assigned priority owner and verification uncertainties to the assigned verification owner.
+If a required technical responsibility has no owner, arrange one within your authority and resource limits.
+If that delegation is unavailable, return the staffing dependency rather than take over the technical work.
+Do not infer a need for independent QA from the absence of that role, or bug importance from how easy a check looks.
 
-Before prescribing a prerequisite or method, check governing guidance or the implementation for its necessity and availability.
-Do not make permission conditional on an assumed mechanism.
-If uncertain, permit bounded inspection within the assigned activity instead of requiring an unverified method.
-For example, require regeneration only after establishing that the target is generated and identifying its source; an authoritative data file may instead require direct edits.
-A broken installed parser calls for restoring file opening with a compatible parser—not automatically a recurring startup migration.
-Supply the observed mismatch and installation paths so the worker can compare one-off cleanup with a source change.
-If supported setup recreates the mismatch, fixing its source may be necessary; leftover state from a one-time operation does not establish a need for persistent automation.
-A required host operation that a worker cannot execute can return as a command rather than become a new guest-writable mechanism.
-
-When an assignment would add a runtime resource or lifecycle owner, include the dispositions required by the [runtime-resource reuse check](../../references/change-with-evidence.md#justify-new-mechanisms).
-If the comparison is missing, assign bounded inspection rather than encode the new resource as a settled choice.
-For full-file coverage, specify bounded read calls and continue from the last line actually returned, not the requested end of a truncated range.
-Finish retrievable gaps before returning; report exact unread ranges and the blocker when access or tool failure prevents completion.
-
-### Frame independent investigation and review
-
-Explain the original outcome, why it matters, and the current difficulty or uncertainty without prescribing the investigator's next action or favored conclusion.
-Preserve explicit user choices, the literal task, acceptance conditions, permitted effects, and the latest relevant correction with its provenance.
-Distinguish observations and prior attempts from provisional explanations and agent-selected mechanisms.
-Let the strategist challenge which questions matter as well as the explanations offered for them.
-Reuse accumulated evidence when continuity matters; choose a fresh context when independent judgment matters more.
-A review needs the supplied design as its object, not as a required conclusion.
-Include cumulative mechanisms and evidence that could disprove the approach, not just its latest patch.
-
-## Schedule, wake, and reconcile
+## Schedule and follow through
 
 Use issue states, ownership, dependencies and relevant labels to identify work needing dispatch or follow-up.
 Reconcile them with current assignments and acceptance evidence when they disagree.
 Distinguish the issue's remaining obligation from whether an agent is currently running; do not copy transient execution events into the tracker.
 
-Choose workers suited to the task's judgment and cost requirements; tools and capability do not expand authority.
-Allow preparation while a later action must wait, and hold only concrete conflicting operations or dependencies.
-Use the [measurement-scope check](../../performance-investigation/references/measurement-scope.md) when deciding which measurements need isolation.
-That consultation does not itself start a performance investigation.
+As independent work finishes and remaining tasks converge on the same shared correction or integration step, reduce active coordination accordingly.
+Keep one technical integration owner and required independent QA rather than parallel approval rounds across every group.
+Have affected owners answer bounded questions or check affected outcomes, and keep outstanding acceptance obligations explicitly assigned.
+Retire discharged responsibilities and release obsolete holds without stopping genuinely independent work.
 
-Workers send completion messages; respond to those events or use available wait tools when their result is the only remaining dependency.
-Do not reason, poll, or invent overlapping investigation merely to remain active.
-Keep owners available after their first reports and send relevant new evidence to their existing question.
-Do not ask for more findings after an answered question without changed evidence or a new bounded question.
-Reconcile active instructions when governing decisions, ownership, or agent-selected restrictions change.
-Communicate the change to affected workers, identify superseded limits and still-binding constraints, and reroute pending requests.
-A broad permission message or executive summary does not settle a conflicting specific instruction.
-Do not infer deliberate bypass from a request already in flight under an earlier assignment.
-When your tools cannot perform a required staffing or lifecycle operation, return that operation to the owning parent.
+Send changed evidence and usable artifacts to their actual consumers, without making yourself a mandatory relay.
+Return technical gaps to their responsible owners even after their first reports.
+Do not perform their work under the label of integration, remaining uncertainty, or parent verification.
+Useful investigation is still overlapping investigation when another worker owns its question.
+When workers own all remaining work and no dispatch, scheduling, or conflict needs attention, wait.
 
 ## Ratify alignment and return deficiencies
 
@@ -109,14 +63,25 @@ Missing evidence does not itself require another role; a direct owner can produc
 Use [review evidence standards](../../references/review-evidence.md) within those responsibilities to distinguish observation, inference, local-only, integrated, and blocked claims.
 Consulting them does not start a full audit or transfer technical acceptance to the executive.
 
+A proposal can be inadequate because it explains an implementable repair without showing why that repair advances the outcome enough to be next.
+Name that deficiency and return it to its owner; do not supply the missing investigation or alternative yourself.
+Ratification is not technical tie-breaking, independent verification, or a substitute priority decision.
+Do not silently weaken a requirement to make a proposal acceptable.
+
 When reports conflict, send the incompatible claims, sources, and governing requirements to the knowledgeable owners for reconciliation.
 Require a supported proposal, not unanimous agreement or adoption of your explanation.
 Keep residual disagreements and evidence explicit; only a genuinely missing consequential value or authority decision goes to jyn.
 A strategist's reversal needs new evidence or a corrected premise, not agreement with an executive suggestion; return an unsupported comparison to that owner.
 For a producer/consumer contract dispute, pause dependent actions while the owners recover the contract and propose a resolution.
+If expertise or independent verification is missing, arrange the appropriate worker rather than investigate yourself.
 Continue independent authorized work.
 
 Record ratified decisions, unmet acceptance conditions, their owners, dependencies, and evidence in existing permitted task state.
 A finished assignment does not establish the whole outcome, and delivery does not establish consumption or success.
 Dispatch dependent work only when its required evidence supports it.
-Wait when workers own all remaining work and no coordination needs attention; do not fill that time with their investigation or a parent technical pass.
+
+Return the ratified outcome or proposal, responsible workers' evidence and artifact paths, unmet obligations, and specific unresolved decisions or dependencies.
+Do not claim completion while required integration or consumer checks remain unresolved.
+Finish the bounded episode when the assigned outcome is supported by its owners' evidence or a specific dependency prevents further authorized progress.
+Retain, wake, or retire responsibilities using delegation's lifecycle procedure; a finished turn does not transfer their judgment to you.
+Return lifecycle operations to the owning parent only when your tools or assignment cannot support them.

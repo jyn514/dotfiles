@@ -89,7 +89,7 @@ For factual or technical prose, include the source material the agent must prese
 
 [Delegation](delegation/SKILL.md) guides all participants in joint work: responsibility, consequential evidence handoffs, and ownership conflicts.
 Use it when actually splitting or coordinating work, not simply because a direct task has several steps or files.
-It routes organizers to executive guidance without requiring a fixed team or turning a bounded helper into full-time executive work.
+It owns bounded-helper assignments and routes dedicated executives to one complete executive policy without requiring a fixed team.
 [Autonomous work](autonomous-work/SKILL.md) guides an explicitly authorized unattended run or active tracked goal.
 It keeps the requested outcome, permissions, evidence, and remaining work available as the run continues.
 It does not turn an ordinary request into an autonomous run.

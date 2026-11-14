@@ -15,7 +15,7 @@ Use history when it could change the choice.
 Read each reference on entering its phase.
 For delegation, supply the full phase text or resolved absolute path, shared inputs, and only that phase's candidate material.
 These references are not registered skills for subagent preloading.
-Use [delegation](../../delegation/SKILL.md) for responsibilities and permitted effects; organizers follow its [executive procedure](../../delegation/references/executive.md).
+Use [delegation](../../delegation/SKILL.md) for responsibilities, permitted effects, and [bounded assignments](../../delegation/SKILL.md#give-a-self-contained-assignment).
 
 1. **Map uncovered options** with [alternatives](alternatives.md).
    Skip scouting when existing candidates cover the material choices; do not manufacture competitors for one supplied design without an unresolved fork.

@@ -29,7 +29,7 @@ A bounded helper does not prevent its caller from finishing its own task, while 
 Peer references name existing assignments, not assumed teammates.
 Workers keep ordinary work and checks within their assignment when no separate owner exists and return questions outside it to their caller.
 A dedicated executive instead arranges a missing technical owner or reports the staffing dependency; it does not become that owner.
-[Delegation](../skills/delegation/SKILL.md) owns shared participation and routes organizers to the [executive procedure](../skills/delegation/references/executive.md).
+[Delegation](../skills/delegation/SKILL.md) owns shared participation and bounded-helper assignments, and routes dedicated executives to the [executive policy](../skills/delegation/references/executive.md).
 
 ### Executive: organize decisions without taking them over
 
@@ -129,7 +129,7 @@ Keep tightly state-dependent sequences under one owner.
 ## Sources, disagreements, and authority
 
 Assignments supply original sources, motivation, current evidence, permitted effects, ownership, and local constraints.
-Stable role prompts supply procedures; assignments do not need to reinvent them.
+Role prompts supply stable procedures directly or route to their canonical policy; assignments do not need to reinvent them.
 Workers read governing requirements themselves and distinguish them from agent-authored assumptions.
 Explicitly chosen user outcomes and contracts remain binding when a worker questions the framing.
 Recommendations and ratification do not authorize implementation, continued autonomous execution, or resuming an inactive goal.
@@ -167,8 +167,9 @@ Broader experience, maintenance, and affected-party questions should improve eac
 
 The [Pi configuration entrypoint](../config/pi-agent/README.md#team-roles) describes template selection and deployment boundaries.
 The loader advertises each template's description and caller hint; it adds the selected body to the worker's input.
-Roots read delegation when actually splitting or coordinating joint work; organizers then load executive procedure on demand, not because they are roots.
-A root taking executive responsibility also follows delegation's installed executive-role-body route; outside autonomous-root mode, a direct caller using a bounded helper does not adopt that role.
+Roots read delegation when actually splitting or coordinating joint work.
+Delegation selects whether the caller keeps its technical task with bounded helpers or takes the dedicated executive responsibility.
+The Pi executive template selects that responsibility and routes through delegation to the same executive policy; it contains no separate behavioral rules.
 Every subagent has a shared-coordination read route through global Pi `AGENTS.md`, including generic, omitted-role, parent, and Luna consumers; the common skill body is not unconditionally included.
 [Autonomous-work](../skills/autonomous-work/SKILL.md) requires every autonomous root to act as executive with delegated technical ownership, not a fully staffed role catalogue.
 Ordinary delegated assignments do not inherit autonomous mode; technical owners retain implementation, verification, and local-method judgment.

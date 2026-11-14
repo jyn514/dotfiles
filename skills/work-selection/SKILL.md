@@ -150,7 +150,7 @@ Use [autonomous-work](../autonomous-work/SKILL.md) for unattended-run authority 
 ### When an independent recommendation earns its cost
 
 Seek independence when jyn requires it or expected evidence or useful parallelism justifies the handoff; otherwise compare directly within your responsibility.
-For an independent assignment, use the responsible strategist or a compatible template and read delegation's [investigation framing](../delegation/references/executive.md#frame-independent-investigation-and-review).
+For an independent assignment, use the responsible strategist or a compatible template and read delegation's [investigation framing](../delegation/SKILL.md#frame-independent-investigation-and-review).
 Supply the literal task, acceptance condition, governing references, current situation, and evidence entrypoints for both the main activity and current work.
 Include relevant corrections with provenance; quote only available exact text.
 Separate observations, failures, and prior attempts from provisional explanations.

@@ -175,7 +175,7 @@ Include expansion is not built into the manager.
 A configured instruction-includes extension can expand `@file` directives from both normal context and the child-role file.
 Excluding that extension also excludes its custom include behavior.
 For the dotfiles ROOT split, keep portable working and skill-selection rules in shared `AGENTS.md` context.
-Keep root identity, delegation permission, and whole-task coordination in `ROOT.md`; the dotfiles extension loads it only without `PI_SUBAGENT_ID`.
+Keep root identity, delegation permission, and the conditional delegation read route in `ROOT.md`; the dotfiles extension loads it only without `PI_SUBAGENT_ID`.
 Install that root split before updating this package, so children cannot inherit the old root-only preamble from shared context.
 
 **Migration:** existing child-role SYSTEM files now add instructions rather than replace Pi's base prompt.

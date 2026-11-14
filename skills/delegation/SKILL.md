@@ -19,7 +19,20 @@ Workers choose local methods and resolve technical disagreements with the knowle
 A peer reference names an assigned responsibility, not an agent that must exist.
 Use its existing owner when assigned; otherwise keep ordinary work and checks within your assignment and return questions outside it to your caller.
 Name the missing decision, expertise, or independent evidence instead of requesting a role merely because the prompt mentions it.
-A dedicated executive arranges a technical owner or reports the staffing dependency; it does not take over the unassigned technical question.
+
+## Choose your responsibility
+
+A technical owner using bounded helpers retains its own task, judgment, integration, and acceptance.
+Handle ordinary bounded work directly; add helpers only when a useful independent output, required independent evidence, or parallel execution earns the handoff cost.
+Neither task size nor root status selects the dedicated executive role.
+
+Read the [executive policy](references/executive.md) when assigned to organize a workstream as its executive or when owning an explicitly authorized autonomous root run.
+That policy owns the dedicated role, including its technical-ownership limits and fresh-context rule.
+Bounded-helper callers and specialists participating in a joint activity use this skill without adopting that role.
+
+For example, a bounded CLI repair can stay with its direct owner or one builder through ordinary consumer checks.
+Independent verification requires a separate assignment only when jyn requires it or its evidence earns the handoff cost.
+An unsettled overall-priority question can justify a strategist; neither the repair's file count nor its need for checks creates that question.
 
 ## Work through your dependencies
 
@@ -53,13 +66,109 @@ Hold only the conflicting operation, release it with the resulting revision IDs,
 
 ## Before assigning a worker
 
+Apply the remaining assignment and scheduling procedures only when you assign or manage workers.
+
 If you are a root agent, use your `pi-link-tools` to ensure you have a semantic `link-name` and link group set *before* you spawn your first subagent.
 Once you have set a name and group, do not change them again.
 
-Add a worker only for concrete expected value: a useful independent output, required independent evidence, or useful parallelism after handoff costs.
-Neither multiple steps nor multiple files justify staffing a team; preserve independence jyn requests and responsibilities already assigned.
-For assigning or managing other workers, read the [executive guidance](references/executive.md) and take only the coordination responsibility needed.
-A bounded helper does not make you a full-time executive or prevent you from finishing your own task.
-A Pi root taking executive responsibility for a workstream must also read the installed [executive role body](~/.pi/agent/pi-codex-subagents/agents/executive.md), not merely the procedure reference.
-Bounded-helper callers retaining their own technical task do not take that role.
-Specialists participating in a joint activity do not load executive guidance merely to exchange evidence or retain their assigned question.
+Choose workers suited to the task's judgment and cost requirements; tools and capability do not expand authority.
+Use advertised role templates when they fit the assigned responsibility, supplying task-specific outcomes, evidence, effects, and limits.
+When assigning archivist coverage, select the `archivist` template on Pi; on other harnesses, assign an equivalent bounded source-recovery role.
+
+### Assign bounded outcomes
+
+Split work only when independent execution saves time, independent evidence is needed, or ownership or capability constraints require it.
+Count the cost of producing, reading, and reconstructing context across the handoffs as well as the work that can overlap.
+Name each assignment's question or decision, usable output, evidence need, and stopping condition.
+Distinct role names do not make two unbounded versions of the same inquiry independent.
+An intentionally independent check can revisit the same question; make its purpose explicit.
+
+Keep implementation, integration, and intended-consumer checks assigned through completion, not merely through an isolated patch.
+Keep coupled creation and integration coherent; establish the format of a separately useful output early enough for its preparation to overlap consumption.
+For coupled changes, name an integration owner and use the [shared-contract check](references/shared-contracts.md).
+Accountability does not require that agent to perform every task; separate files do not establish independence.
+Preserve required independent verification.
+Within existing authorization, include ordinary failure inspection and in-scope corrections without another permission handoff at every step.
+Retain explicit user-imposed limits and approvals.
+Require return before an unresolved consequential choice, conflicting ownership, or effects outside the assignment's authority or resource limits.
+
+For work already tracked, use native issue fields to record current ownership, state and dependencies within your mutation authority.
+Use labels for useful routing or waiting distinctions that existing fields do not express.
+Follow project conventions and tracker procedures; do not introduce a standard label set for every run.
+Update those fields when work starts, responsibility changes, a candidate enters review, or a blocker appears or clears.
+Put rationale and evidence in comments rather than using comments as the only record of current state.
+An agent finishing its turn does not establish issue completion.
+
+### Give a self-contained assignment
+
+Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
+State permitted effects, resource limits, ownership, and protected work.
+Name accessible canonical procedures instead of reproducing stable methods the selected role already receives.
+The advertised role hint names only role-specific additions to this packet.
+Do not assume a worker inherits the parent's prompt or prior reads; generic workers still need the task's responsibility framing.
+Supply actual inputs and evidence entrypoints for the requested activity, not only files for your preferred mechanism.
+Request the smallest evidence set the receiver needs to judge the result and take its next action; reuse applicable evidence instead of demanding new reports by default.
+
+Before prescribing a prerequisite or method, check governing guidance or the implementation for its necessity and availability.
+Do not make permission conditional on an assumed mechanism.
+If uncertain, permit bounded inspection within the assigned activity instead of requiring an unverified method.
+For example, require regeneration only after establishing that the target is generated and identifying its source; an authoritative data file may instead require direct edits.
+A broken installed parser calls for restoring file opening with a compatible parser—not automatically a recurring startup migration.
+Supply the observed mismatch and installation paths so the worker can compare one-off cleanup with a source change.
+If supported setup recreates the mismatch, fixing its source may be necessary; leftover state from a one-time operation does not establish a need for persistent automation.
+A required host operation that a worker cannot execute can return as a command rather than become a new guest-writable mechanism.
+
+When an assignment would add a runtime resource or lifecycle owner, include the dispositions required by the [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms).
+If the comparison is missing, assign bounded inspection rather than encode the new resource as a settled choice.
+For full-file coverage, specify bounded read calls and continue from the last line actually returned, not the requested end of a truncated range.
+Finish retrievable gaps before returning; report exact unread ranges and the blocker when access or tool failure prevents completion.
+
+### Frame independent investigation and review
+
+Explain the original outcome, why it matters, and the current difficulty or uncertainty without prescribing the investigator's next action or favored conclusion.
+Preserve explicit user choices, the literal task, acceptance conditions, permitted effects, and the latest relevant correction with its provenance.
+Distinguish observations and prior attempts from provisional explanations and agent-selected mechanisms.
+Let the strategist challenge which questions matter as well as the explanations offered for them.
+Reuse accumulated evidence when continuity matters; choose a fresh context when independent judgment matters more.
+A review needs the supplied design as its object, not as a required conclusion.
+Include cumulative mechanisms and evidence that could disprove the approach, not just its latest patch.
+
+### Report combined progress
+
+When several assignments need a combined progress report to their parent, have one existing owner, such as the integrator or sub-coordinator, deliver it.
+Other owners send intermediate findings directly to their consumers rather than echoing that progress upward.
+Preserve independent QA verdicts and direct escalation whenever the parent must act.
+When normal completion delivery is available, do not send a separate status message that merely repeats an imminent final report.
+
+### Delegate coordination
+
+Give a sub-coordinator responsibility for its group's local scheduling, integration, and acceptance follow-through within its assignment.
+Keep local technical exchanges with the assigned workers, integration owner, and QA rather than routing them through the parent.
+Report completed group outcomes, changes affecting the parent's dependencies, cross-group conflicts, and decisions outside the group's authority upward.
+Keep intermediate evidence in existing artifacts and send it directly to affected owners; copy the parent only when its next action changes.
+A parent receiving routine local detail returns any needed action to the group owner rather than opening a second coordination loop.
+
+When delegating coordination, assign archivist coverage at the same time rather than waiting for overload.
+Tell the archivist which workstreams it covers, including any newly delegated group.
+Have it maintain sourced current decisions, superseded instructions, and unresolved questions in existing permitted task state.
+The archivist reconciles records; it does not decide technical acceptance or grant authority.
+
+## Schedule, wake, and reconcile
+
+Allow preparation while a later action must wait, and hold only concrete conflicting operations or dependencies.
+Use the [measurement-scope check](../performance-investigation/references/measurement-scope.md) when deciding which measurements need isolation.
+That consultation does not itself start a performance investigation.
+
+Workers send completion messages; respond to those events or use available wait tools when their result is the only remaining dependency.
+Do not reason, poll, or invent overlapping investigation merely to remain active.
+Keep owners available after their first reports and send relevant new evidence to their existing question.
+Do not ask for more findings after an answered question without changed evidence or a new bounded question.
+Reconcile active instructions when governing decisions, ownership, or agent-selected restrictions change.
+Communicate the change to affected workers, identify superseded limits and still-binding constraints, and reroute pending requests.
+A broad permission message or executive summary does not settle a conflicting specific instruction.
+End reconciliation by recording the controlling sources, resolved action, residual disagreement, and affected holds released or retained in existing task state.
+Send the disposition to owners whose next action changes; do not seek another round of confirmations from unaffected owners.
+Reopen a resolved question only when a message supplies changed evidence or identifies an unresolved conflict with that disposition.
+Check the original source or current affected artifact when needed to distinguish new evidence from a replay; delivery time does not establish decision order.
+Do not infer deliberate bypass from a request already in flight under an earlier assignment.
+When your tools cannot perform a required staffing or lifecycle operation, return that operation to the owning parent.
