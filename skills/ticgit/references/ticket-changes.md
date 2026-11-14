@@ -43,6 +43,26 @@ Edit the title and description with the same file format:
 ti edit <id> -F ticket.md
 ```
 
+## Maintain the current record
+
+Before a maintenance write, ask what changes for someone reading the ticket now:
+
+- **Update the description and applicable native fields** when current scope, disposition, remaining work, or the permitted next action changes.
+  Replace superseded operative instructions rather than prepending another full snapshot.
+  The description alone should make the current disposition and remaining action intelligible, with direct links to evidence and its owner where needed.
+- **Comment** when new evidence or rationale explains a transition or a meaningful step without changing those operative facts.
+  If it changes those operative facts, update the description and applicable native fields too.
+- **Link** to the canonical owner for child-owned acceptance, evidence, or shared accounting instead of copying its narrative into parents and children.
+  Keep the parent’s own outcome and remaining action intelligible locally.
+- **Make no additional record** when existing records already convey the relevant facts and no useful new evidence or transition needs recording.
+  Routine progress or test receipts do not require a substantial description rewrite.
+
+When replacing an instruction, preserve consequential rationale and provenance in existing history or a suitable record if they would otherwise be lost.
+Do not create an archive snapshot for every edit.
+An investigation can finish while the product work it informs remains unresolved; record each disposition at its own owner.
+A tracker state records work's status, not permission to execute it.
+Follow the existing acceptance and evidence requirements before claiming completion; neither an investigation result nor a state change automatically closes product work.
+
 ## Progress Notes
 
 Add comments with an explicit target and body:
@@ -109,4 +129,4 @@ ti dep <blocker-id> -t <id> --remove
 
 Comment when you learn something important or finish a meaningful step.
 Mark blockers with an explicit state update and dependencies with `ti dep`.
-Resolve tickets only after implementation and verification are complete.
+Resolve tickets only when their acceptance and evidence requirements are met, including implementation and verification where applicable.
