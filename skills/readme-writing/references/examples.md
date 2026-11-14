@@ -39,6 +39,54 @@ The overview establishes scope; the individual examples develop understanding of
 
 Source: `https://github.com/astral-sh/uv/blob/419068541b7452193b72a240d345595595cca3e3/README.md`.
 
+## Lead with the current use, not the inherited output
+
+**Source and scope:** jyn's revision of the gh2md README after the exporter gained a resumable SQLite corpus and a Datasette browser.
+Human feedback called the structure reasonable but rewrote much of the prose.
+The passages below compare the agent's draft with that revision, not with the older upstream README.
+
+The agent opened:
+
+> gh2md exports GitHub issues, pull requests, and conversation comments to readable Markdown.
+> Save a repository's discussions in a local SQLite corpus to resume an interrupted download, refresh it later, and render it offline.
+> You can also export directly to Markdown without keeping a corpus.
+
+jyn's first sentence instead identifies the stored data:
+
+> gh2md exports GitHub issues, pull requests, and conversation comments to a local SQLite database.
+
+The next sentence names Datasette for viewing and programmatic manipulation.
+The introduction then describes the intended scale and cites a reported end-to-end download of rust-lang/rust.
+The original opening is accurate, but keeps treating the database as an intermediate step toward Markdown.
+The revision explains why someone investigating a large issue tracker would want the database itself.
+The lesson is to recheck the intended use, not to promote whichever feature was added most recently.
+
+### Explain why a reader would switch modes
+
+The agent's browser paragraph said:
+
+> To browse a saved corpus in a local web interface, see the optional Datasette guide.
+
+jyn explains that Markdown becomes unmanageable for repositories with many issues, then shows fetching a database and serving it.
+The guide is still linked, but the README now gives the reader a reason to choose that route before sending them elsewhere.
+Likewise, the revision leads with fast refresh and explains that a full refresh is nearly as expensive as the initial fetch.
+This makes the trade-off legible without first teaching the metadata traversal algorithm.
+The recommended path follows the actual task and cost, rather than making the most exhaustive operation the default example.
+
+### Show something worth inspecting
+
+The agent supplied an explicitly fictional export and screenshots of its three-record fixture.
+jyn instead linked gh2md's own issue-tracker export and deferred the screenshots in favor of real Rust examples.
+The fixture demonstrated that the UI could display issues; the real output gives a prospective reader a recognizable use to inspect.
+Synthetic data remains useful for explaining a mechanism or testing a renderer, but a screenshot earns its place by showing the project's value.
+
+### Separate setup from use without breaking the commands
+
+jyn also requested Bash examples and one setup step rather than a repeated `uv run --with-editable .` prefix.
+After the packaging supported ordinary project execution, the setup could establish a shell with `uv run bash`.
+Later examples then used `gh2md` directly.
+Removing the repeated prefix works because the setup establishes the command's environment, not because a shorter command is automatically better.
+
 ## A library with a large reference
 
 Suppose JobJar is a TypeScript background-job library backed by PostgreSQL.

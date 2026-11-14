@@ -23,6 +23,8 @@ Explain its value and introduce its private names through their meaning.
 
 What does the reader want to do or understand?
 What do they supply, what does the project do, and what remains their responsibility?
+Check the current intended use against the inherited description; an accurate older feature need not remain the introduction's emphasis.
+The [gh2md revision](references/examples.md#lead-with-the-current-use-not-the-inherited-output) shows this choice without changing the basic structure.
 Distinguish working behavior from aspirations; report missing facts rather than filling gaps with terminology.
 Read the [real and constructed examples](references/examples.md) before drafting.
 
@@ -60,6 +62,8 @@ Introduce private terms through concrete meaning and familiar language.
 Make benefits tangible through what readers can do and the effort or limitation the project addresses.
 Keep the project's voice and precise specialized terms.
 
+Prefer actual output and representative workflows when demonstrating the project's usefulness.
+A constructed fixture can clarify mechanics without being a good showcase; choose the example for what the reader needs to recognize.
 Hypothetical examples can explain a method, not establish its success.
 Label them and stay within supplied capabilities.
 Do not invent interfaces, commands, guarantees, measurements, or observed results.
@@ -70,6 +74,8 @@ Preserve exact tokens in commands, interfaces, quoted output, and paths.
 For the queue's introductory use, the shared database explains how the processes cooperate and the repeated-handler warning guides safe use.
 A tracing callback catalog serves readers configuring tracing; give those details an appropriate lookup destination.
 Select details for the account you've chosen and describe the operations accurately.
+Explain when a reader would choose a feature, rather than merely listing modes or narrating their mechanics.
+Lead with the routine path suited to the intended task; explain when a more expensive or exceptional operation is worth choosing.
 Keep prerequisites, conditions, hazards, and limits beside the actions they govern.
 Use tables to make choices comparable or facts easy to look up, and prose to develop relationships.
 Give each a distinct purpose.
@@ -80,6 +86,14 @@ Use `reorganize-docs` for extraction, moves, and navigation.
 Edit each destination for its own reader task rather than dumping cut prose there.
 If supporting edits are outside scope, keep necessary detail here or report the missing owner.
 A small project may need no supporting pages.
+
+## Establish the command environment once
+
+Use Bash for shell examples rather than adopting the author's personal interactive shell.
+Establish installation and execution context once.
+Use direct invocation when that context supports it; retain wrappers required for normal use or taught by the example.
+Keep commands runnable in the stated context; do not strip a required launcher prefix.
+Keep repository names, filenames, and other identifiers consistent across related steps.
 
 ## Read the whole result, then follow its links
 
