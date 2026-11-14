@@ -137,6 +137,19 @@ Do not turn a proposed mechanism into its own requirement.
 - Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
 - Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
 
+### Design for expected changes
+
+Identify the changes the next editor is likely to make, using the task and existing editing patterns.
+Keep things that change together together, and separate independently changing material from the machinery that interprets it.
+Give each expected change a clear, authoritative editing location that does not require understanding unrelated implementation details.
+Use appropriate native formats and existing mechanisms; avoid speculative abstractions.
+
+For example, keep an HTML footer's copy and layout together in a template; Python supplies the URL and truncation flag.
+Changing punctuation or line layout should not require tracing backend branches or editing Python-generated markup.
+Keep algorithm internals in code rather than turning every constant into configuration.
+
+When reviewing, ask: does a small, expected change require tracing or modifying unrelated code?
+
 ### Optimization and caching
 
 Before optimizing or caching an operation, check whether the operation or intermediate representation can be eliminated.
