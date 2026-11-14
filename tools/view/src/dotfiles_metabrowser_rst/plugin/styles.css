@@ -45,6 +45,15 @@
   margin-block: 0 0.5rem;
 }
 
+.mb-rst-document span.literal,
+.mb-rst-document :not(pre) > code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--hover-bg);
+  border-radius: 0.2rem;
+  padding: 0.1em 0.25em;
+}
+
 .mb-rst-document .literal-block,
 .mb-rst-document .code {
   overflow-x: auto;
