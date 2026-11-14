@@ -1223,6 +1223,41 @@ test("Pi terminal titles contain only the link name while preserving saved sessi
   assert.deepEqual(checkpoints, ["startup", "link-rename", "explicit-title", "preserved-title", "cleared-title", "new-session"]);
 });
 
+test("managed child hides broadcasts and refuses direct execution without disabling peer tools", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-child-broadcast-"));
+  const environment = {
+    PI_SUBAGENT_PARENT_SESSION_ID: "fixture-parent",
+    PI_SUBAGENT_ID: "fixture-worker",
+    PI_SUBAGENT_TASK_NAME: "executive",
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, environment);
+    const loaded = await discoverAndLoadExtensions([sourcePath], directory, join(directory, "agent"));
+    assert.deepEqual(loaded.errors, []);
+    const extension = loaded.extensions[0];
+    assert.deepEqual([...extension.tools.keys()].sort(),
+      ["link_compact", "link_list", "link_send", "link_set_identity"]);
+    const send = extension.tools.get("link_send").definition;
+    const schema = send.parameters;
+    assert.ok(schema.properties.to.anyOf.some(option => option.type === "string"), "named peer sends remain exposed");
+    assert.ok(schema.properties.to.anyOf.some(option => option.properties?.authorOf), "private author replies remain exposed");
+    assert.ok(!schema.properties.to.anyOf.some(option => option.properties?.broadcast), "workers do not advertise broadcasts");
+    assert.equal(schema.properties.includeSubagents, undefined, "workers do not advertise broadcast-only options");
+    // Bypass schema validation as a stale/programmatic caller could: the operation
+    // must still refuse before opening a connection or selecting any recipients.
+    const result = await send.execute("worker-broadcast", { to: { broadcast: true }, message: "routine status", includeSubagents: true });
+    assert.equal(result.isError, true);
+    assert.equal(result.details.error, "root_only_broadcast");
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("managed child loading the configured package registers ordinary link tools and hooks", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pi-link-child-enabled-"));
   const previous = process.env.PI_SUBAGENT_OWNER_TOKEN;

@@ -237,6 +237,12 @@ Use [`to: { authorOf: messageId }`](#reply-to-a-delivered-author) to answer a re
 
 #### Group broadcast
 
+Only top-level sessions can originate broadcasts.
+Managed workers retain named sends and private author replies, but cannot broadcast, even when they own workers themselves.
+Their tool schema omits the broadcast target and `includeSubagents`; runtime checks also reject stale or programmatic broadcast calls.
+The hub rejects worker-attributed broadcasts from older extensions with `root_only_broadcast` before delivering any copies.
+Workers send normal results through their parent channel and ask their parent when a team-wide announcement is needed.
+
 ```typescript
 link_send({
   to: { broadcast: true },

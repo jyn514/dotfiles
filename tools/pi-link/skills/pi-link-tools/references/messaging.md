@@ -38,8 +38,9 @@ Late joiners receive no replay.
 **Worker delivery requires the supported manager/child bridge:** it selects active own workers; without it, worker inclusion reports unsupported.
 Do not claim workers received a root broadcast or invent an automatic parent-forwarding rule.
 
-Avoid broadcasts in most cases.
-They should only be used by executives and coordinators.
+Only top-level sessions can broadcast; delegated executives and coordinators cannot.
+Reserve broadcasts for team-wide corrections, not status updates.
+Workers contact the responsible peer directly and ask their parent when a broadcast is needed.
 
 ## Keep replies private
 

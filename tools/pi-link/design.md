@@ -115,6 +115,9 @@ link_send({
   For broadcasts, an empty `inReplyTo` is treated as omitted.
 - `includeSubagents` defaults to `false` and may be `true` only for a broadcast.
   Direct sends remain one-recipient operations.
+- Only top-level sessions may originate broadcasts; managed-worker identity removes this permission regardless of name or ownership of children.
+  Worker tool schemas omit broadcast options, and runtime checks reject worker broadcasts before routing.
+  Hubs also reject worker-attributed requests from older extensions before selecting recipients.
 - Broadcast selects connected root sessions in the sender's current group, excluding the sending session.
   It never means every terminal on the hub and never infers membership from cwd.
 - All plain names share the empty group.

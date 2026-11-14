@@ -1888,14 +1888,17 @@ export default function (pi: ExtensionAPI) {
     renderResult: (result, _options, theme) => renderIconResult(result, theme),
   });
 
+  const canBroadcast = !managedWorker();
   pi.registerTool({
     ...TOP_LEVEL_TOOL,
     name: "link_send",
     label: "Link Send",
     description: [
-      "Send to one Pi terminal by name, privately to a delivered message author with to: {authorOf: messageId}, or to connected group roots with to: {broadcast: true}.",
+      canBroadcast
+        ? "Send to one Pi terminal by name, privately to a delivered message author with to: {authorOf: messageId}, or to connected group roots with to: {broadcast: true}."
+        : "Send to one Pi terminal by name or privately to a delivered message author with to: {authorOf: messageId}. Only top-level sessions can broadcast.",
       "authorOf resolves one admitted reference by stable root/worker identity and attaches its reply reference; no name fallback. A supported owner manager can reopen a completed worker and return its final answer privately; failed/interrupted/suspended/paused workers stay inactive. Names remain connected-only. Returns submission, not a model answer.",
-      "includeSubagents is opt-in for broadcast only; unavailable worker integration is reported explicitly.",
+      ...(canBroadcast ? ["includeSubagents is opt-in for broadcast only; unavailable worker integration is reported explicitly."] : []),
       "A busy receiver queues steering input under its steeringMode; delivery is not guaranteed at the next turn boundary. An idle receiver starts a turn. Submission does not acknowledge model admission.",
     ].join(" "),
     promptSnippet:
@@ -1903,7 +1906,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       to: Type.Union([
         Type.String({ description: "Target terminal name" }),
-        Type.Object({ broadcast: Type.Literal(true) }, { additionalProperties: false }),
+        ...(canBroadcast ? [Type.Object({ broadcast: Type.Literal(true) }, { additionalProperties: false })] : []),
         Type.Object({
           authorOf: Type.String({ minLength: 1, description: "Full ID of a message delivered to this session" }),
         }, { additionalProperties: false }),
@@ -1912,7 +1915,7 @@ export default function (pi: ExtensionAPI) {
       inReplyTo: Type.Optional(
         Type.String({ description: "Correlation only for direct/broadcast; authorOf supplies its own reference" }),
       ),
-      includeSubagents: Type.Optional(Type.Boolean({ description: "Include active owned workers; broadcast only" })),
+      ...(canBroadcast ? { includeSubagents: Type.Optional(Type.Boolean({ description: "Include active owned workers; broadcast only" })) } : {}),
     }, { additionalProperties: false }),
 
     async execute(_toolCallId, params, signal) {

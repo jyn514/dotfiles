@@ -23,6 +23,8 @@ Broadcasts remain active-only, and helper-only communication does not require an
 
 Other link tools and an independent connection are available when pi-link is enabled and the template's tool list permits them.
 Follow the configured tool surface; do not infer a reply-only restriction from worker status.
+Full pi-link workers can send named messages and author-targeted replies, but only top-level sessions can broadcast.
+Owning children does not give a managed worker broadcast permission.
 
 ## Independent worker questions
 

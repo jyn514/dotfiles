@@ -73,6 +73,43 @@ function setup(): Bus { const bus = new Bus(); buses.push(bus); bus.add("hub", "
 afterEach(() => { for (const bus of buses.splice(0)) bus.dispose(); });
 
 describe("root broadcast routing", () => {
+  for (const senderId of ["hub", "client"]) for (const includeSubagents of [undefined, true]) {
+    test(`managed ${senderId} cannot broadcast, including its own workers (${includeSubagents})`, async () => {
+      const bus = new Bus(); buses.push(bus);
+      let workerCalls = 0;
+      const managed = {
+        managedWorker: () => ({ ownerSessionId: "outer", workerId: "executive-id", taskName: "executive" }),
+        workers: {
+          broadcast: async () => { workerCalls++; return []; },
+          reply: async () => ({ status: "submitted" as const }),
+        },
+      };
+      bus.add("hub", "coordinator@project", senderId === "hub" ? managed : {});
+      bus.add("client", "reviewer@project", senderId === "client" ? managed : {});
+      const sender = bus.nodes.get(senderId)!;
+      const result = await sender.link.broadcast({ message: "routine status", includeSubagents });
+      expect(result.isError).toBe(true);
+      expect(outcomes(result)).toMatchObject([{ status: "failed", reason: "root_only_broadcast" }]);
+      expect(sender.sent).toEqual([]);
+      expect(workerCalls).toBe(0);
+      for (const node of bus.nodes.values()) expect(node.inbox).toEqual([]);
+    });
+  }
+  test("hub rejects an old producer's managed-worker broadcast without delivering any copy", async () => {
+    const bus = new Bus(); buses.push(bus);
+    const receipts: unknown[] = [];
+    const hub = bus.add("hub", "hub@project", { sendPeer: (_peer, frame) => { receipts.push(frame); return true; } });
+    const sender = bus.add("old-child", "coordinator@project");
+    hub.link.handleHub({ type: "link_request", messagingVersion: 2, id: "old-worker-broadcast",
+      operation: "broadcast", message: "routine status", includeSubagents: true,
+      fromManagedWorker: { ownerSessionId: "outer", workerId: "worker-id", taskName: "executive" },
+    }, { name: sender.name, sessionId: sender.id });
+    await Promise.resolve();
+    expect(hub.inbox).toEqual([]);
+    expect(sender.inbox).toEqual([]);
+    expect(receipts).toEqual([expect.objectContaining({ type: "link_receipt", id: "old-worker-broadcast",
+      outcomes: [expect.objectContaining({ status: "failed", reason: "root_only_broadcast" })], empty: false })]);
+  });
   test("selects first-@ group once, excludes sender, preserves one ID and broadcast marker", async () => {
     const bus = setup();
     bus.hub().name = "coordinator@project@nested";

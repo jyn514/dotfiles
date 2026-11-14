@@ -272,6 +272,7 @@ export class LinkMessaging {
     if (managed && !request.fromWorker) request = { ...request, fromManagedWorker: managed };
     const self = this.options.self();
     const fail = (status: LinkStatus, reason: string) => Promise.resolve(this.result(request.id, request.operation, [this.routing(status, reason)], false, request.destination));
+    if (request.operation === "broadcast" && managed) return fail("failed", "root_only_broadcast");
     if (typeof request.message !== "string" || !request.message.trim()) return fail("failed", "invalid_message");
     if (signal?.aborted) return fail("skipped", "aborted_before_send");
     if (!self || this.options.role() === "disconnected") return fail("failed", "disconnected");
@@ -354,6 +355,12 @@ export class LinkMessaging {
       && (frame.fromWorker === undefined || frame.operation === "reply" || frame.operation === "native_reply");
   }
   private async route(request: LinkRequest, source: LinkSource): Promise<LinkReceipt> {
+    // Older worker extensions already send this locator, even if their tool
+    // schema still advertises broadcasts. Reject before selecting recipients.
+    if (request.operation === "broadcast" && request.fromManagedWorker) {
+      return { type: "link_receipt", messagingVersion: MESSAGING_VERSION, id: request.id,
+        outcomes: [this.routing("failed", "root_only_broadcast")], empty: false };
+    }
     if (request.fromWorker && ((request.operation !== "reply" && request.operation !== "native_reply") || request.fromWorker.ownerSessionId !== source.sessionId)) {
       return { type: "link_receipt", messagingVersion: MESSAGING_VERSION, id: request.id,
         outcomes: [this.routing("failed", "invalid_worker_owner")], empty: false };
