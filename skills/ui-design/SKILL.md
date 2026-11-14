@@ -1,6 +1,6 @@
 ---
 name: ui-design
-description: "Design or review frontend screens, interactions, mockups, and cross-screen consistency. Ground changes in the existing product, compare real components with matched fixtures, and verify behavior, accessibility, themes, and viewports. Use for UI/UX design, redesigns, mockups, and usability reviews. Not for backend architecture, prose-only editing, or a trivial styling correction with settled behavior. A review or mockup request does not authorize production changes."
+description: "Design, implement, debug, or review frontend screens, interactions, and browser-rendered output. Use for UI/UX work and rendering or interaction verification, including server-rendered HTML, Markdown displays, and UI claims in completion audits or session closeout. Ground checks in real components, styles, fixtures, and supported viewports. Not for backend-only work, prose-only edits, or mechanical changes that require no rendered-behavior judgment. Review and mockup requests do not authorize production changes."
 license: MIT
 ---
 
