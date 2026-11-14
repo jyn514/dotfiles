@@ -21,10 +21,16 @@ Ask first when the owning component has none.
 Before selecting or changing a dependency or external artifact, identify the source, lockfile, installer, or image that selects it, and known consumers that update independently.
 Trace the proposed update to its intended consumer; changing test dependencies does not establish deployment.
 
-## Review and verify
+## Review the candidate
+
+Before committing to a candidate or starting expensive installation/build checks, confirm that it is available from the configured source and inspect its declared runtime and platform requirements.
+Check those requirements against the intended consumers, including independently managed runtimes.
+Use existing evidence or the smallest check that resolves uncertainty; a fresh installation is not always necessary.
 
 Review its source scope, maintenance activity, release provenance, known security concerns, and compatibility in proportion to its authority and risk.
 Prefer primary sources; inspect the source when the dependency is small or receives significant authority.
+
+## Pin and verify
 
 Pin or lock the selected version according to repository conventions.
 Verify the installed artifact, image digest, or lockfile and exercise the behavior that required it.
