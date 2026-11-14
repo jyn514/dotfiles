@@ -39,19 +39,25 @@ Imports preserve titles, conversation creation times, message times when availab
 A missing message time falls back to the conversation creation time; a missing conversation time uses the import time.
 The default follows parent links from `current_node`, not the order of JSON object keys.
 `--branches` includes alternate paths in the same Pi tree and selects the exported `current_node` when opened.
-Null nodes and non-user/assistant messages do not become conversation messages; omitted message roles are reported.
+Null nodes do not become conversation messages.
+Parent-linked tool results and named assistant calls with JSON-object arguments become Pi tool calls and results when every imported continuation supplies a matching result.
+If an alternate branch or selected tip leaves a call unanswered, that call and its results use the archival representation instead.
+Calls with code or other non-object arguments, unmatched results, and other message roles become visible archival messages with their original source records retained in metadata.
+Archived system and developer messages do not become active system-role instructions.
 
 Reasoning thoughts and recaps become Pi `thinking` blocks.
 Thought summaries and body text are retained, with chunks used when body text is absent.
 Audio transcriptions become text.
-Supported user images (PNG, JPEG, GIF, WebP) embed their bytes in the session.
+Supported user and tool-result images (PNG, JPEG, GIF, WebP) embed their bytes in the session.
 Other attachments, including assistant images and image formats Pi cannot display, appear as saved-file references.
 Files are saved beside each session in `<session-filename-without-.jsonl>.assets/`, with original filenames sanitized under separate asset directories.
 File references use absolute paths; moving the import requires updating those references.
 Embedded images remain usable without the sidecar directory.
 
 The importer resolves asset pointers, `.dat` files, original-filename indexes, and library file IDs locally.
-Missing bytes produce visible references and warnings rather than invented content.
+Missing file data produces visible references and warnings rather than invented content.
+Warnings identify the conversation title and ID, message ID, attachment name, and source reference.
+The count measures unresolved references per message, not bytes or unique files; duplicate references within one message count once.
 Unknown content is retained as marked JSON text and reported in warnings.
 Imports do not recover reasoning or files absent from the export, fetch remote assets, or replay tools.
 

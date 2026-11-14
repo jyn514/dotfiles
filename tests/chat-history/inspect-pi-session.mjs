@@ -3,8 +3,8 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 const text = (content) => typeof content === "string"
   ? content : content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-const messages = (entries) => entries.filter((entry) => entry.type === "message")
-  .map((entry) => text(entry.message.content));
+const messages = (entries) => entries.filter((entry) => entry.type === "message" || entry.type === "custom_message")
+  .map((entry) => text(entry.type === "message" ? entry.message.content : entry.content));
 const inspect = (file) => {
   const session = SessionManager.open(file);
   const paths = [];
@@ -16,6 +16,10 @@ const inspect = (file) => {
   return {
     active: messages(session.getBranch()),
     context: session.buildSessionContext().messages.map((message) => text(message.content)),
+    roles: session.buildSessionContext().messages.map((message) => message.role),
+    toolCalls: session.buildSessionContext().messages.filter((message) => message.role === "assistant")
+      .flatMap((message) => message.content.filter((block) => block.type === "toolCall")),
+    toolResults: session.buildSessionContext().messages.filter((message) => message.role === "toolResult"),
     paths,
     labels: session.getEntries().filter((entry) => entry.type === "label").map((entry) => entry.label),
   };

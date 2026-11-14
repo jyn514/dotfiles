@@ -55,6 +55,7 @@ class ChatGPTExport:
         self.archive = zipfile.ZipFile(path) if path.suffix.lower() == ".zip" else None
         self.root = (path if path.is_dir() else path.parent).resolve()
         self.warnings = Counter()
+        self.missing_attachments = []
         try:
             if self.archive:
                 names = self.archive.namelist()
@@ -162,6 +163,56 @@ class ChatGPTExport:
                     return member, attachment.get("name") or self.names.get(member) or library.get("file_name") or id
         return None, attachment.get("name") or library.get("file_name") or reference or attachment.get("id") or "attachment"
 
+    def tool_pairs(self, conversation, ordered, session_id):
+        """Match parent-linked results to named calls with explicit JSON-object arguments.
+
+        Do not guess argument schemas for code or manufacture calls for orphan results.
+        Those messages use the displayed archival representation instead.
+        """
+        mapping = conversation["mapping"]
+        parents, nearest = {}, {}
+        for node_id in ordered:
+            parents[node_id] = nearest.get(mapping[node_id]["parent"])
+            nearest[node_id] = node_id if mapping[node_id].get("message") else parents[node_id]
+        calls, results = {}, {}
+        for node_id in ordered:
+            message = mapping[node_id].get("message")
+            if not message or message.get("author", {}).get("role") != "tool":
+                continue
+            parent = parents[node_id]
+            caller = mapping[parent].get("message") if parent is not None else None
+            if not caller or caller.get("author", {}).get("role") != "assistant":
+                continue
+            name = caller.get("recipient")
+            if not isinstance(name, str) or not name or name == "all":
+                continue
+            if message["author"].get("name") not in (None, name):
+                continue
+            content = caller.get("content", {})
+            parts = content.get("parts", [])
+            if content.get("content_type") != "text" or len(parts) != 1 or not isinstance(parts[0], str):
+                continue
+            try:
+                arguments = json.loads(parts[0])
+                # Python accepts NaN/Infinity, but Pi's JSON reader does not.
+                json.dumps(arguments, allow_nan=False)
+            except ValueError:
+                continue
+            if not isinstance(arguments, dict):
+                continue
+            call_id = "chatgpt_" + uuid.uuid5(uuid.NAMESPACE_URL, f"{session_id}:{parent}:call").hex
+            calls[parent] = {"type": "toolCall", "id": call_id, "name": name, "arguments": arguments}
+            results[node_id] = calls[parent]
+        # One entry may occur on several imported branches. Archive ambiguous calls
+        # everywhere rather than leave a native call unanswered on another branch.
+        unsafe = {parents[n] for n in ordered if mapping[n].get("message")
+                  and parents[n] in calls and n not in results}
+        tips = (set(ordered) - {mapping[n]["parent"] for n in ordered}) | {conversation["current_node"]}
+        unsafe.update(nearest[n] for n in tips if nearest[n] in calls)
+        calls = {n: call for n, call in calls.items() if n not in unsafe}
+        call_ids = {call["id"] for call in calls.values()}
+        return calls, {n: call for n, call in results.items() if call["id"] in call_ids}
+
     def import_conversation(self, conversation, destination, convert, cwd, branches=False):
         """Write one new session; leave existing outputs untouched and clean failed staging."""
         destination = destination.resolve()
@@ -171,19 +222,42 @@ class ChatGPTExport:
         payload = self.metadata(conversation, cwd)
         ordered = self.ordered_nodes(conversation, branches)
         mapping = conversation["mapping"]
+        calls, results = self.tool_pairs(conversation, ordered, payload["session_id"])
         assets, parents, events = {}, {}, []
         for node_id in ordered:
             node = mapping[node_id]
             parent = parents.get(node["parent"])
             message = node.get("message")
-            role = message.get("author", {}).get("role") if message else None
-            if role not in ("user", "assistant"):
+            if not message:
                 parents[node_id] = parent
-                if message:
-                    self.warnings[f"omitted {role!r} messages (not user/assistant history)"] += 1
                 continue
-            content = self.content(message, role, asset_dir, assets)
-            if not content:
+            author = message.get("author", {})
+            role = author.get("role")
+            context = (f"conversation {json.dumps(payload['title'], ensure_ascii=False)} "
+                       f"({json.dumps(conversation.get('id') or conversation['conversation_id'])}), "
+                       f"message {json.dumps(node_id)}")
+            content = self.content(message, role, asset_dir, assets, context)
+            fields = {}
+            if node_id in calls:
+                content[0] = calls[node_id]
+            elif node_id in results:
+                call = results[node_id]
+                role = "toolResult"
+                fields["message_fields"] = {"toolCallId": call["id"], "toolName": call["name"],
+                                            "isError": message.get("metadata", {}).get("is_error") is True}
+            elif role not in ("user", "assistant") or message.get("recipient") not in (None, "all"):
+                # Custom messages retain source roles without turning archived system
+                # instructions into active system messages or inventing tool arguments.
+                label = f"[Archived ChatGPT {role!r} message"
+                if author.get("name"):
+                    label += f" from {json.dumps(author['name'], ensure_ascii=False)}"
+                if message.get("recipient") not in (None, "all"):
+                    label += f" to {json.dumps(message['recipient'], ensure_ascii=False)}"
+                content = [{"type": "text", "text": label + "]"}, *[
+                    {"type": "text", "text": block["thinking"]} if block["type"] == "thinking" else block
+                    for block in content]]
+                fields["custom"] = {"source": "chatgpt", "message": message}
+            if not content and role != "toolResult":
                 parents[node_id] = parent
                 continue
             entry_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"chatgpt:{payload['session_id']}:{node_id}"))
@@ -191,7 +265,7 @@ class ChatGPTExport:
             model = message.get("metadata", {}).get("model_slug") or payload["model"]
             events.append({"type": "import_message", "role": role, "content": content,
                            "timestamp": iso_time(message.get("create_time"), payload["created_at"]),
-                           "entry_id": entry_id, "parent_id": parent, "model": model})
+                           "entry_id": entry_id, "parent_id": parent, "model": model, **fields})
         payload["selected_tip"] = parents[conversation["current_node"]]
         segments = [[{"type": "session_meta", "payload": payload}, *events]]
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -217,7 +291,7 @@ class ChatGPTExport:
                 raise
         return count
 
-    def content(self, message, role, asset_dir, assets):
+    def content(self, message, role, asset_dir, assets, context):
         blocks, seen = [], set()
         attachments = message.get("metadata", {}).get("attachments", [])
 
@@ -227,12 +301,14 @@ class ChatGPTExport:
 
         def asset(reference, info):
             member, name = self.resolve_asset(reference, info)
-            identity = member or reference or info.get("id") or info.get("library_file_id") or name
+            identity = (member or info.get("library_file_id") or info.get("id")
+                        or re.sub(r"^(?:file-service|sediment)://", "", reference or "") or name)
             if identity in seen:
                 return
             seen.add(identity)
             if member is None:
-                self.warnings["missing attachment bytes; references retained"] += 1
+                self.missing_attachments.append(f"{context}: attachment {json.dumps(name, ensure_ascii=False)}; "
+                                        f"reference: {json.dumps(reference or info, ensure_ascii=False)}")
                 text(f"[Missing ChatGPT attachment: {json.dumps(name)}; reference: {json.dumps(reference or info)}]")
                 return
             if member not in assets:
@@ -240,7 +316,7 @@ class ChatGPTExport:
                 assets[member] = relative, self.read(member)
             relative, data = assets[member]
             mime = image_mime(data)
-            if mime and role == "user":
+            if mime and role in ("user", "tool"):
                 blocks.append({"type": "image", "data": base64.b64encode(data).decode("ascii"), "mimeType": mime})
             else:
                 if info.get("mime_type", "").startswith("image/") and not mime:
@@ -266,6 +342,8 @@ class ChatGPTExport:
                     text(part.get("text", ""))
                 else:
                     unsupported(part)
+        elif kind == "code":
+            text(content.get("text", ""))
         elif kind in ("thoughts", "reasoning_recap") and role == "assistant":
             if kind == "reasoning_recap":
                 thinking = content.get("content", "")

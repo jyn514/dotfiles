@@ -166,7 +166,7 @@ def linear_messages(segments, payload):
         source_payload = payload
         if event.get("type") == "import_message":
             parent = event["parent_id"]
-            source_payload = dict(payload, model=event["model"])
+            source_payload = dict(payload, model=event["model"], imported=event)
         yield entry_id, parent, role, text, timestamp, source_payload
         parent = entry_id
 
@@ -185,7 +185,16 @@ def convert(segments, destination: Path, normalize=False, branches=None):
     count = 0
     for entry_id, parent, role, text, timestamp, source_payload in turns:
         content = text if isinstance(text, list) or role == "user" else [{"type": "text", "text": text}]
-        message = {"role": role, "content": content, "timestamp": timestamp_ms(timestamp)}
+        imported = source_payload.get("imported", {})
+        if "custom" in imported:
+            output.append({"type": "custom_message", "id": entry_id, "parentId": parent,
+                           "timestamp": timestamp or now, "content": content,
+                           "display": True, "customType": "chatgpt-archive",
+                           "details": imported["custom"]})
+            count += 1
+            continue
+        message = {"role": role, "content": content, "timestamp": timestamp_ms(timestamp),
+                   **imported.get("message_fields", {})}
         if role == "assistant":
             message.update({
                 "api": source_payload.get("api", "openai-responses"),
@@ -194,7 +203,7 @@ def convert(segments, destination: Path, normalize=False, branches=None):
                 "usage": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
                           "totalTokens": 0, "cost": {"input": 0, "output": 0,
                           "cacheRead": 0, "cacheWrite": 0, "total": 0}},
-                "stopReason": "stop"})
+                "stopReason": "toolUse" if any(b["type"] == "toolCall" for b in content) else "stop"})
         output.append({"type": "message", "id": entry_id, "parentId": parent,
                        "timestamp": timestamp or now, "message": message})
         count += 1
@@ -284,6 +293,12 @@ def import_export(args, parser):
             print(f"pi --session {shlex.quote(str(destinations[0]))}")
         for warning, amount in sorted(export.warnings.items()):
             print(f"warning: {amount} {warning}", file=sys.stderr)
+        if export.missing_attachments:
+            amount = len(export.missing_attachments)
+            unit = "reference" if amount == 1 else "references"
+            print(f"warning: {amount} attachment {unit} with no local file data; references retained", file=sys.stderr)
+            for diagnostic in export.missing_attachments:
+                print(f"  {diagnostic}", file=sys.stderr)
     finally:
         export.close()
 

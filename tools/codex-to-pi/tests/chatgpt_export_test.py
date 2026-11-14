@@ -212,8 +212,172 @@ class ChatGPTExportTests(unittest.TestCase):
         self.assertIn("Missing ChatGPT attachment", blocks[0]["text"])
         self.assertIn("sediment://missing", blocks[0]["text"])
         self.assertIn("keep me", blocks[1]["text"])
-        self.assertIn("missing attachment bytes", result.stderr)
+        self.assertIn("1 attachment reference with no local file data", result.stderr)
+        self.assertIn(FIRST, result.stderr)
+        self.assertIn("question", result.stderr)
+        self.assertIn("sediment://missing", result.stderr)
         self.assertIn("preserved as JSON", result.stderr)
+
+    def inspect_pi(self):
+        result = subprocess.run(["node", str(ROOT / "tests/chat-history/inspect-pi-session.mjs"),
+                                 str(next(self.output.glob("*.jsonl")))],
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)[0]
+
+    def test_orphan_tool_results_and_system_content_survive_with_files_and_images(self):
+        for branches in (False, True):
+            with self.subTest(branches=branches):
+                self.output = self.directory / str(branches)
+                item = conversation()
+                system = node("system", "root", "system", {"content_type": "text", "parts": ["Archived instructions"]})
+                tool = node("tool", "question", "tool", {"content_type": "multimodal_text", "parts": [
+                    "Unique tool output", {"content_type": "image_asset_pointer", "asset_pointer": "file-image"}]},
+                    metadata={"attachments": [{"id": "file-image", "name": "result.png"},
+                                              {"id": "file-document", "name": "result.txt"}]})
+                tool["message"]["author"]["name"] = "python"
+                item["mapping"].update(system=system, tool=tool)
+                item["mapping"]["question"]["parent"] = "system"
+                item["mapping"]["thought"]["parent"] = "tool"
+                self.write_export([item], {"file-image.dat": PNG, "file-document.dat": b"tool attachment bytes"})
+                result = self.run_cli(*(["--branches"] if branches else []), "--output-dir", self.output)
+                entries = self.read_entries(result)
+                custom = [e for e in entries if e["type"] == "custom_message"]
+                self.assertEqual([system["message"], tool["message"]], [e["details"]["message"] for e in custom])
+                self.assertTrue(all(e["display"] for e in custom))
+                self.assertFalse(any(m["role"] in ("system", "toolResult") for m in self.messages(entries)))
+                self.assertIn("Unique tool output", str(custom[-1]["content"]))
+                image = next(b for b in custom[-1]["content"] if b["type"] == "image")
+                self.assertEqual(PNG, base64.b64decode(image["data"]))
+                self.assertEqual({PNG, b"tool attachment bytes"},
+                                 {p.read_bytes() for p in self.output.glob("*.assets/*/*")})
+                tree = self.inspect_pi()
+                self.assertEqual(tree["active"], tree["context"])
+                self.assertEqual(2, tree["roles"].count("custom"))
+                self.assertTrue(any("Unique tool output" in value for value in tree["context"]))
+                self.assertNotIn("omitted", result.stderr)
+
+    def test_tool_pairs_require_matching_names_and_json_object_arguments(self):
+        cases = [("text", '{"query":"résumé"}', "browser", True),
+                 ("text", '{"query":"résumé"}', "other-tool", False),
+                 ("text", '["not an argument object"]', "browser", False),
+                 ("text", 'not JSON', "browser", False),
+                 ("text", '{"value":NaN}', "browser", False),
+                 ("text", '{"value":1e400}', "browser", False),
+                 ("code", 'print("résumé")', "browser", False)]
+        for branches in (False, True):
+            for index, (kind, body, result_name, native) in enumerate(cases):
+                with self.subTest(branches=branches, kind=kind, result_name=result_name, body=body):
+                    self.output = self.directory / f"pair-{branches}-{index}"
+                    item = conversation()
+                    content = {"content_type": kind, **({"parts": [body]} if kind == "text" else {"text": body})}
+                    item["mapping"]["call"] = node("call", "question", "assistant", content, recipient="browser")
+                    item["mapping"]["gap"] = node("gap", "call")
+                    item["mapping"]["result"] = node("result", "gap", "tool",
+                        {"content_type": "multimodal_text", "parts": ["Matched tool output",
+                            {"content_type": "image_asset_pointer", "asset_pointer": "file-image"}]},
+                        metadata={"is_error": True, "attachments": [{"id": "file-tool", "name": "tool.txt"},
+                                                                  {"id": "file-image", "name": "result.png"}]})
+                    item["mapping"]["result"]["message"]["author"]["name"] = result_name
+                    item["mapping"]["thought"]["parent"] = "result"
+                    self.write_export([item], {"file-tool.dat": b"native tool attachment", "file-image.dat": PNG})
+                    result = self.run_cli(*(["--branches"] if branches else []), "--output-dir", self.output)
+                    entries = self.read_entries(result)
+                    tree = self.inspect_pi()
+                    self.assertEqual(tree["active"], tree["context"])
+                    self.assertTrue(any("Matched tool output" in value for value in tree["context"]))
+                    self.assertEqual({b"native tool attachment", PNG},
+                                     {p.read_bytes() for p in self.output.glob("*.assets/*/*")})
+                    if native:
+                        self.assertEqual(1, len(tree["toolCalls"]))
+                        self.assertEqual({"query": "résumé"}, tree["toolCalls"][0]["arguments"])
+                        self.assertEqual("browser", tree["toolCalls"][0]["name"])
+                        self.assertEqual(1, len(tree["toolResults"]))
+                        self.assertEqual(tree["toolCalls"][0]["id"], tree["toolResults"][0]["toolCallId"])
+                        self.assertTrue(tree["toolResults"][0]["isError"])
+                        image = next(b for b in tree["toolResults"][0]["content"] if b["type"] == "image")
+                        self.assertEqual(PNG, base64.b64decode(image["data"]))
+                        self.assertIn("toolResult", tree["roles"])
+                        self.assertFalse(any(e["type"] == "custom_message" for e in entries))
+                    else:
+                        self.assertEqual([], tree["toolCalls"])
+                        self.assertEqual([], tree["toolResults"])
+                        custom = [e for e in entries if e["type"] == "custom_message"]
+                        self.assertEqual(2, len(custom))
+                        self.assertTrue(any(body in value for value in tree["context"]))
+                        self.assertEqual(content, custom[0]["details"]["message"]["content"])
+
+    def test_native_calls_never_dangle_on_an_imported_branch_or_selected_tip(self):
+        for branches in (False, True):
+            for current in ("call", "unfinished", "alternate", "result"):
+                with self.subTest(branches=branches, current=current):
+                    self.output = self.directory / f"branch-{branches}-{current}"
+                    item = conversation()
+                    item["mapping"] = {
+                        "question": node("question", None, "user"),
+                        "call": node("call", "question", "assistant",
+                                     {"content_type": "text", "parts": ['{"query":"branch"}']}, recipient="browser"),
+                        "unfinished": node("unfinished", "call"),
+                        "alternate": node("alternate", "call", "assistant"),
+                        "result": node("result", "call", "tool")}
+                    item["current_node"] = current
+                    self.write_export([item])
+                    entries = self.read_entries(self.run_cli(*(["--branches"] if branches else []),
+                                                             "--output-dir", self.output))
+                    expected_native = int(not branches and current == "result")
+                    # Check all imported branches, not just the active context.
+                    calls = [b for m in self.messages(entries) for b in m["content"] if b["type"] == "toolCall"]
+                    results = [m for m in self.messages(entries) if m["role"] == "toolResult"]
+                    self.assertEqual(expected_native, len(calls))
+                    self.assertEqual(expected_native, len(results))
+                    tree = self.inspect_pi()
+                    self.assertEqual(tree["active"], tree["context"])
+                    self.assertEqual(expected_native, len(tree["toolCalls"]))
+                    self.assertEqual(expected_native, len(tree["toolResults"]))
+
+    def test_empty_tool_results_remain_native_results(self):
+        for parts in ([""], []):
+            with self.subTest(parts=parts):
+                self.output = self.directory / f"empty-{len(parts)}"
+                item = conversation()
+                item["mapping"]["call"] = node("call", "question", "assistant",
+                    {"content_type": "text", "parts": ["{}"]}, recipient="browser")
+                item["mapping"]["result"] = node("result", "call", "tool",
+                    {"content_type": "text", "parts": parts})
+                item["mapping"]["thought"]["parent"] = "result"
+                self.write_export([item])
+                self.read_entries(self.run_cli("--output-dir", self.output))
+                tree = self.inspect_pi()
+                self.assertEqual(1, len(tree["toolCalls"]))
+                self.assertEqual(1, len(tree["toolResults"]))
+                self.assertEqual([], tree["toolResults"][0]["content"])
+                self.assertEqual(tree["toolCalls"][0]["id"], tree["toolResults"][0]["toolCallId"])
+                self.assertFalse(tree["toolResults"][0]["isError"])
+
+    def test_missing_attachment_diagnostics_count_per_message_references_and_identify_each(self):
+        first, second = conversation(), conversation(SECOND)
+        first["title"] = "First conversation"
+        second["title"] = "Second conversation"
+        for item, node_id in ((first, "question"), (first, "answer"), (second, "answer")):
+            item["mapping"][node_id]["message"]["metadata"] = {"attachments": [
+                {"id": "file-missing", "name": "missing\\nfile.pdf"}] * 2}
+        first["mapping"]["question"]["message"]["content"] = {"content_type": "multimodal_text", "parts": [
+            {"content_type": "image_asset_pointer", "asset_pointer": "file-service://file-missing"}]}
+        self.write_export([first, second])
+        result = self.run_cli("--output-dir", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("3 attachment references with no local file data; references retained", result.stderr)
+        self.assertNotIn("missing attachment bytes", result.stderr)
+        details = [line for line in result.stderr.splitlines() if line.startswith("  conversation ")]
+        self.assertEqual(3, len(details))
+        for line, id, title, message in zip(details, (FIRST, FIRST, SECOND),
+                                          ("First conversation", "First conversation", "Second conversation"),
+                                          ("question", "answer", "answer")):
+            self.assertIn(id, line)
+            self.assertIn(title, line)
+            self.assertIn(f'message "{message}"', line)
+            self.assertIn('missing\\\\nfile.pdf', line)
+            self.assertIn("file-missing", line)
 
     def test_bad_parent_cycle_and_missing_current_fail_without_outputs(self):
         for fault in ("cycle", "missing-parent", "missing-current"):
