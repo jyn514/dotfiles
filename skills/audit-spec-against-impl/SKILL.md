@@ -12,7 +12,8 @@ Use [evidence standards](../references/review-evidence.md) when supporting findi
 
 - **Conformance audit:** find unfulfilled promises and intentional behavior the specification no longer describes.
   A mismatch establishes drift; evidence of project intent determines which side needs to change.
-- **Behavior characterization:** recover source-cited behavior, business rules, quirks, and unknowns for understanding or reimplementation.
+- **Behavior characterization:** recover source-cited behavior for understanding or reimplementation.
+  Distinguish a recovered specification of capabilities and interface rules from a characterization report that also records defects and gaps.
   Current behavior is evidence of what exists, not automatic authority for what a replacement must preserve.
 
 Choose from the requested outcome, not merely whether a specification file exists.

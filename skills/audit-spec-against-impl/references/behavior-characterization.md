@@ -1,8 +1,24 @@
 # Recover a descriptive specification
 
 Use when asked to extract existing behavior or business rules, reverse-spec code, or characterize a system for reimplementation.
-Produce an account of what the inspected implementation does, not a newly approved normative contract or a replacement design.
+Recover existing capabilities and interface rules without selecting a replacement design or approving new requirements.
 A findings-only request remains findings-only; write maintained documentation only when that output is requested.
+
+## Choose the requested artifact
+
+A recovered specification helps readers understand or use the system's capabilities, inputs, rules, outputs, and supported failure behavior.
+A characterization report also records accidental behavior, defects, and investigation gaps.
+Use the requested artifact to select what belongs in the maintained document, not merely to choose its title.
+
+For example, an exporter specification describes which discussions it exports and how their comments appear in output.
+If a failed comment request still produces exit status 0, record that defect and its evidence separately.
+Do not open the specification with the failure or turn it into a rule a replacement must preserve.
+If the request instead asks for bug-compatible reimplementation, include the exact failure behavior in its characterization report.
+
+Keep defect findings available for a separate report or, with filing authority, the issue tracker.
+Without filing authority, return the findings to the caller; do not silently file issues or lose the evidence.
+Retain investigation details where they change a reader's interpretation of a rule or an unresolved decision.
+A test-count receipt or inventory of unperformed checks does not belong in the specification by default.
 
 ## Bound the implementation and evidence
 
@@ -42,7 +58,8 @@ If a fallback accepts an invalid identifier, record the quirk and its trigger wi
 
 For each material rule, retain its trigger, outcome, source location, and applicable configuration.
 Use file-and-line or stable symbol references tied to the inspected revision.
-Label what the evidence establishes: source-supported behavior, runtime-observed behavior under named inputs, inference, or an unresolved gap.
+Distinguish source-supported behavior, runtime observations under named inputs, inference, and unresolved gaps in the evidence.
+State consequential uncertainty beside the affected rule rather than adding evidence labels to every paragraph.
 Do not assign numerical confidence without a basis or collapse several uncertain paths into a confirmed rule.
 
 Keep these distinctions explicit:
@@ -53,8 +70,9 @@ Keep these distinctions explicit:
 - **Unknown:** a missing path, ambiguous intent, conflicting evidence, or unavailable environment that prevents a conclusion.
 
 An existing test can document a quirk without establishing that it is intentional or worth preserving.
-Retain conflicts with existing documentation instead of silently choosing code or prose as the authority.
+Retain conflicts with existing documentation in the findings instead of silently choosing code or prose as the authority.
 Use project decisions or relevant history when they can resolve intent; otherwise leave the preservation question open.
+When intent remains ambiguous, identify the affected rule as unresolved rather than presenting either version as settled.
 Do not silently turn recovered descriptions into normative specification edits.
 
 ## Check coverage and deliver
@@ -65,10 +83,14 @@ A list of source files or passing helper tests does not establish complete consu
 Use the cheapest safe check that can resolve a material uncertainty, following the [shared testing guidance](../../references/testing.md).
 A characterization request does not itself authorize implementation changes, new regression suites, or mutations of real user state and shared services.
 
-Deliver the recovered data model, behavioral rules, quirks, and gaps at the requested destination or in the findings report.
-Group them by capability or caller task; use separate files only when their size or consumers justify it.
+Deliver the requested artifact, grouped by capability or caller task.
+For a recovered specification, keep capabilities, data, interface rules, and supported failure behavior in the document.
+Return defects, accidental behavior, and investigation gaps as separate findings; file them only with authority.
+For a characterization report, include quirks and gaps when its consumer needs them, especially for compatibility work.
+Use separate files only when their size or consumers justify it.
 Include enough conditions, outcomes, examples, and provenance for the intended reader to use the account without reopening every source file.
-State inspected coverage, unexamined paths, unavailable runtime checks, and unresolved preservation decisions.
+Report inspected coverage, material unexamined paths, unavailable checks, and unresolved preservation decisions in the investigation handoff.
+Put a limitation in the maintained specification when it changes how readers interpret or use the described capability.
 Do not claim rebuild completeness while required entrypoints or behavior remain unexplained.
 If documentation is requested, use the [editorial pass](../../holistic-writing/references/editorial-pass.md) and its format-specific validation.
 Stop at characterization unless reconciliation, planning, implementation, or issue filing is separately authorized.

@@ -354,6 +354,47 @@ The test expectation then explains why the ticket asks for a policy decision rat
 The full ticket keeps the reproduction evidence, provenance, future test cases, and restriction against treating the ticket as implementation authority.
 Those details follow the problem and choice rather than replacing their explanation.
 
+## A specification can become a bug report even after its caveats are cut
+
+**Source and scope:** a recovered specification for gh2md 2.5.1, revised on November 13, 2026 after jyn requested a specification.
+The reader is a maintainer evaluating the exporter's capabilities and interfaces.
+The excerpts below come from the rejected document and its revision; the issue-report example condenses the separately filed finding.
+
+The document opened:
+
+> **The CLI can report success after exporting only part of a repository.**
+> Request failures, interruption, and skipped records can leave incomplete output; labels have no pagination.
+
+**A tempting but incomplete revision:** shorten the warning and remove repeated disclaimers elsewhere.
+An earlier editorial pass had already cut evidence-label scaffolding and an inventory of unperformed checks.
+The document still began with a defect and organized much of its attention around the investigation.
+
+**Human correction:** jyn called this a bug report, not a specification, and said bug reports belong in issues.
+
+The revised specification opens:
+
+> gh2md exports a GitHub repository's issues, pull requests, and conversation comments to Markdown.
+> It produces either one combined file or one file per issue or pull request.
+> Readers can browse the discussions offline with their authors, dates, labels, and source links.
+
+The separate issue report explains the defect:
+
+> A failed repository-page request stops pagination but returns earlier pages for export.
+> A failed comment-page request stops that discussion's pagination but continues with other discussions.
+> The CLI can then return normally and print `Done.` despite missing content.
+
+**Editorial reading:** the original opening answers whether this implementation can lose data before explaining what the exporter does.
+The warning is useful to someone deciding whether to trust a completed download, but its prominence makes the document read as a failure investigation.
+Shortening it does not supply the capability reference the maintainer requested.
+The revised opening establishes the export's purpose; the remaining specification explains selection, fields, authentication, and output format.
+The issue keeps the concrete failure trace and its repair question without making accidental data loss part of the exporter's contract.
+
+This is a choice of artifact, not a ban on failure behavior in specifications.
+A documented rejection of invalid input belongs beside the input rule.
+An unresolved contradiction that changes how callers use an interface needs to remain visible beside that interface.
+A request for a bug-compatible replacement can require the exact accidental behavior in a characterization report.
+Here, the requested specification did not require an investigation narrative or preservation of defects.
+
 ## Smaller revision exercises
 
 These exercises use invented examples.

@@ -78,6 +78,7 @@ Words can earn attention through rhythm, emphasis, humor, or a changed feeling a
 For decision-oriented writing, keep the problem, stakes, requested outcome, decisive evidence, and material limits of alternatives in the main text.
 Move supporting traces, setup, and background to appendices or collapsed details when the format allows it; link instead of repeating them.
 Do not force essays, references, or instructions into a proposal's progression.
+For a specification dominated by defect findings, compare the [specification-versus-bug-report revision](reading-examples.md#a-specification-can-become-a-bug-report-even-after-its-caveats-are-cut).
 
 For important measurements, state what was counted, the population or denominator, input revision or time range, method, and limitations.
 Explain what the number demonstrates and whether it is provisional or an acceptance constant.
