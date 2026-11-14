@@ -54,6 +54,19 @@ Bridge discovery and readiness use `127.0.0.1` when `listenOnLoopback` is enable
 Without that listener, they use the selected primary bind address.
 CLI callers use the existing `localDialHost` helper; bridge URLs and UDS transport are unchanged.
 
+### Reconnect replay
+
+Replay retains only the latest consecutive assistant text snapshot, including
+unfinished responses. Thinking deltas, tool-call sub-events, and all intervening
+events remain boundaries. Original sequence numbers and the pre-compaction
+high-water mark stay unchanged. Only replay shrinks; stored events and live
+forwarding do not change.
+
+The patch's `replay-streaming-catchup.test.ts` compares raw and compacted replay
+through the real client reducer, including mid-message reconnects, thinking,
+tool boundaries, and the next live tool event. Its subscribe-path regression
+also checks that delta replay completes without a history window or reset.
+
 ### Fixed web-interface-only profile
 
 This downstream build uses Dashboard as a browser interface to Pi, not as an
