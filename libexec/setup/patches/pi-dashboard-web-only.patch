@@ -1,0 +1,2732 @@
+# Downstream web-only; ordered against Dashboard 13fea27249e8b00fc6600c1e91437e22b859b8d2.
+--- a/packages/client/src/App.tsx
++++ b/packages/client/src/App.tsx
+@@ -1,6 +1,6 @@
+ import { inferPlatform, pathKey } from "@blackbelt-technology/pi-dashboard-shared/session-group-path.js";
+ import type { OpenSpecArtifact } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+-import { mdiAccessPointNetwork, mdiDownload } from "@mdi/js";
++import { mdiDownload } from "@mdi/js";
+ import type React from "react";
+ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+ import { Redirect, Route, Switch, useLocation, useRoute, useSearch, useSearchParams } from "wouter";
+@@ -37,7 +37,6 @@
+ import { Toast, useToast } from "./components/primitives/Toast.js";
+ import { AcpEndedCallout } from "./components/session/AcpEndedCallout.js";
+ import { FileAccessToastHost } from "./components/session/FileAccessToastHost.js";
+-import { MissingRequiredBanner } from "./components/session/MissingRequiredBanner.js";
+ import { RecoveryOfferHost } from "./components/session/RecoveryOfferHost.js";
+ import { SessionBanner } from "./components/session/SessionBanner.js";
+ import { SessionHeader } from "./components/session/SessionHeader.js";
+@@ -67,6 +66,7 @@
+ import { useIdleFx } from "./hooks/useIdleFx.js";
+ import { selectInflightBashTools } from "./hooks/useInflightBashTools.js";
+ import { useInstallPrompt } from "./hooks/useInstallPrompt.js";
++import { useRemoteAccessIndicator } from "./hooks/useRemoteAccessIndicator.js";
+ import { useLaunchSource } from "./hooks/useLaunchSource.js";
+ import { useMessageHandler } from "./hooks/useMessageHandler.js";
+ import { useMobile } from "./hooks/useMobile.js";
+@@ -74,7 +74,6 @@
+ import { useOpenSpecReader } from "./hooks/useOpenSpecReader.js";
+ import { type OpenSpecGetInflight, useOpenSpecReconcile } from "./hooks/useOpenSpecReconcile.js";
+ import { usePiResourceFileFetch } from "./hooks/usePiResourceFileFetch.js";
+-import { useRemoteAccessIndicator } from "./hooks/useRemoteAccessIndicator.js";
+ import { useSidebarState } from "./hooks/useSidebarState.js";
+ import { useStaleToolReconcile } from "./hooks/useStaleToolReconcile.js";
+ import { useWebSocket } from "./hooks/useWebSocket.js";
+@@ -182,9 +181,6 @@
+   import("./components/access-grant/ProvisionPromptHost.js").then((m) => ({ default: m.ProvisionPromptHost })),
+ );
+ // The Remote access dialog (wizard, step bodies, QR) stays off the entry chunk: it loads on first open.
+-const RemoteAccessDialog = lazy(() =>
+-  import("./components/remote-access/RemoteAccessDialog.js").then((m) => ({ default: m.RemoteAccessDialog })),
+-);
+ const PairingApprovalHost = lazy(() =>
+   import("./components/pairing-approval/PairingApprovalHost.js").then((m) => ({ default: m.PairingApprovalHost })),
+ );
+@@ -1519,11 +1515,7 @@
+     navigate,
+   });
+ 
+-  // Request global roles once on connect, using any available session id
+-  // as a routing target (the bridge handler doesn't actually scope by it).
+-  // Without this the Settings → Roles panel stays empty until something else
+-  // (a `roles:set`, `session_start`, etc.) triggers a `roles_list`.
+-  // See change: fix-pi-flows-end-to-end (Group 5 — global roles).
++  // Request Pi's authoritative model list once on connect.
+   const globalRefreshRequestedRef = useRef(false);
+   useEffect(() => {
+     if (status !== "connected" || globalRefreshRequestedRef.current) return;
+@@ -1531,8 +1523,7 @@
+     // bridge handler runs in pi; ended sessions have no live WS). Status
+     // values: "active" | "idle" | "streaming" — anything but "ended".
+     let liveSession: string | undefined;
+-    // Prefer a pi session: roles are pi-only and an ACP session refuses them.
+-    // See change: add-acp-session-driver.
++    // Prefer a pi session; ACP sessions do not expose Pi's model registry.
+     for (const [id, s] of sessions) {
+       if (s.status === "ended") continue;
+       if (s.driver !== "acp") { liveSession = id; break; }
+@@ -1540,12 +1531,6 @@
+     }
+     if (!liveSession) return;
+     globalRefreshRequestedRef.current = true;
+-    // Both roles and models are GLOBAL in pi-flows / pi-coding-agent. The
+-    // bridge re-emits them on session_start, but on a fresh dashboard load
+-    // (no new pi sessions starting) the client has no copy. Pull both via
+-    // any live session id; the handlers in the bridge use a local sessionId
+-    // closure and don't actually scope by it.
+-    send({ type: "request_roles", sessionId: liveSession });
+     send({ type: "request_models", sessionId: liveSession });
+   }, [status, sessions, send]);
+ 
+@@ -2190,21 +2175,8 @@
+   // session list changes. See change: add-session-tags.
+   const allTags = useMemo(() => allTagsInUse(Array.from(sessions.values())), [sessions]);
+ 
+-  // Connection-menu "Access" group: Remote access (opens the dialog hosted below) + Install as app.
+-  // See change: declutter-sidebar-header.
++  // Network policy is fixed by dotfiles; only the local install affordance remains.
+   const accessItems: AccessItem[] = [
+-    {
+-      id: "remote-access",
+-      label: i18nT("connection.remoteAccess", undefined, "Remote access"),
+-      sublabel: remoteAccess.label.replace(/^Remote access: /, ""),
+-      icon: mdiAccessPointNetwork,
+-      testId: "tunnel-btn",
+-      tone: remoteAccess.tone,
+-      opensDialog: true,
+-      onSelect: (trigger) => {
+-        void remoteAccess.openDialog(trigger).catch(logRejection("App.openRemoteAccess"));
+-      },
+-    },
+     ...(installPrompt.canInstall && !installPrompt.isInstalled
+       ? [
+           {
+@@ -2220,12 +2192,6 @@
+       : []),
+   ];
+ 
+-  const remoteAccessDialogHost = remoteAccess.dialogOpen ? (
+-    <Suspense fallback={null}>
+-      <RemoteAccessDialog initialRun={remoteAccess.resumeRun} onClose={remoteAccess.closeDialog} />
+-    </Suspense>
+-  ) : null;
+-
+   const sessionList = (
+     <SessionList
+       sessions={Array.from(sessions.values())}
+@@ -3103,19 +3069,7 @@
+     // Embed: desktop shows the embed home in the content area; the mobile list
+     // panel already shows it, so the (off-screen) detail panel renders nothing
+     // rather than a second copy.
+-    renderLanding: () => embed ? (isMobile ? null : <EmbedHome navigate={navigate} />) : (
+-      <LandingPage
+-        providersReady={providersReady.ready}
+-        anthropicAuthenticated={providersReady.anthropicAuthenticated}
+-        onCreateProject={(name) => createProjectAndPin(name, { send, setPinned: setPinnedDirectories })}
+-        pinnedCount={pinnedDirectories.length}
+-        sessionsCount={sessions.size}
+-        firstPinnedCwd={pinnedDirectories[0] ?? null}
+-        onOpenPinDialog={() => setPinDialogOpen(true)}
+-        onSpawnSession={handleSpawnSession}
+-        navigate={navigate}
+-      />
+-    ),
++    renderLanding: () => embed ? (isMobile ? null : <EmbedHome navigate={navigate} />) : <LandingPage />,
+   };
+ 
+   // Outer chrome ErrorBoundary — defense-in-depth for first-party shell
+@@ -3361,7 +3315,6 @@
+         {grantPromptHost}
+         {provisionPromptHost}
+         {pairingApprovalHost}
+-        {remoteAccessDialogHost}
+         <MobileShell
+           depth={mobileDepth}
+           onBack={() => {
+@@ -3377,7 +3330,6 @@
+               ) : (
+                 <>
+                   <InstallBanner canInstall={installPrompt.canInstall} isIOS={installPrompt.isIOS} isInstalled={installPrompt.isInstalled} prompt={installPrompt.prompt} />
+-                  <MissingRequiredBanner />
+                   {connectionBanner}
+                   {sessionList}
+                 </>
+@@ -3420,7 +3372,6 @@
+       {grantPromptHost}
+       {provisionPromptHost}
+       {pairingApprovalHost}
+-      {remoteAccessDialogHost}
+       {/* Concurrent worktree-init stack — fixed overlay, mounted in both shells
+           (mobile branch above) so desktop also surfaces it. See change:
+           friendlier-worktree-init. */}
+--- a/packages/client/src/components/session/SessionList.tsx
++++ b/packages/client/src/components/session/SessionList.tsx
+@@ -66,7 +66,6 @@
+ import { encodeFolderPath } from "../../lib/util/folder-encoding.js";
+ import { truncatePathMiddle } from "../../lib/util/truncate-path.js";
+ import { useYoloAppBar, YoloBarLink } from "../access-grant/YoloIndicators.js";
+-import { FolderActionBanner } from "../folder/FolderActionBanner.js";
+ import { FolderActionsMenu, type FolderMenuItem, type FolderMenuRadioGroup } from "../folder/FolderActionsMenu.js";
+ import { FolderSpawnButtons } from "../folder/FolderSpawnButtons.js";
+ import { initializeSpawnOpts, siblingSpawnOpts } from "../../lib/spawn/spawn-opts.js";
+@@ -2395,16 +2394,6 @@
+               hides the banner block, but a folder that cannot proceed still
+               surfaces the compact warning chip. See change:
+               add-focus-mode-and-card-block-toggles (Safety cues survive). */}
+-          {isCompact && !isStub && (
+-            <FolderActionBanner
+-              cwd={group.cwd}
+-              status={initStatus}
+-              isProjectRoot={isProjectRoot}
+-              onInitializeProject={onSpawnSession ? (c) => onSpawnSession(c, undefined, initializeSpawnOpts(c, PROJECT_INIT_PROMPT)) : undefined}
+-              onStatusChange={refetchInit}
+-              compact
+-            />
+-          )}
+           {!isCollapsed && !isStub && (<>
+           {/* Git info + folder actions share ONE compact row (variant B):
+               branch/commit left, Initialize + settings gear right-grouped.
+@@ -2435,21 +2424,6 @@
+             </div>
+             {groupByChip}
+           </div>
+-          {/* Tier-0 call-to-action banner — renders only when the folder cannot
+-              proceed (setup / init needed / re-trust / running / failure). */}
+-          <FolderActionBanner
+-            cwd={group.cwd}
+-            status={initStatus}
+-            // Project-root gate for the "not a pi project" banner: pinned,
+-            // workspace-added, or POSITIVE git-root evidence. `folderIsGitRepo`
+-            // is optimistic (unknown → true), so it is NOT sufficient on its
+-            // own — an unpinned dir with an unknown git probe must not reach
+-            // tier 0. See change: add-folder-action-banner (D-D2).
+-            isProjectRoot={isProjectRoot}
+-            onInitializeProject={onSpawnSession ? (c) => onSpawnSession(c, undefined, initializeSpawnOpts(c, PROJECT_INIT_PROMPT)) : undefined}
+-            onStatusChange={refetchInit}
+-            compact={!showFolderBanner}
+-          />
+           {/* Slot-pill grid: the plugin slot sections (Automations / Goals /
+               KB) + OpenSpec render as single-concern pills in a 2-col grid that
+               collapses to 1-col at mobile width. A section that renders null
+--- a/packages/client/src/hooks/__tests__/usePluginEnabledSet.test.tsx
++++ b/packages/client/src/hooks/__tests__/usePluginEnabledSet.test.tsx
+@@ -89,7 +89,7 @@
+     await act(async () => {
+       await fetchMock().mock.results[0]?.value;
+     });
+-    expect(isPluginUnavailable("late")).toBe(false);
++    expect(isPluginUnavailable("late")).toBe(true);
+     const callsBefore = setEnabledSet.mock.calls.length;
+ 
+     act(() => {
+@@ -110,7 +110,7 @@
+ });
+ 
+ // test-plan #E90 / task 6.14 (recompute on registration). See change: decouple-plugins-from-core.
+-describe("usePluginEnabledSet → enable filter default-allow + recompute triggers", () => {
++describe("usePluginEnabledSet → server-authoritative enable filter + recompute triggers", () => {
+   const SLOTS = ["settings-section", "session-card-badge", "command-route", "tool-renderer"] as const;
+   function registryWithFlows() {
+     const registry = createSlotRegistry();
+@@ -128,12 +128,12 @@
+     return view;
+   }
+ 
+-  it("never set → every claim; health [] → flows shown in every slot (default-allow)", async () => {
++  it("never set → every claim; health [] → all bundled claims disabled", async () => {
+     const registry = registryWithFlows();
+     for (const slot of SLOTS) expect(idsIn(registry, slot)).toEqual(["flows"]); // filter inactive
+     plugins = [];
+     await mount(registry);
+-    for (const slot of SLOTS) expect(idsIn(registry, slot)).toEqual(["flows"]);
++    for (const slot of SLOTS) expect(idsIn(registry, slot)).toEqual([]);
+   });
+ 
+   it("health {flows, enabled:false} → flows hidden in every slot, still listed for the activation UI", async () => {
+@@ -144,23 +144,23 @@
+     expect(registry.getAllPluginsForActivationUi().map((p) => p.id)).toContain("flows");
+   });
+ 
+-  it("a runtime plugin registered after the health read joins the enabled set: one recompute on registration", async () => {
++  it("a runtime plugin registered after an empty health read stays disabled", async () => {
+     const registry = registryWithFlows();
+     const setEnabledSet = vi.spyOn(registry, "setEnabledSet");
+     plugins = []; // the server's snapshot predates the runtime plugin
+     await mount(registry);
+     const before = setEnabledSet.mock.calls.length;
+-    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual(["flows"]);
++    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual([]);
+ 
+     registry.registerPlugin({ id: "quota-ui", displayName: "Quota" });
+     registry.addClaim({ pluginId: "quota-ui", priority: 2, slot: "session-card-badge" });
+-    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual(["flows"]); // filtered until recompute
++    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual([]);
+     act(() => {
+       window.dispatchEvent(new CustomEvent("runtime-plugins-registered", { detail: { ids: ["quota-ui"], owners: [] } }));
+     });
+     expect(setEnabledSet.mock.calls.length).toBe(before + 1);
+     expect(fetchMock()).toHaveBeenCalledTimes(1); // no refetch
+-    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual(["flows", "quota-ui"]);
++    expect(registry.getClaims("session-card-badge").map((c) => c.pluginId)).toEqual([]);
+   });
+ 
+   it("one recompute per trigger: plugin_config_update and plugins_changed each apply exactly once", async () => {
+--- a/packages/client/src/hooks/usePluginEnabledSet.ts
++++ b/packages/client/src/hooks/usePluginEnabledSet.ts
+@@ -58,27 +58,11 @@
+     function applySnapshot(plugins: ReadonlyArray<PluginStatusLike>) {
+       lastPlugins.current = plugins;
+       try {
+-        // Default-allow semantics: the enabled set is
+-        //   (every build-time-known plugin id) MINUS (explicitly disabled ids).
+-        // This prevents a misconfigured / incomplete server-side discovery
+-        // (e.g. plugins not bundled into ~/.pi-dashboard/) from hiding every
+-        // claim the build-time PLUGIN_REGISTRY embedded into the client.
+-        // Plugins server explicitly reports as `enabled: false` are still
+-        // filtered. See change: add-plugin-activation-ui.
+-        const buildTimeIds = new Set(
+-          registry.getAllPluginsForActivationUi().map((p) => p.id),
+-        );
+-        const explicitlyDisabled = new Set(
+-          plugins
+-            .filter((p) => p.enabled === false)
+-            .map((p) => p.id),
+-        );
++        // The server owns activation. A bundled client entry with no matching
++        // server status must stay disabled: otherwise a deliberately passive
++        // server (`plugins: []`) still mounts plugin clients that call missing
++        // routes and manufacture errors such as the KB "index failed" row.
+         const enabled = new Set<string>();
+-        for (const id of buildTimeIds) {
+-          if (!explicitlyDisabled.has(id)) enabled.add(id);
+-        }
+-        // Also include server-known plugins not in build-time registry,
+-        // unless explicitly disabled (handles future external plugins).
+         for (const p of plugins) {
+           if (p.enabled !== false) enabled.add(p.id);
+         }
+@@ -121,7 +105,7 @@
+       if (Array.isArray(plugins)) applySnapshot(plugins);
+     };
+     // A runtime plugin registered AFTER the status read: its id is now in the registry summaries, so
+-    // re-applying the last snapshot (default-allow) puts it in the enabled set. No refetch; before the
++    // re-applying the last snapshot keeps it disabled until the server reports it. No refetch; before the
+     // first read there is nothing to re-apply (the first read sees the registered plugin anyway).
+     const onRuntimeRegistered = () => {
+       if (lastPlugins.current) applySnapshot(lastPlugins.current);
+--- a/packages/client/src/lib/chat/event-reducer.ts
++++ b/packages/client/src/lib/chat/event-reducer.ts
+@@ -22,6 +22,7 @@
+ // per-session-events store the plugin runtime owns.
+ import { parseSkillBlock, type SkillBlock } from "@blackbelt-technology/pi-dashboard-shared/skill-block-parser.js";
+ import type { DashboardEvent } from "@blackbelt-technology/pi-dashboard-shared/types.js";
++import { WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
+ import { ownerOfEventType } from "../plugins/event-type-owners.js";
+ import { isPluginEntryType } from "../plugins/plugin-entry-types.js";
+ import {
+@@ -2888,6 +2889,11 @@
+       break;
+     }
+ 
++    // The server uses this payload-free marker to refuse mid-compaction reloads.
++    // It is lifecycle bookkeeping, not a transcript row.
++    case "session_before_compact":
++      break;
++
+     case "session_compact": {
+       next.messages = [
+         ...next.messages,
+@@ -3031,6 +3037,10 @@
+       const status = data.status as string;
+       const message = data.message as string | undefined;
+       next.pendingPrompt = undefined;
++      // Management controls removed by the downstream profile are not chat
++      // events. Hide retained feedback from older clients as well as live
++      // refusals so disabled Dashboard products never become transcript rows.
++      if (message === WEB_ONLY_REFUSAL) break;
+       // Upsert: a terminal status (completed/error) for the same command
+       // transitions the most recent matching started row in place, instead of
+       // appending a duplicate. Keeps chat clean for started → terminal pairs.
+--- a/packages/client/src/lib/plugins/__tests__/plugin-availability.test.ts
++++ b/packages/client/src/lib/plugins/__tests__/plugin-availability.test.ts
+@@ -25,9 +25,9 @@
+     expect(["ok", "off", "failed", "refused"].map(isPluginUnavailable)).toEqual([false, true, true, true]);
+   });
+ 
+-  it("treats an id the server does not list as available (default-allow)", () => {
++  it("treats an id the server does not list as unavailable after the status read", () => {
+     applyPluginStatuses([{ id: "x", enabled: false }]);
+-    expect(isPluginUnavailable("never-listed")).toBe(false);
++    expect(isPluginUnavailable("never-listed")).toBe(true);
+   });
+ 
+   it("notifies subscribers only when availability actually changes", () => {
+--- a/packages/client/src/lib/plugins/plugin-availability.ts
++++ b/packages/client/src/lib/plugins/plugin-availability.ts
+@@ -27,14 +27,14 @@
+ export interface PluginAvailabilitySnapshot {
+   /**
+    * True only when a status read happened AND it lists the plugin as
+-   * unavailable. Before the first read, or for an id the server does not list
+-   * (default-allow, like the enabled set), the plugin counts as available.
++   * unavailable. Before the first read, availability is unknown. After a read,
++   * an omitted id is unavailable because the server owns activation.
+    */
+   isUnavailable(id: string): boolean;
+ }
+ 
+ function makeSnapshot(table: ReadonlyMap<string, boolean> | null): PluginAvailabilitySnapshot {
+-  return { isUnavailable: (id) => table?.get(id) === false };
++  return { isUnavailable: (id) => table !== null && table.get(id) !== true };
+ }
+ 
+ // `null` table = no status read yet. id → available once read.
+--- a/packages/extension/src/__tests__/project-trust.test.ts
++++ b/packages/extension/src/__tests__/project-trust.test.ts
+@@ -22,7 +22,6 @@
+ } from "@blackbelt-technology/pi-dashboard-shared/pi-trust-resource-digest.js";
+ import { hookDefHash } from "@blackbelt-technology/pi-dashboard-shared/worktree-init-hook.js";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+-import { registerProjectTrust } from "../bridge-handlers/lifecycle.js";
+ import { decideBridgeProjectTrust, type ProjectTrustDecisionInput, type ProjectTrustDeps, readEventCwd } from "../project-trust.js";
+ import { createHttpLiveQuery, isRemoteBridge, type LiveQueryFn, type LiveQueryResult } from "../project-trust-live.js";
+ import { __resetSpawnToken, captureSpawnTokenAtActivation, consumeSpawnToken } from "../spawn-token.js";
+@@ -732,70 +731,9 @@
+   }, 30_000);
+ });
+ 
+-describe("the registered handler (#E10)", () => {
+-  function fakeInst(state: { active: boolean }) {
+-    let registered: ((event: unknown, ctx: unknown) => Promise<unknown>) | undefined;
+-    const inst = {
+-      pi: { on: (_name: string, fn: typeof registered) => { registered = fn; } },
+-      safe: (fn: unknown) => fn,
+-      isActive: () => state.active,
+-      dashboardSpawned: true,
+-      activationCwd: "/nowhere/else",
+-      dashboardUrl: "ws://127.0.0.1:1",
+-      rendezvous: null,
+-    };
+-    return { inst, handler: () => registered! };
+-  }
+-
+-  it("a covered answer with a valid proof is a per-run yes", async () => {
+-    const r = mkdir("live-h1");
+-    const state = { active: true };
+-    const { inst, handler } = fakeInst(state);
+-    registerProjectTrust(inst as never, {
+-      home: root,
+-      agentDir,
+-      readConfig: () => cfg({ coverInteractive: true }), // the test process is not a headless RPC session
+-      readSnapshot: () => liveSnap(1),
+-      denyRules: () => NO_DENY,
+-      liveQuery: async () => covered(r),
+-      log: () => {},
+-    });
+-    expect(await handler()({ cwd: r }, {})).toEqual({ trusted: "yes", remember: false });
+-  });
+-
+-  it("the instance flipping inactive while the query is pending yields undecided", async () => {
+-    const r = mkdir("live-h2");
+-    const state = { active: true };
+-    const { inst, handler } = fakeInst(state);
+-    registerProjectTrust(inst as never, {
+-      home: root,
+-      agentDir,
+-      readConfig: () => cfg({ coverInteractive: true }),
+-      readSnapshot: () => liveSnap(1),
+-      denyRules: () => NO_DENY,
+-      liveQuery: async () => {
+-        state.active = false; // a reload replaced this bridge mid-query
+-        return covered(r);
+-      },
+-      log: () => {},
+-    });
+-    expect(await handler()({ cwd: r }, {})).toEqual({ trusted: "undecided" });
+-  });
+-
+-  it("an inactive instance never queries", async () => {
+-    const r = mkdir("live-h3");
+-    let called = false;
+-    const { inst, handler } = fakeInst({ active: false });
+-    registerProjectTrust(inst as never, {
+-      readSnapshot: () => liveSnap(1),
+-      liveQuery: async () => {
+-        called = true;
+-        return covered(r);
+-      },
+-    });
+-    expect(await handler()({ cwd: r }, {})).toEqual({ trusted: "undecided" });
+-    expect(called).toBe(false);
+-  });
++it("downstream lifecycle never registers a project_trust decision", () => {
++  const source = fs.readFileSync(new URL("../bridge-handlers/lifecycle.ts", import.meta.url), "utf8");
++  expect(source).not.toContain('pi.on("project_trust"');
+ });
+ 
+ describe("remote live query targets the dashboard HTTP origin (fix-remote-bridge-ticket-origin)", () => {
+--- /dev/null
++++ b/packages/extension/src/__tests__/web-only-boundary.test.ts
+@@ -0,0 +1,70 @@
++/** Downstream fixed web-only contract. Native web controls remain; Dashboard adds no agent policy. */
++import { describe, expect, it, vi } from "vitest";
++import { readBridgeSource } from "./helpers/bridge-source.js";
++import { makeStubInstance } from "./helpers/bridge-instance-stub.js";
++import { handleInboundMessage } from "../bridge-handlers/dispatch.js";
++
++const bridge = readBridgeSource("bridge.ts");
++const lifecycle = readBridgeSource("bridge-handlers/lifecycle.ts");
++const forwarders = readBridgeSource("bridge-handlers/forwarders.ts");
++
++describe("fixed web-only activation boundary", () => {
++  it("never activates provider/role managers, agent gates, context injection or credential delivery", () => {
++    for (const call of ["activateProviderRegister(pi)", "activateRoleManager(pi)", "claudeCompatExtension(", "awaitStartupProviderModels(", "createCredentialGuard(", "createCredentialGuardToolCallHandler(", "createMcpDashboardRegistrar(", "createVaultDelivery(", "createVaultRedaction(", "createPathGate(", "new FanoutAdmissionGate(", "registerProjectTrust(inst)", "registerDashboardContextInjector(", "onProviderChanged("]) {
++      expect(bridge, call).not.toContain(call);
++    }
++  });
++  it("never registers extra tools, changes PATH, mints MCP, overrides defaults or accepts system followups", () => {
++    for (const call of ["registerAskUserTool(pi)", "registerCanvasTool(pi)", "registerRoleModelTools(pi", "provisionOpenspecCli(", '"dashboard:enqueue-followup"', '"mcp/mint-token"', "inst.vaultDelivery.", "inst.applyDefaultModel("]) {
++      expect(lifecycle, call).not.toContain(call);
++    }
++    expect(forwarders).not.toContain("inst.runAutoNameOnTurnEnd()");
++    expect(forwarders).not.toContain("inst.enqueueSystemFollowup(");
++    expect(bridge).not.toContain("function enqueueSystemFollowup(");
++    expect(bridge).not.toContain("createAutoNamer(");
++  });
++  it("never starts the background GitHub PR probe", () => {
++    expect(bridge).toContain("createPassivePrStatusScheduler()");
++    expect(bridge).not.toContain("git.prStatusAsync(");
++  });
++  it("forwards chat state without exposing Pi lifecycle internals as cards", () => {
++    for (const event of ["turn_start", "before_agent_start", "agent_before_settle", "resources_discover", "session_before_switch", "session_before_fork", "session_before_tree", "session_tree"]) {
++      expect(forwarders).not.toContain(`\"${event}\"`);
++    }
++    for (const event of ["message_start", "message_update", "message_end", "tool_execution_start", "tool_execution_end", "user_bash", "ui_prompt_start", "ui_prompt_end"]) {
++      expect(forwarders).toContain(`\"${event}\"`);
++    }
++  });
++});
++
++describe("web-only inbound controls", () => {
++  it.each(["credentials_updated", "vault_snapshot", "mcp_token_minted", "role_set", "role_remove", "role_preset_load", "role_preset_save", "role_preset_delete", "flow_management", "flow_control", "plugin_emit_event", "git_commit_draft"])("refuses %s without calling any effect owner", async (type) => {
++    const command = vi.fn();
++    const feedback = vi.fn();
++    const { inst, pi } = makeStubInstance({ commandHandler: { handle: command } as never, sendCommandFeedback: feedback });
++    await handleInboundMessage(inst, { type, action: "run", refreshProviders: ["provider"], eventType: "flow:run" });
++    expect(command).not.toHaveBeenCalled();
++    expect(pi.events.emit).not.toHaveBeenCalled();
++    expect(feedback).toHaveBeenCalledWith(type, expect.stringContaining("web-only"));
++  });
++  it("quietly ignores the legacy request_roles startup probe", async () => {
++    const command = vi.fn();
++    const feedback = vi.fn();
++    const { inst } = makeStubInstance({ commandHandler: { handle: command } as never, sendCommandFeedback: feedback });
++    await handleInboundMessage(inst, { type: "request_roles" });
++    expect(command).not.toHaveBeenCalled();
++    expect(feedback).not.toHaveBeenCalled();
++  });
++  it.each(["send_prompt", "abort", "set_model", "set_thinking_level", "new_session", "resume_session"])("keeps native %s routing", async (type) => {
++    const command = vi.fn();
++    const { inst } = makeStubInstance({ commandHandler: { handle: command } as never, polling: {} as never, sendModelUpdateIfChanged: vi.fn() });
++    await handleInboundMessage(inst, { type, text: "hello" });
++    expect(command).toHaveBeenCalled();
++  });
++  it("routes dotfiles question answers to the existing PromptBus", async () => {
++    const respond = vi.fn();
++    const { inst } = makeStubInstance({ promptBus: { respond } as never, polling: {} as never });
++    await handleInboundMessage(inst, { type: "prompt_response", promptId: "queue-question", answer: "yes" });
++    expect(respond).toHaveBeenCalledWith(expect.objectContaining({ id: "queue-question", answer: "yes" }));
++  });
++});
+--- a/packages/extension/src/bridge-handlers/dispatch.ts
++++ b/packages/extension/src/bridge-handlers/dispatch.ts
+@@ -1,3 +1,4 @@
++import { isWebOnlyDisabledCommand, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
+ /**
+  * Inbound dashboard→bridge WebSocket message dispatch.
+  *
+@@ -7,13 +8,8 @@
+ 
+ import type { ServerToExtensionMessage, TranscriptRequestMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
+ import { decideTranscriptRequest } from "@blackbelt-technology/pi-dashboard-shared/transcript-request-guard.js";
+-import { applyAutoNameRestore } from "../auto-session-namer.js";
+ import { routeGitInfoRefresh } from "../bridge-polling.js";
+-import type { McpTokenMintedPayload } from "../mcp-token-delivery.js";
+-import { refreshAfterCredentialsReload } from "../model-refresh.js";
+ import { emitPendingPrompts } from "../pending-prompt-emitter.js";
+-import { buildProviderCatalogue, reloadProviders, toModelInfo } from "../provider-register.js";
+-import { filterByEnabledModels } from "../session-sync.js";
+ import { serveSubagentResync } from "../subagent-forward-sites.js";
+ import { readTranscriptChunk, type TranscriptCursor } from "../transcript-backfill.js";
+ import { handleUiManagement } from "../ui-modules.js";
+@@ -63,6 +59,13 @@
+   const pi = inst.pi;
+   if (!inst.isActive()) return; // Stale listener guard
+   const msg = data as ServerToExtensionMessage;
++  // Older browser bundles request Dashboard-owned roles on connect. Roles do
++  // not exist in the fixed web-only profile, so compatibility is a quiet no-op.
++  if (msg.type === "request_roles") return;
++  if (isWebOnlyDisabledCommand(msg.type)) {
++    inst.sendCommandFeedback(msg.type, WEB_ONLY_REFUSAL);
++    return;
++  }
+   // Prompt-rate bound (B21): ONE bucket per bridge PROCESS across every
+   // turn-starting command, spent before the command does any work. Keyed by the
+   // process-global `shared` state, not the `ConnectionManager`: `/reload` builds a
+@@ -144,91 +147,8 @@
+     inst.pluginRequests.handleReply(msg);
+     return;
+   }
+-  // Credential vault: `vault_snapshot` is consumed here (never re-emitted, never
+-  // logged); `dashboard_identity` is only observed so the other consumers below
+-  // still see it. See change: add-credential-vault.
+-  if (inst.vaultDelivery.onServerMessage(msg)) return;
+-  // Agent path gate: grant-store identity + grant results (never re-emitted).
+-  if (inst.pathGate.onServerMessage(msg as { type?: string })) return;
+-  if (msg.type === "mcp_token_minted") {
+-    // The minted MCP bearer (+ /mcp url) arrives on the session-private
+-    // lane and is registered with pi's built-in MCP — never placed in
+-    // process.env, a log line, or pi.events.
+-    // See change: migrate-mcp-to-pi-builtin (D1).
+-    inst.mcpRegistrar.onMinted(msg as McpTokenMintedPayload);
+-    return;
+-  }
+-  // Reload auth credentials when dashboard notifies of changes
+-  if (msg.type === "credentials_updated") {
+-    try {
+-      // Hot-reload providers.json diff BEFORE refreshing the registry,
+-      // so any newly added providers are registered before getAvailable() runs.
+-      // Explicit Settings → Refresh models: force-re-register the named
+-      // providers so their /models list is re-fetched. Older servers omit the
+-      // field. See change: add-provider-models-refresh.
+-      const force = Array.isArray(msg.refreshProviders)
+-        ? msg.refreshProviders.filter((n: unknown): n is string => typeof n === "string")
+-        : [];
+-      if (force.length) console.log(`[dashboard] refreshing provider models: ${JSON.stringify(force)}`);
+-      const diff = await (force.length ? reloadProviders(pi, { force }) : reloadProviders(pi)).catch((err) => {
+-        console.error("[dashboard] reloadProviders failed:", err);
+-        return { added: [], removed: [], changed: [] };
+-      });
+-      if (diff.added.length || diff.removed.length || diff.changed.length) {
+-        console.log(
+-          `[dashboard] hot-reloaded providers: added=${JSON.stringify(diff.added)} removed=${JSON.stringify(diff.removed)} changed=${JSON.stringify(diff.changed)}`,
+-        );
+-      }
+-      inst.cachedModelRegistry?.authStorage?.reload?.();
+-      // pi 0.84.0: await + inspect refresh() so getAvailable() below sees
+-      // the refreshed catalogue. Scoped to touched providers; an empty diff
+-      // (credential-only change) runs a local full refresh.
+-      // See changes: update-pi-core-0-84-adopt-apis, refresh-models-on-provider-change.
+-      await refreshAfterCredentialsReload(inst.cachedModelRegistry, diff);
+-    } catch (err) { console.error("[dashboard] credentials reload failed:", err); }
+-    // Push updated models list to dashboard client
+-    if (inst.cachedModelRegistry && inst.sessionReady) {
+-      try {
+-        const models = filterByEnabledModels(inst.cachedModelRegistry.getAvailable().map(toModelInfo));
+-        inst.connection.send({ type: "models_list", sessionId: inst.sessionId, models });
+-        // See change: replace-hardcoded-provider-lists.
+-        inst.connection.send({ type: "providers_list", sessionId: inst.sessionId, providers: buildProviderCatalogue() });
+-      } catch (err) { console.error("[dashboard] models_list push failed:", err); }
+-    }
+-    return;
+-  }
+-  // Auto-naming toggle relay: store the pushed value so the namer gates on
+-  // the current preference. See change: add-auto-session-naming.
+-  if (msg.type === "preferences_update") {
+-    if (typeof (msg as any).autoNameSessions === "boolean") {
+-      inst.autoNameSessions = (msg as any).autoNameSessions;
+-    }
+-    // Claude subscription compat switch: applied only when boolean, so an
+-    // older server (no field) never resets it. See change:
+-    // retire-anthropic-messages-bridge (design D3).
+-    if (typeof (msg as any).claudeSubscriptionCompat === "boolean") {
+-      inst.claudeSubscriptionCompat = (msg as any).claudeSubscriptionCompat;
+-      // Mirror for subagent children. See change: seed-claude-compat-on-upgrade.
+-      inst.shared.claudeSubscriptionCompat = inst.claudeSubscriptionCompat;
+-    }
+-    return;
+-  }
+-  // Persisted stop state + session-owned provenance pushed at register, so a
+-  // permanent stop AND the `auto`/`system`/`user` provenance survive a
+-  // PROCESS restart / session resume. With no namer yet the adopted state
+-  // seeds it; a namer that an observation already created gets the
+-  // provenance via `restoreProvenance` (it replaces a live `user` only when
+-  // the live name equals the restored witness).
+-  // See change: fix-auto-naming-reasoning-model (design D7);
+-  // investigate-auto-name-provenance-relabel (D4).
+-  if (msg.type === "auto_name_state_restore") {
+-    const adopted = applyAutoNameRestore(msg as any, inst.autoNamer, pi.getSessionName());
+-    if (adopted) {
+-      inst.namerState = adopted;
+-      inst.shared.namerState = adopted;
+-    }
+-    return;
+-  }
++  // Preferences and naming state cannot re-enable agent policy in this build.
++  if (msg.type === "preferences_update" || msg.type === "auto_name_state_restore") return;
+   // Graceful stop-after-turn: latch a per-session flag; the next turn_end
+   // shuts the session down cleanly. Idempotent. See change:
+   // adopt-pi-071-072-073-features.
+@@ -240,108 +160,6 @@
+   // only targets bridges whose cwd is inside the worktree. See change:
+   // redesign-composer-session-strip (D5).
+   if (routeGitInfoRefresh(msg, { prStatus: inst.prStatus, gitTracker: inst.polling.gitTracker })) return;
+-  // Route role management from dashboard
+-  if (msg.type === "role_set" && pi.events) {
+-    const data: any = { role: (msg as any).role, modelId: (msg as any).modelId };
+-    pi.events.emit("roles:set", data);
+-    if (data.success) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      inst.connection.send({
+-        type: "roles_list",
+-        sessionId: inst.sessionId,
+-        roles: rolesData.roles ?? {},
+-        presets: rolesData.presets ?? [],
+-        activePreset: rolesData.activePreset ?? null,
+-        builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-      });
+-    }
+-    return;
+-  }
+-  if (msg.type === "role_preset_load" && pi.events) {
+-    const data: any = { name: (msg as any).presetName };
+-    pi.events.emit("roles:preset-load", data);
+-    if (data.success) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      inst.connection.send({
+-        type: "roles_list",
+-        sessionId: inst.sessionId,
+-        roles: rolesData.roles ?? {},
+-        presets: rolesData.presets ?? [],
+-        activePreset: rolesData.activePreset ?? null,
+-        builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-      });
+-    }
+-    return;
+-  }
+-  if (msg.type === "role_preset_save" && pi.events) {
+-    const data: any = { name: (msg as any).presetName };
+-    pi.events.emit("roles:preset-save", data);
+-    if (data.success) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      inst.connection.send({
+-        type: "roles_list",
+-        sessionId: inst.sessionId,
+-        roles: rolesData.roles ?? {},
+-        presets: rolesData.presets ?? [],
+-        activePreset: rolesData.activePreset ?? null,
+-        builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-      });
+-    }
+-    return;
+-  }
+-  if (msg.type === "role_preset_delete" && pi.events) {
+-    const data: any = { name: (msg as any).presetName };
+-    pi.events.emit("roles:preset-delete", data);
+-    if (data.success) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      inst.connection.send({
+-        type: "roles_list",
+-        sessionId: inst.sessionId,
+-        roles: rolesData.roles ?? {},
+-        presets: rolesData.presets ?? [],
+-        activePreset: rolesData.activePreset ?? null,
+-        builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-      });
+-    }
+-    return;
+-  }
+-  // Remove a CUSTOM role: purge from schema + active map + every preset.
+-  // Built-ins are rejected server-side in the roles:remove handler.
+-  // Mirrors the role_set routing block. See change: add-custom-roles-ui.
+-  if (msg.type === "role_remove" && pi.events) {
+-    const data: any = { role: (msg as any).role };
+-    pi.events.emit("roles:remove", data);
+-    if (data.success) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      inst.connection.send({
+-        type: "roles_list",
+-        sessionId: inst.sessionId,
+-        roles: rolesData.roles ?? {},
+-        presets: rolesData.presets ?? [],
+-        activePreset: rolesData.activePreset ?? null,
+-        builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-      });
+-    }
+-    return;
+-  }
+-  if (msg.type === "request_roles" && pi.events) {
+-    const rolesData: any = {};
+-    pi.events.emit("roles:get-all", rolesData);
+-    inst.connection.send({
+-      type: "roles_list",
+-      sessionId: inst.sessionId,
+-      roles: rolesData.roles ?? {},
+-      presets: rolesData.presets ?? [],
+-      activePreset: rolesData.activePreset ?? null,
+-      builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-    });
+-    return;
+-  }
+   // Route PromptBus responses from dashboard client
+   if (msg.type === "prompt_response" && inst.promptBus) {
+     inst.promptBus.respond({
+@@ -353,23 +171,6 @@
+       // See change: add-ask-user-input-multiline-paste.
+       images: (msg as any).images,
+     });
+-    return;
+-  }
+-  // Legacy architect_prompt_response routing REMOVED.
+-  // Previously routed to flow:prompt-response + cancelAllPending().
+-  // Now handled by PromptBus: dashboard sends prompt_response,
+-  // bus calls respond(), adapters get onResponse() for cross-cancellation.
+-  // Route flow control messages to pi-flows via pi.events
+-  // Generic plugin-registered event emission. A dashboard plugin action
+-  // (e.g. automation) emits a configured event INTO this session; the
+-  // bridge relays it onto pi.events. Decoupled: the bridge does not know
+-  // which events exist. See change: automation-emit-configured-event.
+-  if (msg.type === "plugin_emit_event" && pi.events) {
+-    const eventType = (msg as { eventType?: unknown }).eventType;
+-    if (typeof eventType === "string" && eventType.length > 0) {
+-      const data = (msg as { data?: unknown }).data;
+-      pi.events.emit(eventType, data && typeof data === "object" ? (data as Record<string, unknown>) : {});
+-    }
+     return;
+   }
+   // Subagent resync (D2): reply with the latest retained snapshot of a
+--- a/packages/extension/src/bridge-handlers/forwarders.ts
++++ b/packages/extension/src/bridge-handlers/forwarders.ts
+@@ -9,13 +9,11 @@
+ import os from "node:os";
+ import { isUnderArtifactRoot, resolveArtifactRoots } from "../artifact-roots.js";
+ import { feedPollingEvent, scheduleModelRecheckOnSelect } from "../bridge-polling.js";
+-import { SURFACE_MESSAGE } from "../empty-actionable-guard.js";
+-import { mapEventToProtocol, redactBeforeSettleContext, redactCompactionEntry } from "../event-forwarder.js";
++import { mapEventToProtocol, redactCompactionEntry } from "../event-forwarder.js";
+ import { flushesParkedText } from "../message-update-coalescer.js";
+ import { stripForForward } from "../subagent-frame-strip.js";
+ import { isSubagentTick } from "../subagent-tick-throttle.js";
+ import { inlineToolResultImages } from "../tool-result-image-inliner.js";
+-import { classifyTurnActionability } from "../turn-actionability.js";
+ import type { BridgeInstance } from "./instance.js";
+ 
+ // Forward all pi core events to the dashboard.
+@@ -24,7 +22,6 @@
+   "agent_start",
+   "agent_end",
+   "agent_settled",
+-  "turn_start",
+   "turn_end",
+   "message_start",
+   "message_update",
+@@ -39,17 +36,10 @@
+ // Pass-through events: forwarded as-is with no special handling.
+ // Unrecognized types render as expandable JSON cards in the dashboard.
+ const passThroughEventTypes = [
+-  "tool_call",
+-  "tool_result",
+   "user_bash",
+-  "input",
+-  "before_agent_start",
+-  "resources_discover",
+-  "session_before_switch",
+-  "session_before_fork",
++  // Observe compaction so an idle, out-of-band compaction still blocks reload.
++  // Its preparation payload stays in Pi; only the event type crosses the bridge.
+   "session_before_compact",
+-  "session_before_tree",
+-  "session_tree",
+   // pi >= 0.84.3. Clears the server-side `compacting` latch on the failure
+   // path (see event-status-extraction.ts) — without it a failed or aborted
+   // compaction blocks every later reload of the session.
+@@ -60,10 +50,6 @@
+   // unconditional (no version gate, not merely inert below an old floor).
+   "ui_prompt_start",
+   "ui_prompt_end",
+-  // pi >= 0.87. Fires before final settlement; no status effect (the agent
+-  // may still continue). Forwarded without its `context` preview.
+-  // See change: update-pi-core-1-0-adopt-apis (D5).
+-  "agent_before_settle",
+ ] as const;
+ // Excluded from subscription (not forwarded):
+ // - `context`: carries full message arrays (very large)
+@@ -161,10 +147,6 @@
+         if (trackerSynth) {
+           inst.sendSyntheticRetryEvent(trackerSynth.eventType, trackerSynth.data);
+         }
+-        // Automatic session topic-naming: attempt on each terminal turn until
+-        // the first success (or a permanent lockout). Non-blocking; all errors
+-        // are handled inside the namer. See change: add-auto-session-naming.
+-        inst.runAutoNameOnTurnEnd();
+         // Bridge shadow follow-up queue: the per-entry drain matcher in
+         // the `message_start` handler removes each entry as pi delivers it
+         // (mirrors pi's internal `_processAgentEvent`). No bulk clear here
+@@ -175,58 +157,6 @@
+         // (above), which fires once per run after pi is idle.
+         // See change: update-pi-core-1-3-adopt-apis (design D4).
+ 
+-        // Empty-actionable-turn guard: classify this turn's terminal shape.
+-        // A thinking-only / empty `stop` (no visible text, no tool call, no
+-        // error) would otherwise idle the session silently. Continue-or-
+-        // surface instead. Normal / tool-call / truncated / error turns yield
+-        // `none` and only reset the guard's per-session counter.
+-        // See change: fix-gemini-subagent-silent-tool-schema-failure.
+-        {
+-          const agentMsgs = (event as any)?.messages;
+-          const terminalMsg =
+-            Array.isArray(agentMsgs) && agentMsgs.length > 0
+-              ? (agentMsgs[agentMsgs.length - 1] as Record<string, unknown>)
+-              : undefined;
+-          if (terminalMsg?.role === "assistant") {
+-            const actionability = classifyTurnActionability(terminalMsg as any);
+-            const decision = inst.emptyActionableGuard.observe(inst.sessionId, actionability);
+-            if (decision.action === "continue" && decision.nudge) {
+-              // Only nudge when nothing else will already re-run the session
+-              // (no user/system follow-up pending). A pending entry means the
+-              // session is not idling, so the guard can safely no-op.
+-              // Held steers re-run the session at settle too.
+-              if (inst.bridgeFollowUp.length === 0 && inst.bridgeSteer.length === 0) {
+-                inst.enqueueSystemFollowup(decision.nudge);
+-              }
+-            } else if (decision.action === "surface") {
+-              // Non-error status: the model returned only reasoning. Forward a
+-              // structured, non-error notice so the server logs it to
+-              // server.log and the dashboard card renders it (distinct from an
+-              // error banner).
+-              const model =
+-                typeof terminalMsg.model === "string"
+-                  ? (terminalMsg.model as string)
+-                  : undefined;
+-              const provider =
+-                typeof terminalMsg.provider === "string"
+-                  ? (terminalMsg.provider as string)
+-                  : undefined;
+-              inst.connection.send({
+-                type: "event_forward",
+-                sessionId: inst.sessionId,
+-                event: {
+-                  eventType: "empty_actionable_surface",
+-                  timestamp: Date.now(),
+-                  data: {
+-                    message: decision.reason ?? SURFACE_MESSAGE,
+-                    model: provider && model ? `${provider}/${model}` : model,
+-                  },
+-                },
+-              });
+-            }
+-          }
+-        }
+-
+       }
+       // For model_select, enrich the event data with thinkingLevel
+       if (eventType === "model_select") {
+@@ -344,7 +274,6 @@
+             // (possibly aborted) empty-actionable chain never shortens the next
+             // unrelated prompt's retry budget.
+             // See change: fix-gemini-subagent-silent-tool-schema-failure.
+-            inst.emptyActionableGuard.reset(inst.sessionId);
+           } else if (inst.abortLatch.shouldAbort(inst.sessionId)) {
+             try { inst.cachedCtx?.abort?.(); } catch { /* idempotent */ }
+           }
+@@ -596,7 +525,7 @@
+   }
+ }
+ 
+-/** Forward the remaining pi events to the dashboard unchanged. */
++/** Forward remaining Pi events; compaction preparation carries only its lifecycle marker. */
+ export function registerPassThroughForwarders(inst: BridgeInstance): void {
+   const pi = inst.pi;
+   for (const eventType of passThroughEventTypes) {
+@@ -606,8 +535,8 @@
+       if (!inst.sessionReady) return;
+       // Same choke point as the enriched loop (D5).
+       inst.coalescer.flush();
+-      const forwarded = event?.type === "agent_before_settle" ? redactBeforeSettleContext(event) : event;
+-      const msg = mapEventToProtocol(inst.sessionId, forwarded);
++      const observed = eventType === "session_before_compact" ? { type: eventType } : event;
++      const msg = mapEventToProtocol(inst.sessionId, observed);
+       inst.connection.send(msg);
+     }));
+   }
+--- a/packages/extension/src/bridge-handlers/lifecycle.ts
++++ b/packages/extension/src/bridge-handlers/lifecycle.ts
+@@ -12,11 +12,8 @@
+ import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
+ import { Loader } from "@earendil-works/pi-tui";
+ import { cleanupAttachmentsForSession, } from "../ask-user-attachments.js";
+-import { registerAskUserTool } from "../ask-user-tool.js";
+ import { connectPromptBusEvents } from "../prompt-bus-events.js";
+ import { extractFirstMessage, filterHiddenCommands, getCurrentModelString, isHeadlessRpcSession, safeCwd } from "../bridge-context.js";
+-import { hasExplicitModelArg, shouldApplyDefaultModel } from "../bridge-default-model-gate.js";
+-import { registerCanvasTool } from "../canvas-tool.js";
+ import { ensureDisposable, drainDisposables } from "../bridge-polling.js";
+ import { buildUserMessageContent } from "../command-handler.js";
+ import { DashboardDefaultAdapter } from "../dashboard-default-adapter.js";
+@@ -28,17 +25,13 @@
+ import { flipHasUI } from "../hasui-flip.js";
+ import { healthUrlForInstance, verifyInstanceIdentity } from "../instance-verification.js";
+ import { sendPiVersionIfChanged as _sendPiVersionIfChanged } from "../model-tracker.js";
+-import { provisionOpenspecCli } from "../openspec-cli-shim.js";
+ import { pollCost } from "../poll-cost.js";
+ import { collectMetrics, startMetricsMonitor, stopMetricsMonitor } from "../process-metrics.js";
+ import { createProcessScanScheduler } from "../process-scan-scheduler.js";
+ import { scanChildProcessesAsync } from "../process-scanner.js";
+-import { decideBridgeProjectTrust, type ProjectTrustDeps, readEventCwd } from "../project-trust.js";
+-import { createHttpLiveQuery, isRemoteBridge } from "../project-trust-live.js";
+ import { PromptBus } from "../prompt-bus.js";
+-import { buildProviderCatalogue, reloadProviders, toModelInfo } from "../provider-register.js";
++import { toModelInfo } from "../provider-register.js";
+ import { gateRemoteRegistration, isRemoteEndpoint } from "../remote-registration-gate.js";
+-import { registerRoleModelTools } from "../role-model-tools.js";
+ import { autoStartServer } from "../server-auto-start.js";
+ import { launchServer } from "../server-launcher.js";
+ import { loadServerPins, notePinEndpoint, serverPinsPath } from "../server-pin-store.js";
+@@ -183,61 +176,15 @@
+       if (!inst.isActive() || !inst.sessionReady) return;
+       const name = typeof event?.name === "string" ? event.name : pi.getSessionName();
+       if (typeof name === "string" && name.length > 0) {
+-        inst.getAutoNamer().onObservedName(name);
++        if (name !== inst.lastSessionName) {
++          inst.lastSessionName = name;
++          inst.connection.send({ type: "session_name_update", sessionId: inst.sessionId, name, nameSource: "user" });
++        }
+       }
+     }));
+   } catch { /* older pi: no session_info_changed — poll fallback covers it */ }
+ }
+ 
+-/**
+- * `project_trust`: trust-gate decision for the dashboard-spawned project.
+- *
+- * pi awaits this handler, so it may be asynchronous: on a snapshot miss the
+- * decision runs a live trust query bounded by `piTrustMirror.liveQueryTimeoutMs`
+- * (default 300 ms local / 1000 ms remote). The body has its own try/catch and
+- * every path resolves to `{ trusted: "undecided" }` or a per-run yes — it never
+- * relies on `safe()` or pi's runner to contain a failure. A bridge replaced while
+- * the query was pending (reload) answers undecided. See change: mirror-dashboard-trust-live-remote.
+- */
+-export function registerProjectTrust(inst: BridgeInstance, overrides: Partial<ProjectTrustDeps> = {}): void {
+-  const pi = inst.pi;
+-  try {
+-    pi.on("project_trust" as any, inst.safe(async (event: any, ctx: any) => {
+-      // Return the pi trust decision. A newer bridge taking over, or any
+-      // non-match, defers. `remember:false` = trust for THIS run only.
+-      try {
+-        if (!inst.isActive()) return { trusted: "undecided" };
+-        const decision = await decideBridgeProjectTrust(
+-          {
+-            dashboardSpawned: inst.dashboardSpawned,
+-            isHeadless: isHeadlessRpcSession(),
+-            eventCwd: readEventCwd(event, ctx),
+-            activationCwd: inst.activationCwd,
+-          },
+-          {
+-            isRemoteBridge: () => isRemoteBridge(inst.dashboardUrl),
+-            liveQuery: createHttpLiveQuery({
+-              endpoint: () => inst.dashboardUrl,
+-              httpPort: () => inst.rendezvous?.httpPort,
+-              env: process.env,
+-            }),
+-            ...overrides,
+-          },
+-        );
+-        // The instance may have been replaced while the live query was pending.
+-        if (!inst.isActive()) return { trusted: "undecided" };
+-        return decision.trusted === "yes"
+-          ? { trusted: "yes", remember: false }
+-          : { trusted: "undecided" };
+-      } catch {
+-        return { trusted: "undecided" };
+-      }
+-    }));
+-  } catch { /* older pi: no project_trust event — no-op */ }
+-}
+-
+-const VAULT_START_REASONS = new Set(["startup", "reload", "new", "resume", "fork"]);
+-
+ /** `session_start`: register the session, build the PromptBus, patch `ctx.ui`, arm timers. */
+ export function registerSessionStart(inst: BridgeInstance): void {
+   const pi = inst.pi;
+@@ -248,20 +195,6 @@
+     // Bail out if a newer bridge instance has taken over
+     if (!inst.isActive()) return;
+     const newSessionId = ctx.sessionManager.getSessionId();
+-    inst.pathGate.onSessionStart();
+-    // Credential vault: resolve the project from THIS session's own cwd (never the
+-    // launch directory) on every start reason; an unreadable cwd withdraws all.
+-    // See change: add-credential-vault (D2, D3).
+-    void inst.vaultDelivery
+-      .onSessionStart({
+-        reason: VAULT_START_REASONS.has(_event?.reason) ? _event.reason : "startup",
+-        getCwd: () => ctx.sessionManager.getCwd(),
+-      })
+-      .catch(() => {});
+-    // Re-arm MCP registration for the (replacement) session; its mint below
+-    // registers pi-dashboard again. See change: migrate-mcp-to-pi-builtin (D1).
+-    inst.mcpRegistrar.onSessionStart();
+-
+     // On session switch/fork (0.65.0+: event.reason replaces session_switch/session_fork events),
+     // unregister the old session before re-registering the new one.
+     const reason = _event?.reason;
+@@ -295,32 +228,6 @@
+     inst.cachedCtx = ctx;
+     inst.sessionId = newSessionId;
+ 
+-    // Provision the openspec CLI: drop a shim on process.env.PATH so the
+-    // generated openspec-* skills' bare `openspec` resolves in-session. Runs on
+-    // init AND /reload (re-points the shim on extension upgrade); the PATH
+-    // prepend is idempotent. Fail-soft: on hard failure, surface a
+-    // dashboard-visible missing-tool signal. See change:
+-    // provision-openspec-cli-in-sessions.
+-    provisionOpenspecCli({
+-      onMissingTool: (reason) => {
+-        inst.connection.send({
+-          type: "event_forward",
+-          sessionId: inst.sessionId,
+-          event: {
+-            eventType: "bash_output",
+-            timestamp: Date.now(),
+-            data: {
+-              command: "openspec (session provisioning)",
+-              output: reason,
+-              exitCode: 127,
+-              excludeFromContext: true,
+-              missingTool: { kind: "missing-tool", toolName: "openspec" },
+-            },
+-          },
+-        });
+-      },
+-    });
+-
+     // Wrap sessionManager.appendMessage so that future message_end events can
+     // recover the just-generated entry id, even when their setTimeout(0)
+     // fires before pi has finished mutating event.message in place. The
+@@ -336,30 +243,6 @@
+     inst.customWrappedSm = null;
+     inst.wrapCustomPersistenceForCtx(ctx);
+ 
+-    // Register ask_user at runtime (not at load time) to avoid static
+-    // tool-name conflicts with other extensions like pi-flows.
+-    registerAskUserTool(pi);
+-
+-    // Register the canvas declare-tool (change: auto-canvas). Fire-and-forget
+-    // UI intent; the server observes the forwarded tool call and drives the
+-    // canvas. Runtime registration for the same conflict-avoidance reason.
+-    registerCanvasTool(pi);
+-
+-    // Register the agent-facing role/model tools (list_models, list_roles,
+-    // update_roles). list_models reads the in-process session registry via a
+-    // live getter so its refs match the human Model Selector exactly.
+-    // See change: add-agent-role-model-tools.
+-    registerRoleModelTools(pi, {
+-      getRegistry: () => inst.cachedModelRegistry,
+-      // Live scope read at call time from the latest captured ctx (dynamic via
+-      // Ctrl+P cycling). Absent on older pi / empty when unscoped → no filter.
+-      // See change: update-pi-core-0-83-adopt-apis.
+-      getScopedModels: () => (inst.cachedCtx as any)?.scopedModels,
+-      // Resync from global config before each read.
+-      // See change: list-models-auto-resync (design D2).
+-      reloadProviders: () => reloadProviders(pi),
+-    });
+-
+     // Extract session file/dir early — needed for source detection and UI proxy
+     const sessionFile = ctx.sessionManager.getSessionFile?.() ?? undefined;
+     const sessionDir = ctx.sessionManager.getSessionDir?.() ?? undefined;
+@@ -418,14 +301,6 @@
+ 
+     // Listen for adapter registrations from other extensions (e.g. pi-flows)
+     if (pi.events) {
+-      // a system-originated continuation through the single drain path by
+-      // emitting `dashboard:enqueue-followup`. Inert when no plugin emits it.
+-      // See change: add-goal-continuation-plugin (Decision 2).
+-      pi.events.on("dashboard:enqueue-followup", (payload: any) => {
+-        if (payload && typeof payload.text === "string") {
+-          inst.enqueueSystemFollowup(payload.text);
+-        }
+-      });
+       disconnectPromptEvents();
+       const bus = inst.promptBus;
+       disconnectPromptEvents = connectPromptBusEvents(pi.events, bus, () => inst.isActive() && inst.promptBus === bus);
+@@ -634,22 +509,6 @@
+     // See change: bridge-owned-cancellable-steer (D7).
+     inst.emitQueueUpdate();
+ 
+-    // D3: mint-on-registration. Ask the mcp-server plugin for this session's
+-    // /mcp credential now that the socket is (re)registered — the reply
+-    // arrives on the session-private lane (mcp_token_minted) and registers
+-    // pi-dashboard with pi's built-in MCP, and re-registers after every
+-    // reconnect, which is what makes a dashboard restart self-heal. Ordered
+-    // after session_register on the SAME socket, so the server's
+-    // connection-key attribution is already established when it arrives.
+-    // See change: wire-mcp-session-token (D3/D5).
+-    inst.connection.send({
+-      type: "plugin_pi_message",
+-      sessionId: inst.sessionId,
+-      pluginId: "mcp-server",
+-      messageType: "mcp/mint-token",
+-      payload: {},
+-    });
+-
+     // Flush any subagent frames buffered during the not-ready window (D1) so a
+     // reconnect/discovery/reload gap self-heals instead of leaving a running
+     // subagent's detail empty. See change: fix-subagent-live-detail-reliability.
+@@ -687,54 +546,9 @@
+         const models = filterByEnabledModels(inst.cachedModelRegistry.getAvailable().map(toModelInfo));
+         inst.connection.send({ type: "models_list", sessionId: inst.sessionId, models });
+         // See change: replace-hardcoded-provider-lists.
+-        inst.connection.send({ type: "providers_list", sessionId: inst.sessionId, providers: buildProviderCatalogue() });
+       } catch { /* modelRegistry not available */ }
+     }
+ 
+-    // Apply default model only on brand-new sessions (no prior message history)
+-    // that were NOT launched with an explicit --model flag. Resume (--session) and
+-    // fork (--fork) both load parent messages, so messageCount > 0 and we keep their
+-    // existing model. Mirrors pi's own !hasExistingSession gate (sdk.js:106 —
+-    // `existingSession.messages.length > 0`). NOT the raw getEntries() count: pi's
+-    // sdk.js auto-appends model_change + thinking_level_change setup entries to a
+-    // brand-new session BEFORE emitting session_start, so getEntries() is ≥ 2 even
+-    // for a session with no user history. Only message entries count.
+-    // The bridge runs inside the pi process, so process.argv is pi's argv — an
+-    // explicit --model there is the spawner's resolved choice and the default
+-    // never overrides it. The deferred retry below needs no separate guard: when
+-    // the gate is false this never sets pendingDefaultModel, so onProviderChanged
+-    // has nothing to re-apply.
+-    // See changes: fix-resume-keeps-session-model,
+-    //              fix-default-model-new-session-entry-count,
+-    //              fix-default-model-clobbers-explicit-model (issue #595).
+-    const entryCount = ctx.sessionManager.buildSessionContext?.()?.messages?.length ?? 0;
+-    const freshConfig = loadConfig();
+-    if (shouldApplyDefaultModel({
+-      reason: _event?.reason,
+-      entryCount,
+-      hasModelRegistry: Boolean(inst.cachedModelRegistry),
+-      hasDefaultModel: Boolean(freshConfig.defaultModel),
+-      hasExplicitModel: hasExplicitModelArg(process.argv),
+-    })) {
+-      inst.pendingDefaultModel = inst.applyDefaultModel();
+-    }
+-
+-    // Send initial roles
+-    if (pi.events) {
+-      const rolesData: any = {};
+-      pi.events.emit("roles:get-all", rolesData);
+-      if (rolesData.roles) {
+-        inst.connection.send({
+-          type: "roles_list",
+-          sessionId: inst.sessionId,
+-          roles: rolesData.roles ?? {},
+-          presets: rolesData.presets ?? [],
+-          activePreset: rolesData.activePreset ?? null,
+-          builtinRoleNames: rolesData.builtinRoleNames ?? [],
+-        });
+-      }
+-    }
+-
+     // Discover or auto-start server (non-blocking — connection will reconnect)
+     //
+     // When a real launchServer() is about to run (not on mDNS/health-check
+@@ -887,7 +701,6 @@
+     startMetricsMonitor();
+     inst.heartbeatTimer = setInterval(() => {
+       if (!inst.isActive()) return;
+-      inst.vaultDelivery.tick();
+       inst.connection.send({
+         type: "session_heartbeat",
+         sessionId: inst.sessionId,
+@@ -919,11 +732,6 @@
+           pluginForwardRetained: inst.pluginForwardRegistry.stats.buffer.retained,
+           pluginForwardDropped:
+             inst.pluginForwardRegistry.stats.buffer.dropped + inst.pluginForwardRegistry.stats.buffer.keyRejected,
+-          // Agent path gate counters (in-root decisions are counted, not logged).
+-          pathGateInRoot: inst.pathGate.counters.inRoot,
+-          pathGateAsked: inst.pathGate.counters.asked,
+-          pathGateBlocked: inst.pathGate.counters.blocked,
+-          pathGateYoloAllowed: inst.pathGate.counters.yoloAllowed,
+           // Poll-cost counters (summed across sessions on /api/health).
+           // See change: optimize-polling-hot-paths.
+           ...pollCost,
+@@ -1070,9 +878,6 @@
+     // Let the reloaded instance (fresh ExtensionAPI) pass the re-entry guard.
+     // See change: fix-terminal-session-dashboard-reload (D4).
+     releaseBridgeOwnerOnShutdown(inst.shared, event?.reason);
+-    // Remove this session's pi-dashboard MCP registration (a reloaded
+-    // instance re-registers on its own mint). See change: migrate-mcp-to-pi-builtin (D1).
+-    inst.mcpRegistrar.onSessionShutdown();
+     inst.shared.isAgentStreaming = false;
+     stopMetricsMonitor();
+     if (inst.heartbeatTimer) {
+--- a/packages/extension/src/bridge.ts
++++ b/packages/extension/src/bridge.ts
+@@ -7,24 +7,20 @@
+ 
+ import { randomUUID } from "node:crypto";
+ import fs from "node:fs";
+-import os from "node:os";
+ import path from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { ensureConfig, loadConfig, } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+-import { claudeCompatExtension } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/claude-compat.js";
+ import { processPidNamespace } from "@blackbelt-technology/pi-dashboard-shared/pid-namespace.js";
+ import * as git from "@blackbelt-technology/pi-dashboard-shared/platform/git.js";
+ import { rendezvousEndpoint } from "@blackbelt-technology/pi-dashboard-shared/rendezvous.js";
+ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+ import { AbortLatch } from "./abort-latch.js";
+-import { type AutoNamer, createAutoNamer, type PersistedNamerState, type StreamSimpleFn } from "./auto-session-namer.js";
+ import { shouldActivateBridge } from "./bridge-activation.js";
+ import type { BridgeContext } from "./bridge-context.js";
+-import { extractLatestTurnWindow, } from "./bridge-context.js";
+ import { handleInboundMessage } from "./bridge-handlers/dispatch.js";
+ import { registerEnrichedForwarders, registerPassThroughForwarders } from "./bridge-handlers/forwarders.js";
+ import { type BridgeState, createInstance } from "./bridge-handlers/instance.js";
+-import { registerProjectTrust, registerSessionInfoChanged, registerSessionShutdown, registerSessionStart, registerTurnEnd } from "./bridge-handlers/lifecycle.js";
++import { registerSessionInfoChanged, registerSessionShutdown, registerSessionStart, registerTurnEnd } from "./bridge-handlers/lifecycle.js";
+ import { appendIdentityLog } from "./bridge-identity-log.js";
+ import { createPollingHolder, drainDisposables, ensureDisposable, teardownPreviousIncarnation } from "./bridge-polling.js";
+ import {
+@@ -32,14 +28,9 @@
+   tryExecSlashTemplate,
+   validateImages,
+ } from "./command-handler.js";
+-import { buildSessionContextText, runForkSubagentDraft } from "./commit-draft-agent.js";
+ import { ConnectionManager, type WatchdogFireInfo } from "./connection.js";
+-import { createCredentialGuard, createCredentialGuardToolCallHandler } from "./credential-guard.js";
+ import { toCustomEntryForward, toCustomMessageForward } from "./custom-entry-forward.js";
+-import { registerDashboardContextInjector } from "./dashboard-context-injector.js";
+ import { runDevBuild } from "./dev-build.js";
+-import { EmptyActionableGuard, } from "./empty-actionable-guard.js";
+-import { resolveGuardConfig } from "./empty-actionable-guard-config.js";
+ import { instanceIdFileForSocket, resolveEndpoint } from "./endpoint-resolution.js";
+ import { mapEventToProtocol, } from "./event-forwarder.js";
+ import { bridgeExtensionIdentity } from "./extension-identity.js";
+@@ -54,24 +45,19 @@
+ import { createInboundLimits } from "./inbound-limits.js";
+ import { localCredentialPlan, proofFailureLogCause } from "./local-token-header.js";
+ import { inlineMessageText, type ReadFileOutcome } from "./markdown-image-inliner.js";
+-import { createMcpDashboardRegistrar, type McpRegistrationApi, } from "./mcp-token-delivery.js";
+ import { COALESCE_WINDOW_MS, MessageUpdateCoalescer } from "./message-update-coalescer.js";
+ import { buildSpawnNewSessionMessage } from "./spawn-new-session.js";
+ import { resetReconnectCaches as _resetReconnectCaches, sendCwdMissingIfChanged as _sendCwdMissingIfChanged, sendModelUpdateIfChanged as _sendModelUpdateIfChanged, sendPiVersionIfChanged as _sendPiVersionIfChanged, sendSessionNameIfChanged as _sendSessionNameIfChanged } from "./model-tracker.js";
+-import { createPathGate } from "./path-gate/index.js";
+-import { Suppression } from "./path-gate/suppression.js";
+ import { emitPendingPrompts } from "./pending-prompt-emitter.js";
+ import { readPiRetrySettings } from "./pi-retry-settings.js";
+ import { isPinnedEndpoint } from "./pinned-endpoint.js";
+ import { PluginForwardRegistry } from "./plugin-event-forward-registry.js";
+ import { createPluginRequestClient, installPluginRequest } from "./plugin-request-client.js";
+-import { createPrStatusScheduler, type PrStatusScheduler } from "./pr-status.js";
++import { createPassivePrStatusScheduler, type PrStatusScheduler } from "./pr-status.js";
+ import { getOwnPgid, } from "./process-scanner.js";
+ import { expandPromptTemplateFromDisk } from "./prompt-expander.js";
+-import { activate as activateProviderRegister, awaitStartupProviderModels, buildProviderCatalogue, onProviderChanged, reloadProviders, toModelInfo } from "./provider-register.js";
+ import { createRemoteUpgradePreparer } from "./remote-upgrade-preparer.js";
+ import { installPiAiDelayFn, RetryTracker } from "./retry-tracker.js";
+-import { activate as activateRoleManager, resolveNamingModel } from "./role-manager.js";
+ import { loadServerPins, serverPinsPath } from "./server-pin-store.js";
+ import { replaySessionEntries as _replaySessionEntries, sendStateSync as _sendStateSync, filterByEnabledModels, isLive } from "./session-sync.js";
+ import { tryDispatchExtensionCommand } from "./slash-dispatch.js";
+@@ -88,9 +74,6 @@
+ import { createTransportDiagnostics } from "./transport-diagnostics.js";
+ import { refreshUiModules, type UiModulesBridgeCtx } from "./ui-modules.js";
+ import { drainUsageAndSend, makeCacheWarmingDecisionHandler, UsageDrain, } from "./usage-drain.js";
+-import { createVaultDelivery } from "./vault-delivery.js";
+-import { createVaultForwardFilter } from "./vault-forwarder.js";
+-import { createVaultRedaction } from "./vault-redaction.js";
+ 
+ /**
+  * Formats the state behind a watchdog force-close for `server.log`.
+@@ -119,45 +102,15 @@
+   return (process as any)[BRIDGE_KEY];
+ }
+ 
+-// Async: everything below runs synchronously up to the final `await`, so
+-// callers that do not await still see every registration immediately. pi
+-// awaits the factory before resolving `--model`, so the custom-provider models
+-// registered (cache) or discovered (bounded, `--model` provider only) during
+-// activation are flushed first. See change:
+-// register-custom-provider-models-at-activation (D1).
+ export default async function (pi: ExtensionAPI): Promise<void> {
+   // Per-process opt-out, decided before ANY registration: an inert bridge
+   // registers no tool/command/handler/MCP and never connects or auto-starts.
+   // Dashboard spawns stamp PI_DASHBOARD_BRIDGE=on. See change: add-bridge-env-opt-out.
+   if (!shouldActivateBridge(process.env, () => loadConfig().bridge)) return;
+   try {
+-    // Activate provider management before bridge init so providers are
+-    // registered before session_start fires and models_list is sent.
+-    activateProviderRegister(pi);
+-
+-    // Activate role manager: registers `roles:*` handlers that back
+-    // Settings → Roles. Relocated from pi-flows per OpenSpec change
+-    // `adopt-model-resolve-handler-and-roles-ownership`; the legacy `flow:`
+-    // prefix was dropped in `add-agent-role-model-tools` (design D11).
+-    activateRoleManager(pi);
+-
+-    // Claude subscription compat rewrite on EVERY pi this extension loads
+-    // into — main sessions and subagent children alike — reading the switch
+-    // value the connected bridge mirrors process-globally. Runs before the
+-    // re-entry guard so children get it too. See change:
+-    // seed-claude-compat-on-upgrade.
+-    claudeCompatExtension(() => getBridgeState().claudeSubscriptionCompat === true)(pi as never);
+-
+-    // Anthropic-messages payload transforms (system prompt rewrite + tool
+-    // filter/remap) are handled by the installed @benvargas/pi-claude-code-use
+-    // package when present. No local duplication here.
+-
++    // Downstream web-only: Pi owns providers, roles, trust and agent policy.
+     initBridge(pi);
+ 
+-    // LAST step: a rejection here would make pi discard every queued
+-    // registration of this factory, so it is caught below (and the promise
+-    // itself never rejects).
+-    return await awaitStartupProviderModels();
+   } catch (err) {
+     // Never crash the host pi agent — dashboard is non-essential
+     console.error("[dashboard] Bridge init failed:", err);
+@@ -214,41 +167,9 @@
+   // instead of the captured ctx, or they crash the host after a session change.
+   // See change: fix-stale-ctx-cwd-crash.
+   // → inst.cachedCwd (BridgeInstance field; unset until assigned)
+-  inst.pendingDefaultModel = null; // non-null if default model not yet applied (custom provider not ready)
++  // The flow list is plugin-owned; the web-only bridge never probes or manages it.
+ 
+-  /** Try to apply the default model from config. Returns the model string if not found (pending), null if applied or no default. */
+-  function applyDefaultModel(): string | null {
+-    const freshConfig = loadConfig();
+-    if (!freshConfig.defaultModel || !inst.cachedModelRegistry) return null;
+-    const slashIdx = freshConfig.defaultModel.indexOf("/");
+-    if (slashIdx <= 0) return null;
+-    const provider = freshConfig.defaultModel.slice(0, slashIdx);
+-    const modelId = freshConfig.defaultModel.slice(slashIdx + 1);
+-    try {
+-      const found = inst.cachedModelRegistry.find(provider, modelId);
+-      if (found) {
+-        (pi as any).setModel(found).then(() => {
+-          // Apply the configured default thinking level alongside the default
+-          // model. setModel preserves the current level, so an explicit call is
+-          // required. pi.setThinkingLevel is synchronous and clamps the level to
+-          // the model's capabilities. Empty value = "do not override".
+-          // See change: add-default-thinking-level.
+-          const level = freshConfig.defaultThinkingLevel;
+-          if (level) (pi as any).setThinkingLevel?.(level);
+-          setTimeout(() => sendModelUpdateIfChanged(), 50);
+-        }).catch(() => {});
+-        return null; // applied
+-      }
+-    } catch { /* ignore */ }
+-    return freshConfig.defaultModel; // not found yet — pending
+-  }
+-  inst.applyDefaultModel = applyDefaultModel;
+ 
+-  // The flow list is plugin-owned (flows plugin bridge publishes a catalog
+-  // event); core no longer probes or sends it. See change:
+-  // flows-dock-chip-and-panel-actions (D8).
+-
+-
+   inst.heartbeatTimer = null;
+   inst.gitPollTimer = null;
+   // Adaptive async process-scan scheduler (replaces the fixed setInterval).
+@@ -324,35 +245,12 @@
+     }));
+   }
+   inst.renewGitTracker = renewGitTracker;
+-  const prStatus: PrStatusScheduler = createPrStatusScheduler({
+-    probe: (cwd) => git.prStatusAsync({ cwd }),
+-    // A reload starts a new bridge incarnation; the old scheduler must not
+-    // keep probing into the new timer registry. See change:
+-    // redesign-composer-session-strip (doubt-review #2).
+-    alive: isActive,
+-    onChange: () => {
+-      if (isActive()) polling.gitTracker?.sendCached();
+-    },
+-    setTimer: setRegisteredTimeout,
+-    clearTimer: clearRegisteredTimeout,
+-  });
++  const prStatus: PrStatusScheduler = createPassivePrStatusScheduler();
+   inst.prStatus = prStatus;
+   let lastGitWorktreeJson: string | undefined; // see change: add-worktree-spawn-dialog
+   let lastGitStatusJson: string | undefined; // see change: add-session-uncommitted-indicator-and-commit
+   let lastCwdMissing: boolean | undefined; // see change: add-worktree-lifecycle-actions
+   // → inst.lastSessionName (BridgeInstance field; unset until assigned)
+-  // ── add-auto-session-naming ────────────────────────────────────────────
+-  // Global auto-naming toggle, relayed by the server via `preferences_update`.
+-  // Default true so a bridge that registers before the first push still names.
+-  inst.autoNameSessions = true;
+-  inst.claudeSubscriptionCompat = false;
+-  // → inst.autoNamer (BridgeInstance field; unset until assigned)
+-  // The namer's durable state set is carried across reload as VALUES, never as
+-  // the namer object: its closures would retain a stale connection, session id
+-  // and ctx. See change: fix-auto-naming-reasoning-model (design D7).
+-  inst.namerState = prev.namerState;
+-  // Lazily-loaded pi-ai streamSimple (null = load attempted and failed).
+-  let piAiStreamSimple: StreamSimpleFn | null | undefined;
+   inst.cachedHasUI = prev.hasUI;
+   inst.cachedModelRegistry = prev.modelRegistry;
+   inst.cachedCtx = prev.ctx;
+@@ -372,11 +270,7 @@
+   const dashboardSpawned = prev.dashboardSpawned;
+   inst.dashboardSpawned = dashboardSpawned;
+ 
+-  // Capture the cwd at bridge ACTIVATION (module scope). `project_trust` fires
+-  // during resource-loader reload — BEFORE `session_start` reaches extension
+-  // handlers — so a cwd captured at session_start would still be undefined
+-  // when the trust handler runs. For a fresh headless spawn this IS the
+-  // dashboard-provided spawn cwd. See change: adopt-pi-074-080-features (A.3).
++  // Read-only retry display uses the activation cwd for Pi's settings.
+   const activationCwd = process.cwd();
+   inst.activationCwd = activationCwd;
+ 
+@@ -393,13 +287,6 @@
+   // covers the async gap and a missing peer. See change: fix-retry-delay-cap.
+   installPiAiDelayFn(retryTracker);
+   inst.retryTracker = retryTracker;
+-  // Empty-actionable-turn guard: when a terminal turn is a clean-but-empty
+-  // `stop` (thinking-only, no text, no tool call), continue-or-surface instead
+-  // of idling silently. Provider-agnostic. See change:
+-  // fix-gemini-subagent-silent-tool-schema-failure.
+-  const guardConfig = resolveGuardConfig();
+-  const emptyActionableGuard = new EmptyActionableGuard(guardConfig.mode, guardConfig.retryCap);
+-  inst.emptyActionableGuard = emptyActionableGuard;
+   // Abort latch: keeps a user abort latched so a provider backoff that
+   // outlives the 2 s persistent-abort scheduler still stops pi's retry.
+   // Set on abort; cleared on a new user prompt or terminal agent_end; honored
+@@ -415,25 +302,6 @@
+   const subagentFrameBuffer = new SubagentFrameBuffer();
+   inst.subagentFrameBuffer = subagentFrameBuffer;
+ 
+-  // Dashboard MCP server registration with pi's built-in MCP. The bearer lives
+-  // only in this registrar and pi's registration — never in process.env.
+-  // See change: migrate-mcp-to-pi-builtin (D1).
+-  const mcpRegistrar = createMcpDashboardRegistrar({
+-    pi: pi as unknown as McpRegistrationApi,
+-    sessionId: () => inst.sessionId,
+-    reportUnavailable: (reason) => {
+-      inst.connection.send({
+-        type: "plugin_pi_message",
+-        sessionId: inst.sessionId,
+-        pluginId: "mcp-server",
+-        messageType: "mcp/registration-unavailable",
+-        payload: { reason },
+-      });
+-    },
+-    log: console,
+-  });
+-  inst.mcpRegistrar = mcpRegistrar;
+-
+   // Bound the Agent-tick rate on the `tool_execution_update` carrier. That
+   // carrier has no throttle anywhere on its path, so its rate is the
+   // subagent's raw session-event rate; the sibling `subagents:*` carrier is
+@@ -672,45 +540,6 @@
+   }
+   inst.drainFollowupQueue = drainFollowupQueue;
+   /**
+-   * System-originated follow-up enqueue. Unlike `bufferFollowupSend`, this
+-   * does NOT gate on `isAgentStreaming` — it is called by plugin bridges
+-   * (via the `dashboard:enqueue-followup` pi.event) AFTER the run's terminal
+-   * events have fired, by which point `isAgentStreaming` is already `false`
+-   * and the streaming gate would silently discard the entry.
+-   *
+-   * Routes through the SINGLE existing `drainFollowupQueue` path so a
+-   * plugin-requested continuation cannot race or double-inject against
+-   * user follow-ups: both share the one `bridgeFollowUp` buffer and the
+-   * `isDraining` lock, shipping one entry per settle. It ships at once when
+-   * the session is idle, otherwise on the next `agent_settled`.
+-   *
+-   * Text-only by design — the plugin path has no image source — so it wraps
+-   * into a `{ text }` entry. Subject to BOTH buffer bounds, with the refusal
+-   * reported under its OWN command name (`enqueue_followup`): a refused system
+-   * nudge is a lost plugin continuation, and attributing it to `send_prompt`
+-   * would misreport a programmatic refusal as a user action (design D8).
+-   *
+-   * Schedules `drainFollowupQueue()` via
+-   * `setTimeout(…, 0)` so the drain re-runs AFTER the async judge verdict
+-   * resolves (the bridge's own `agent_settled` drain already ran against an
+-   * empty buffer by then).
+-   *
+-   * Generic infrastructure — not goal-specific. See change:
+-   * add-goal-continuation-plugin (design.md Decision 2).
+-   */
+-  function enqueueSystemFollowup(text: string): void {
+-    if (typeof text !== "string" || text.length === 0) return;
+-    const admitted = bridgeFollowUp.push({ text });
+-    if (!admitted.ok) {
+-      console.warn("[dashboard] follow-up buffer refused system entry:", admitted.message);
+-      sendCommandFeedback("enqueue_followup", admitted.message);
+-      return;
+-    }
+-    emitQueueUpdate();
+-    setTimeout(() => drainFollowupQueue(), 0);
+-  }
+-  inst.enqueueSystemFollowup = enqueueSystemFollowup;
+-  /**
+    * Mirror of pi's `_getUserMessageText` (pi-coding-agent agent-session.js).
+    * Used by the per-entry shadow-queue drain matcher in the `message_start`
+    * handler. Joining all text blocks (and dropping non-text content) keeps
+@@ -1118,92 +947,8 @@
+     pluginRequests.failAll("disconnected");
+   };
+ 
+-  // Agent path gate: asks the operator before read/write/edit leave the session's
+-  // roots. Created before the connection so the close handler can reset it.
+-  // See change: ask-agent-file-access-in-chat.
+-  const pathGate = createPathGate({
+-    suppression: (getBridgeState().pathGateSuppression ??= new Suppression()),
+-    getSessionId: () => inst.sessionId,
+-    getPromptBus: () => inst.promptBus,
+-    send: (m) => inst.connection.sendIfOpen(m),
+-    readConfig: () => loadConfig().agentPathGate,
+-    getCwd: () => inst.cachedCwd ?? process.cwd(),
+-    getSessionDir: () => {
+-      try {
+-        return inst.cachedCtx?.sessionManager?.getSessionDir?.();
+-      } catch {
+-        return undefined;
+-      }
+-    },
+-    log: (line) => console.log(line),
+-    notify: (message) => {
+-      try {
+-        inst.cachedCtx?.ui?.notify?.(message, "warning");
+-      } catch {
+-        /* best effort */
+-      }
+-    },
+-  });
+-  inst.pathGate = pathGate;
+-
+-  // Credential vault: applies the hub's granted env values to process.env and
+-  // reconciles on every connect and session_start. State lives on `process`, so
+-  // a reload keeps it. See change: add-credential-vault.
+-  const vaultDelivery = createVaultDelivery({
+-    send: (m) => inst.connection.sendIfOpen(m),
+-    sessionId: () => inst.sessionId ?? "",
+-    certValidation: () => inst.connection.certValidation,
+-    log: (line) => console.log(line),
+-  });
+-  inst.vaultDelivery = vaultDelivery;
+-  // Redaction: the value set is vaultDelivery's process-global redaction registry,
+-  // so a reload and a nested pi mask the same values. The forward filter masks
+-  // every outgoing event_forward frame on a copy (with tail hold-back) and is
+-  // installed at the connection, so no plaintext value reaches the send buffer.
+-  const vaultRedaction = createVaultRedaction({
+-    getState: () => vaultDelivery.redactionState(),
+-    createLocalBashOperations: async () => {
+-      try {
+-        const pkg: any = await import("@earendil-works/pi-coding-agent");
+-        const create: (() => unknown) | undefined = pkg.createLocalBashOperations ?? pkg.default?.createLocalBashOperations;
+-        return create?.() as any;
+-      } catch {
+-        return undefined; // the forwarded copy is still masked
+-      }
+-    },
+-    log: (line) => console.log(line),
+-  });
+-  const vaultForwardFilter = createVaultForwardFilter(vaultRedaction.masker);
+-  // tool_result / message_end / user_bash: masked before pi records the result.
+-  // Fail CLOSED: if masking throws, the output is withheld rather than passed raw.
+-  pi.on("tool_result", async (event: any) => {
+-    try {
+-      return (await vaultRedaction.toolResult(event)) as any;
+-    } catch {
+-      return { content: [{ type: "text", text: "[output withheld: vault redaction failed]" }], details: undefined, structuredContent: undefined } as any;
+-    }
+-  });
+-  pi.on("message_end", (event: any) => {
+-    try {
+-      return vaultRedaction.messageEnd(event) as any;
+-    } catch {
+-      // Fail CLOSED like tool_result: record a placeholder, keep the role.
+-      const message = event?.message;
+-      if (!message || typeof message !== "object") return undefined;
+-      return { message: { ...message, content: [{ type: "text", text: "[message withheld: vault redaction failed]" }] } } as any;
+-    }
+-  });
+-  pi.on("user_bash", async () => {
+-    try {
+-      return (await vaultRedaction.userBash()) as any;
+-    } catch {
+-      return undefined;
+-    }
+-  });
+-
+   inst.connection = new ConnectionManager({
+     url: inst.dashboardUrl,
+-    outboundFilter: (m) => vaultForwardFilter.filter(m),
+     // fix-bridge-mdns-migration-hijack (D5): every migration decision —
+     // accepted or refused, including a reversibility fallback — is reported
+     // through this single chokepoint. `console.log` serves capture-enabled
+@@ -1260,7 +1005,6 @@
+     onOpen: () => {
+       if (!isActive() || inst.connection !== primaryConnection) return;
+       pluginLaneUp();
+-      vaultDelivery.onOpen();
+       // `onReconnect` skips the FIRST open, so plugin latest/stream messages
+       // retained before it would wait for the next emission. Drain after the
+       // manager flushes its buffered register frame (microtask).
+@@ -1277,8 +1021,6 @@
+     onClose: () => {
+       if (inst.connection !== primaryConnection) return;
+       pluginLaneDown();
+-      pathGate.reset();
+-      vaultDelivery.onClose();
+     },
+     onMessage: safe(async (data: unknown) => {
+     return handleInboundMessage(inst, data);
+@@ -1385,38 +1127,17 @@
+   const commandHandler = createCommandHandler(pi, () => inst.sessionId, {
+     limits: inboundLimits,
+     getModelRegistry: () => inst.cachedModelRegistry,
+-    // Selector-open re-sync of providers.json: heals a missed credentials_updated.
+-    // See change: refresh-models-on-provider-change (D1).
+-    reloadProviders: async () => { await reloadProviders(pi); },
+     // Surface a session-id-mismatch drop server-side; the guard's own
+     // `console.error` goes to /dev/null under the default
+     // `keeperLog.capturePiOutput:false`.
+     // See change: fix-spawn-correlation-ttl-coupling (D6).
+     reportInboundDrop: (drop) => inst.connection.reportInboundDrop(drop),
+-    // AI-draft fork-subagent wiring (see change:
+-    // add-session-uncommitted-indicator-and-commit). Both degrade silently
+-    // to the draft ladder's lower rungs when unavailable.
+-    getSessionContextText: () => buildSessionContextText(inst.cachedCtx),
+-    runDraftAgent: (seed: string, cwd: string) =>
+-      runForkSubagentDraft(seed, cwd, () => inst.cachedCtx?.model),
+-    // Mirror server attach/detach pushes into BridgeContext.attachedChange so
+-    // the before_agent_start injector exposes it. See change:
+-    // inject-session-context-into-agent.
+-    // Dashboard system renames reach the namer BEFORE pi echoes them, so the
+-    // echo is not latched `user`. See change: investigate-auto-name-provenance-relabel (D3).
++    // Browser renames are explicit user actions; no automatic namer exists.
+     onSystemRename: (name: string) => {
+-      const prevName = inst.lastSessionName;
+-      const rollbackNamer = getAutoNamer().noteSystemRename(name);
+-      inst.lastSessionName = name; // suppress the redundant plain name poll
+-      return () => {
+-        rollbackNamer();
+-        inst.lastSessionName = prevName;
+-      };
++      const previous = inst.lastSessionName;
++      inst.lastSessionName = name;
++      return () => { inst.lastSessionName = previous; };
+     },
+-    onUserRename: () => {
+-      // Only matters once a namer exists; never create one for a user rename.
+-      inst.autoNamer?.noteUserRename();
+-    },
+     onAttachProposalChanged: (next: string | null) => {
+       inst.attachedChange = next;
+       const s = getBridgeState();
+@@ -1686,13 +1407,11 @@
+         sessionId: inst.sessionId,
+         sessionFile: inst.lastSessionFile,
+         originEndpoint: inst.dashboardUrl,
+-        onServerMessage: (m) => void pathGate.onServerMessage(m),
+         connect: (url) => {
+           let handler: (msg: unknown) => void = () => {};
+           targetManager = new ConnectionManager({
+             url,
+-            outboundFilter: (m) => vaultForwardFilter.filter(m),
+-            planDial: (base) => localCredentialPlan(base),
++                    planDial: (base) => localCredentialPlan(base),
+             onIdentityFailure: (report) => appendIdentityLog(report),
+             getSessionId: () => inst.sessionId,
+             onMessage: (data) => {
+@@ -1857,91 +1576,6 @@
+   function sendSessionNameIfChanged() { const bc = syncBc(); _sendSessionNameIfChanged(bc); applyBc(bc); }
+   inst.sendSessionNameIfChanged = sendSessionNameIfChanged;
+ 
+-  // ── add-auto-session-naming ──────────────────────────────────────────────
+-  // Stream through pi's OWN `ctx.modelRegistry`, not a bare-imported pi-ai
+-  // module (design D6). `ModelRuntime.streamSimple` already performs the full
+-  // normalize → prepare → `provider.streamSimple` sequence with credentials pi
+-  // has already resolved, so this is shorter than adapting a module AND it
+-  // removes a compat surface instead of adding one.
+-  //
+-  // pi >= 0.85 exports no global `streamSimple` at all, so the old bare import
+-  // silently yielded `undefined` and auto-naming never ran. The module import
+-  // is kept only as a fallback for a pi older than `piCompatibility.minimum`.
+-  // NOT cached across calls when it resolves from the registry: the registry
+-  // is captured lazily, so caching a miss would pin auto-naming off for the
+-  // whole session. See change: adopt-piai-factory-api-registry.
+-  async function loadStreamSimple(): Promise<StreamSimpleFn | undefined> {
+-    const registry: any = inst.cachedModelRegistry;
+-    if (typeof registry?.streamSimple === "function") {
+-      return registry.streamSimple.bind(registry) as StreamSimpleFn;
+-    }
+-    if (piAiStreamSimple !== undefined) return piAiStreamSimple ?? undefined;
+-    try {
+-      const mod: any = await import("@earendil-works/pi-ai");
+-      piAiStreamSimple = (mod.streamSimple as StreamSimpleFn) ?? null;
+-    } catch {
+-      piAiStreamSimple = null;
+-    }
+-    return piAiStreamSimple ?? undefined;
+-  }
+-
+-  // One namer per bridge (a bridge is a single pi session). Built lazily so it
+-  // captures the live `cachedCtx` / `cachedModelRegistry` at call time.
+-  function getAutoNamer(): AutoNamer {
+-    if (inst.autoNamer) return inst.autoNamer;
+-    inst.autoNamer = createAutoNamer({
+-      getAutoNameSessions: () => inst.autoNameSessions,
+-      resolveNamingModel,
+-      getRegistry: () => inst.cachedModelRegistry,
+-      loadStreamSimple,
+-      getTranscript: () => extractLatestTurnWindow(inst.cachedCtx),
+-      applyName: (title: string) => {
+-        try { pi.setSessionName(title); } catch { /* ignore */ }
+-        inst.lastSessionName = title; // suppress the redundant plain name_update poll
+-        inst.connection.send({ type: "session_name_update", sessionId: inst.sessionId, name: title, nameSource: "auto" });
+-      },
+-      reportUserRename: (name: string) => {
+-        inst.connection.send({ type: "session_name_update", sessionId: inst.sessionId, name, nameSource: "user" });
+-      },
+-      emitError: (reason: string) => {
+-        inst.connection.send({ type: "auto_name_error", sessionId: inst.sessionId, reason });
+-      },
+-      reportOutcome: ({ outcome, reason, modelRef }) => {
+-        inst.connection.send({
+-          type: "auto_name_outcome", sessionId: inst.sessionId, outcome, reason, modelRef, at: Date.now(),
+-        });
+-      },
+-      // Carried across reload AND persisted server-side into the session's
+-      // `.meta.json`, so "permanent" survives a process restart rather than
+-      // re-spending a full budget on every cold start (design D7).
+-      persistState: (state: PersistedNamerState) => {
+-        inst.namerState = state;
+-        prev.namerState = state;
+-        inst.connection.send({ type: "auto_name_state", sessionId: inst.sessionId, state });
+-      },
+-    }, inst.namerState);
+-    return inst.autoNamer;
+-  }
+-  inst.getAutoNamer = getAutoNamer;
+-
+-  // Run one naming attempt after a terminal turn. Observing the current name
+-  // first catches a pre-existing / in-pi rename (external → permanent "user"
+-  // lockout) before attempting to auto-name.
+-  //
+-  // The toggle gates the OBSERVATION but not the attempt: `maybeName` checks it
+-  // internally so the `disabled` outcome is reportable at all (design D9),
+-  // while `onObservedName` stays gated exactly as before this change. Letting
+-  // it run with the feature OFF would newly latch `nameSource: "user"` (plus a
+-  // persisted update) on sessions the user never asked to auto-name, inflating
+-  // the very population the follow-up investigation has to measure.
+-  // See change: fix-auto-naming-reasoning-model.
+-  function runAutoNameOnTurnEnd(): void {
+-    const namer = getAutoNamer();
+-    if (inst.autoNameSessions) namer.onObservedName(pi.getSessionName() ?? "");
+-    void namer.maybeName();
+-  }
+-  inst.runAutoNameOnTurnEnd = runAutoNameOnTurnEnd;
+-
+   function sendCwdMissingIfChanged(cwd: string) { const bc = syncBc(); _sendCwdMissingIfChanged(bc, cwd); applyBc(bc); }
+   inst.sendCwdMissingIfChanged = sendCwdMissingIfChanged;
+   function sendPiVersionIfChanged() { _sendPiVersionIfChanged(syncBc()); }
+@@ -1956,31 +1590,6 @@
+   // Pass-through events: forward with no enrichment
+   registerPassThroughForwarders(inst);
+ 
+-  // No dashboard-side subagent admission: the subagents producer's `maxConcurrent`
+-  // semaphore is the ONE concurrency limit and queues the excess instead of
+-  // refusing it. See change: subagent-queue-visibility (D6).
+-
+-  // Agent credential guard — always on, no setting. Registered BEFORE the path gate so a
+-  // blocked call never shows a gate prompt and a grant / YOLO / gate-off cannot override it.
+-  // Deliberately NOT wrapped in the fail-open `safe()`: the guard maps an internal error to a
+-  // block of that one call. Stale bridge instances (after reload) pass through.
+-  // See change: encrypt-credentials-at-rest (D12).
+-  const credentialGuardHandler = createCredentialGuardToolCallHandler(
+-    createCredentialGuard({ env: process.env, homedir: os.homedir(), log: (line) => console.log(line) }),
+-    isActive,
+-  );
+-  pi.on("tool_call", credentialGuardHandler as any);
+-  // Agent path gate — registered AFTER the bridge's own forwarder and deliberately
+-  // NOT wrapped in the fail-open `safe()`: its own try/catch maps any internal error to a block. Stale bridge instances
+-  // (after reload) pass through. See change: ask-agent-file-access-in-chat (D1).
+-  pi.on("tool_call", ((event: any, ctx: any) => {
+-    if (!isActive()) return undefined;
+-    return pathGate.handler(event, ctx);
+-  }) as any);
+-  pi.on("before_agent_start", safe((event: any) => {
+-    if (!isActive()) return;
+-    pathGate.onBeforeAgentStart(event);
+-  }));
+   // Generic custom entries/messages (pi.appendEntry / pi.sendMessage) are NOT
+   // subscribed here: pi does NOT dispatch `entry_appended` to extensions, and
+   // the idle-path sendMessage emits message_start/end to internal listeners
+@@ -1989,36 +1598,9 @@
+   // pattern as wrapAppendMessageForCtx), installed at session_start below.
+   // See change: render-inline-reasoning-and-custom-entries (D2).
+ 
+-  // Push external renames the moment they happen (pi 0.80.3+ session_info_changed)
+-  // instead of waiting for the turn-end name poll. The new name is routed
+-  // through the auto-namer's self-filter: the bridge's OWN auto-name echoing
+-  // back is classified self (no push, no lockout); a dashboard / in-pi rename
+-  // is classified external → one session_name_update{nameSource:"user"} +
+-  // permanent lockout. The turn-end poll (runAutoNameOnTurnEnd) stays as a
+-  // fallback for pi builds that do not emit this event. See change:
+-  // adopt-pi-074-080-features (A.2).
++  // Observe Pi-side renames without generating names or changing provenance.
+   registerSessionInfoChanged(inst);
+ 
+-  // Auto-decide project_trust for dashboard-spawned headless sessions (pi
+-  // 0.79.0+). The event fires during resource-loader reload, BEFORE
+-  // session_start reaches handlers, so the gate compares the event cwd to the
+-  // ACTIVATION cwd (captured at module scope above). Reads eventCwd from the
+-  // per-event ctx inside try/catch (ctx.cwd throws after session replacement).
+-  // Any non-match — or a throw — defers to pi's default. See change:
+-  // adopt-pi-074-080-features (A.3).
+-  registerProjectTrust(inst);
+-
+-  // Per-turn system-prompt injector: splice dashboard session context
+-  // (sessionId, cwd, attached OpenSpec change) into the system prompt. Reads
+-  // live state via syncBc each turn; isActive guards against /reload stacking.
+-  // Coexists with the pass-through before_agent_start forwarder above (pi
+-  // chains { systemPrompt } results). See change: inject-session-context-into-agent.
+-  registerDashboardContextInjector(
+-    pi,
+-    () => ({ sessionId: inst.sessionId, attachedChange: inst.attachedChange }),
+-    isActive,
+-  );
+-
+   // Pi does NOT forward `queue_update` events to extensions (verified in
+   // pi-coding-agent 0.71+ — see _emitExtensionEvent allowlist). Bridge
+   // tracks the shadow queues itself; drain happens on observed boundaries:
+@@ -2124,24 +1706,6 @@
+ 
+   registerSessionShutdown(inst);
+ 
+-  // Re-send models list when custom providers finish async discovery
+-  onProviderChanged(() => {
+-    if (!isActive()) return;
+-    if (inst.cachedModelRegistry && inst.sessionReady) {
+-      try {
+-        const models = filterByEnabledModels(inst.cachedModelRegistry.getAvailable().map(toModelInfo));
+-        inst.connection.send({ type: "models_list", sessionId: inst.sessionId, models });
+-        // See change: replace-hardcoded-provider-lists.
+-        inst.connection.send({ type: "providers_list", sessionId: inst.sessionId, providers: buildProviderCatalogue() });
+-      } catch { /* ignore */ }
+-
+-      // Retry pending default model — custom provider may now have its models
+-      if (inst.pendingDefaultModel) {
+-        inst.pendingDefaultModel = applyDefaultModel();
+-      }
+-    }
+-  });
+-
+   // Register cleanup for /reload — saves state to globalThis and tears down resources
+   const state = getBridgeState();
+   state.cleanup = () => {
+@@ -2154,7 +1718,6 @@
+     if (inst.heartbeatTimer) { clearInterval(inst.heartbeatTimer); inst.heartbeatTimer = null; }
+     if (inst.gitPollTimer) { clearInterval(inst.gitPollTimer); inst.gitPollTimer = null; }
+     drainDisposables(s);
+-
+     // Dev build & restart: rebuild client and stop server before reload
+     if (config.devBuildOnReload) {
+       const __filename = fileURLToPath(import.meta.url);
+--- a/packages/extension/src/pr-status.ts
++++ b/packages/extension/src/pr-status.ts
+@@ -86,6 +86,17 @@
+   dispose(): void;
+ }
+ 
++/** Web-only bridge profile: expose no cached PR state and never execute `gh`. */
++export function createPassivePrStatusScheduler(): PrStatusScheduler {
++  return {
++    tuple: () => ({}),
++    observe: () => {},
++    refresh: () => {},
++    invocations: () => 0,
++    dispose: () => {},
++  };
++}
++
+ const UNKNOWN: PrTuple = {};
+ const ALL_NULL: PrTuple = {
+   gitPrNumber: null,
+--- /dev/null
++++ b/packages/server/src/__tests__/web-only-compaction-reload.test.ts
+@@ -0,0 +1,60 @@
++import type { EventForwardMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
++import { describe, expect, it, vi } from "vitest";
++import { createInitialState, reduceEvent } from "../../../client/src/lib/chat/event-reducer.js";
++import { registerEnrichedForwarders, registerPassThroughForwarders } from "../../../extension/src/bridge-handlers/forwarders.js";
++import { makeStubInstance } from "../../../extension/src/__tests__/helpers/bridge-instance-stub.js";
++import { dispatchReload, type DispatchReloadContext, RELOAD_COMPACTING_MESSAGE } from "../rpc-keeper/dispatch-reload.js";
++import { extractSessionUpdates } from "../session/event-status-extraction.js";
++
++describe("web-only compaction observation", () => {
++  it.each(["session_compact", "session_compact_failed"])("refuses reload during idle compaction, then allows it after %s", async (terminal) => {
++    const session = { status: "idle", compacting: false };
++    let chat = createInitialState();
++    const sent: EventForwardMessage[] = [];
++    const { inst, pi } = makeStubInstance({
++      coalescer: { flush: vi.fn() } as never,
++      polling: {} as never,
++      connection: {
++        send: (message: EventForwardMessage) => {
++          sent.push(message);
++          Object.assign(session, extractSessionUpdates(message.event));
++          chat = reduceEvent(chat, message.event);
++        },
++      } as never,
++    });
++    registerEnrichedForwarders(inst);
++    registerPassThroughForwarders(inst);
++    const fire = async (type: string, payload: Record<string, unknown> = {}) => {
++      const handlers = pi.handlers.get(type);
++      expect(handlers, `registered ${type} observer`).toHaveLength(1);
++      for (const handler of handlers!) await handler({ type, ...payload }, {});
++    };
++    const respawn = vi.fn(async () => {});
++    const sendToSession = vi.fn(() => true);
++    const feedback = vi.fn();
++    const context: DispatchReloadContext = {
++      headlessPidRegistry: { getPid: () => 42, listSessions: () => [] },
++      getSession: () => session,
++      isSessionConnected: () => true,
++      sendToSession,
++      respawn,
++      emitCommandFeedback: feedback,
++    };
++    const preparation = { context: { messages: ["private context"] }, customInstructions: "private instructions" };
++    const before = JSON.stringify(preparation);
++    await fire("session_before_compact", preparation);
++    expect(JSON.stringify(preparation)).toBe(before);
++    expect(sent[0].event.data).toEqual({ type: "session_before_compact" });
++    expect(session).toEqual({ status: "idle", compacting: true });
++    expect(chat.messages).toEqual([]);
++    expect(await dispatchReload("S1", context)).toBe("refused");
++    expect(feedback).toHaveBeenCalledWith("S1", "/reload", "error", RELOAD_COMPACTING_MESSAGE);
++    expect(respawn).not.toHaveBeenCalled();
++    expect(sendToSession).not.toHaveBeenCalled();
++
++    await fire(terminal);
++    expect(session).toEqual({ status: "idle", compacting: false });
++    expect(await dispatchReload("S1", context)).toBe("respawn");
++    expect(respawn).toHaveBeenCalledOnce();
++  });
++});
+--- /dev/null
++++ b/packages/server/src/__tests__/web-only-preferences-routes.test.ts
+@@ -0,0 +1,34 @@
++import Fastify from "fastify";
++import { describe, expect, it, vi } from "vitest";
++
++import { registerPreferencesAutoNameRoutes } from "../routes/preferences-auto-name-routes.js";
++import { registerPreferencesWorktreeInitRoutes } from "../routes/preferences-worktree-init-routes.js";
++
++describe("fixed web-only preferences", () => {
++  it("reports automatic naming and worktree creation as disabled despite stale stored values", async () => {
++    const app = Fastify();
++    const preferencesStore = {
++      getAutoNameSessions: vi.fn(() => true),
++      getAutoInitWorktreeOnSpawn: vi.fn(() => true),
++      setAutoNameSessions: vi.fn(),
++      setAutoInitWorktreeOnSpawn: vi.fn(),
++    };
++    registerPreferencesAutoNameRoutes(app, {
++      preferencesStore: preferencesStore as never,
++      piGateway: { broadcast: vi.fn() } as never,
++      networkGuard: async () => {},
++    });
++    registerPreferencesWorktreeInitRoutes(app, {
++      preferencesStore: preferencesStore as never,
++      networkGuard: async () => {},
++    });
++
++    const naming = await app.inject({ method: "GET", url: "/api/preferences/auto-name" });
++    const worktree = await app.inject({ method: "GET", url: "/api/preferences/worktree-auto-init" });
++
++    expect(naming.json()).toEqual({ autoNameSessions: false });
++    expect(worktree.json()).toEqual({ autoInitWorktreeOnSpawn: false });
++    expect(preferencesStore.getAutoNameSessions).not.toHaveBeenCalled();
++    expect(preferencesStore.getAutoInitWorktreeOnSpawn).not.toHaveBeenCalled();
++  });
++});
+--- /dev/null
++++ b/packages/server/src/__tests__/web-only-server-boundary.test.ts
+@@ -0,0 +1,138 @@
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import type { WebSocket } from "ws";
++
++import { createServer, type DashboardServer, type ServerConfig } from "../server.js";
++import { proofWebSocket } from "../test-support/local-credential-stamp.js";
++
++const config: ServerConfig = {
++  port: 0,
++  piPort: 0,
++  host: "127.0.0.1",
++  dev: true,
++  autoShutdown: false,
++  shutdownIdleSeconds: 0,
++  tunnel: false,
++  pingInterval: 0,
++};
++
++function waitForOpen(ws: WebSocket): Promise<void> {
++  return new Promise((resolve, reject) => {
++    ws.once("open", resolve);
++    ws.once("error", reject);
++  });
++}
++
++function waitForSpawnFailure(ws: WebSocket): Promise<Record<string, unknown>[]> {
++  return new Promise((resolve, reject) => {
++    const messages: Record<string, unknown>[] = [];
++    const timeout = setTimeout(() => reject(new Error("spawn preflight response timeout")), 2000);
++    ws.on("message", (raw) => {
++      const message = JSON.parse(raw.toString()) as Record<string, unknown>;
++      if (message.type !== "spawn_result" && message.type !== "spawn_error") return;
++      messages.push(message);
++      if (messages.some((item) => item.type === "spawn_result")
++        && messages.some((item) => item.type === "spawn_error")) {
++        clearTimeout(timeout);
++        resolve(messages);
++      }
++    });
++  });
++}
++
++describe("fixed web-only server boundary", () => {
++  let server: DashboardServer | undefined;
++  const previousNoMdns = process.env.PI_DASHBOARD_NO_MDNS;
++
++  beforeEach(() => {
++    process.env.PI_DASHBOARD_NO_MDNS = "1";
++    vi.spyOn(console, "log").mockImplementation(() => {});
++    vi.spyOn(console, "warn").mockImplementation(() => {});
++    vi.spyOn(console, "error").mockImplementation(() => {});
++  });
++
++  afterEach(async () => {
++    if (server) await server.stop();
++    server = undefined;
++    vi.restoreAllMocks();
++    if (previousNoMdns === undefined) delete process.env.PI_DASHBOARD_NO_MDNS;
++    else process.env.PI_DASHBOARD_NO_MDNS = previousNoMdns;
++  });
++
++  it("refuses agent-policy writes and reports stale automatic preferences as disabled", async () => {
++    server = await createServer(config);
++    await server.start();
++    const base = `http://127.0.0.1:${server.httpPort()}`;
++
++    for (const [method, path] of [
++      ["PUT", "/api/pi-settings"],
++      ["POST", "/api/access/grants"],
++      ["PATCH", "/api/preferences/auto-name"],
++      ["PATCH", "/api/preferences/worktree-auto-init"],
++    ] as const) {
++      const response = await fetch(base + path, {
++        method,
++        headers: { "content-type": "application/json" },
++        body: "{}",
++      });
++      expect(response.status, `${method} ${path}`).toBe(403);
++      expect(await response.json()).toMatchObject({ error: "web_only" });
++    }
++
++    const naming = await fetch(base + "/api/preferences/auto-name");
++    const worktree = await fetch(base + "/api/preferences/worktree-auto-init");
++    expect(await naming.json()).toEqual({ autoNameSessions: false });
++    expect(await worktree.json()).toEqual({ autoInitWorktreeOnSpawn: false });
++  });
++
++  it("wires a broken managed bridge declaration to an immediate browser spawn failure", async () => {
++    const previousHome = process.env.HOME;
++    const home = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-preflight-server-"));
++    const agentDir = path.join(home, ".pi", "agent");
++    const declarationPath = path.join(agentDir, "pi-dashboard");
++    const settingsSource = path.join(home, "tracked-settings.json");
++    fs.mkdirSync(agentDir, { recursive: true });
++    fs.writeFileSync(settingsSource, JSON.stringify({
++      packages: [{ source: "./pi-dashboard", skills: [] }],
++    }));
++    fs.symlinkSync(settingsSource, path.join(agentDir, "settings.json"));
++    fs.symlinkSync(path.join(home, "missing-dashboard-extension"), declarationPath, "dir");
++    process.env.HOME = home;
++
++    let browser: WebSocket | undefined;
++    try {
++      server = await createServer(config);
++      await server.start();
++      browser = proofWebSocket(`ws://127.0.0.1:${server.httpPort()}/ws`);
++      await waitForOpen(browser);
++      const failure = waitForSpawnFailure(browser);
++      browser.send(JSON.stringify({
++        type: "spawn_session",
++        cwd: home,
++        requestId: "broken-bridge",
++      }));
++
++      const messages = await failure;
++      expect(messages).toContainEqual(expect.objectContaining({
++        type: "spawn_result",
++        success: false,
++        requestId: "broken-bridge",
++      }));
++      expect(messages).toContainEqual(expect.objectContaining({
++        type: "spawn_error",
++        code: "PREFLIGHT_FAILED",
++        reasons: [expect.objectContaining({
++          code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++          message: expect.stringContaining(declarationPath),
++        })],
++      }));
++    } finally {
++      browser?.close();
++      if (previousHome === undefined) delete process.env.HOME;
++      else process.env.HOME = previousHome;
++    }
++  });
++});
+--- a/packages/server/src/pairing/browser-gateway.ts
++++ b/packages/server/src/pairing/browser-gateway.ts
+@@ -11,6 +11,7 @@
+ import type { ExitIntent } from "@blackbelt-technology/pi-dashboard-shared/boot-state.js";
+ import type { NotifyLogEntry } from "@blackbelt-technology/pi-dashboard-shared/types.js";
+ import { normalizeNotifyLevel } from "@blackbelt-technology/pi-dashboard-shared/notify.js";
++import { isWebOnlyDisabledCommand, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
+ import { WebSocket, WebSocketServer } from "ws";
+ import { getLastBindReachability } from "../auth/bind-reachability-service.js";
+ import { type DirectoryService, hasOpenSpecDir, hasOpenSpecRoot } from "../directory-service.js";
+@@ -2285,6 +2286,17 @@
+             resource: road?.resource ?? { kind: "", ws: msg.type },
+           });
+           if (!allowed) return;
++        }
++
++        if (isWebOnlyDisabledCommand(msg.type)) {
++          if (msg.type === "plugin_action") {
++            const action = msg as { pluginId?: string; action?: string };
++            sendTo(ws, { type: "plugin_action_error", pluginId: action.pluginId ?? "", action: action.action ?? "", error: WEB_ONLY_REFUSAL });
++          } else {
++            const event = { eventType: "command_feedback", timestamp: Date.now(), data: { command: msg.type, status: "error", message: WEB_ONLY_REFUSAL } };
++            sendTo(ws, { type: "event", sessionId: (msg as { sessionId?: string }).sessionId ?? "", seq: 0, event });
++          }
++          return;
+         }
+ 
+         // ACP sessions: pi-only operations are refused before any forwarding.
+--- a/packages/server/src/routes/preferences-auto-name-routes.ts
++++ b/packages/server/src/routes/preferences-auto-name-routes.ts
+@@ -33,7 +33,9 @@
+     "/api/preferences/auto-name",
+     { preHandler: networkGuard },
+     async () => {
+-      return { autoNameSessions: preferencesStore.getAutoNameSessions() };
++      // The downstream bridge never invokes the naming model. Report that
++      // fixed behavior even when an older preferences file says otherwise.
++      return { autoNameSessions: false };
+     },
+   );
+ 
+--- a/packages/server/src/routes/preferences-worktree-init-routes.ts
++++ b/packages/server/src/routes/preferences-worktree-init-routes.ts
+@@ -27,7 +27,9 @@
+     "/api/preferences/worktree-auto-init",
+     { preHandler: networkGuard },
+     async () => {
+-      return { autoInitWorktreeOnSpawn: preferencesStore.getAutoInitWorktreeOnSpawn() };
++      // Fixed downstream web-only profile: stale persisted preferences must not
++      // make the browser create a worktree as a side effect of session spawn.
++      return { autoInitWorktreeOnSpawn: false };
+     },
+   );
+ 
+--- a/packages/server/src/routes/system-routes.ts
++++ b/packages/server/src/routes/system-routes.ts
+@@ -158,17 +158,9 @@
+     if (!result.success) return { ok: false as const, error: result.error };
+     const config = await import("@blackbelt-technology/pi-dashboard-shared/config.js");
+     const reloaded = config.loadConfig();
+-    const mirrorKeys = (["defaultModel", "defaultThinkingLevel"] as const).filter((k) => partial[k] !== undefined);
+-    let piMirror: PiMirrorResult | undefined;
+-    if (mirrorKeys.length > 0) {
+-      try {
+-        piMirror = await mirrorDefaultsToPi(config.loadConfig, mirrorKeys);
+-      } catch (err) {
+-        piMirror = { ok: false, error: "io" };
+-        console.warn("[pi-settings] default-model mirror threw:", err instanceof Error ? err.message : err);
+-      }
+-      if (!piMirror.ok) console.warn(`[pi-settings] default-model mirror failed: ${piMirror.error}`);
+-    }
++    // Downstream web-only: saving Dashboard config never mirrors agent defaults
++    // into Pi's settings (which may be a user-owned tracked symlink).
++    const piMirror: PiMirrorResult | undefined = undefined;
+     return { ok: true as const, result, reloaded, piMirror };
+   };
+   return runOnConfigSaveChain(run);
+--- a/packages/server/src/server.ts
++++ b/packages/server/src/server.ts
+@@ -13,7 +13,7 @@
+ import { fileURLToPath } from "node:url";
+ import { computeReplayEntryTypes } from "@blackbelt-technology/pi-dashboard-shared/dashboard-plugin/replay-entry-types.js";
+ import { getReplayEntryTypes, recordRejectedPluginAction, setReplayEntryTypesProvider } from "./plugin-entry-stats.js";
+-import { createGatedProviderAuth, createIsPiExtensionInstalled, createPluginServiceRegistry, createPluginSessionManager, createServerPluginContext, discoverPlugins, fixtureEntryAllowed, getFileValidatorPool, getFileValidatorRegistry, getPluginStatusStore, getWsRouteRegistry, loadServerEntries, pluginServerAllowed, redactPluginConfigForClient, refreshRequirementProbesFor, registerPluginAssetsRoute, resolvePluginEnabled, type ServerLoadDeps, setDeclaredBundledPluginIds } from "@blackbelt-technology/dashboard-plugin-runtime/server";
++import { createGatedProviderAuth, createIsPiExtensionInstalled, createPluginServiceRegistry, createPluginSessionManager, createServerPluginContext, discoverPlugins, fixtureEntryAllowed, getFileValidatorPool, getFileValidatorRegistry, getPluginStatusStore, getWsRouteRegistry, pluginServerAllowed, redactPluginConfigForClient, refreshRequirementProbesFor, registerPluginAssetsRoute, resolvePluginEnabled, type ServerLoadDeps, setDeclaredBundledPluginIds } from "@blackbelt-technology/dashboard-plugin-runtime/server";
+ import {
+   createMcpClientConfigService,
+   createRealConfigIO,
+@@ -30,13 +30,9 @@
+ import type { HostAction, HostResource, Principal } from "@blackbelt-technology/pi-dashboard-shared/identity.js";
+ import { advertiseDashboard, createBrowser, type DashboardBrowser, type DiscoveredServer, resolveAdvertisedAddresses, stopAdvertising } from "@blackbelt-technology/pi-dashboard-shared/mdns-discovery.js";
+ import { DEFAULT_MEMORY_LIMITS } from "@blackbelt-technology/pi-dashboard-shared/memory-limits.js";
+-import {
+-  deregisterPluginBridge,
+-  reconcilePluginBridgePackages,
+-  syncPluginBridges,
+-} from "@blackbelt-technology/pi-dashboard-shared/plugin-bridge-register.js";
+ import type { PluginRequestMessage } from "@blackbelt-technology/pi-dashboard-shared/protocol.js";
+ import { RECOVERY_REATTACH_GRACE_MS, RECOVERY_SHUTDOWN_WINDOW_MS } from "@blackbelt-technology/pi-dashboard-shared/recovery-timing.js";
++import { isWebOnlyDisabledRoute, WEB_ONLY_REFUSAL } from "@blackbelt-technology/pi-dashboard-shared/web-only.js";
+ import {
+   deriveEffectiveSource,
+   deriveLocalIdentity,
+@@ -641,21 +637,6 @@
+  * (filesystem → persisted grant; cwd → pin). Best-effort — the grant itself already
+  * stands. See change: mirror-dashboard-trust-to-pi.
+  */
+-function storePiTrustChoiceOfVerdict(
+-  mirror: ReturnType<typeof createPiTrustMirrorService>,
+-  msg: { verdict: string; plane: string; subject: string; piTrust?: boolean },
+-): void {
+-  if (msg.verdict !== "allow-always" || typeof msg.piTrust !== "boolean") return;
+-  const kind = msg.plane === "filesystem" ? "accessGrants" : msg.plane === "cwd" ? "pinned" : null;
+-  if (!kind) return;
+-  try {
+-    mirror.setChoice(kind, msg.subject, msg.piTrust);
+-    mirror.refresh();
+-  } catch (err) {
+-    console.warn(`[pi-trust-mirror] could not store the pi-trust choice: ${(err as Error)?.message}`);
+-  }
+-}
+-
+ export async function createServer(config: ServerConfig): Promise<DashboardServer> {
+   // Decide the network trust mode ONCE, before any hook is installed and before
+   // the server listens (so no operator write can race it). Never re-derived
+@@ -1761,31 +1742,9 @@
+     listPersistedGrants: () => listAccessGrants().filter((g) => g.scope === "project"),
+     live: piTrustLive,
+   });
+-  setPiTrustMirror(piTrustMirror);
+-  try {
+-    piTrustMirror.rebuildAtBoot();
+-  } catch (err) {
+-    console.warn(`[pi-trust-mirror] boot snapshot rebuild failed: ${(err as Error)?.message}`);
+-  }
+-  // Any source change refreshes the snapshot (coalesced); operator revokes additionally
+-  // go through the ordered `revoke` path in their handlers.
+-  let mirrorRefreshQueued = false;
+-  const queueMirrorRefresh = (): void => {
+-    if (mirrorRefreshQueued) return;
+-    mirrorRefreshQueued = true;
+-    setImmediate(() => {
+-      mirrorRefreshQueued = false;
+-      piTrustMirror.refresh();
+-    });
+-  };
+-  preferencesStore.onPinsChanged?.(queueMirrorRefresh);
+-  preferencesStore.onWorkspacesChanged(queueMirrorRefresh);
+-  setGrantsChangedListener(queueMirrorRefresh);
+-  setTrustChangedListener(queueMirrorRefresh);
+-  // Session entries never reach disk, so their listeners recompute the live count
+-  // synchronously (the snapshot is rewritten before the action reports success).
+-  setSessionGrantsChangedListener(() => piTrustMirror.noteLiveChanged());
+-  setSessionTrustChangedListener(() => piTrustMirror.noteLiveChanged());
++  setPiTrustMirror(undefined); // Never install Dashboard as Pi's trust writer.
++  // No boot snapshot rebuild or source-change listeners: Dashboard does not
++  // author Pi trust, even if persisted full-mode preferences predate this patch.
+   const hostProjectTrust = await loadHostProjectTrustService();
+   pluginServiceRegistry.set("host.isProjectTrusted", hostProjectTrust.isProjectTrusted);
+   pluginServiceRegistry.set("host.projectTrustSource", hostProjectTrust.projectTrustSource);
+@@ -2063,6 +2022,12 @@
+     maxParamLength: 1024,
+   });
+ 
++  fastify.addHook("onRequest", async (request, reply) => {
++    if (isWebOnlyDisabledRoute(request.method, request.url)) {
++      return reply.code(403).send({ error: "web_only", message: WEB_ONLY_REFUSAL });
++    }
++  });
++
+   // Optional native TLS listener (off by default): a second `https.Server` that
+   // dispatches into THIS Fastify instance — one route table, one gate chain, one
+   // upgrade switch, two transports. Reconciled after `listen`; failure-isolated.
+@@ -2272,7 +2237,6 @@
+     isRefused,
+   });
+   yoloForLiveTrust = yolo;
+-  yolo.setChangeListener(() => piTrustMirror.noteLiveChanged());
+   const yoloBoot = yolo.activateFromEnv(process.env[YOLO_ENV]);
+   if (yoloBoot.ok) {
+     const s = yoloBoot.session;
+@@ -2299,7 +2263,6 @@
+   browserGateway.registerHandler("grant_response", (msg) => {
+     grantCoordinator
+       .onResponse(msg)
+-      .then(() => storePiTrustChoiceOfVerdict(piTrustMirror, msg))
+       .catch((err: unknown) => {
+         console.error(`[access-grant] grant_response failed: ${(err as Error)?.message ?? err}`);
+       });
+@@ -2311,13 +2274,7 @@
+     deps: {
+       now: Date.now,
+       grants: createDefaultProvisioningGrantStore(),
+-      // Same two calls as `storePiTrustChoiceOfVerdict`: store the choice, then refresh the snapshot.
+-      mirror: () => ({
+-        setChoice: (kind, folder, choice) => {
+-          piTrustMirror.setChoice(kind, folder, choice);
+-          piTrustMirror.refresh();
+-        },
+-      }),
++      mirror: () => null,
+       ladder: {
+         killSwitch: () => isGrantPromptKilled(),
+         promptEnabled: () => loadConfig().accessGrants?.promptEnabled === true,
+@@ -4821,15 +4778,7 @@
+             },
+           )),
+         };
+-        pluginDiscovery = createPluginDiscoveryWiring({
+-          loadDeps: pluginLoadDeps,
+-          readDeclaredBundledIds: () => readServedBundledPluginIds(clientDirResolved),
+-          clearContentHashCache: () => runtimeClients.clearContentHashCache(),
+-          logAdmissions: () => logRuntimeAdmissions({ info: (m) => console.log(m) }, "refresh"),
+-          listActiveCwds: () => sessionManager.listActive().map((s) => s.cwd),
+-          broadcastPluginsChanged: (plugins) => browserGateway.broadcast({ type: "plugins_changed", plugins }),
+-        });
+-        await loadServerEntries(pluginLoadDeps);
++        // Fixed web-only build: no plugin server entries or discovery refresh loader.
+       } catch (err) {
+         console.error('[plugin-loader] Unexpected error during pre-listen load:', err);
+       } finally {
+@@ -5428,72 +5377,7 @@
+           },
+         );
+ 
+-      // Auto-register plugin bridge entries
+-      const discoveredPlugins = discoverPlugins();
+-      // A fixture bridge left in settings.json by an earlier opt-in run must
+-      // not survive into a gated run (reconciliation below would keep it).
+-      // See change: expose-plugin-credential-and-oauth-seams (D8).
+-      for (const p of discoveredPlugins) {
+-        if (p.bridgeEntryPath && !fixtureEntryAllowed(p.manifest)) {
+-          try { deregisterPluginBridge(p.manifest.id); } catch (err) {
+-            console.warn(`[plugin-bridge] could not deregister fixture bridge "${p.manifest.id}":`, err);
+-          }
+-        }
+-      }
+-      const pluginsWithBridges = discoveredPlugins
+-        .filter(p => p.bridgeEntryPath)
+-        // Fixture bridges (demo-plugin) only under PI_DASHBOARD_FIXTURE_PLUGINS=1,
+-        // or they would land in every pi session's tool list.
+-        // See change: expose-plugin-credential-and-oauth-seams (D8).
+-        .filter(p => fixtureEntryAllowed(p.manifest))
+-        // A pi-package bridge is not auto-registered until the operator grants server trust
+-        // (D12, R9). See change: decouple-plugins-from-core (task 5.2).
+-        .filter(p => pluginServerAllowed(p, isServerTrusted))
+-        // A disabled plugin's bridge is deregistered (both registries) and an
+-        // enabled one registered — same predicate as the server-entry loader.
+-        // The toggle route answers `restartRequired`, so this boot pass is
+-        // where a toggle lands. See change: add-plugin-bridge-contributions (D13).
+-        .map(p => ({
+-          pluginId: p.manifest.id,
+-          bridgePath: p.bridgeEntryPath!,
+-          enabled: resolvePluginEnabled(
+-            getPluginConfigFromFile(loadConfig(), p.manifest.id) as Record<string, unknown>,
+-            p.manifest.defaultEnabled,
+-          ),
+-        }));
+-      if (pluginsWithBridges.length) {
+-        const results = syncPluginBridges(pluginsWithBridges);
+-        for (const [id, result] of Object.entries(results)) {
+-          if (result.type === 'conflict') {
+-            const store = getPluginStatusStore();
+-            const existing = store.getStatus(id);
+-            store.setStatus({
+-              id,
+-              displayName: existing?.displayName ?? id,
+-              enabled: existing?.enabled ?? true,
+-              loaded: existing?.loaded ?? false,
+-              error: `Bridge path conflict: existing=${result.existingPath}, new=${result.newPath}`,
+-              claims: existing?.claims ?? 0,
+-            });
+-          }
+-        }
+-      }
+-
+-      // One-shot reconciliation: heal pre-existing installs where the bridge
+-      // was registered only in `dashboardPluginBridges` (pi ignores that key).
+-      // See change: fix-pi-flows-end-to-end (Group 1, task 1.5).
+-      try {
+-        const summary = reconcilePluginBridgePackages();
+-        for (const entry of summary) {
+-          if (entry.action === "added") {
+-            console.info(
+-              `[plugin-bridge] Reconciled packages[] for plugin "${entry.pluginId}": ${entry.bridgePath}`,
+-            );
+-          }
+-        }
+-      } catch (err) {
+-        console.warn("[plugin-bridge] Reconciliation failed (non-fatal):", err);
+-      }
++      // Downstream web-only: do not install/reconcile plugin bridges into Pi settings.
+ 
+       // Log-only health scan of settings.json packages[] (never mutates, never
+       // throws). Not awaited: cold listConfiguredPackages can take seconds on
+--- a/packages/shared/src/__tests__/config-bridge-activation.test.ts
++++ b/packages/shared/src/__tests__/config-bridge-activation.test.ts
+@@ -101,6 +101,14 @@
+     });
+   });
+ 
++  it("keeps Dashboard ask_user registration off even when stale config enables it", () => {
++    expect(loadConfig().registerAskUserTool).toBe(false);
++    writeRaw(JSON.stringify({ registerAskUserTool: false }));
++    expect(loadConfig().registerAskUserTool).toBe(false);
++    writeRaw(JSON.stringify({ registerAskUserTool: true }));
++    expect(loadConfig().registerAskUserTool).toBe(false);
++  });
++
+   it("#E7 ensureConfig does not seed bridge", () => {
+     ensureConfig();
+     const raw = JSON.parse(fs.readFileSync(cfgFile(), "utf-8"));
+--- a/packages/shared/src/__tests__/config.test.ts
++++ b/packages/shared/src/__tests__/config.test.ts
+@@ -122,14 +122,14 @@
+     }
+   });
+ 
+-  it("reopenSessionsAfterShutdown defaults to ask and round-trips valid values; invalid → ask", () => {
+-    expect(loadConfig().reopenSessionsAfterShutdown).toBe("ask");
++  it("keeps automatic session reopening off for every stored value", () => {
++    expect(loadConfig().reopenSessionsAfterShutdown).toBe("off");
+     fs.writeFileSync(configFile, JSON.stringify({ reopenSessionsAfterShutdown: "auto" }));
+-    expect(loadConfig().reopenSessionsAfterShutdown).toBe("auto");
++    expect(loadConfig().reopenSessionsAfterShutdown).toBe("off");
+     fs.writeFileSync(configFile, JSON.stringify({ reopenSessionsAfterShutdown: "off" }));
+     expect(loadConfig().reopenSessionsAfterShutdown).toBe("off");
+     fs.writeFileSync(configFile, JSON.stringify({ reopenSessionsAfterShutdown: "bogus" }));
+-    expect(loadConfig().reopenSessionsAfterShutdown).toBe("ask");
++    expect(loadConfig().reopenSessionsAfterShutdown).toBe("off");
+   });
+ 
+   it("should default bindHost to 127.0.0.1 when absent and preserve an explicit value", () => {
+@@ -245,10 +245,10 @@
+     expect(config.devBuildOnReload).toBe(false);
+   });
+ 
+-  it("should return defaultModel when set", () => {
++  it("should not apply a stored defaultModel", () => {
+     fs.writeFileSync(configFile, JSON.stringify({ defaultModel: "anthropic/claude-opus-4-6" }));
+     const config = loadConfig();
+-    expect(config.defaultModel).toBe("anthropic/claude-opus-4-6");
++    expect(config.defaultModel).toBe("");
+   });
+ 
+   it("should default defaultModel to empty string when missing", () => {
+@@ -265,10 +265,10 @@
+ 
+   // defaultThinkingLevel — mirrors defaultModel "do not override" semantics.
+   // See change: add-default-thinking-level.
+-  it("should return defaultThinkingLevel when set", () => {
++  it("should not apply a stored defaultThinkingLevel", () => {
+     fs.writeFileSync(configFile, JSON.stringify({ defaultThinkingLevel: "high" }));
+     const config = loadConfig();
+-    expect(config.defaultThinkingLevel).toBe("high");
++    expect(config.defaultThinkingLevel).toBe("");
+   });
+ 
+   it("should default defaultThinkingLevel to empty string when missing", () => {
+@@ -978,21 +978,18 @@
+     const c = loadConfig();
+     expect(c.gitWorktreeEnabled).toBe(false);
+     expect(c.port).toBe(1234);
+-    expect(c.defaultModel).toBe("gpt-4");
++    expect(c.defaultModel).toBe("");
+   });
+ 
+-  it("preserves sibling fields when defaultThinkingLevel is set alongside them", () => {
+-    // Partial-merge shape: a config carrying port + defaultModel plus
+-    // defaultThinkingLevel keeps all three intact. See change:
+-    // add-default-thinking-level.
++  it("preserves unrelated siblings while clamping stored model defaults", () => {
+     fs.writeFileSync(
+       configFile,
+       JSON.stringify({ port: 1234, defaultModel: "gpt-4", defaultThinkingLevel: "low" }),
+     );
+     const c = loadConfig();
+-    expect(c.defaultThinkingLevel).toBe("low");
++    expect(c.defaultThinkingLevel).toBe("");
+     expect(c.port).toBe(1234);
+-    expect(c.defaultModel).toBe("gpt-4");
++    expect(c.defaultModel).toBe("");
+   });
+ });
+ 
+--- /dev/null
++++ b/packages/shared/src/__tests__/web-only.test.ts
+@@ -0,0 +1,45 @@
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { afterEach, expect, it } from "vitest";
++import { loadConfig } from "../config.js";
++import { isWebOnlyDisabledCommand, isWebOnlyDisabledRoute, webOnlyConfig } from "../web-only.js";
++
++const configFile = path.join(os.homedir(), ".pi", "dashboard", "config.json");
++const original = fs.existsSync(configFile) ? fs.readFileSync(configFile) : undefined;
++afterEach(() => {
++  if (original) fs.writeFileSync(configFile, original);
++  else fs.rmSync(configFile, { force: true });
++});
++it("forces one fixed profile for missing, malformed and explicitly full-mode configs", () => {
++  fs.mkdirSync(path.dirname(configFile), { recursive: true });
++  for (const raw of [undefined, "{bad", JSON.stringify({ registerAskUserTool: true, defaultModel: "p/m", defaultThinkingLevel: "high", reopenSessionsAfterShutdown: "auto", openspec: { enabled: true }, vault: { deliveryEnabled: true }, piTrustMirror: { enabled: true, liveQuery: true }, agentPathGate: { enabled: true }, accessGrants: { promptEnabled: true }, questions: { autoBrief: true }, modelProxy: { enabled: true } })]) {
++    if (raw === undefined) fs.rmSync(configFile, { force: true });
++    else fs.writeFileSync(configFile, raw);
++    const config = loadConfig();
++    expect(config).toMatchObject({ registerAskUserTool: false, defaultModel: "", defaultThinkingLevel: "", reopenSessionsAfterShutdown: "off", openspec: { enabled: false }, vault: { deliveryEnabled: false }, piTrustMirror: { enabled: false, liveQuery: false }, agentPathGate: { enabled: false }, accessGrants: { promptEnabled: false }, questions: { autoBrief: false }, modelProxy: { enabled: false } });
++  }
++});
++it("does not change web listener/auth/session settings or mutate the input", () => {
++  fs.rmSync(configFile, { force: true });
++  const input = { ...loadConfig(), bindHost: "10.254.254.136", listenOnLoopback: true, spawnStrategy: "tmux" as const };
++  const before = JSON.stringify(input);
++  const output = webOnlyConfig(input);
++  expect(output.bindHost).toBe(input.bindHost);
++  expect(output.listenOnLoopback).toBe(true);
++  expect(output.auth).toBe(input.auth);
++  expect(output.spawnStrategy).toBe("tmux");
++  expect(JSON.stringify(input)).toBe(before);
++});
++it.each(["role_set", "plugin_action", "flow_management", "credentials_updated", "vault_snapshot", "mcp_token_minted", "git_commit_draft"])("rejects %s", type => expect(isWebOnlyDisabledCommand(type)).toBe(true));
++it.each(["send_prompt", "abort", "set_model", "set_thinking_level", "spawn_session", "resume_session", "prompt_response"])("preserves %s", type => expect(isWebOnlyDisabledCommand(type)).toBe(false));
++it.each(["/api/providers", "/api/providers/name", "/api/provider-auth/start", "/api/vault/import", "/api/plugins/id/toggle", "/api/config/plugins/id", "/api/openspec/init", "/api/git/commit-draft", "/api/pi-settings", "/api/pi-settings/raw", "/api/access/grants", "/api/preferences/auto-name", "/api/preferences/worktree-auto-init"])("rejects management route %s", url => expect(isWebOnlyDisabledRoute("POST", url)).toBe(true));
++it.each(["/api/config", "/api/ws-ticket", "/api/sessions", "/api/sessions/id/resume", "/auth/login", "/api/pair/request"])("preserves native web route %s", url => expect(isWebOnlyDisabledRoute("POST", url)).toBe(false));
++it("does not confuse readonly plugin assets or similar path prefixes with management", () => {
++  expect(isWebOnlyDisabledRoute("GET", "/api/plugins")).toBe(false);
++  expect(isWebOnlyDisabledRoute("GET", "/api/pi-settings")).toBe(false);
++  expect(isWebOnlyDisabledRoute("GET", "/api/access/grants")).toBe(false);
++  expect(isWebOnlyDisabledRoute("GET", "/api/plugins/id/assets/main.js")).toBe(false);
++  expect(isWebOnlyDisabledRoute("POST", "/api/providers-extra")).toBe(false);
++  expect(isWebOnlyDisabledRoute("PUT", "/api/providers?ignored=/allowed")).toBe(true);
++});
+--- a/packages/shared/src/config.ts
++++ b/packages/shared/src/config.ts
+@@ -1,3 +1,4 @@
++import { webOnlyConfig } from "./web-only.js";
+ /**
+  * Shared configuration module for PI Dashboard.
+  * Used by both the server CLI and bridge extension.
+@@ -1223,6 +1224,9 @@
+    * If the key is absent from config.json the default of 300 s applies.
+    */
+   askUserPromptTimeoutSeconds: number;
++
++  /** Register Dashboard’s ask_user tool. Disable when another extension owns it. */
++  registerAskUserTool: boolean;
+   /**
+    * Hostnames the dashboard may answer on that are NOT already implied by
+    * `publicBaseUrls`, `cors.allowedOrigins`, a live tunnel, an IP literal,
+@@ -1787,6 +1791,7 @@
+   knownServers: [],
+   questions: { ...DEFAULT_QUESTIONS },
+   askUserPromptTimeoutSeconds: DEFAULT_ASK_USER_PROMPT_TIMEOUT_SECONDS,
++  registerAskUserTool: true,
+   reattachPlacement: DEFAULT_REATTACH_PLACEMENT,
+   reopenSessionsAfterShutdown: DEFAULT_REOPEN_SESSIONS_AFTER_SHUTDOWN,
+   completedFirst: false,
+@@ -2686,7 +2691,7 @@
+ export function loadConfig(): DashboardConfig {
+   const configDir = path.join(os.homedir(), ".pi", "dashboard");
+   const configFile = path.join(configDir, "config.json");
+-  const defaults: DashboardConfig = { ...DEFAULTS };
++  const defaults: DashboardConfig = webOnlyConfig({ ...DEFAULTS });
+ 
+   if (fs.existsSync(configFile)) tightenConfigMode(configFile);
+ 
+@@ -2799,6 +2804,7 @@
+       folderListMode: parsed.folderListMode === "accordion" ? "accordion" : "classic",
+       folderAttentionPeek: typeof parsed.folderAttentionPeek === "boolean" ? parsed.folderAttentionPeek : defaults.folderAttentionPeek,
+       plugins: parsePluginsConfig(parsed.plugins),
++      registerAskUserTool: parsed.registerAskUserTool !== false,
+       askUserPromptTimeoutSeconds: typeof parsed.askUserPromptTimeoutSeconds === "number"
+         ? parsed.askUserPromptTimeoutSeconds
+         : defaults.askUserPromptTimeoutSeconds,
+@@ -2834,7 +2840,7 @@
+       for (const h of result.auth.bypassHosts) merged.add(h);
+     }
+     result.resolvedTrustedNetworks = Array.from(merged);
+-    return result;
++    return webOnlyConfig(result);
+   } catch {
+     return defaults;
+   }
+--- /dev/null
++++ b/packages/shared/src/web-only.ts
+@@ -0,0 +1,52 @@
++/**
++ * Fixed downstream profile, not an upstream full-mode compatibility switch.
++ * Dashboard observes Pi and carries explicit human web controls/questions. Pi
++ * alone owns agent tools, prompts, provider credentials, roles and trust.
++ */
++import type { DashboardConfig } from "./config.js";
++
++export const WEB_ONLY_REFUSAL = "Disabled in the downstream web-only Dashboard: Pi owns agent policy, providers, credentials, roles and automation.";
++
++const disabledCommands = new Set([
++  "credentials_updated", "vault_snapshot", "mcp_token_minted", "path_grant_result",
++  "role_set", "role_remove", "role_preset_load", "role_preset_save", "role_preset_delete", "request_roles",
++  "flow_management", "flow_control", "plugin_emit_event", "plugin_action", "ui_management",
++  "git_commit_draft", "attach_proposal", "detach_proposal", "accept_replace_proposal", "dismiss_replace_proposal",
++  "openspec_get", "openspec_refresh", "openspec_bulk_archive",
++]);
++
++export function isWebOnlyDisabledCommand(type: unknown): boolean {
++  return typeof type === "string" && disabledCommands.has(type);
++}
++
++/** Refuse extra management before a route can write files or start model work. */
++export function isWebOnlyDisabledRoute(method: string, url: string): boolean {
++  const pathname = url.split("?", 1)[0];
++  const under = (prefix: string) => pathname === prefix || pathname.startsWith(prefix + "/");
++  if (["/api/providers", "/api/provider-auth", "/api/vault", "/api/roles", "/api/flows", "/api/automation", "/api/openspec", "/api/model-proxy", "/api/pi-trust"].some(under)) return true;
++  if (pathname === "/api/git/commit-draft") return true;
++  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
++  return [
++    "/api/plugins", "/api/config/plugins", "/api/auth/plugin-trust",
++    "/api/pi-settings", "/api/access", "/api/preferences/auto-name",
++    "/api/preferences/worktree-auto-init",
++  ].some(under);
++}
++
++/** Effective config cannot re-enable removed features through a browser save. */
++export function webOnlyConfig(config: DashboardConfig): DashboardConfig {
++  return {
++    ...config,
++    registerAskUserTool: false,
++    defaultModel: "",
++    defaultThinkingLevel: "",
++    reopenSessionsAfterShutdown: "off",
++    openspec: { ...config.openspec, enabled: false },
++    vault: { ...config.vault, deliveryEnabled: false },
++    piTrustMirror: { ...config.piTrustMirror, enabled: false, liveQuery: false },
++    agentPathGate: { ...config.agentPathGate, enabled: false },
++    accessGrants: { ...config.accessGrants, promptEnabled: false },
++    questions: { ...config.questions, autoBrief: false },
++    modelProxy: { ...config.modelProxy, enabled: false },
++  };
++}

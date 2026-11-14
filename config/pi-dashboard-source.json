@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/BlackBeltTechnology/pi-agent-dashboard.git",
+  "revision": "e78b4c2c0474a8ab04941e76942e5a5b9d92c2d6",
+  "patches": [
+    "libexec/setup/patches/pi-dashboard-prompt-queue.patch",
+    "libexec/setup/patches/pi-dashboard-bridge-registration.patch",
+    "libexec/setup/patches/pi-dashboard-local-listeners.patch",
+    "libexec/setup/patches/pi-dashboard-transient-info.patch",
+    "libexec/setup/patches/pi-dashboard-web-only.patch",
+    "libexec/setup/patches/pi-dashboard-replay-compaction.patch"
+  ]
+}

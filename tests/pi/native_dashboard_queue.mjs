@@ -13,7 +13,7 @@ test("real queued ask_user bridges browser and terminal answers exactly once", {
   skip: enabled ? false : "opt in with DOTFILES_TEST_DASHBOARD_QUEUE=1 and explicit patched Dashboard/browser paths",
   timeout: 180_000,
 }, async (t) => {
-  for (const name of ["DASHBOARD_TEST_CLI", "DASHBOARD_TEST_CORE", "DASHBOARD_TEST_INSTALL", "DASHBOARD_TEST_PLAYWRIGHT", "DASHBOARD_TEST_CHROMIUM"]) {
+  for (const name of ["DASHBOARD_TEST_CORE", "DASHBOARD_TEST_PLAYWRIGHT", "DASHBOARD_TEST_CHROMIUM"]) {
     assert.ok(process.env[name] && existsSync(process.env[name]), `${name} must name an existing explicit prerequisite`);
   }
   assert.ok(process.env.PI_PACKAGE_DIR, "PI_PACKAGE_DIR must select the installed Pi SDK, not the locked unit-test SDK");

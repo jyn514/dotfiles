@@ -1,0 +1,1455 @@
+# Downstream bridge-registration; ordered against Dashboard 13fea27249e8b00fc6600c1e91437e22b859b8d2.
+--- a/packages/client/src/components/__tests__/SpawnErrorBanner.test.tsx
++++ b/packages/client/src/components/__tests__/SpawnErrorBanner.test.tsx
+@@ -25,6 +25,24 @@
+     expect(el.outerHTML).not.toMatch(/\bred-500\b/);
+   });
+ 
++  it("renders the bridge preflight reason and broken declaration path", () => {
++    const detail: SpawnErrorDetail = {
++      kind: "error",
++      message: "Dashboard bridge unavailable",
++      code: "PREFLIGHT_FAILED",
++      reasons: [{
++        code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++        message: "Dashboard bridge declaration resolves through broken path /home/test/.pi/agent/pi-dashboard",
++      }],
++    };
++    const { getByTestId } = render(<SpawnErrorBanner detail={detail} />);
++    const el = getByTestId("spawn-error-banner");
++
++    expect(el.textContent).toContain("Preflight checks failed.");
++    expect(el.textContent).toContain("Dashboard bridge declaration resolves through broken path");
++    expect(el.textContent).toContain("/home/test/.pi/agent/pi-dashboard");
++  });
++
+   it("renders stderr inside a collapsible LogBlock (closed by default), not <details>", () => {
+     const detail: SpawnErrorDetail = { kind: "error", message: "crash", code: "PI_CRASHED", stderr: "Error: nope" };
+     const { getByTestId, queryByTestId } = render(<SpawnErrorBanner detail={detail} />);
+--- a/packages/client/src/hooks/__tests__/useMessageHandler.spawn-failed.test.tsx
++++ b/packages/client/src/hooks/__tests__/useMessageHandler.spawn-failed.test.tsx
+@@ -62,6 +62,53 @@
+     expect(onSpawnFailed).not.toHaveBeenCalled();
+   });
+ 
++  it("an early spawn_error echoing a requestId releases the pending spawn once", () => {
++    const { dispatch, onSpawnFailed, navigate } = setup({ R3: { cwd: "/p", kind: "spawn" } });
++    dispatch({
++      type: "spawn_error",
++      cwd: "/p",
++      strategy: "tmux",
++      message: "Pi exited",
++      code: "PI_CRASHED",
++      requestId: "R3",
++    });
++    expect(onSpawnFailed).toHaveBeenCalledWith("R3");
++    dispatch({
++      type: "session_added",
++      session: { id: "late", cwd: "/p", source: "tui", status: "active", startedAt: 1 } as DashboardSession,
++      spawnRequestId: "R3",
++    });
++    expect(navigate).not.toHaveBeenCalled();
++    expect(onSpawnFailed).toHaveBeenCalledTimes(1);
++  });
++
++  it("a failed spawn_result followed by an uncorrelated preflight error releases once", () => {
++    const { dispatch, onSpawnFailed, pending } = setup({ R4: { cwd: "/broken", kind: "spawn" } });
++
++    dispatch({
++      type: "spawn_result",
++      cwd: "/broken",
++      success: false,
++      message: "Dashboard bridge unavailable",
++      requestId: "R4",
++    });
++    dispatch({
++      type: "spawn_error",
++      cwd: "/broken",
++      strategy: "tmux",
++      message: "Dashboard bridge unavailable",
++      code: "PREFLIGHT_FAILED",
++      reasons: [{
++        code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++        message: "Dashboard bridge declaration resolves through broken path /home/test/.pi/agent/pi-dashboard",
++      }],
++    });
++
++    expect(pending.has("R4")).toBe(false);
++    expect(onSpawnFailed).toHaveBeenCalledTimes(1);
++    expect(onSpawnFailed).toHaveBeenCalledWith("R4");
++  });
++
+   it("F9/X7: session_added with the spawnRequestId navigates exactly once (App owns navigation)", () => {
+     const { dispatch, navigate, onSpawnFailed } = setup({ R: { cwd: "/p", kind: "spawn" } });
+     dispatch({
+--- a/packages/client/src/hooks/useMessageHandler.ts
++++ b/packages/client/src/hooks/useMessageHandler.ts
+@@ -1598,6 +1598,10 @@
+         // production builds (per AGENTS.md ServerToBrowserMessage invariant).
+         // See change: spawn-failure-diagnostics for new code/reasons/stderr fields.
+         clearSpawningCwd(msg.cwd);
++        if (msg.requestId) {
++          pendingSpawnsRef.current.delete(msg.requestId);
++          onSpawnFailed?.(msg.requestId);
++        }
+         setSpawnErrors((prev) => {
+           const next = new Map(prev);
+           next.set(msg.cwd, {
+@@ -1620,7 +1624,7 @@
+             cwd: msg.cwd,
+             code: msg.code ?? "SPAWN_ERROR",
+             message: msg.message,
+-            requestId: undefined,
++            requestId: msg.requestId,
+           });
+         }
+         break;
+--- a/packages/server/src/__tests__/extension-register-appimage.test.ts
++++ b/packages/server/src/__tests__/extension-register-appimage.test.ts
+@@ -24,7 +24,7 @@
+     fs.mkdirSync(extDir, { recursive: true });
+     fs.writeFileSync(path.join(extDir, "package.json"), "{}");
+ 
+-    const result = findBundledExtension(tmpDir);
++    const result = findBundledExtension(tmpDir, { resolvePackage: () => null });
+     expect(result).toBe(extDir);
+     expect(result).not.toContain("/tmp/.mount_");
+   });
+--- a/packages/server/src/__tests__/extension-register.test.ts
++++ b/packages/server/src/__tests__/extension-register.test.ts
+@@ -51,10 +51,9 @@
+   it("should not crash on malformed settings.json", () => {
+     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+     fs.writeFileSync(settingsPath, "not valid json{{{");
+-    // Should not throw — starts fresh
+-    registerBridgeExtension("/test/extension");
+-    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+-    expect(settings.packages).toContain("/test/extension");
++    // Malformed user configuration remains authoritative; warn without replacing it.
++    expect(() => registerBridgeExtension("/test/extension")).not.toThrow();
++    expect(fs.readFileSync(settingsPath, "utf-8")).toBe("not valid json{{{");
+   });
+ 
+   it("should not crash when settings directory does not exist", () => {
+--- a/packages/server/src/__tests__/process-manager-keeper-spawn.test.ts
++++ b/packages/server/src/__tests__/process-manager-keeper-spawn.test.ts
+@@ -526,3 +526,13 @@
+     expect(env.PWD).toBe(fs.realpathSync(tmpCwd));
+   });
+ });
++
++
++it("explicit tmux fails visibly instead of silently launching the RPC keeper when unavailable", async () => {
++  const keeper = makeFakeKeeperManager({ spawnResult: { success: false, message: "must not run" } as never });
++  setKeeperManager(keeper.km);
++  const result = await spawnPiSession(tmpCwd, { strategy: "tmux" });
++  expect(result).toMatchObject({ success: false, code: "TMUX_MISSING" });
++  expect(result.message).toContain("Install tmux");
++  expect(keeper.state.spawnCalls).toEqual([]);
++});
+--- /dev/null
++++ b/packages/server/src/__tests__/process-manager-tmux-monitor.test.ts
+@@ -0,0 +1,73 @@
++import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { execFileSync } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
++import { afterEach, describe, expect, it } from "vitest";
++import { buildTmuxMonitorScript } from "../spawn-process/process-manager.js";
++
++const sockets: string[] = [];
++const roots: string[] = [];
++
++function tmux(socket: string, ...args: string[]): string {
++  return String(execFileSync("tmux", ["-L", socket, ...args], { encoding: "utf8" })).trim();
++}
++
++async function waitForFile(file: string): Promise<void> {
++  const deadline = Date.now() + 2_000;
++  while (!existsSync(file) && Date.now() < deadline) {
++    await new Promise((resolve) => setTimeout(resolve, 10));
++  }
++}
++
++afterEach(() => {
++  for (const socket of sockets.splice(0)) {
++    try { tmux(socket, "kill-server"); } catch { /* already gone */ }
++  }
++  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
++});
++
++describe.runIf(process.platform !== "win32" && existsSync("/usr/bin/tmux"))(
++  "tmux failure monitor with non-POSIX login shells",
++  () => {
++    for (const shell of ["/usr/bin/fish", "/usr/bin/zsh"]) {
++      it.runIf(existsSync(shell))(`captures failure under ${shell}`, async () => {
++        const root = mkdtempSync(join(tmpdir(), "dashboard-tmux-monitor-"));
++        roots.push(root);
++        const failure = join(root, "failure.log");
++        const monitor = join(root, "monitor.sh");
++        writeFileSync(
++          monitor,
++          buildTmuxMonitorScript("printf 'concrete failure\\n'; /bin/sh -c 'exit 7'", failure),
++          { mode: 0o700 },
++        );
++        const socket = `dashboard-monitor-${process.pid}-${sockets.length}`;
++        sockets.push(socket);
++        tmux(socket, "new-session", "-d", "-s", "holder");
++        tmux(socket, "set-option", "-g", "default-shell", shell);
++
++        const pane = tmux(
++          socket,
++          "new-window",
++          "-d",
++          "-P",
++          "-F",
++          "#{pane_id}",
++          "-t",
++          "holder",
++          "/bin/sh",
++          monitor,
++        );
++        await waitForFile(failure);
++        if (!existsSync(failure)) {
++          throw new Error(`pane did not publish failure under ${shell}`);
++        }
++
++        expect(readFileSync(failure, "utf8")).toContain("concrete failure");
++        expect(readFileSync(failure, "utf8")).toContain("[pi-dashboard-spawn-exit:7]");
++        expect(tmux(socket, "display-message", "-p", "-t", pane, "#{pane_dead}:#{pane_dead_status}"))
++          .toBe("1:7");
++        tmux(socket, "kill-pane", "-t", pane);
++      });
++    }
++  },
++);
+--- a/packages/server/src/__tests__/process-manager.test.ts
++++ b/packages/server/src/__tests__/process-manager.test.ts
+@@ -3,6 +3,7 @@
+ import path from "node:path";
+ import type { ToolResolver } from "@blackbelt-technology/pi-dashboard-shared/platform/binary-lookup.js";
+ import { execFileSync, execSync } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
++import { readFileSync } from "node:fs";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import {
+   buildHeadlessArgs,
+@@ -501,12 +502,19 @@
+     afterEach(() => resetResolver());
+ 
+     it("D9: carries the registry-resolved pi argv into the pane, not a bare `pi`", () => {
++      mockExecFileSync.mockReturnValueOnce("%17\n" as never);
+       const result = spawnTmux("/work", undefined);
+       expect(result.success).toBe(true);
++      expect(result.paneId).toBe("%17");
+       const [, args] = mockExecFileSync.mock.calls[0];
+-      // The pane command is the LAST argv element; it must reference the
+-      // resolved cli.js, so tmux honours the SELECTED runtime.
+-      expect(args![args!.length - 1]).toContain("/opt/pi/dist/cli.js");
++      expect(args).toEqual(expect.arrayContaining(["-P", "-F", "#{pane_id}"]));
++      expect(result.paneMonitorScriptPath).toBeTruthy();
++      expect(args?.slice(-2)).toEqual(["/bin/sh", result.paneMonitorScriptPath]);
++      const monitor = readFileSync(result.paneMonitorScriptPath!, "utf8");
++      expect(monitor).toContain("/opt/pi/dist/cli.js");
++      expect(monitor).toContain("[pi-dashboard-spawn-exit:%s]");
++      expect(monitor).toMatch(/^#!\/bin\/sh/);
++      expect(monitor).not.toContain("sleep 121");
+     });
+ 
+     it("D9: returns PI_NOT_FOUND when the runtime cannot be resolved", () => {
+@@ -582,12 +590,13 @@
+     });
+     afterEach(() => resetResolver());
+ 
+-    it("X3: passes stdio:ignore and a buildSpawnEnv env carrying the token", () => {
++    it("X3: captures host tmux pane id and passes the spawn env at both sites", () => {
+       spawnTmux("/p", { spawnToken: "tok-1" });
+       spawnWslTmux("/p", { spawnToken: "tok-1" });
+       expect(mockExecFileSync).toHaveBeenCalledTimes(2);
++      expect(mockExecFileSync.mock.calls[0][2]).toMatchObject({ stdio: ["ignore", "pipe", "ignore"] });
++      expect(mockExecFileSync.mock.calls[1][2]).toMatchObject({ stdio: "ignore" });
+       for (const [, , opts] of mockExecFileSync.mock.calls) {
+-        expect(opts!).toMatchObject({ stdio: "ignore" });
+         expect((opts!.env as Record<string, string>).PI_DASHBOARD_SPAWN_TOKEN).toBe("tok-1");
+       }
+     });
+--- a/packages/server/src/__tests__/session-action-handler-spawn.test.ts
++++ b/packages/server/src/__tests__/session-action-handler-spawn.test.ts
+@@ -28,6 +28,7 @@
+   loadConfig: vi.fn().mockReturnValue({
+     spawnStrategy: "headless",
+     spawnRegisterTimeoutMs: 30000,
++    acpAgents: [],
+   }),
+ }));
+ 
+@@ -52,6 +53,7 @@
+ 
+ function makeCtx() {
+   const messages: unknown[] = [];
++  const pendingAttachEnqueue = vi.fn();
+   const ws = {
+     readyState: WebSocket.OPEN,
+     send: vi.fn((data: string) => messages.push(JSON.parse(data))),
+@@ -65,7 +67,8 @@
+     sendTo,
+     headlessPidRegistry: { register: vi.fn() } as never,
+     pendingDashboardSpawns: new Map(),
+-    pendingAttachRegistry: { enqueue: vi.fn() } as never,
++    pendingAttachRegistry: { enqueue: pendingAttachEnqueue } as never,
++    pendingAttachEnqueue,
+     sessionManager: {} as never,
+     broadcast: vi.fn() as never,
+     piGateway: {} as never,
+@@ -91,6 +94,94 @@
+     expect(errorMsg).toBeDefined();
+     expect(errorMsg.code).toBe("PREFLIGHT_FAILED");
+     expect(mockAppendSpawnFailure).toHaveBeenCalledWith(expect.objectContaining({ code: "PREFLIGHT_FAILED" }));
++  });
++
++  it("refuses a broken bridge before intents or watchdog and retries after repair", async () => {
++    mockPreflightSpawn.mockReturnValue({ ok: true, reasons: [] });
++    mockSpawnPiSession.mockResolvedValue({
++      success: true,
++      pid: 123,
++      process: {} as never,
++      dashboardSpawned: true,
++      message: "spawned",
++    });
++    const watchdog = { arm: vi.fn() };
++    vi.mocked(getSpawnRegisterWatchdog).mockReturnValue(watchdog as never);
++
++    const ctx = makeCtx();
++    const initial = { enqueue: vi.fn() };
++    const worktree = { enqueue: vi.fn() };
++    const probeBridgeDeclaration = vi.fn()
++      .mockReturnValueOnce({
++        ok: false,
++        settingsPath: "/home/me/.pi/agent/settings.json",
++        declarationPath: "/home/me/.pi/agent/pi-dashboard",
++        message: "Pi settings do not load the Dashboard bridge from /home/me/.pi/agent/pi-dashboard.",
++      })
++      .mockReturnValueOnce({
++        ok: true,
++        settingsPath: "/home/me/.pi/agent/settings.json",
++        declarationPath: "/home/me/.pi/agent/pi-dashboard",
++      });
++    Object.assign(ctx, {
++      probeBridgeDeclaration,
++      pendingInitialPromptRegistry: initial,
++      pendingWorktreeBaseRegistry: worktree,
++    });
++    const message = {
++      type: "spawn_session",
++      cwd: "/p/x",
++      requestId: "request-1",
++      attachProposal: "proposal",
++      initialPrompt: "start",
++      gitWorktreeBase: "main",
++    } as never;
++
++    await handleSpawnSession(message, ctx as never);
++
++    expect(mockSpawnPiSession).not.toHaveBeenCalled();
++    expect(ctx.pendingAttachEnqueue).not.toHaveBeenCalled();
++    expect(initial.enqueue).not.toHaveBeenCalled();
++    expect(worktree.enqueue).not.toHaveBeenCalled();
++    expect(watchdog.arm).not.toHaveBeenCalled();
++    expect(ctx.messages).toContainEqual(expect.objectContaining({
++      type: "spawn_result",
++      success: false,
++      requestId: "request-1",
++    }));
++    expect(ctx.messages).toContainEqual(expect.objectContaining({
++      type: "spawn_error",
++      code: "PREFLIGHT_FAILED",
++      reasons: [{
++        code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++        message: expect.stringContaining("/home/me/.pi/agent/pi-dashboard"),
++      }],
++    }));
++
++    await handleSpawnSession(message, ctx as never);
++
++    expect(probeBridgeDeclaration).toHaveBeenCalledTimes(2);
++    expect(probeBridgeDeclaration).toHaveBeenNthCalledWith(1, "/p/x");
++    expect(probeBridgeDeclaration).toHaveBeenNthCalledWith(2, "/p/x");
++    expect(mockSpawnPiSession).toHaveBeenCalledOnce();
++    expect(watchdog.arm).toHaveBeenCalledOnce();
++  });
++
++  it("does not require the Pi bridge for ACP spawns", async () => {
++    const ctx = makeCtx();
++    const probeBridgeDeclaration = vi.fn().mockReturnValue({
++      ok: false,
++      settingsPath: "/home/me/.pi/agent/settings.json",
++      message: "Dashboard bridge unavailable",
++    });
++    Object.assign(ctx, { probeBridgeDeclaration });
++
++    await handleSpawnSession({ type: "spawn_session", cwd: "/p/x", agent: "unknown-acp" } as never, ctx as never);
++
++    expect(probeBridgeDeclaration).not.toHaveBeenCalled();
++    expect(ctx.messages).not.toContainEqual(expect.objectContaining({
++      reasons: [expect.objectContaining({ code: "DASHBOARD_BRIDGE_UNAVAILABLE" })],
++    }));
+   });
+ 
+   it("successful headless spawn arms watchdog with pid", async () => {
+--- a/packages/server/src/__tests__/spawn-register-watchdog.test.ts
++++ b/packages/server/src/__tests__/spawn-register-watchdog.test.ts
+@@ -2,7 +2,7 @@
+  * Tests for SpawnRegisterWatchdog.
+  * Uses vitest fake timers. See change: spawn-failure-diagnostics.
+  */
+-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
++import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+@@ -88,6 +88,73 @@
+     w.clearByCwd("/p/x");
+     vi.advanceTimersByTime(15000);
+     expect(messages).toHaveLength(0);
++  });
++
++  it("reports a failed tmux pane immediately with its captured output", () => {
++    const { ws, messages } = makeMockWs();
++    const kill = vi.fn();
++    const failurePath = join(mkdtempSync(join(tmpdir(), "dashboard-pane-")), "failure.log");
++    let notifyFailure: () => void = () => undefined;
++    const stopWatch = vi.fn();
++    const watchPaneFailure = vi.fn((_path: string, notify: () => void) => {
++      notifyFailure = notify;
++      return stopWatch;
++    });
++    const killPane = vi.fn();
++    const w = new SpawnRegisterWatchdog(10000, {
++      watchPaneFailure,
++      findPidsBySpawnToken: () => [321],
++      kill,
++      killPane,
++    });
++    w.arm({
++      cwd: "/p/x",
++      mechanism: "tmux",
++      ws,
++      paneId: "%9",
++      paneFailurePath: failurePath,
++      spawnToken: "token-1",
++      requestId: "request-1",
++    });
++
++    writeFileSync(failurePath, "Path does not exist: /missing\n[pi-dashboard-spawn-exit:1]\n");
++    notifyFailure();
++
++    expect(watchPaneFailure).toHaveBeenCalledWith(failurePath, expect.any(Function));
++    expect(stopWatch).toHaveBeenCalledOnce();
++    expect(kill).toHaveBeenCalledWith(321);
++    expect(killPane).toHaveBeenCalledWith("%9");
++    expect(messages).toHaveLength(1);
++    expect(JSON.parse(messages[0]!)).toMatchObject({
++      type: "spawn_error",
++      code: "PI_CRASHED",
++      requestId: "request-1",
++      stderr: "Path does not exist: /missing",
++    });
++    vi.advanceTimersByTime(15000);
++    expect(messages).toHaveLength(1);
++  });
++
++  it("clears the pane-file watch when tmux registers successfully", () => {
++    const failurePath = join(mkdtempSync(join(tmpdir(), "dashboard-pane-clear-")), "failure.log");
++    writeFileSync(failurePath, "stale");
++    const stopWatch = vi.fn();
++    const killPane = vi.fn();
++    const releasePane = vi.fn();
++    const w = new SpawnRegisterWatchdog(10000, {
++      watchPaneFailure: () => stopWatch,
++      findPidsBySpawnToken: () => [],
++      kill: () => undefined,
++      killPane,
++      releasePane,
++    });
++    w.arm({ cwd: "/p/x", mechanism: "tmux", paneId: "%10", paneFailurePath: failurePath });
++
++    expect(w.clearByCwd("/p/x")).toBe(true);
++    expect(stopWatch).toHaveBeenCalledOnce();
++    expect(() => readFileSync(failurePath)).toThrow();
++    expect(releasePane).toHaveBeenCalledWith("%10");
++    expect(killPane).not.toHaveBeenCalled();
+   });
+ 
+   it("arm without clear fires spawn_register_timeout", () => {
+--- a/packages/server/src/browser-handlers/handler-context.ts
++++ b/packages/server/src/browser-handlers/handler-context.ts
+@@ -3,6 +3,7 @@
+  * Each handler receives only what it needs via this context.
+  */
+ 
++import type { BridgeDeclarationProbeResult } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
+ import type { ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { WebSocket } from "ws";
+ import type { DirectoryService } from "../directory-service.js";
+@@ -88,6 +89,8 @@
+    */
+   terminalAdmission?: import("../lib/route-admission.js").RouteAdmissionDeps;
+   headlessPidRegistry: HeadlessPidRegistry;
++  /** Re-read Pi's package declaration before each spawn; absent in narrow unit fixtures only. */
++  probeBridgeDeclaration?: (cwd: string) => BridgeDeclarationProbeResult;
+   pendingResumeRegistry: PendingResumeRegistry;
+   pendingDashboardSpawns?: Map<string, number>;
+   /**
+--- a/packages/server/src/browser-handlers/session-action-handler.ts
++++ b/packages/server/src/browser-handlers/session-action-handler.ts
+@@ -795,6 +795,41 @@
+   const config = loadConfig();
+   const strategy = config.spawnStrategy ?? "tmux";
+ 
++  // A spawned Pi process cannot register when its declared Dashboard bridge is
++  // broken. Re-check on every attempt so repairing the package link works
++  // without a server restart, and fail before filing any one-shot intents.
++  const bridgeProbe = msg.agent === undefined ? ctx.probeBridgeDeclaration?.(msg.cwd) : undefined;
++  if (bridgeProbe && !bridgeProbe.ok) {
++    const reasons = [{
++      code: "DASHBOARD_BRIDGE_UNAVAILABLE",
++      message: bridgeProbe.message,
++    }];
++    sendTo(ws, {
++      type: "spawn_result",
++      cwd: msg.cwd,
++      success: false,
++      message: bridgeProbe.message,
++      requestId: msg.requestId,
++    });
++    sendTo(ws, {
++      type: "spawn_error",
++      cwd: msg.cwd,
++      strategy,
++      message: bridgeProbe.message,
++      code: "PREFLIGHT_FAILED",
++      reasons,
++    });
++    appendSpawnFailure({
++      ts: new Date().toISOString(),
++      cwd: msg.cwd,
++      strategy,
++      code: "PREFLIGHT_FAILED",
++      message: bridgeProbe.message,
++      reasons,
++    });
++    return;
++  }
++
+   // §6.2 / D11: stamp the session owner ONLY through this trusted road, and
+   // only while the resolver is active AND the socket carries a human principal.
+   // Pre-mint the spawn token so the owner is filed against it BEFORE the spawn
+@@ -981,6 +1016,9 @@
+         timeoutMs: config.spawnRegisterTimeoutMs,
+         ws,
+         spawnToken: spawnResult.spawnToken,
++        paneId: spawnResult.paneId,
++        paneFailurePath: spawnResult.paneFailurePath,
++        paneMonitorScriptPath: spawnResult.paneMonitorScriptPath,
+         ...(msg.requestId ? { requestId: msg.requestId } : {}),
+       });
+     }
+--- a/packages/server/src/pairing/browser-gateway.ts
++++ b/packages/server/src/pairing/browser-gateway.ts
+@@ -772,6 +772,8 @@
+    *  `wireEvents`. Absent → subscribe never waits on a bridge replay.
+    *  See change: fix-large-session-resume-replay. */
+   replayState?: ReplayState,
++  /** Live, read-only Pi bridge declaration check for the spawn preflight. */
++  probeBridgeDeclaration?: (cwd: string) => import("@blackbelt-technology/pi-dashboard-shared/bridge-register.js").BridgeDeclarationProbeResult,
+ ): BrowserGateway {
+   const wss = new WebSocketServer({ noServer: true });
+ 
+@@ -2167,6 +2169,7 @@
+               }),
+           },
+           headlessPidRegistry, pendingResumeRegistry, pendingDashboardSpawns,
++          probeBridgeDeclaration,
+           pendingAttachRegistry,
+           pendingInitialPromptRegistry,
+           pendingResumeIntents,
+--- a/packages/server/src/server.ts
++++ b/packages/server/src/server.ts
+@@ -17,7 +17,7 @@
+ } from "@blackbelt-technology/pi-dashboard-mcp-core";
+ import type { ExitIntent } from "@blackbelt-technology/pi-dashboard-shared/boot-state.js";
+ import { isRecoveryAllowed } from "@blackbelt-technology/pi-dashboard-shared/boot-state.js";
+-import { findBundledExtension, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
++import { findBundledExtension, probeBridgeDeclaration, registerBridgeExtension } from "@blackbelt-technology/pi-dashboard-shared/bridge-register.js";
+ import type { PackageOperationCompleteMessage, ServerToBrowserMessage } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import type { AuthConfig, DashboardConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+ import { CONFIG_DIR, CONFIG_FILE, getPluginConfig as getPluginConfigFromFile, loadConfig, resolvePublicBaseUrls, writeConfigFileSecure } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+@@ -698,10 +698,15 @@
+   const extPath = activeExtension?.dir ?? findBundledExtension(path.resolve(__serverDir, "..", "..", ".."));
+   if (extPath) {
+     registerBridgeExtension(extPath);
+-    console.log(`[dashboard] Bridge extension registered: ${extPath}`);
++    const initialBridgeProbe = probeBridgeDeclaration(extPath);
++    if (initialBridgeProbe.ok) {
++      console.log(`[dashboard] Bridge extension registered: ${extPath}`);
++    } else {
++      console.warn(`[dashboard] Bridge extension unavailable: ${initialBridgeProbe.message}`);
++    }
+   } else {
+     console.warn(`[dashboard] Bridge extension NOT found (searched from ${__serverDir}). ` +
+-      `Sessions will spawn but never connect to the gateway. ` +
++      `New Pi session spawns will be refused until it is available. ` +
+       `Manually add the extension path to ~/.pi/agent/settings.json packages[] as a workaround.`);
+   }
+ 
+@@ -1487,7 +1492,7 @@
+   const browseRoots = () => (confineRemoteBrowse ? resolveBrowseRoots(browseRootSources) : Promise.resolve(null));
+ 
+   const replayState = createReplayState(config.replayTimings);
+-  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry, pendingInitialPromptRegistry, pendingResumeIntents, pendingClientCorrelations, pendingWorktreeBaseRegistry, metaPersistence, fitWorkerPool, config.maxReplayEvents, config.replayWindowMode, sessionArchive, pendingArchiveIntents, remoteTranscriptStore, pendingPrincipalOwnerRegistry, identityEnforced, undefined, questionStore, browseRoots, replayState);
++  const browserGateway = createBrowserGateway(sessionManager, eventStore, piGateway, undefined, pendingForkRegistry, sessionOrderManager, preferencesStore, directoryService, terminalManager, pendingDashboardSpawns, config.maxWsBufferBytes, pendingAttachRegistry, pendingInitialPromptRegistry, pendingResumeIntents, pendingClientCorrelations, pendingWorktreeBaseRegistry, metaPersistence, fitWorkerPool, config.maxReplayEvents, config.replayWindowMode, sessionArchive, pendingArchiveIntents, remoteTranscriptStore, pendingPrincipalOwnerRegistry, identityEnforced, undefined, questionStore, browseRoots, replayState, () => probeBridgeDeclaration(extPath));
+   // Transition-only feed behind `GET /api/events/stream` (registry frames + question changes).
+   // See change: add-agent-event-stream.
+   const agentEventHub = createAgentEventHub({
+--- a/packages/server/src/spawn-process/process-manager.ts
++++ b/packages/server/src/spawn-process/process-manager.ts
+@@ -17,7 +17,8 @@
+  */
+ 
+ import { randomUUID } from "node:crypto";
+-import { existsSync } from "node:fs";
++import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
++import os from "node:os";
+ import path from "node:path";
+ import type { SpawnFailureCode } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import { loadConfig, type SpawnStrategy } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+@@ -255,6 +256,12 @@
+   stderr?: string;
+   /** Path to the per-session stderr log (Windows headless). Forwarded to watchdog. See change: spawn-failure-diagnostics. */
+   logPath?: string;
++  /** tmux pane handle used to surface an early wrapper failure before registration times out. */
++  paneId?: string;
++  /** Atomic pane-output snapshot written only when the tmux wrapper fails. */
++  paneFailurePath?: string;
++  /** One-shot sh monitor; normally unlinks itself as soon as the pane starts. */
++  paneMonitorScriptPath?: string;
+   /**
+    * Token minted by `spawnPiSession` and injected into the spawned process's
+    * env as `PI_DASHBOARD_SPAWN_TOKEN`. Returned so callers can register it
+@@ -677,6 +684,24 @@
+   return ["tmux", "new-session", "-d", "-s", "pi-dashboard", ...envArgs, "-c", cwd, paneCommand];
+ }
+ 
++export function buildTmuxMonitorScript(paneCommand: string, failurePath: string): string {
++  const pendingFailurePath = `${failurePath}.partial`;
++  return `#!/bin/sh
++rm -f "$0"
++tmux set-option -p -t "$TMUX_PANE" remain-on-exit on
++${paneCommand}
++status=$?
++if [ "$status" -ne 0 ]; then
++  tmux capture-pane -p -S -80 -t "$TMUX_PANE" > ${shellEscape(pendingFailurePath)}
++  printf '\\n[pi-dashboard-spawn-exit:%s]\\n' "$status" >> ${shellEscape(pendingFailurePath)}
++  mv ${shellEscape(pendingFailurePath)} ${shellEscape(failurePath)}
++else
++  tmux set-option -p -t "$TMUX_PANE" remain-on-exit off
++fi
++exit "$status"
++`;
++}
++
+ /** The endpoint pin `buildSpawnEnv` set, for the tmux `-e` path (D6). */
+ function tmuxEndpoint(env: NodeJS.ProcessEnv): { url?: string; socket?: string; marker?: string } | undefined {
+   if (spawnDashboardPiPort == null) return undefined;
+@@ -905,7 +930,18 @@
+   const opts = policy ? mergeCwdPolicy(policy, baseOpts) : baseOpts;
+ 
+   const mechanism = chooseMechanism(opts, opts?.electronMode ?? false);
++  // Explicit interactive policy must not silently turn into an RPC session.
++  // Non-Pi child adapters deliberately use the headless keeper independently.
++  if (opts.strategy === "tmux" && !opts.childCmd?.length && mechanism === "headless") {
++    return {
++      success: false,
++      code: "TMUX_MISSING",
++      message: "Interactive session creation requires tmux. Install tmux and make it available to Dashboard, or explicitly select the headless strategy.",
++      spawnToken,
++    };
++  }
+ 
++
+   let result: SpawnResult;
+   switch (mechanism) {
+     case "tmux":     result = spawnTmux(cwd, opts); break;
+@@ -949,15 +985,46 @@
+   // child environment — unrelated operator options survive into the pane, and
+   // the dashboard's own flag is already gone.
+   const cmd = buildTmuxCommand(cwd, exists, options, piCmd, tmuxHeapNodeOptions(env), tmuxEndpoint(env), contributed);
++  const failureId = options?.spawnToken ?? randomUUID();
++  const failureDir = path.join(os.homedir(), ".pi", "dashboard", "sessions", "spawn-panes");
++  const paneFailurePath = path.join(failureDir, `${failureId}.log`);
++  const pendingFailurePath = `${paneFailurePath}.partial`;
++  const monitorScriptPath = path.join(failureDir, `${failureId}.sh`);
++  const paneCommand = cmd.at(-1)!;
++  // tmux accepts a command plus argv. Passing the monitor as one command string
++  // starts the configured interactive shell first, including its startup files.
++  cmd.splice(cmd.length - 1, 1, "/bin/sh", monitorScriptPath);
++  const subcommand = cmd.indexOf(exists ? "new-window" : "new-session");
++  cmd.splice(subcommand + 1, 0, "-P", "-F", "#{pane_id}");
+   try {
++    mkdirSync(failureDir, { recursive: true, mode: 0o700 });
++    rmSync(paneFailurePath, { force: true });
++    rmSync(pendingFailurePath, { force: true });
++    writeFileSync(monitorScriptPath, buildTmuxMonitorScript(paneCommand, paneFailurePath), { mode: 0o700 });
+     const { argv, spawnOptions } = buildSafeArgv(cmd[0], cmd.slice(1));
+-    execFileSync(argv[0], argv.slice(1), { stdio: "ignore", env, ...spawnOptions });
++    const output = execFileSync(argv[0], argv.slice(1), {
++      encoding: "utf8",
++      stdio: ["ignore", "pipe", "ignore"],
++      env,
++      ...spawnOptions,
++    });
++    const paneId = String(output ?? "").trim();
+     return {
+       success: true,
+       dashboardSpawned: true,
+       message: `Pi session started in tmux (${exists ? "new window" : "new session"})`,
++      ...(paneId ? { paneId } : {}),
++      paneFailurePath,
++      paneMonitorScriptPath: monitorScriptPath,
+     };
+   } catch (err: any) {
++    try {
++      rmSync(paneFailurePath, { force: true });
++      rmSync(pendingFailurePath, { force: true });
++      rmSync(monitorScriptPath, { force: true });
++    } catch {
++      /* preserve the structured spawn failure even when cleanup is also denied */
++    }
+     return { success: false, code: "TMUX_MISSING", message: `Failed to start session: ${err.message}` };
+   }
+ }
+--- a/packages/server/src/spawn-process/spawn-register-watchdog.ts
++++ b/packages/server/src/spawn-process/spawn-register-watchdog.ts
+@@ -27,14 +27,17 @@
+  * See change: spawn-failure-diagnostics, fix-tmux-session-shutdown-leak (D5).
+  */
+ 
+-import { readFileSync, realpathSync } from "node:fs";
++import { readFileSync, realpathSync, rmSync, watch } from "node:fs";
++import path from "node:path";
+ import type {
++  SpawnErrorMessage,
+   SpawnRegisterRecoveredMessage,
+   SpawnRegisterTimeoutMessage,
+ } from "@blackbelt-technology/pi-dashboard-shared/browser-protocol.js";
+ import { clampSpawnRegisterTimeoutMs, loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
+ import { killProcess } from "@blackbelt-technology/pi-dashboard-shared/platform/process.js";
+ import { findPidsBySpawnToken } from "@blackbelt-technology/pi-dashboard-shared/platform/process-identify.js";
++import { buildSafeArgv, execFileSync } from "@blackbelt-technology/pi-dashboard-shared/platform/exec.js";
+ import type { SpawnMechanism } from "@blackbelt-technology/pi-dashboard-shared/platform/spawn-mechanism.js";
+ import WebSocket from "ws";
+ import { appendSpawnFailure } from "./spawn-failure-log.js";
+@@ -59,6 +62,9 @@
+ export interface WatchdogReclaimDeps {
+   findPidsBySpawnToken: (token: string) => number[];
+   kill: (pid: number) => void;
++  watchPaneFailure: (filePath: string, onFailure: () => void) => () => void;
++  killPane: (paneId: string) => void;
++  releasePane: (paneId: string) => void;
+ }
+ 
+ export interface WatchdogArmOptions {
+@@ -86,6 +92,10 @@
+    * See change: redesign-directory-home-split.
+    */
+   requestId?: string;
++  /** Specific tmux pane to inspect while waiting for Pi to register. */
++  paneId?: string;
++  paneFailurePath?: string;
++  paneMonitorScriptPath?: string;
+ }
+ 
+ interface Entry {
+@@ -101,6 +111,10 @@
+   timeoutMs: number;
+   spawnToken?: string;
+   requestId?: string;
++  paneId?: string;
++  paneFailurePath?: string;
++  paneMonitorScriptPath?: string;
++  stopPaneFailureWatch?: () => void;
+ }
+ 
+ interface RecentlyFiredEntry {
+@@ -138,6 +152,44 @@
+           // Fire-and-forget: the diagnostic below must not wait on it.
+           void killProcess(pid, { timeoutMs: 2000 }).catch(() => undefined);
+         }),
++      watchPaneFailure:
++        reclaim?.watchPaneFailure ??
++        ((filePath, onFailure) => {
++          try {
++            const filename = path.basename(filePath);
++            const watcher = watch(path.dirname(filePath), { persistent: false }, (_event, changed) => {
++              if (changed === filename) onFailure();
++            });
++            watcher.on("error", () => undefined);
++            queueMicrotask(onFailure);
++            return () => watcher.close();
++          } catch {
++            queueMicrotask(onFailure);
++            return () => undefined;
++          }
++        }),
++      killPane:
++        reclaim?.killPane ??
++        ((paneId) => {
++          try {
++            const { argv, spawnOptions } = buildSafeArgv("tmux", ["kill-pane", "-t", paneId]);
++            execFileSync(argv[0], argv.slice(1), { stdio: "ignore", ...spawnOptions });
++          } catch {
++            /* the pane may already be gone */
++          }
++        }),
++      releasePane:
++        reclaim?.releasePane ??
++        ((paneId) => {
++          try {
++            const { argv, spawnOptions } = buildSafeArgv("tmux", [
++              "set-option", "-p", "-t", paneId, "remain-on-exit", "off",
++            ]);
++            execFileSync(argv[0], argv.slice(1), { stdio: "ignore", ...spawnOptions });
++          } catch {
++            /* the pane may already be gone */
++          }
++        }),
+     };
+   }
+ 
+@@ -146,7 +198,7 @@
+     // takes effect on the next spawn without a server restart.
+     // See change: spawn-failure-diagnostics (fix W1).
+     const effectiveTimeout = clampSpawnRegisterTimeoutMs(opts.timeoutMs ?? this.timeoutMs);
+-    const { pid, cwd, mechanism, logPath, ws, spawnToken, requestId } = opts;
++    const { pid, cwd, mechanism, logPath, ws, spawnToken, requestId, paneId, paneFailurePath, paneMonitorScriptPath } = opts;
+     const cwdKey = normalizeCwdKey(cwd);
+     const entry: Entry = {
+       timer: null as unknown as ReturnType<typeof setTimeout>,
+@@ -154,8 +206,17 @@
+       timeoutMs: effectiveTimeout,
+       spawnToken,
+       requestId,
++      paneId,
++      paneFailurePath,
++      paneMonitorScriptPath,
+     };
+     entry.timer = setTimeout(() => this._fireEntry(entry), effectiveTimeout);
++    if (paneId && paneFailurePath) {
++      entry.stopPaneFailureWatch = this.reclaim.watchPaneFailure(
++        paneFailurePath,
++        () => this._inspectPane(entry),
++      );
++    }
+     // Always index by cwd so a `session_register` clears the watchdog even
+     // when the bridge's reported pid differs from the spawner's pid (e.g.
+     // headless `--mode rpc` spawn returns the RPC keeper PID, not pi's PID;
+@@ -171,16 +232,16 @@
+     // leaked pi were never diagnosed and (now) would never be reclaimed. Its
+     // own `clearByToken` cancels it when it actually registers.
+     // See change: fix-tmux-session-shutdown-leak.
+-    if (priorCwd && !priorCwd.spawnToken) clearTimeout(priorCwd.timer);
++    if (priorCwd && !priorCwd.spawnToken) this._dropFromIndices(priorCwd, true);
+     this.byCwd.set(cwdKey, entry);
+     if (pid !== undefined) {
+       const priorPid = this.byPid.get(pid);
+-      if (priorPid && priorPid !== priorCwd) clearTimeout(priorPid.timer);
++      if (priorPid && priorPid !== priorCwd) this._dropFromIndices(priorPid, true);
+       this.byPid.set(pid, entry);
+     }
+     if (spawnToken) {
+       const priorTok = this.byToken.get(spawnToken);
+-      if (priorTok && priorTok !== priorCwd && priorTok !== entry) clearTimeout(priorTok.timer);
++      if (priorTok && priorTok !== priorCwd && priorTok !== entry) this._dropFromIndices(priorTok, true);
+       this.byToken.set(spawnToken, entry);
+     }
+   }
+@@ -194,7 +255,7 @@
+     const entry = this.byToken.get(spawnToken);
+     if (entry) {
+       clearTimeout(entry.timer);
+-      this._dropFromIndices(entry);
++      this._dropFromIndices(entry, true);
+       return true;
+     }
+     // Check for late recovery: `recentlyFired` is keyed by token when the entry
+@@ -210,7 +271,7 @@
+     const entry = this.byPid.get(pid);
+     if (entry) {
+       clearTimeout(entry.timer);
+-      this._dropFromIndices(entry);
++      this._dropFromIndices(entry, true);
+       return true;
+     }
+     // Check for late recovery.
+@@ -222,7 +283,7 @@
+     const entry = this.byCwd.get(cwdKey);
+     if (entry) {
+       clearTimeout(entry.timer);
+-      this._dropFromIndices(entry);
++      this._dropFromIndices(entry, true);
+       return true;
+     }
+     // Check for late recovery. An entry that HAS a token is indexed under it,
+@@ -233,7 +294,16 @@
+   }
+ 
+   /** Remove an entry from every index that still points at it. */
+-  private _dropFromIndices(entry: Entry): void {
++  private _dropFromIndices(entry: Entry, releasePane = false): void {
++    clearTimeout(entry.timer);
++    entry.stopPaneFailureWatch?.();
++    try {
++      if (entry.paneFailurePath) rmSync(entry.paneFailurePath, { force: true });
++      if (entry.paneMonitorScriptPath) rmSync(entry.paneMonitorScriptPath, { force: true });
++    } catch {
++      /* diagnostics cleanup must not break registration */
++    }
++    if (releasePane && entry.paneId) this.reclaim.releasePane(entry.paneId);
+     const cwdEntry = this.byCwd.get(entry.cwdKey);
+     if (cwdEntry === entry) this.byCwd.delete(entry.cwdKey);
+     if (entry.pid !== undefined) {
+@@ -252,6 +322,7 @@
+   }
+ 
+   private _fireEntry(entry: Entry): void {
++    if (this._inspectPane(entry)) return;
+     const { cwd, pid, logPath, ws, timeoutMs: entryTimeoutMs } = entry;
+     // Remove from active maps.
+     this._dropFromIndices(entry);
+@@ -314,6 +385,7 @@
+     // Reclaim BEFORE the `readyState` early-return: the leak is real whether or
+     // not a browser is still listening for the diagnostic.
+     this._reclaimSpawn(entry);
++    if (entry.paneId) this.reclaim.killPane(entry.paneId);
+ 
+     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+ 
+@@ -328,6 +400,42 @@
+     ws.send(JSON.stringify(msg));
+   }
+ 
++  private _inspectPane(entry: Entry): boolean {
++    if (!entry.paneId || !entry.paneFailurePath) return false;
++    const output = readLogTail(entry.paneFailurePath);
++    if (!output) return false;
++    const match = output.match(/\[pi-dashboard-spawn-exit:(\d+)\]/);
++    if (!match) return false;
++
++    const exitStatus = Number(match[1]);
++    const stderr = output.replace(/\n?\[pi-dashboard-spawn-exit:\d+\]\s*$/, "").slice(-4096).trim();
++    this._dropFromIndices(entry);
++    appendSpawnFailure({
++      ts: new Date().toISOString(),
++      cwd: entry.cwd,
++      strategy: entry.mechanism,
++      code: "PI_CRASHED",
++      message: `Pi session exited before connecting to the dashboard (status ${exitStatus})`,
++      ...(entry.spawnToken ? { spawnToken: entry.spawnToken } : {}),
++      ...(stderr ? { stderrTail: stderr } : {}),
++    });
++    this._reclaimSpawn(entry);
++    this.reclaim.killPane(entry.paneId);
++
++    if (!entry.ws || entry.ws.readyState !== WebSocket.OPEN) return true;
++    const msg: SpawnErrorMessage = {
++      type: "spawn_error",
++      cwd: entry.cwd,
++      strategy: entry.mechanism,
++      code: "PI_CRASHED",
++      message: `Pi session exited before connecting to the dashboard (status ${exitStatus})`,
++      ...(stderr ? { stderr } : {}),
++      ...(entry.requestId ? { requestId: entry.requestId } : {}),
++    };
++    entry.ws.send(JSON.stringify(msg));
++    return true;
++  }
++
+   /**
+    * Terminate the process behind a spawn that never registered.
+    *
+@@ -433,6 +541,9 @@
+   pid?: number;
+   logPath?: string;
+   spawnToken?: string;
++  paneId?: string;
++  paneFailurePath?: string;
++  paneMonitorScriptPath?: string;
+ }
+ 
+ /**
+@@ -471,6 +582,9 @@
+       pid: result.pid,
+       logPath: result.logPath,
+       spawnToken: result.spawnToken,
++      paneId: result.paneId,
++      paneFailurePath: result.paneFailurePath,
++      paneMonitorScriptPath: result.paneMonitorScriptPath,
+       timeoutMs: effectiveTimeout,
+       ...(ws ? { ws } : {}),
+     });
+--- a/packages/shared/src/__tests__/bridge-register.test.ts
++++ b/packages/shared/src/__tests__/bridge-register.test.ts
+@@ -1,13 +1,13 @@
+ /**
+  * Tests for the shared bridge-register module.
+  */
+-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+ import fs from "node:fs";
+-import path from "node:path";
+ import os from "node:os";
++import path from "node:path";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ 
+ // We test against a real temp filesystem
+-import { findBundledExtension, registerBridgeExtension } from "../bridge-register.js";
++import { findBundledExtension, probeBridgeDeclaration, registerBridgeExtension } from "../bridge-register.js";
+ 
+ describe("shared bridge-register", () => {
+   let tmpDir: string;
+@@ -42,9 +42,20 @@
+       fs.mkdirSync(extDir, { recursive: true });
+       fs.writeFileSync(path.join(extDir, "package.json"), '{"name":"test"}');
+ 
+-      expect(findBundledExtension(baseDir)).toBe(extDir);
++      expect(findBundledExtension(baseDir, { resolvePackage: () => null })).toBe(extDir);
+     });
+ 
++    it("prefers the resolvable runtime package over a bundled core source copy", () => {
++      const core = path.join(tmpDir, "core");
++      const bundled = path.join(core, "packages", "extension");
++      const runtime = path.join(tmpDir, "node_modules", "@blackbelt-technology", "pi-dashboard-extension");
++      for (const dir of [bundled, runtime]) {
++        fs.mkdirSync(dir, { recursive: true });
++        fs.writeFileSync(path.join(dir, "package.json"), '{"name":"@blackbelt-technology/pi-dashboard-extension"}');
++      }
++      expect(findBundledExtension(core, { resolvePackage: () => path.join(runtime, "package.json") })).toBe(runtime);
++    });
++
+     it("returns null when extension dir does not exist", () => {
+       // Disable Strategy 2 (node-resolver fallback) so we test Strategy 1 in isolation.
+       expect(findBundledExtension(tmpDir, { resolvePackage: () => null })).toBeNull();
+@@ -318,4 +329,147 @@
+       expect(readSettings().packages).toEqual([overlay]);
+     });
+   });
++
++  describe("probeBridgeDeclaration", () => {
++    it("reports the broken declared package path and accepts an in-place repair", () => {
++      const extension = path.join(tmpDir, "runtime-extension");
++      fs.mkdirSync(path.join(extension, "src"), { recursive: true });
++      fs.writeFileSync(path.join(extension, "package.json"), JSON.stringify({
++        name: "@blackbelt-technology/pi-dashboard-extension",
++        pi: { extensions: ["src/bridge.ts"] },
++      }));
++      fs.writeFileSync(path.join(extension, "src", "bridge.ts"), "export {};\n");
++
++      const declared = path.join(tmpDir, ".pi", "agent", "pi-dashboard");
++      fs.mkdirSync(path.dirname(declared), { recursive: true });
++      fs.symlinkSync(path.join(tmpDir, "missing-extension"), declared, "dir");
++      writeSettings({ packages: [{ source: "./pi-dashboard", skills: [] }] });
++
++      expect(probeBridgeDeclaration(extension)).toEqual(expect.objectContaining({
++        ok: false,
++        declarationPath: declared,
++        message: expect.stringContaining(declared),
++      }));
++
++      fs.unlinkSync(declared);
++      fs.symlinkSync(extension, declared, "dir");
++      expect(probeBridgeDeclaration(extension)).toEqual({
++        ok: true,
++        settingsPath,
++        declarationPath: declared,
++      });
++    });
++
++    it("reports the settings path when no Dashboard package is declared", () => {
++      writeSettings({ packages: [] });
++      expect(probeBridgeDeclaration(path.join(tmpDir, "runtime-extension"))).toEqual({
++        ok: false,
++        settingsPath,
++        message: expect.stringContaining(settingsPath),
++      });
++    });
++
++  });
++});
++
++
++describe("declarative relative core-package registration", () => {
++  it.each(["string", "object", "filtered", "disabled", "autoload-disabled", "force-enabled", "excluded", "delta-filtered"])("respects %s declaration and settings symlink", (variant) => {
++    const home = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-declaration-"));
++    try {
++      const agent = path.join(home, ".pi", "agent");
++      const core = path.join(home, "installed-core");
++      const extension = path.join(core, "packages", "extension");
++      fs.mkdirSync(path.join(extension, "src"), { recursive: true });
++      fs.mkdirSync(agent, { recursive: true });
++      fs.writeFileSync(path.join(extension, "src", "bridge.ts"), "export default () => {};\n");
++      fs.writeFileSync(path.join(extension, "package.json"), JSON.stringify({ name: "@blackbelt-technology/pi-dashboard-extension", pi: { extensions: ["src/bridge.ts"] } }));
++      fs.writeFileSync(path.join(core, "package.json"), JSON.stringify({ name: "@blackbelt-technology/pi-agent-dashboard", pi: { extensions: ["packages/extension/src/bridge.ts"] } }));
++      fs.symlinkSync(core, path.join(agent, "pi-dashboard"));
++      const entry = variant === "string" ? "./pi-dashboard" : { source: "./pi-dashboard", skills: [], ...(variant === "filtered" ? { extensions: ["**/bridge.ts"] } : {}), ...(variant === "disabled" ? { extensions: [] } : {}), ...(variant === "autoload-disabled" ? { autoload: false } : {}), ...(variant === "force-enabled" ? { autoload: false, extensions: ["+packages/extension/src/bridge.ts"] } : {}), ...(variant === "excluded" ? { extensions: ["**/*.ts", "!**/bridge.ts"] } : {}), ...(variant === "delta-filtered" ? { autoload: false, extensions: ["**/bridge.ts"] } : {}) };
++      const tracked = path.join(home, "tracked-settings.json");
++      const original = JSON.stringify({ packages: [entry, "unrelated"], theme: "dark" });
++      fs.writeFileSync(tracked, original);
++      const settings = path.join(agent, "settings.json");
++      fs.symlinkSync(tracked, settings);
++      const valid = !["disabled", "autoload-disabled", "excluded"].includes(variant);
++      if (valid) {
++        registerBridgeExtension(extension, { homedir: home, strict: true });
++        registerBridgeExtension(extension, { homedir: home, strict: true });
++      } else {
++        expect(() => registerBridgeExtension(extension, { homedir: home, strict: true })).toThrow(/Refusing to modify managed pi settings symlink/);
++      }
++      expect(fs.lstatSync(settings).isSymbolicLink()).toBe(true);
++      expect(fs.readFileSync(tracked, "utf8")).toBe(original);
++      expect(fs.readFileSync(settings, "utf8")).toBe(original);
++    } finally { fs.rmSync(home, { recursive: true, force: true }); }
++  });
++  it("does not replace malformed settings", () => {
++    const home = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-bad-settings-"));
++    try {
++      const agent = path.join(home, ".pi", "agent");
++      fs.mkdirSync(agent, { recursive: true });
++      const settings = path.join(agent, "settings.json");
++      fs.writeFileSync(settings, "{invalid");
++      expect(() => registerBridgeExtension("/missing", { homedir: home, strict: true })).toThrow();
++      expect(fs.readFileSync(settings, "utf8")).toBe("{invalid");
++    } finally { fs.rmSync(home, { recursive: true, force: true }); }
++  });
++});
++
++
++it.each(["missing-package", "broken-package-link", "missing-settings-target", "missing-declaration"])("native registration preserves externally managed symlinks: %s", (variant) => {
++  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-managed-settings-"));
++  const warning = vi.spyOn(console, "error").mockImplementation(() => {});
++  try {
++    const agent = path.join(home, ".pi", "agent");
++    fs.mkdirSync(agent, { recursive: true });
++    if (variant === "broken-package-link") fs.symlinkSync(path.join(home, "not-installed"), path.join(agent, "pi-dashboard"));
++    const tracked = path.join(home, "tracked-settings.json");
++    const original = JSON.stringify({ packages: variant === "missing-declaration" ? [] : [{ source: "./pi-dashboard", skills: [] }] });
++    if (variant !== "missing-settings-target") fs.writeFileSync(tracked, original);
++    const settings = path.join(agent, "settings.json");
++    fs.symlinkSync(tracked, settings);
++    const before = fs.lstatSync(settings);
++    registerBridgeExtension("/installed/packages/extension", { homedir: home });
++    expect(warning).toHaveBeenCalledWith(expect.stringMatching(/Configure or repair the declared local package/));
++    expect(() => registerBridgeExtension("/installed/packages/extension", { homedir: home, strict: true })).toThrow(/Refusing to modify managed pi settings symlink/);
++    expect(fs.lstatSync(settings).isSymbolicLink()).toBe(true);
++    expect(fs.lstatSync(settings).ino).toBe(before.ino);
++    expect(fs.readlinkSync(settings)).toBe(tracked);
++    if (variant === "missing-settings-target") expect(fs.existsSync(tracked)).toBe(false);
++    else expect(fs.readFileSync(tracked, "utf8")).toBe(original);
++  } finally { warning.mockRestore(); fs.rmSync(home, { recursive: true, force: true }); }
++});
++
++
++it.each(["valid", "disabled", "missing", "broken"])("native core/split resolution respects managed %s declaration", (variant) => {
++  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-split-registration-"));
++  try {
++    const core = path.join(home, "installed-core");
++    const bundled = path.join(core, "packages", "extension");
++    const split = path.join(core, "node_modules", "@blackbelt-technology", "pi-dashboard-extension");
++    for (const dir of [bundled, split]) {
++      fs.mkdirSync(path.join(dir, "src"), { recursive: true });
++      fs.writeFileSync(path.join(dir, "src", "bridge.ts"), "export default () => {};\n");
++      fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@blackbelt-technology/pi-dashboard-extension", pi: { extensions: ["src/bridge.ts"] } }));
++    }
++    fs.writeFileSync(path.join(core, "package.json"), JSON.stringify({ name: "@blackbelt-technology/pi-agent-dashboard", pi: { extensions: ["packages/extension/src/bridge.ts"] } }));
++    const agent = path.join(home, ".pi", "agent");
++    fs.mkdirSync(agent, { recursive: true });
++    if (variant !== "missing") fs.symlinkSync(variant === "broken" ? path.join(home, "absent") : split, path.join(agent, "pi-dashboard"));
++    const original = JSON.stringify({ packages: [{ source: "./pi-dashboard", skills: [], ...(variant === "disabled" ? { extensions: [] } : {}) }] });
++    const tracked = path.join(home, "tracked-settings.json");
++    fs.writeFileSync(tracked, original);
++    const settings = path.join(agent, "settings.json");
++    fs.symlinkSync(tracked, settings);
++    // Exercise the native default Node resolver, not a manually selected bridge.
++    const selected = findBundledExtension(core);
++    expect(selected).toBe(split);
++    if (variant === "valid") registerBridgeExtension(selected!, { homedir: home, strict: true });
++    else expect(() => registerBridgeExtension(selected!, { homedir: home, strict: true })).toThrow(/Refusing to modify managed/);
++    expect(fs.lstatSync(settings).isSymbolicLink()).toBe(true);
++    expect(fs.readFileSync(settings, "utf8")).toBe(original);
++    expect(fs.readFileSync(tracked, "utf8")).toBe(original);
++  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+ });
+--- a/packages/shared/src/bridge-register.ts
++++ b/packages/shared/src/bridge-register.ts
+@@ -8,9 +8,10 @@
+  * packages/electron/src/lib/bridge-register.ts.
+  */
+ import fs from "node:fs";
+-import path from "node:path";
+-import os from "node:os";
+ import { createRequire } from "node:module";
++import os from "node:os";
++import path from "node:path";
++import { minimatch } from "minimatch";
+ 
+ /**
+  * Check that a candidate path is a valid, stable extension directory.
+@@ -38,7 +39,7 @@
+   /**
+    * Resolve `@blackbelt-technology/pi-dashboard-extension/package.json`
+    * via Node's module resolver. Return the absolute package.json path
+-   * or null. Defaults to `createRequire(import.meta.url).resolve(...)`.
++   * or null. Defaults to `createRequire(<baseDir>/package.json).resolve(...)`.
+    */
+   resolvePackage?: () => string | null;
+ }
+@@ -60,9 +61,9 @@
+   }
+ }
+ 
+-function defaultResolvePackage(): string | null {
++function defaultResolvePackage(baseDir: string): string | null {
+   try {
+-    const req = createRequire(import.meta.url);
++    const req = createRequire(path.join(baseDir, "package.json"));
+     return req.resolve("@blackbelt-technology/pi-dashboard-extension/package.json");
+   } catch {
+     return null;
+@@ -73,12 +74,14 @@
+  * Find the bundled extension directory.
+  *
+  * Resolution order:
+- *   1. Monorepo layout: `<baseDir>/packages/extension/`.
+- *   2. Node module resolution: `@blackbelt-technology/pi-dashboard-extension/package.json`
+- *      via `require.resolve` from this module. Works in ANY install layout
++ *   1. Node module resolution: `@blackbelt-technology/pi-dashboard-extension/package.json`
++ *      via `require.resolve` from the caller's package root. Works in ANY install layout
+  *      (flat `node_modules/`, scoped, nested, pnpm, npm-g). This is the
+  *      canonical identity-based lookup and the only reliable strategy
+- *      when pi-dashboard is installed via `npm i -g`.
++ *      when pi-dashboard is installed via `npm i -g`. Prefer this runtime
++ *      dependency over source copies shipped inside the core package: those
++ *      source copies need not have their own runtime dependencies installed.
++ *   2. Monorepo fallback: `<baseDir>/packages/extension/`.
+  *
+  * Returns null if both strategies fail, the resolved directory doesn't
+  * have a package.json, or the path is under /tmp/.mount_* (AppImage).
+@@ -89,23 +92,101 @@
+   baseDir: string,
+   deps: FindExtensionDeps = {},
+ ): string | null {
+-  // Strategy 1: monorepo sibling layout.
+-  const monorepoCandidate = path.resolve(baseDir, "packages", "extension");
+-  if (isValidExtensionPath(monorepoCandidate)) return monorepoCandidate;
+-
+-  // Strategy 2: Node module resolver. This works for the `npm i -g
++  // Prefer the installed extension's runtime dependency closure, not a source
++  // copy inside the core package that cannot resolve those dependencies.
++  // Strategy 1: Node module resolver. This works for the `npm i -g
+   // pi-dashboard` layout where the extension is shipped as a runtime dep
+   // of pi-dashboard-server.
+-  const resolver = deps.resolvePackage ?? defaultResolvePackage;
++  const resolver = deps.resolvePackage ?? (() => defaultResolvePackage(baseDir));
+   const extPkgJson = resolver();
+   if (extPkgJson) {
+     const extDir = path.dirname(extPkgJson);
+     if (isValidExtensionPath(extDir)) return extDir;
+   }
+ 
++  // Strategy 2: workspace/bundled fallback when no runtime package resolves.
++  const monorepoCandidate = path.resolve(baseDir, "packages", "extension");
++  if (isValidExtensionPath(monorepoCandidate)) return monorepoCandidate;
+   return null;
+ }
+ 
++/** A valid user declaration is authoritative, including a relative core-package link.
++ * Compare public pi.extensions resources by realpath, not installation location/name.
++ * This intentionally does not resolve remote sources or install another package.
++ */
++type BridgeDeclarationState = "enabled" | "disabled" | "unmentioned" | "unrelated";
++
++function bridgeDeclarationState(entry: unknown, extensionPath: string, settingsDir: string, home: string): BridgeDeclarationState {
++  const declaration = typeof entry === "string" ? { source: entry } : entry as {
++    source?: unknown; extensions?: unknown; autoload?: unknown;
++  } | null;
++  if (!declaration || typeof declaration.source !== "string") return "unrelated";
++  const source = declaration.source;
++  if (!(source.startsWith(".") || source.startsWith("/") || source.startsWith("~/") || /^[a-zA-Z]:[/\\]/.test(source))) return "unrelated";
++  const root = path.resolve(settingsDir, source.startsWith("~/") ? path.join(home, source.slice(2)) : source);
++  try {
++    const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
++    const target = JSON.parse(fs.readFileSync(path.join(extensionPath, "package.json"), "utf8"));
++    const targetEntries = target.pi?.extensions;
++    const entries = manifest.pi?.extensions;
++    if (!Array.isArray(entries) || !Array.isArray(targetEntries)) return "unrelated";
++    const targets = targetEntries.filter((p: unknown): p is string => typeof p === "string")
++      .map((p: string) => fs.realpathSync(path.resolve(extensionPath, p)));
++    for (const resource of entries) {
++      if (typeof resource !== "string") continue;
++      const file = path.resolve(root, resource);
++      if (!targets.includes(fs.realpathSync(file))) continue;
++      const filters = declaration.extensions;
++      if (filters === undefined) return declaration.autoload === false ? "unmentioned" : "enabled";
++      if (!Array.isArray(filters) || !filters.every(p => typeof p === "string")) return "disabled";
++      if (!filters.length) return declaration.autoload === false ? "unmentioned" : "disabled";
++      const rel = path.relative(root, file).replaceAll(path.sep, "/");
++      const absolute = file.replaceAll(path.sep, "/");
++      const exact = (p: string) => [rel, absolute].includes(p.replace(/^\.\//, ""));
++      const matches = (p: string) => [rel, absolute, path.basename(file)].some(f => minimatch(f, p));
++      if (declaration.autoload === false) {
++        // Native Pi delta filters are ordered, not the grouped autoload policy.
++        let state: BridgeDeclarationState = "unmentioned";
++        for (const p of filters) {
++          const marked = /^[!+\-]/.test(p);
++          const pattern = marked ? p.slice(1) : p;
++          if ((p.startsWith("+") || p.startsWith("-")) ? exact(pattern) : matches(pattern)) {
++            state = p.startsWith("-") || p.startsWith("!") ? "disabled" : "enabled";
++          }
++        }
++        return state;
++      }
++      const includes = filters.filter(p => !/^[!+\-]/.test(p));
++      let enabled = !includes.length || includes.some(matches);
++      if (filters.some(p => p.startsWith("!") && matches(p.slice(1)))) enabled = false;
++      if (filters.some(p => p.startsWith("+") && exact(p.slice(1)))) enabled = true;
++      if (filters.some(p => p.startsWith("-") && exact(p.slice(1)))) enabled = false;
++      return enabled ? "enabled" : "disabled";
++    }
++    return "unrelated";
++  } catch {
++    return "unrelated";
++  }
++}
++
++function declaresBridge(entry: unknown, extensionPath: string, settingsDir: string, home: string): boolean {
++  return bridgeDeclarationState(entry, extensionPath, settingsDir, home) === "enabled";
++}
++
++export type BridgeDeclarationProbeResult =
++  | { ok: true; settingsPath: string; declarationPath: string }
++  | { ok: false; settingsPath: string; declarationPath?: string; message: string };
++
++function declaredLocalRoot(entry: unknown, settingsDir: string, home: string): string | null {
++  const declaration = typeof entry === "string" ? { source: entry } : entry as { source?: unknown } | null;
++  if (!declaration || typeof declaration.source !== "string") return null;
++  const source = declaration.source;
++  if (!(source.startsWith(".") || source.startsWith("/") || source.startsWith("~/") || /^[a-zA-Z]:[/\\]/.test(source))) {
++    return null;
++  }
++  return path.resolve(settingsDir, source.startsWith("~/") ? path.join(home, source.slice(2)) : source);
++}
++
+ /** Optional overrides for testing / multi-HOME scenarios. */
+ export interface BridgeRegisterOptions {
+   /**
+@@ -122,6 +203,65 @@
+ }
+ 
+ /**
++ * Re-read Pi settings and verify that its public package declarations load the
++ * selected Dashboard bridge. This is deliberately read-only and uncached so a
++ * repaired declaration takes effect on the next spawn without restarting the
++ * Dashboard server.
++ */
++export function probeBridgeDeclaration(
++  extensionPath: string | null,
++  opts: Pick<BridgeRegisterOptions, "homedir"> = {},
++): BridgeDeclarationProbeResult {
++  const home = opts.homedir
++    ?? process.env.HOME
++    ?? process.env.USERPROFILE
++    ?? os.homedir();
++  const settingsPath = path.join(home, ".pi", "agent", "settings.json");
++  const settingsDir = path.dirname(settingsPath);
++  if (!extensionPath) {
++    return {
++      ok: false,
++      settingsPath,
++      message: `Dashboard bridge package is unavailable; Pi settings ${settingsPath} cannot load it.`,
++    };
++  }
++
++  let settings: Record<string, unknown>;
++  try {
++    settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
++  } catch {
++    return {
++      ok: false,
++      settingsPath,
++      message: `Cannot read Pi settings ${settingsPath} to verify the Dashboard bridge.`,
++    };
++  }
++
++  const packages = Array.isArray(settings.packages) ? settings.packages : [];
++  for (const entry of packages) {
++    if (!declaresBridge(entry, extensionPath, settingsDir, home)) continue;
++    return {
++      ok: true,
++      settingsPath,
++      declarationPath: declaredLocalRoot(entry, settingsDir, home) ?? extensionPath,
++    };
++  }
++
++  const localRoots = packages
++    .map((entry) => declaredLocalRoot(entry, settingsDir, home))
++    .filter((root): root is string => root !== null);
++  const declarationPath = localRoots.find((root) => /pi[-_ ]?dashboard/i.test(root));
++  return {
++    ok: false,
++    settingsPath,
++    ...(declarationPath ? { declarationPath } : {}),
++    message: declarationPath
++      ? `Pi settings ${settingsPath} do not load the Dashboard bridge from ${declarationPath}. Repair that package declaration and try again.`
++      : `Pi settings ${settingsPath} do not declare the Dashboard bridge package. Repair the package declaration and try again.`,
++  };
++}
++
++/**
+  * Register an extension path in pi's settings.json packages array.
+  *
+  * Non-destructive cleanup: only removes dashboard-related paths
+@@ -151,9 +291,26 @@
+       const raw = fs.readFileSync(settingsPath, "utf-8").trim();
+       if (raw) settings = JSON.parse(raw);
+     }
+-  } catch { /* start fresh */ }
++  } catch (err) {
++    // Never replace malformed user configuration (including a tracked symlink).
++    if (opts.strict) throw new Error(`Cannot read pi settings ${settingsPath}`, { cause: err });
++    console.error(`[dashboard] Cannot read pi settings ${settingsPath}:`, err);
++    return;
++  }
+ 
+   const packages = Array.isArray(settings.packages) ? settings.packages as string[] : [];
++  // Check BEFORE cleanup/dedup: registration is discovery, not settings ownership.
++  if (packages.some(p => declaresBridge(p, extensionPath, settingsDir, home))) return;
++  // A settings symlink belongs to its external owner, even when its declared
++  // package (or target) has not been configured yet. Atomic rename would sever
++  // that ownership; writing through would instead mutate tracked configuration.
++  if (fs.lstatSync(settingsPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
++    const message = `Refusing to modify managed pi settings symlink ${settingsPath}: no valid Dashboard bridge declaration resolves. Configure or repair the declared local package before starting Dashboard.`;
++    if (opts.strict) throw new Error(message);
++    console.error(`[dashboard] ${message}`);
++    return;
++  }
++
+ 
+   // Compute the identity (package.json#name) of the new entry. We use it
+   // to dedupe across install layouts (dev / .app / npm-global / legacy
+--- a/packages/shared/src/browser-protocol.ts
++++ b/packages/shared/src/browser-protocol.ts
+@@ -536,6 +536,8 @@
+   reasons?: PreflightReason[];
+   /** Interpolation vars for `err.<domain>.<code>`. Additive. See change: make-all-ui-text-i18n. */
+   vars?: Record<string, string | number>;
++  /** Browser spawn request that failed after tmux accepted the pane. */
++  requestId?: string;
+ }
+ 
+ /**

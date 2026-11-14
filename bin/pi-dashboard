@@ -1,0 +1,11 @@
+#!/bin/sh
+set -u
+
+source=$HOME/.local/share/pi-dashboard/current
+if ! [ -f "$source/packages/server/bin/pi-dashboard.mjs" ]; then
+	echo 'Dashboard source build is missing; run ./setup dashboard from your dotfiles checkout' >&2
+	exit 1
+fi
+# Resolve once so the CLI and its imports stay in this build if setup switches current.
+source=$(realpath "$source") || exit
+exec node "$source/packages/server/bin/pi-dashboard.mjs" "$@"

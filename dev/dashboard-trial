@@ -74,12 +74,7 @@ def main() -> int:
         raise ValueError(f"Build local Pi first; dist/index.js is missing under {pi_package}")
 
     setup = load_setup()
-    mise_env = os.environ | {"MISE_GLOBAL_CONFIG_FILE": str(ROOT / "config/mise.toml")}
-    install = Path(subprocess.run(
-        ["mise", "where", f"{setup.TOOL}@{setup.pin()}"],
-        env=mise_env, text=True, capture_output=True, check=True,
-    ).stdout.strip()).resolve()
-    core = setup.installed_core(install)
+    core = Path.home() / ".local/share/pi-dashboard/current"
 
     home = state / "home"
     agent = home / ".pi/agent"
@@ -99,7 +94,7 @@ def main() -> int:
     settings.symlink_to(settings_source)
 
     tailnet_host = setup.tailscale_address()
-    setup.configure(core, install, home, bind_host=tailnet_host)
+    setup.configure(core, home, bind_host=tailnet_host)
     if not 1 <= options.port <= 65535:
         raise ValueError("Dashboard port must be between 1 and 65535")
     http_port = options.port
@@ -142,19 +137,19 @@ def main() -> int:
     tailnet_origin = f"http://{tailnet_host}:{http_port}"
     tailnet_pairing_url = f"{tailnet_origin}/pair?request"
     log_path = state / "dashboard.log"
-    cli = install / "bin/pi-dashboard"
+    cli = core / "packages/server/bin/pi-dashboard.mjs"
     server = None
     try:
         with log_path.open("wb") as log:
             server = subprocess.Popen(
-                [str(cli), "--host", tailnet_host, "--port", str(http_port),
+                ["node", str(cli), "--host", tailnet_host, "--port", str(http_port),
                  "--pi-port", str(pi_port), "--no-tunnel"],
                 cwd=workspace, env=env, stdout=log, stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
         wait_for_http(origin, server, log_path)
         opened = subprocess.run(
-            [str(cli), "open", "--print", "--url", origin],
+            ["node", str(cli), "open", "--print", "--url", origin],
             cwd=workspace, env=env, text=True, capture_output=True, check=True,
         )
         urls = [line for line in opened.stdout.splitlines() if line.startswith(origin)]

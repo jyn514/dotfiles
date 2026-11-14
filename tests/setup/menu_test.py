@@ -232,7 +232,7 @@ setup_proc_hardening() { record proc-hardening; }
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("[services|11]", result.stdout)
         self.assertIn("[proc|12]", result.stdout)
-        self.assertIn("Please enter a number 0-12", result.stdout)
+        self.assertIn("Please enter a number 0-13", result.stdout)
 
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -354,6 +354,7 @@ install_glide_native() { record glide-install; }
 install_dragon_native() { record dragon-install; }
 install_mise() { record mise-install; }
 install_pi() { record pi-install; }
+install_dashboard() { record dashboard-install; }
 install_platform_bundles() { record platform-bundles; }
 cmd_alias() { return 0; }
 '''
@@ -374,9 +375,16 @@ cmd_alias() { return 0; }
 libexec/setup/glide.py) record glide-policy;;
 tools/codex-sandbox/lima/install-autostart.py) record sandbox-autostart;;
 libexec/setup/setup_obsidian_sync.py) record obsidian;;
-libexec/setup/setup_dashboard.py)
+libexec/setup/setup_dashboard.py*)
     [ "$MISE_GLOBAL_CONFIG_FILE" = "$EXPECTED_MISE_CONFIG" ] || exit 92
-    record dashboard-policy;;
+    shift
+    if [ "$#" = 0 ]; then
+        record dashboard-policy
+    elif [ "$#" = 2 ] && [ "$1" = --checkout ]; then
+        record "dashboard-policy $*"
+    else
+        exit 95
+    fi;;
 *) record "unexpected-python $*"; exit 93;;
 esac
 ''',
@@ -393,17 +401,19 @@ esac
             }
             env.pop("IS_MACOS", None)
             result = subprocess.run(
-                ["/bin/sh", str(script), option], cwd=directory,
+                ["/bin/sh", str(script), *([option] if isinstance(option, str) else option)], cwd=directory,
                 env=env, text=True, capture_output=True,
             )
             return result, log.read_text().splitlines() if log.exists() else []
 
-    def test_removed_dashboard_route_does_not_dispatch(self):
-        result, effects = self.run_setup("dashboard")
-        self.assertEqual(126, result.returncode, result.stderr)
-        self.assertEqual([], effects)
-        self.assertIn("[services|11]", result.stdout)
-        self.assertIn("[proc|12]", result.stdout)
+    def test_dashboard_route_forwards_checkout_path_as_one_argument(self):
+        for options, expected in ((["dashboard"], "dashboard-policy"),
+                                  (["dashboard", "--checkout", "/source with spaces"],
+                                   "dashboard-policy --checkout /source with spaces")):
+            with self.subTest(options=options):
+                result, effects = self.run_setup(options)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual([expected], effects)
 
     def test_services_configures_dashboard_after_existing_services_without_startup(self):
         for option in ("services", "11"):
@@ -434,7 +444,7 @@ esac
 
     def test_local_and_all_install_packages_without_dashboard_or_tailscale_configuration(self):
         local = ["glide-install", "dragon-install", "glide-policy", "mise-install",
-                 "pi-install", "platform-bundles"]
+                 "pi-install", "dashboard-install", "platform-bundles"]
         for option, expected in (("local", local + ["python"]),
                                  ("all", ["global"] + local +
                                   ["basics", "shell", "python", "vim", "sandbox"])):

@@ -36,7 +36,7 @@ Backup and sandbox provisioning retain their separate setup commands;
 
 ### Pi Dashboard
 
-Ordinary package setup installs and patches Dashboard through mise.
+Ordinary package setup builds and installs Dashboard from its pinned source; mise supplies Node and pnpm.
 Run `./setup services` to configure its browser interface and bridge alongside the other user services.
 Dashboard configuration requires an online Tailscale connection and selects that IPv4 address plus `127.0.0.1` at the same HTTP port.
 Tracked policy lives in `config/pi-dashboard.json`; local pairing state and secrets remain in the runtime configuration.

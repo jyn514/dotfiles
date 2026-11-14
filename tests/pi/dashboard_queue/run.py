@@ -62,11 +62,9 @@ def interrupted(_signal, _frame):
 
 def main() -> int:
     signal.signal(signal.SIGTERM, interrupted)
-    scratch = REPOSITORY / "work"
-    scratch.mkdir(exist_ok=True)
     children: list[subprocess.Popen] = []
     report = {"status": "failed", "scope": "public installed Pi SDK InteractiveMode on real PTY; not bin/pi or HostPiOwner"}
-    with tempfile.TemporaryDirectory(prefix="dashboard-queue-", dir=scratch) as temporary:
+    with tempfile.TemporaryDirectory(prefix="dashboard-queue-") as temporary:
         run = Path(temporary)
         home, workspace = run / "home", run / "workspace"
         agent, dashboard = home / ".pi/agent", home / ".pi/dashboard"
@@ -83,7 +81,7 @@ def main() -> int:
             "pairing": {"acceptLanRequests": False}, "mdns": {"enabled": False},
         }
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "SHELL", "PI_PACKAGE_DIR") if key in os.environ}
-        for name in ("DASHBOARD_TEST_CLI", "DASHBOARD_TEST_CORE", "DASHBOARD_TEST_INSTALL", "DASHBOARD_TEST_PLAYWRIGHT", "DASHBOARD_TEST_CHROMIUM", "DASHBOARD_TEST_NODE"):
+        for name in ("DASHBOARD_TEST_CORE", "DASHBOARD_TEST_PLAYWRIGHT", "DASHBOARD_TEST_CHROMIUM", "DASHBOARD_TEST_NODE"):
             env[name] = os.environ[name]
         env.update({
             "HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
@@ -105,10 +103,9 @@ def main() -> int:
         drain_thread = None
         try:
             core = Path(env["DASHBOARD_TEST_CORE"]).resolve()
-            install = Path(env["DASHBOARD_TEST_INSTALL"]).resolve()
-            receipt = json.loads((install / ".dotfiles-dashboard-patch.json").read_text())
-            report["installation"] = {"core": str(core), "install": str(install),
-                                      "version": receipt["version"], "patch_sha256": receipt["patch_sha256"]}
+            receipt = json.loads((core / ".dotfiles-dashboard-patch.json").read_text())
+            report["installation"] = {"core": str(core), "source": receipt["source"],
+                                      "patches": receipt["patches"]}
             # Match the real persisted declaration and machine-local link. The
             # queue extension is the only other extension in this offline fixture.
             declaration = {"source": "./pi-dashboard", "skills": []}
@@ -122,29 +119,18 @@ def main() -> int:
             settings.symlink_to(settings_source)
             package_link = agent / "pi-dashboard"
             package_link.symlink_to(core, target_is_directory=True)
-            baseline_env = env | {
-                "PROBE_INFO": str(run / "core-package-load.json"),
-                "PROBE_EVENTS": str(run / "core-package-observations.jsonl"),
-            }
-            baseline = subprocess.run([
-                env["DASHBOARD_TEST_NODE"], str(HERE / "native-tui.mjs"), "--probe-core-package",
-            ], cwd=workspace, env=baseline_env, capture_output=True, text=True, timeout=35)
-            (run / "core-package-load.log").write_text(baseline.stdout + baseline.stderr)
-            assert baseline.returncode == 0, "core package compatibility probe must complete"
-            report["corePackageBaseline"] = json.loads((run / "core-package-load.json").read_text())
-
             # Exercise the real setup owner rather than choosing an extension
             # path in the test. This only reconciles this fixture's private HOME;
             # it does not install packages, contact Tailscale or activate services.
             spec = importlib.util.spec_from_file_location("dashboard_setup", REPOSITORY / "libexec/setup/setup_dashboard.py")
             setup = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(setup)
-            setup.configure(core, install, home, bind_host="100.64.0.1")
+            setup.configure(core, home, bind_host="100.64.0.1")
             assert settings.is_symlink(), "setup must preserve declarative settings ownership"
             assert json.loads(settings.read_text())["packages"] == [declaration]
             linked_root = package_link.resolve()
             package_manifest = json.loads((linked_root / "package.json").read_text())
-            assert package_manifest["name"] == "@blackbelt-technology/pi-dashboard-extension", "setup must select the public split extension package"
+            assert linked_root == core, "setup must select the built workspace"
             assert package_manifest.get("pi", {}).get("extensions"), "Pi discovers the bridge from its public package manifest"
             report["registration"] = {
                 "owner": "libexec/setup/setup_dashboard.py:configure",
@@ -160,7 +146,7 @@ def main() -> int:
             report["fixturePolicy"] = {"agentPathGate": configured["agentPathGate"], "bindHost": configured["bindHost"]}
             with (run / "server.log").open("wb") as server_log:
                 server = subprocess.Popen([
-                    env["DASHBOARD_TEST_CLI"], "--host", "127.0.0.1", "--port", str(http_port),
+                    env["DASHBOARD_TEST_NODE"], str(core / "packages/server/bin/pi-dashboard.mjs"), "--host", "127.0.0.1", "--port", str(http_port),
                     "--pi-port", str(pi_port), "--no-tunnel",
                 ], cwd=workspace, env=env, stdout=server_log, stderr=subprocess.STDOUT, start_new_session=True)
             children.append(server)
@@ -216,7 +202,7 @@ def main() -> int:
             report["continuedBeforeAnswer"] = True
             shutil.copyfile(run / "events.jsonl", run / "before-browser.jsonl")
             authorized = subprocess.run([
-                env["DASHBOARD_TEST_CLI"], "open", "--print", "--url", origin,
+                env["DASHBOARD_TEST_NODE"], str(core / "packages/server/bin/pi-dashboard.mjs"), "open", "--print", "--url", origin,
             ], cwd=workspace, env=env, capture_output=True, text=True, timeout=15, check=True)
             proof_urls = [line for line in authorized.stdout.splitlines() if line.startswith(origin + "/auth/local-proof?")]
             assert len(proof_urls) == 1, "normal CLI must return one local browser authorization proof"
@@ -302,11 +288,11 @@ def main() -> int:
             if artifacts:
                 destination = Path(artifacts)
                 destination.mkdir(parents=True, exist_ok=True)
-                for name in ("result.json", "events.jsonl", "before-browser.jsonl", "session.jsonl", "browser.json", "core-package-load.json", "core-package-load.log", "server.log", "tui.log", "browser.log"):
+                for name in ("result.json", "events.jsonl", "before-browser.jsonl", "session.jsonl", "browser.json", "server.log", "tui.log", "browser.log"):
                     if (run / name).exists():
                         shutil.copyfile(run / name, destination / name)
             if report["status"] != "passed":
-                for name in ("core-package-load.log", "events.jsonl", "tui.log", "server.log", "browser.json", "browser.log"):
+                for name in ("events.jsonl", "tui.log", "server.log", "browser.json", "browser.log"):
                     path = run / name
                     if path.exists():
                         text = re.sub(r"/auth/local-proof\?[^\s\"']+", "/auth/local-proof?[redacted]", path.read_text(errors="replace")[-18000:])

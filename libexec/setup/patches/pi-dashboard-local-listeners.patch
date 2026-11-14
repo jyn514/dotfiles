@@ -1,0 +1,741 @@
+# Downstream local-listeners; ordered against Dashboard 13fea27249e8b00fc6600c1e91437e22b859b8d2.
+--- /dev/null
++++ b/packages/extension/src/__tests__/server-auto-start-bind.test.ts
+@@ -0,0 +1,81 @@
++import { createServer } from "node:http";
++import type { AddressInfo } from "node:net";
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir, networkInterfaces } from "node:os";
++import { join } from "node:path";
++import { describe, expect, it, vi } from "vitest";
++import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
++import { loadConfig } from "@blackbelt-technology/pi-dashboard-shared/config.js";
++import * as launcher from "@blackbelt-technology/pi-dashboard-shared/server-launcher.js";
++import { autoStartServer, type AutoStartDeps } from "../server-auto-start.js";
++import { launchServer } from "../server-launcher.js";
++
++describe("specific HTTP bind auto-start detection", () => {
++  const host = Object.values(networkInterfaces()).flat().find(a => a && a.family === "IPv4" && !a.internal)?.address ?? "127.0.0.2";
++  it.each([
++    { postLaunch: false, listenOnLoopback: false, lateRuntimeAttach: false },
++    { postLaunch: true, listenOnLoopback: false, lateRuntimeAttach: false },
++    { postLaunch: false, listenOnLoopback: true, lateRuntimeAttach: false },
++    { postLaunch: true, listenOnLoopback: true, lateRuntimeAttach: false },
++    { postLaunch: true, listenOnLoopback: false, lateRuntimeAttach: true },
++    { postLaunch: true, listenOnLoopback: true, lateRuntimeAttach: true },
++  ])("finds the local listener (post-launch: $postLaunch, loopback: $listenOnLoopback, late runtime attach: $lateRuntimeAttach)", async ({ postLaunch, listenOnLoopback, lateRuntimeAttach }) => {
++    const listenerHost = listenOnLoopback ? "127.0.0.1" : host;
++    // A tailnet change can leave the primary bind address unreachable.
++    const bindHost = listenOnLoopback ? "192.0.2.1" : host;
++    const listener = createServer((req, res) => {
++      if (req.url !== "/api/health") { res.writeHead(404).end(); return; }
++      res.setHeader("Content-Type", "application/json");
++      res.end(JSON.stringify({ ok: true, pid: process.pid }));
++    });
++    const lockDir = mkdtempSync(join(tmpdir(), "dashboard-bind-"));
++    await new Promise<void>((resolve, reject) => {
++      listener.once("error", reject);
++      listener.listen(0, listenerHost, resolve);
++    });
++    try {
++      const port = (listener.address() as AddressInfo).port;
++      if (!listenOnLoopback) {
++        expect((await isDashboardRunning(port, "localhost", { timeoutMs: 100, retries: 0 })).running).toBe(false);
++      }
++      let calls = 0;
++      const probe = vi.fn(async (...args: Parameters<typeof isDashboardRunning>) => {
++        if (postLaunch && calls++ === 0) return { running: false };
++        return isDashboardRunning(args[0], args[1], { timeoutMs: 100, retries: 0 });
++      });
++      const deps: AutoStartDeps = {
++        isDashboardRunning: probe,
++        discoverDashboard: vi.fn(async () => []),
++        launchServer: vi.fn(async () => ({ success: true, message: "fixture already ready" })),
++        notify: vi.fn(), log: () => {}, lockDir,
++        resolveServerNode: async () => lateRuntimeAttach
++          ? { resolved: false, range: ">=26.0.0 <27", trail: [] }
++          : { resolved: true, nodeBinary: "/fake/node26/bin/node", version: "v26.0.0", step: "path", range: ">=26.0.0 <27", trail: [] },
++        resolveCliPath: () => join(tmpdir(), "installed", "packages", "server", "src", "cli.ts"),
++      };
++      const result = await autoStartServer({ port, piPort: 19999, autoStart: true, bindHost, listenOnLoopback }, deps);
++      expect(result.server).toEqual({ host: listenerHost, port, piPort: 19999 });
++      expect(probe.mock.calls.every(call => call[1] === listenerHost)).toBe(true);
++      expect(deps.launchServer).toHaveBeenCalledTimes(postLaunch && !lateRuntimeAttach ? 1 : 0);
++      expect(deps.discoverDashboard).toHaveBeenCalledTimes(postLaunch ? 1 : 0);
++    } finally {
++      await new Promise<void>((resolve, reject) => listener.close(err => err ? reject(err) : resolve()));
++      rmSync(lockDir, { recursive: true, force: true });
++    }
++  });
++
++  it.each([false, true])("uses the same endpoint for child readiness (loopback: %s)", async (listenOnLoopback) => {
++    const launch = vi.spyOn(launcher, "launchDashboardServer").mockResolvedValue({
++      childPid: 123, reportedPid: 123, healthOk: true,
++    });
++    try {
++      const result = await launchServer({ ...loadConfig(), bindHost: "192.0.2.1", listenOnLoopback });
++      expect(result.success).toBe(true);
++      expect(launch).toHaveBeenCalledWith(expect.objectContaining({
++        healthHost: listenOnLoopback ? "127.0.0.1" : "192.0.2.1",
++      }));
++    } finally {
++      launch.mockRestore();
++    }
++  });
++});
+--- a/packages/extension/src/server-auto-start.ts
++++ b/packages/extension/src/server-auto-start.ts
+@@ -21,7 +21,7 @@
+   recordChildPid,
+   releaseAutoStartLock,
+ } from "./autostart-lock.js";
+-import { resolveServerCliPath } from "./server-launcher.js";
++import { localServerHealthHost, resolveServerCliPath } from "./server-launcher.js";
+ 
+ export interface DiscoveredServer {
+   host: string;
+@@ -214,10 +214,11 @@
+  * Returns the server to connect to.
+  */
+ export async function autoStartServer(
+-  config: { piPort: number; port: number; autoStart: boolean; readinessTimeoutMs?: number },
++  config: { piPort: number; port: number; autoStart: boolean; readinessTimeoutMs?: number; bindHost?: string; listenOnLoopback?: boolean },
+   deps: AutoStartDeps,
+ ): Promise<AutoStartResult> {
+   const noMdns = mdnsDisabled();
++  const host = localServerHealthHost(config);
+   const log = deps.log ?? appendAutoStartLog;
+   const probeOpts = { ...RESOLVED_PORT_PROBE_OPTS, _sleep: deps.probeSleep };
+ 
+@@ -226,12 +227,12 @@
+   // retried, a refused one is not. When it serves, auto-start returns it and
+   // does NOT consult discovery at all — there is no divergence to record and
+   // no banner, because the correct answer is already known (D4).
+-  const resolved = await deps.isDashboardRunning(config.port, "localhost", probeOpts);
++  const resolved = await deps.isDashboardRunning(config.port, host, probeOpts);
+   if (resolved.running) {
+     log(
+       `attached: dashboard already serving on port ${config.port} (gateway ${config.piPort}) — no launch`,
+     );
+-    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++    return { server: { host, port: config.port, piPort: config.piPort } };
+   }
+ 
+   // 2. Discovery — runs ONLY when the resolved port is silent or foreign.
+@@ -362,9 +363,9 @@
+ 
+     let holderGone = false;
+     while (probes.now() < deadline) {
+-      const probe = await deps.isDashboardRunning(config.port);
++      const probe = await deps.isDashboardRunning(config.port, host);
+       if (probe.running) {
+-        return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++        return { server: { host, port: config.port, piPort: config.piPort } };
+       }
+       if (readLock(lockPath) === null) { holderGone = true; break; }
+       await sleep(pollMs);
+@@ -373,9 +374,9 @@
+     // Holder released without a dashboard coming up, or the budget elapsed:
+     // one last look, then report unavailable.
+     if (holderGone) {
+-      const afterHolder = await deps.isDashboardRunning(config.port);
++      const afterHolder = await deps.isDashboardRunning(config.port, host);
+       if (afterHolder.running) {
+-        return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++        return { server: { host, port: config.port, piPort: config.piPort } };
+       }
+     }
+     return {};
+@@ -427,12 +428,13 @@
+  * is released on ready, failed AND timed-out spawns alike).
+  */
+ async function spawnAndAttach(
+-  config: { piPort: number; port: number; autoStart: boolean },
++  config: { piPort: number; port: number; autoStart: boolean; bindHost?: string; listenOnLoopback?: boolean },
+   deps: AutoStartDeps,
+   noMdns: boolean,
+   lockCtx: { lockDir?: string; locked: boolean },
+   probeOpts: { timeoutMs: number; retries: number; retryDelayMs: number; _sleep?: (ms: number) => Promise<void> },
+ ): Promise<AutoStartResult> {
++  const host = localServerHealthHost(config);
+   // Resolve a Node satisfying the SERVER engines range (pi's own Node may be
+   // below it). Inside the single-flight lock, so concurrent sessions resolve
+   // once. See change: raise-node-floor-to-26 (design D4–D6).
+@@ -441,9 +443,9 @@
+   if (!runtime.resolved) {
+     // A dashboard may have come up while we resolved (another starter,
+     // the desktop app): attach to it and stay quiet.
+-    const late = await deps.isDashboardRunning(config.port);
++    const late = await deps.isDashboardRunning(config.port, host, probeOpts);
+     if (late.running) {
+-      return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++      return { server: { host, port: config.port, piPort: config.piPort } };
+     }
+     log(
+       `refused: no Node satisfying ${runtime.range} for the dashboard server — no launch ` +
+@@ -490,7 +492,7 @@
+       deps.onServerSpawned?.(result.childPid);
+     }
+     deps.onLaunchEnd?.(true);
+-    deps.notify(`🌐 Dashboard started at http://localhost:${config.port} — a plain browser tab needs one-time local authorization: run \`pi-dashboard open\``, "info");
++    deps.notify(`🌐 Dashboard started at http://${host}:${config.port} — a plain browser tab needs one-time local authorization: run \`pi-dashboard open\``, "info");
+ 
+     // D-post: the server we just launched owns the attach decision. Probe the
+     // resolved port with the SAME bootstrap-aware opts as the pre-launch gate;
+@@ -498,9 +500,9 @@
+     // advertiser can never displace the server we just started. The retry
+     // absorbs our own server's bootstrap; no "resolved port silent" warning
+     // is ever raised on this path (D4).
+-    const postLaunch = await deps.isDashboardRunning(config.port, "localhost", probeOpts);
++    const postLaunch = await deps.isDashboardRunning(config.port, host, probeOpts);
+     if (postLaunch.running) {
+-      return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++      return { server: { host, port: config.port, piPort: config.piPort } };
+     }
+ 
+     // Resolved port still silent after the bootstrap-aware probe: discovery
+@@ -523,14 +525,14 @@
+       }
+     }
+ 
+-    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++    return { server: { host, port: config.port, piPort: config.piPort } };
+   }
+ 
+   // Another agent may have started the server concurrently — recheck before warning
+-  const recheck = await deps.isDashboardRunning(config.port);
++  const recheck = await deps.isDashboardRunning(config.port, host);
+   if (recheck.running) {
+     deps.onLaunchEnd?.(true);
+-    return { server: { host: "localhost", port: config.port, piPort: config.piPort } };
++    return { server: { host, port: config.port, piPort: config.piPort } };
+   }
+ 
+   // Surface the log path so users can inspect the crash output without having
+--- a/packages/extension/src/server-launcher.ts
++++ b/packages/extension/src/server-launcher.ts
+@@ -1,3 +1,4 @@
++import { localDialHost } from "@blackbelt-technology/pi-dashboard-shared/local-credential-proof.js";
+ /**
+  * Server launcher — spawns the dashboard server as a detached process.
+  * The spawned server runs in foreground mode (no subcommand) and writes
+@@ -24,6 +25,12 @@
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ const require = createRequire(import.meta.url);
+ 
++/** Local discovery and child readiness use the fixed loopback listener when enabled. */
++export function localServerHealthHost(config: { bindHost?: string; listenOnLoopback?: boolean }): string {
++  if (config.listenOnLoopback) return "127.0.0.1";
++  return config.bindHost === undefined ? "localhost" : localDialHost(config.bindHost);
++}
++
+ export interface LaunchResult {
+   success: boolean;
+   message: string;
+@@ -186,6 +193,7 @@
+       stdio: { logFile: getDashboardServerLogPath() },
+       healthTimeoutMs: config.readinessTimeoutMs ?? HEALTH_CHECK_TIMEOUT_MS,
+       port: config.port,
++      healthHost: localServerHealthHost(config),
+       starter: "Bridge",
+     });
+     return { success: true, message: "Server started", childPid: result.childPid, logOwned: true };
+--- a/packages/server/src/__tests__/cli-parse.test.ts
++++ b/packages/server/src/__tests__/cli-parse.test.ts
+@@ -162,6 +162,12 @@
+     expect(buildConfig({}).host).toBe("127.0.0.1");
+   });
+ 
++  it("carries the explicit loopback listener setting without changing the primary host", () => {
++    expect(buildConfig({}).listenOnLoopback).toBe(false);
++    fs.writeFileSync(configFile, JSON.stringify({ bindHost: "10.0.0.5", listenOnLoopback: true }));
++    expect(buildConfig({})).toMatchObject({ host: "10.0.0.5", listenOnLoopback: true });
++  });
++
+   it("config.bindHost overrides default", () => {
+     fs.writeFileSync(configFile, JSON.stringify({ bindHost: "10.0.0.5" }));
+     expect(buildConfig({}).host).toBe("10.0.0.5");
+--- /dev/null
++++ b/packages/server/src/__tests__/cli-specific-bind.test.ts
+@@ -0,0 +1,60 @@
++import { EventEmitter } from "node:events";
++import type { ChildProcess } from "node:child_process";
++import { createServer } from "node:http";
++import type { AddressInfo } from "node:net";
++import { networkInterfaces } from "node:os";
++import { describe, expect, it, vi } from "vitest";
++import { launchDashboardServer } from "@blackbelt-technology/pi-dashboard-shared/server-launcher.js";
++import { isDashboardRunning } from "@blackbelt-technology/pi-dashboard-shared/server-identity.js";
++import { canonicalBinding, deriveKey, httpPurpose, parseProof, verifyProofMac } from "@blackbelt-technology/pi-dashboard-shared/local-credential-proof.js";
++import { ensureLocalToken } from "../auth/local-token.js";
++import { cmdRestart, cmdStart } from "../cli.js";
++import type { ServerConfig } from "../server.js";
++
++describe("native CLI specific-bind lifecycle", () => {
++  const host = Object.values(networkInterfaces()).flat().find(a => a && a.family === "IPv4" && !a.internal)?.address ?? "127.0.0.2";
++  it("start readiness and restart reach the selected IP without a localhost listener", async () => {
++    let proof: unknown;
++    const token = ensureLocalToken();
++    let requests = 0;
++    const listener = createServer((req, res) => {
++      res.setHeader("Content-Type", "application/json");
++      if (req.url === "/api/health") { res.end(JSON.stringify({ ok: true, pid: process.pid })); return; }
++      if (req.url === "/api/restart") {
++        requests++;
++        proof = req.headers["x-pi-local-proof"];
++        if (req.method !== "POST" || !parseProof(proof) || !verifyProofMac(deriveKey(token), parseProof(proof)!, canonicalBinding(req.socket.localAddress!, req.socket.localPort!), httpPurpose(req.method, req.url)) || req.headers["x-pi-local-token"]) { res.writeHead(403).end(); return; }
++        res.end(JSON.stringify({ ok: true })); return;
++      }
++      res.writeHead(404).end();
++    });
++    await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, host, resolve); });
++    try {
++      const port = (listener.address() as AddressInfo).port;
++      console.info(`Native specific-bind CLI fixture: ${host}:${port}`);
++      expect((await isDashboardRunning(port, "localhost", { timeoutMs: 100, retries: 0 })).running).toBe(false);
++      const config = { port, piPort: 19999, host, dev: false, tunnel: false } as ServerConfig;
++      let classified = 0;
++      const exit = vi.fn();
++      await cmdStart(config, {
++        classify: async () => classified++ === 0 ? { kind: "free" } : { kind: "owned", pid: process.pid },
++        launch: opts => {
++          const child = Object.assign(new EventEmitter(), { pid: process.pid, exitCode: null, signalCode: null, unref: () => {} }) as unknown as ChildProcess;
++          return launchDashboardServer({ ...opts, healthTimeoutMs: 200, _pollIntervalMs: 10, _resolveNativeLoader: () => "file:///fixture.mjs", _spawnNodeScript: () => child });
++        },
++        exit,
++      });
++      expect(exit).not.toHaveBeenCalled();
++      const cmdStopImpl = vi.fn(async () => {});
++      const cmdStartImpl = vi.fn(async () => {});
++      // No probe/fetch override: these are the CLI's real HTTP and proof owners.
++      await cmdRestart(config, { cmdStopImpl, cmdStartImpl });
++      expect(requests).toBe(1);
++      expect(parseProof(proof)).toBeDefined();
++      expect(cmdStopImpl).not.toHaveBeenCalled();
++      expect(cmdStartImpl).not.toHaveBeenCalled();
++    } finally {
++      await new Promise<void>((resolve, reject) => listener.close(err => err ? reject(err) : resolve()));
++    }
++  });
++});
+--- /dev/null
++++ b/packages/server/src/__tests__/http-loopback-listener.test.ts
+@@ -0,0 +1,141 @@
++import fs from "node:fs";
++import http from "node:http";
++import net from "node:net";
++import os from "node:os";
++import path from "node:path";
++import { once } from "node:events";
++import { httpProofHeaders } from "@blackbelt-technology/pi-dashboard-shared/local-credential-proof.js";
++import { afterEach, beforeEach, describe, expect, it } from "vitest";
++import WebSocket from "ws";
++import { ensureLocalToken } from "../auth/local-token.js";
++import { createServer, type DashboardServer } from "../server.js";
++import { createTestServer, type TestServerHandle } from "../test-support/test-server.js";
++
++const addresses = Object.values(os.networkInterfaces()).flat().filter(a => a && a.family === "IPv4" && !a.internal).map(a => a!.address);
++const host = addresses[0] ?? "127.0.0.2";
++const cfgFile = path.join(os.homedir(), ".pi", "dashboard", "config.json");
++let savedConfig: Buffer | undefined;
++let handle: TestServerHandle | undefined;
++let failed: DashboardServer | undefined;
++const sockets: net.Socket[] = [];
++const websockets: WebSocket[] = [];
++
++function request(url: string, opts: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<{ status: number; body: string }> {
++  return new Promise((resolve, reject) => {
++    const req = http.request(url, { method: opts.method ?? "GET", headers: opts.headers }, res => {
++      let body = "";
++      res.on("data", chunk => body += chunk);
++      res.on("end", () => resolve({ status: res.statusCode!, body }));
++    });
++    req.setTimeout(2000, () => req.destroy(new Error("HTTP fixture timed out")));
++    req.on("error", reject);
++    req.end(opts.body);
++  });
++}
++function connect(address: string, port: number): Promise<net.Socket> {
++  return new Promise((resolve, reject) => {
++    const socket = net.connect({ host: address, port });
++    sockets.push(socket);
++    socket.once("connect", () => resolve(socket));
++    socket.once("error", reject);
++  });
++}
++function wsOutcome(url: string, headers?: Record<string, string>): Promise<WebSocket | string> {
++  return new Promise(resolve => {
++    const ws = new WebSocket(url, { headers, handshakeTimeout: 2000 });
++    websockets.push(ws);
++    ws.once("open", () => resolve(ws));
++    ws.once("unexpected-response", (req, res) => { resolve(`http-${res.statusCode}`); res.resume(); req.destroy(); });
++    ws.once("error", e => resolve(`error:${e.message}`));
++  });
++}
++async function signed(url: string, method = "GET", body?: string) {
++  return request(url, { method, headers: { ...httpProofHeaders(ensureLocalToken(), url, method), ...(body ? { "content-type": "application/json" } : {}) }, body });
++}
++
++beforeEach(() => {
++  savedConfig = fs.existsSync(cfgFile) ? fs.readFileSync(cfgFile) : undefined;
++  fs.mkdirSync(path.dirname(cfgFile), { recursive: true });
++  fs.writeFileSync(cfgFile, JSON.stringify({ requireLocalProof: true, trustedNetworks: [], hostGateMode: "enforce" }));
++});
++afterEach(async () => {
++  for (const ws of websockets.splice(0)) ws.terminate();
++  for (const socket of sockets.splice(0)) socket.destroy();
++  await handle?.stop(); handle = undefined;
++  await failed?.stop(); failed = undefined;
++  if (savedConfig) fs.writeFileSync(cfgFile, savedConfig);
++  else fs.rmSync(cfgFile, { force: true });
++});
++
++describe(`native primary ${host} + IPv4 loopback HTTP`, () => {
++  it("defaults off, and enabling an already-loopback primary does not bind twice", async () => {
++    handle = await createTestServer({ host });
++    expect((await request(`http://${host}:${handle.httpPort}/api/health`)).status).toBe(200);
++    await expect(connect("127.0.0.1", handle.httpPort)).rejects.toMatchObject({ code: "ECONNREFUSED" });
++    await handle.stop(); handle = undefined;
++    handle = await createTestServer({ host: "127.0.0.1", listenOnLoopback: true });
++    expect((await request(`http://127.0.0.1:${handle.httpPort}/api/health`)).status).toBe(200);
++  });
++
++  it("shares HTTP/auth/WS, preserves endpoint-bound proofs, closes both edges and restarts cleanly", async () => {
++    handle = await createTestServer({ host, listenOnLoopback: true });
++    const port = handle.httpPort;
++    const primary = `http://${host}:${port}`;
++    const loopback = `http://127.0.0.1:${port}`;
++    const health = await Promise.all([primary, loopback].map(async base => {
++      const result = await request(`${base}/api/health`);
++      expect(result.status).toBe(200);
++      return JSON.parse(result.body);
++    }));
++    expect(health[0].pid).toBe(health[1].pid);
++    expect(health[0].instanceId).toBe(health[1].instanceId);
++    if (addresses[1]) await expect(connect(addresses[1], port)).rejects.toMatchObject({ code: "ECONNREFUSED" });
++    for (const base of [primary, loopback]) {
++      expect((await request(`${base}/api/config`)).status).toBe(403);
++      expect((await signed(`${base}/api/config`)).status).toBe(200);
++      expect((await request(`${base}/api/health`, { headers: { host: "unapproved.invalid" } })).status).toBe(403);
++      expect(await wsOutcome(base.replace("http:", "ws:") + "/ws")).not.toBeInstanceOf(WebSocket);
++      expect(await wsOutcome(base.replace("http:", "ws:") + "/ws?ticket=unknown")).not.toBeInstanceOf(WebSocket);
++      expect(await wsOutcome(base.replace("http:", "ws:") + "/ws", { host: "unapproved.invalid" })).not.toBeInstanceOf(WebSocket);
++      const ticketRes = await signed(`${base}/api/ws-ticket`, "POST", JSON.stringify({ scope: "browser" }));
++      expect(ticketRes.status).toBe(200);
++      const ticket = JSON.parse(ticketRes.body).data.ticket;
++      expect(await wsOutcome(base.replace("http:", "ws:") + `/ws?ticket=${ticket}`)).toBeInstanceOf(WebSocket);
++    }
++    expect(handle.server.browserGateway.wss.clients.size).toBe(2);
++    const url = `${loopback}/api/config`;
++    const token = ensureLocalToken();
++    const wrongEndpoint = httpProofHeaders(token, `${primary}/api/config`, "GET");
++    expect((await request(url, { headers: wrongEndpoint })).status).toBe(403);
++    expect((await request(`${primary}/api/config`, { headers: httpProofHeaders(token, url, "GET") })).status).toBe(403);
++    expect((await request(url, { headers: httpProofHeaders(token, url, "GET", { now: Date.now() - 60_000 }) })).status).toBe(403);
++    const oneUse = httpProofHeaders(token, url, "GET");
++    expect((await request(url, { headers: oneUse })).status).toBe(200);
++    expect((await request(url, { headers: oneUse })).status).toBe(403);
++    const beforeRestart = httpProofHeaders(token, url, "GET");
++    const idle = await connect("127.0.0.1", port);
++    const idleClosed = once(idle, "close");
++    const wsClosed = websockets.filter(ws => ws.readyState === WebSocket.OPEN).map(ws => once(ws, "close"));
++    await handle.stop(); handle = undefined;
++    await Promise.all([idleClosed, ...wsClosed]);
++    for (const address of [host, "127.0.0.1"]) await expect(connect(address, port)).rejects.toMatchObject({ code: "ECONNREFUSED" });
++    handle = await createTestServer({ host, port, listenOnLoopback: true });
++    expect((await request(url, { headers: beforeRestart })).status).toBe(403);
++    expect((await signed(url)).status).toBe(200);
++    expect((await signed(`${primary}/api/config`)).status).toBe(200);
++  });
++
++  it("fails explicitly on loopback bind conflict and releases the primary/gateway", async () => {
++    const blocker = net.createServer();
++    await new Promise<void>((resolve, reject) => { blocker.once("error", reject); blocker.listen(0, "127.0.0.1", resolve); });
++    const port = (blocker.address() as net.AddressInfo).port;
++    try {
++      failed = await createServer({ host, port, piPort: 0, gatewayTcp: true, dev: true, autoShutdown: false, shutdownIdleSeconds: 999, tunnel: false, listenOnLoopback: true });
++      await expect(failed.start()).rejects.toMatchObject({ code: "EADDRINUSE", address: "127.0.0.1", port });
++      await expect(connect(host, port)).rejects.toMatchObject({ code: "ECONNREFUSED" });
++      expect(failed.piPort()).toBe(null);
++    } finally {
++      await new Promise<void>(resolve => blocker.close(() => resolve()));
++    }
++  });
++});
+--- a/packages/server/src/cli.ts
++++ b/packages/server/src/cli.ts
+@@ -248,6 +248,7 @@
+     port: guardTempHomePort(resolvedPort, os.homedir(), os.tmpdir(), warn),
+     piPort: flags.piPort ?? (parseInt(process.env.PI_DASHBOARD_PI_PORT ?? "") || null) ?? fileConfig.piPort,
+     host: flags.host ?? (process.env.PI_DASHBOARD_HOST || null) ?? fileConfig.bindHost,
++    listenOnLoopback: fileConfig.listenOnLoopback,
+     // The `--host` FLAG, kept alongside the resolved value. `pendingBindHost`
+     // must re-resolve the same chain against the CURRENT config, and a flag
+     // wins on the next start too — so the flag has to survive resolution.
+@@ -605,6 +606,7 @@
+       starter: "Standalone",
+       healthTimeoutMs: 30_000,
+       port: config.port,
++      healthHost: localDialHost(config.host),
+     });
+   } catch (err: unknown) {
+     // Any early exit — a foreground bind failure exits 1, only the recovery
+@@ -636,11 +638,10 @@
+     return;
+   }
+ 
+-  // The launcher's readiness probe dials `localhost`, which can reach a
+-  // different socket than 127.0.0.1. Confirm with the classifier (full budget).
++  // Confirm ownership with the classifier after readiness (full budget).
+   const post = await d.classify(config);
+   if (post.kind === "owned" && post.pid === result.childPid) {
+-    console.log(`Dashboard server started (pid ${post.pid}) at http://localhost:${config.port}`);
++    console.log(`Dashboard server started (pid ${post.pid}) at ${localBase(config)}`);
+     return;
+   }
+ 
+@@ -896,7 +897,7 @@
+   stopFn: (cfg: ServerConfig) => Promise<void>,
+   startFn: (cfg: ServerConfig) => Promise<void>,
+ ): Promise<void> {
+-  const status = await probe(config.port);
++  const status = await probe(config.port, localDialHost(config.host));
+   if (status.running) {
+     console.log(
+       `[restart] dashboard running at ${localBase(config)}, delegating to /api/restart`,
+--- a/packages/server/src/server.ts
++++ b/packages/server/src/server.ts
+@@ -2,8 +2,11 @@
+  * Dashboard HTTP + WebSocket server.
+  */
+ 
++import { once } from "node:events";
+ import { readFileSync, realpathSync } from "node:fs";
++import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
+ import { createRequire } from "node:module";
++import type { Socket } from "node:net";
+ import os from "node:os";
+ import path from "node:path";
+ import { monitorEventLoopDelay } from "node:perf_hooks";
+@@ -435,6 +438,8 @@
+    * port stays loopback. See change: configurable-bind-host.
+    */
+   host: string;
++  /** Additional fixed 127.0.0.1 HTTP listener at the primary port (default off). */
++  listenOnLoopback?: boolean;
+   /**
+    * The raw `--host` flag, or `null`. Retained so `pendingBindHost` can
+    * re-resolve the full chain against the current config — a flag wins on the
+@@ -817,6 +822,24 @@
+   let httpBoundAt = 0;
+   // Same contract for the optional TLS listener (its own bind, its own floor). See change: add-tailscale-cert-tls.
+   let tlsBoundAt = 0;
++  let loopbackHttp: HttpServer | null = null;
++  let loopbackBoundAt = 0;
++  const loopbackSockets = new Set<Socket>();
++  // Select by the actual accepted socket, never Host/forwarding headers. Each
++  // listener has its own freshness floor; the verifier binds its own endpoint.
++  const httpProofFloor = (socket: Socket): number =>
++    (socket as import("node:tls").TLSSocket).encrypted ? tlsBoundAt
++      : loopbackSockets.has(socket) ? loopbackBoundAt : httpBoundAt;
++  const stopLoopbackHttp = async (): Promise<void> => {
++    const listener = loopbackHttp;
++    loopbackHttp = null;
++    if (!listener) return;
++    const closed = new Promise<void>(resolve => listener.close(() => resolve()));
++    // Includes upgraded and idle sockets, not only HTTP keep-alive connections.
++    for (const socket of loopbackSockets) socket.destroy();
++    await closed;
++  };
++
+   // Strict local-proof context (`requireLocalProof`, live config read). Threaded to
+   // every genuinely-local admission site. See change: harden-trust-and-credential-boundaries (D2).
+   // The proof cookie is bound to the listener's port; `0` until `listen` runs (inject() in tests).
+@@ -2079,7 +2102,7 @@
+   fastify.addHook("onRequest", async (request) => {
+     localCredential.stamp(request.raw, {
+       kind: "http",
+-      boundAt: (request.raw.socket as import("node:tls").TLSSocket).encrypted ? tlsBoundAt : httpBoundAt,
++      boundAt: httpProofFloor(request.raw.socket),
+     });
+   });
+ 
+@@ -4001,6 +4024,7 @@
+             try { await secondFastify.close(); } catch { /* ignore */ }
+             secondFastify = null;
+           }
++          try { await stopLoopbackHttp(); } catch { /* ignore */ }
+           try { await tlsListener.stop(); } catch { /* ignore */ }
+           try { await fastify.close(); } catch { /* ignore */ }
+         },
+@@ -4813,18 +4837,16 @@
+         routeOwners.end();
+       }
+ 
+-      // Named so the optional TLS listener shares this exact switch (one upgrade
+-      // path, two transports). See change: add-tailscale-cert-tls (D1).
++      // Named so optional HTTP/TLS listeners share this exact upgrade switch. See change: add-tailscale-cert-tls (D1).
+       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: legacy server wiring, grandfathered; decompose in a dedicated refactor, not piecemeal
+       const onUpgrade = (request: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer): void => {
+         // Stamp the local-credential verdict FIRST (before the Host/Origin gates):
+         // everything below reads it via `hasLocalCredential(request.headers)`.
+-        // The proof floor is per transport: a TLS socket is stamped against the
+-        // TLS listener's own bind time, so a proof for the main port never
+-        // verifies here. See change: add-tailscale-cert-tls (D1).
++        // The proof floor is per listener, selected by the accepted socket;
++        // endpoint binding still comes from its real local address/port. See change: add-tailscale-cert-tls (D1).
+         localCredential.stamp(request, {
+           kind: "http",
+-          boundAt: (socket as import("node:tls").TLSSocket).encrypted ? tlsBoundAt : httpBoundAt,
++          boundAt: httpProofFloor(request.socket),
+         });
+         // Ephemeral single-use ticket (D11) bound to the requested WS route
+         // scope. The one cheap read BEFORE the first gate — the host-admission
+@@ -5188,6 +5210,31 @@
+       await listenWithProofFloor(fastify, (at) => (httpBoundAt = at), { port: config.port, host: config.host });
+       const bound = fastify.server.address();
+       if (bound && typeof bound === "object") httpListenPort = bound.port;
++      // Node cannot bind one server to two addresses. Reuse Fastify's route,
++      // hook, authentication and upgrade owners exactly as the native TLS edge
++      // does; add only a listening socket, never a second application/proxy.
++      // Wildcard/IPv4-loopback primary binds already cover the requested edge.
++      if (config.listenOnLoopback === true && bound && typeof bound === "object"
++        && !["127.0.0.1", "0.0.0.0", "::"].includes(bound.address)) {
++        loopbackHttp = createHttpServer();
++        loopbackHttp.keepAliveTimeout = MAIN_KEEP_ALIVE_TIMEOUT_MS;
++        loopbackHttp.setTimeout(MAIN_CONNECTION_TIMEOUT_MS);
++        loopbackHttp.requestTimeout = 0;
++        loopbackHttp.on("connection", socket => {
++          loopbackSockets.add(socket);
++          socket.once("close", () => loopbackSockets.delete(socket));
++        });
++        loopbackHttp.on("request", (req, res) => fastify.server.emit("request", req, res));
++        loopbackHttp.on("upgrade", onUpgrade);
++        loopbackHttp.on("clientError", (err, socket) => fastify.server.emit("clientError", err, socket));
++        const listening = once(loopbackHttp, "listening");
++        loopbackBoundAt = Date.now();
++        loopbackHttp.listen({ port: bound.port, host: "127.0.0.1" });
++        // Unlike optional TLS, an explicitly requested HTTP bind is required:
++        // EADDRINUSE rejects startup and its existing teardown closes both edges.
++        await listening;
++      }
++
+       writePid(process.pid);
+       console.log(`Dashboard server running at http://${config.host}:${config.port}`);
+       // Optional TLS listener: only after Fastify is ready and the main listen resolved.
+@@ -5687,6 +5734,7 @@
+         try { await secondFastify.close(); } catch { /* ignore */ }
+         secondFastify = null;
+       }
++      await stopLoopbackHttp();
+       // The TLS listener (and its open connections) closes with the server.
+       try { await tlsListener.stop(); } catch { /* ignore */ }
+       await fastify.close();
+--- a/packages/shared/src/__tests__/config.test.ts
++++ b/packages/shared/src/__tests__/config.test.ts
+@@ -140,6 +140,16 @@
+     expect(loadConfig().bindHost).toBe("0.0.0.0");
+   });
+ 
++  it("enables listenOnLoopback only for an explicit boolean true", () => {
++    expect(loadConfig().listenOnLoopback).toBe(false);
++    for (const value of [false, "true", 1, null, {}, []]) {
++      fs.writeFileSync(configFile, JSON.stringify({ listenOnLoopback: value }));
++      expect(loadConfig().listenOnLoopback).toBe(false);
++    }
++    fs.writeFileSync(configFile, JSON.stringify({ listenOnLoopback: true }));
++    expect(loadConfig().listenOnLoopback).toBe(true);
++  });
++
+   it("should fall back to default for empty-string or non-string bindHost", () => {
+     fs.writeFileSync(configFile, JSON.stringify({ bindHost: "" }));
+     expect(loadConfig().bindHost).toBe("127.0.0.1");
+--- a/packages/shared/src/__tests__/server-launcher.test.ts
++++ b/packages/shared/src/__tests__/server-launcher.test.ts
+@@ -496,3 +496,23 @@
+     await expect(launchDashboardServer(baseOpts({ _resolveNativeLoader: undefined }))).resolves.toMatchObject({ healthOk: true });
+   });
+ });
++
++it("readiness probes the configured literal bind address using a real HTTP listener", async () => {
++  const { createServer } = await import("node:http");
++  const { networkInterfaces } = await import("node:os");
++  const host = Object.values(networkInterfaces()).flat().find(a => a && a.family === "IPv4" && !a.internal)?.address ?? "127.0.0.2";
++  const { isDashboardRunning: realProbe } = await import("../server-identity.js");
++  const listener = createServer((_req, res) => {
++    res.setHeader("Content-Type", "application/json");
++    res.end(JSON.stringify({ ok: true, pid: process.pid }));
++  });
++  await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, host, resolve); });
++  try {
++    const port = (listener.address() as import("node:net").AddressInfo).port;
++    console.info(`Native specific-bind readiness fixture: ${host}:${port}`);
++    expect((await realProbe(port, "localhost", { timeoutMs: 100, retries: 0 })).running).toBe(false);
++    const result = await launchDashboardServer(baseOpts({ port, healthHost: host, healthTimeoutMs: 200, _isDashboardRunning: realProbe }));
++    expect(result.reportedPid).toBe(process.pid);
++    expect(result.healthOk).toBe(true);
++  } finally { await new Promise<void>((resolve, reject) => listener.close(err => err ? reject(err) : resolve())); }
++});
+--- a/packages/shared/src/config.ts
++++ b/packages/shared/src/config.ts
+@@ -1053,6 +1053,8 @@
+    * See change: configurable-bind-host.
+    */
+   bindHost: string;
++  /** Also serve HTTP on fixed IPv4 loopback at the primary port; restart required. */
++  listenOnLoopback: boolean;
+   autoStart: boolean;
+   autoShutdown: boolean;
+   shutdownIdleSeconds: number;
+@@ -1734,6 +1736,7 @@
+   port: DEFAULT_DASHBOARD_PORT,
+   piPort: DEFAULT_GATEWAY_PORT,
+   bindHost: "127.0.0.1",
++  listenOnLoopback: false,
+   autoStart: true,
+   autoShutdown: false,
+   shutdownIdleSeconds: 300,
+@@ -2700,6 +2703,7 @@
+       port: parsed.port ?? defaults.port,
+       piPort: parsed.piPort ?? defaults.piPort,
+       bindHost: typeof parsed.bindHost === "string" && parsed.bindHost ? parsed.bindHost : defaults.bindHost,
++      listenOnLoopback: parsed.listenOnLoopback === true,
+       autoStart: parsed.autoStart ?? defaults.autoStart,
+       autoShutdown: parsed.autoShutdown ?? defaults.autoShutdown,
+       shutdownIdleSeconds: parsed.shutdownIdleSeconds ?? defaults.shutdownIdleSeconds,
+--- a/packages/shared/src/server-launcher.ts
++++ b/packages/shared/src/server-launcher.ts
+@@ -111,6 +111,8 @@
+   healthTimeoutMs: number;
+   /** Port to probe via `isDashboardRunning(port)`. */
+   port: number;
++  /** Dial target for a specifically bound HTTP listener; absent preserves localhost. */
++  healthHost?: string;
+   /**
+    * Whether the spawned server detaches from the parent's process
+    * group / Windows Job Object. Default: `true` (server outlives the
+@@ -220,6 +222,7 @@
+   const nodeBin = opts.nodeBin ?? process.execPath;
+   const spawn = opts._spawnNodeScript ?? spawnNodeScript;
+   const probe = opts._isDashboardRunning ?? isDashboardRunning;
++  const probeHealth = () => opts.healthHost ? probe(opts.port, opts.healthHost) : probe(opts.port);
+   const pollIntervalMs = opts._pollIntervalMs ?? DEFAULT_POLL_MS;
+   const now = opts._now ?? Date.now;
+   const sleep = opts._sleep ?? defaultSleep;
+@@ -310,14 +313,14 @@
+       // conflict. Ask the probe once (C2: the normal path's conflict signal is the
+       // probe, not a second exit code); a failed probe keeps the generic verdict.
+       if (exitErr instanceof EarlyExitError) {
+-        const after = await probe(opts.port).catch(() => undefined);
++        const after = await probeHealth().catch(() => undefined);
+         if (after?.portConflict) throw new PortConflictError(opts.port);
+       }
+       throw exitErr;
+     }
+     let status;
+     try {
+-      status = await probe(opts.port);
++      status = await probeHealth();
+     } catch {
+       status = { running: false } as const;
+     }

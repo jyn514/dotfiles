@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Apply Dashboard's reviewed patch inside mise, then reconcile local policy.
+"""Build pinned Dashboard source plus downstream patches, then reconcile local policy."""
 
-Only the postinstall entry point changes installed package files. Configuration
-never starts the daemon or rewrites Pi's symlinked settings.
-"""
-
-import gzip
+import argparse
 import hashlib
 import ipaddress
 import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -19,31 +16,19 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TOOL = 'npm:@blackbelt-technology/pi-agent-dashboard'
-PACKAGE = TOOL.removeprefix('npm:')
+PACKAGE = '@blackbelt-technology/pi-agent-dashboard'
+SOURCE = ROOT / 'config/pi-dashboard-source.json'
 STAMP = '.dotfiles-dashboard-patch.json'
-EXTENSION_ALIAS = '.dotfiles-dashboard-extension'
 POLICY = ROOT / 'config/pi-dashboard.json'
+COMPONENTS = {'server': 'server', 'shared': 'shared', 'extension': 'extension', 'web': 'client'}
 
 
 def command(*args, env=None):
     return subprocess.run(args, check=True, text=True, capture_output=True, env=env).stdout.strip()
 
 
-def pin():
-    # Let the existing owning tool parse TOML; do not require a newer global
-    # Python just for tomllib (bootstrap Python is intentionally task-scoped).
-    # mise 2026.9.18 splits dotted paths literally: quoting the tool key makes
-    # the quotes part of the key. This tool name contains no dots.
-    version = command('mise', 'config', 'get', '--file', str(ROOT / 'config/mise.toml'),
-                      f'tools.{TOOL}.version')
-    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
-        raise ValueError(f'{TOOL} must pin an exact X.Y.Z release in config/mise.toml')
-    return version
-
-
-def patch_file(version):
-    return ROOT / 'libexec/setup/patches' / f'pi-dashboard-{version}.patch'
+def run(args, *, cwd=None, env=None):
+    subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
 def digest(contents):
@@ -64,184 +49,201 @@ def publish(path, contents, mode=0o600):
             temporary.unlink(missing_ok=True)
 
 
-def publish_symlink(path, target):
+def check_link(path):
     if path.exists() and not path.is_symlink():
         raise ValueError(f'Refusing to replace an existing path: {path}')
+
+
+def publish_symlink(path, target):
+    check_link(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=path.parent) as temporary:
         replacement = Path(temporary) / path.name
-        replacement.symlink_to(target, target_is_directory=True)
+        replacement.symlink_to(target)
         replacement.replace(path)
 
 
-def installed_core(install):
-    # Ask pnpm for its actual global dependency, not a guessed version/store
-    # directory. The environment form also works with pnpm 12's Rust CLI.
-    env = os.environ | {
-        'PNPM_CONFIG_GLOBAL_DIR': str(install),
-        'PNPM_CONFIG_GLOBAL_BIN_DIR': str(install / 'bin'),
-        'PATH': str(install / 'bin') + os.pathsep + os.environ['PATH'],
-    }
-    records = json.loads(command('pnpm', 'list', '--global', '--depth=0', '--json', env=env))
-    matches = [Path(record['dependencies'][PACKAGE]['path']).resolve()
-               for record in records if PACKAGE in record.get('dependencies', {})]
-    if len(matches) != 1:
-        raise ValueError('pnpm did not identify exactly one Dashboard core package')
-    core = matches[0]
-    if not core.is_relative_to(install.resolve()):
-        raise ValueError('Dashboard resolves outside its owning mise installation')
-    return core
+def source_inputs():
+    """Read the pin and ordered patch bytes once, including during a rebuild."""
+    value = json.loads(SOURCE.read_text())
+    if not isinstance(value, dict) or set(value) != {'repository', 'revision', 'patches'}:
+        raise ValueError(f'Expected repository, revision, and patches in {SOURCE}')
+    if not isinstance(value['repository'], str) or not value['repository']:
+        raise ValueError('Dashboard repository must be a nonempty URL')
+    if not isinstance(value['revision'], str) or not re.fullmatch('[0-9a-f]{40}', value['revision']):
+        raise ValueError('Dashboard revision must be a full lowercase commit hash')
+    if not isinstance(value['patches'], list) or not all(isinstance(p, str) and p for p in value['patches']):
+        raise ValueError('Dashboard patches must be an ordered list of paths')
+    patches = [(name, (ROOT / name).read_bytes()) for name in value['patches']]
+    return value, patches
+
+
+def patch_receipts(patches):
+    return [{'path': name, 'sha256': digest(contents)} for name, contents in patches]
+
+
+def clone(entry, destination):
+    # Use the existing locked-source acquisition owner, with this subsystem's pin.
+    bootstrap = runpy.run_path(str(ROOT / 'libexec/setup/install_bootstrap.py'))
+    bootstrap['clone'](entry, destination)
 
 
 def component_roots(core):
-    # Module lookup paths bypass restrictive package exports without guessing
-    # pnpm's store layout. Walk component dependencies too: shared is transitive.
     result = command('node', str(ROOT / 'libexec/setup/setup_dashboard_roots.mjs'), str(core))
     return {name: [Path(path) for path in paths] for name, paths in json.loads(result).items()}
 
 
-def validate_roots(core, components, version, install):
-    expected = {core: PACKAGE}
-    for component, roots in components.items():
-        if not roots:
-            raise ValueError(f'Missing Dashboard {component} package')
-        expected.update({root: f'@blackbelt-technology/pi-dashboard-{component}' for root in roots})
-    for root, name in expected.items():
-        metadata = json.loads((root / 'package.json').read_text())
-        if metadata.get('name') != name or metadata.get('version') != version:
-            raise ValueError(f'Dashboard version/name mismatch at {root}: expected {name}@{version}')
-        if not root.resolve().is_relative_to(install.resolve()):
-            raise ValueError(f'Dashboard component outside owning installation: {root}')
-    for root in components['extension']:
-        extensions = json.loads((root / 'package.json').read_text()).get('pi', {}).get('extensions', [])
-        if 'src/bridge.ts' not in extensions or not (root / 'src/bridge.ts').is_file():
-            raise ValueError(f'Dashboard runtime extension does not publicly expose its bridge: {root}')
-    if not (core / 'packages/extension/src/bridge.ts').is_file():
-        raise ValueError('Dashboard bundled bridge is missing')
-    for root in components['web']:
-        if not (root / 'dist/index.html').is_file():
-            raise ValueError('Dashboard browser distribution is missing')
+def validate_source(core):
+    metadata = json.loads((core / 'package.json').read_text())
+    if metadata.get('name') != PACKAGE:
+        raise ValueError(f'Not a Dashboard source checkout: {core}')
+    if not re.fullmatch(r'pnpm@[0-9]+\.[0-9]+\.[0-9]+', metadata.get('packageManager', '')):
+        raise ValueError('Dashboard source must pin its pnpm packageManager')
+    if 'packages/extension/src/bridge.ts' not in metadata.get('pi', {}).get('extensions', []):
+        raise ValueError('Dashboard source does not publicly declare its bridge')
+    for relative in ('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/extension/src/bridge.ts',
+                     'packages/server/bin/pi-dashboard.mjs', 'packages/server/src/cli.ts'):
+        if not (core / relative).is_file():
+            raise ValueError(f'Dashboard source is missing {relative}: {core}')
+    for name, directory in COMPONENTS.items():
+        manifest = json.loads((core / f'packages/{directory}/package.json').read_text())
+        if manifest.get('name') != f'@blackbelt-technology/pi-dashboard-{name}':
+            raise ValueError(f'Unexpected Dashboard workspace package: {directory}')
 
 
-def runtime_extension(core, components):
-    extension = Path(command('node', str(ROOT / 'libexec/setup/setup_dashboard_roots.mjs'),
-                             str(core), '--extension'))
-    if extension not in components['extension']:
-        raise ValueError('Dashboard runtime extension is outside the validated package graph')
-    return extension
+def validate_workspace(core):
+    validate_source(core)
+    for name, roots in component_roots(core).items():
+        if roots != [(core / 'packages' / COMPONENTS[name]).resolve()]:
+            raise ValueError(f'Dashboard {name} must resolve to the built workspace, not registry packages')
+    if not (core / 'packages/client/dist/index.html').is_file():
+        raise ValueError('Dashboard browser build is missing')
 
 
-def files(directory):
-    return {path.relative_to(directory): path.read_bytes()
-            for path in directory.rglob('*') if path.is_file()}
+def runtime_files(core):
+    paths = [core / 'package.json', core / 'pnpm-lock.yaml', core / 'pnpm-workspace.yaml']
+    for directory in COMPONENTS.values():
+        paths.append(core / f'packages/{directory}/package.json')
+    for relative in ('packages/server/src', 'packages/server/bin', 'packages/shared/src',
+                     'packages/extension/src', 'packages/client/dist'):
+        paths.extend(path for path in (core / relative).rglob('*') if path.is_file())
+    return {str(path.relative_to(core)): digest(path.read_bytes()) for path in sorted(paths)}
 
 
-def native_patch(stage, patch, reverse=False):
+def validate_build(core):
+    validate_workspace(core)
+    receipt = json.loads((core / STAMP).read_text())
+    if not isinstance(receipt, dict):
+        raise ValueError('Dashboard build receipt must be an object')
+    _, patches = source_inputs()
+    if receipt.get('patches') != patch_receipts(patches):
+        raise ValueError('Dashboard patches changed; rerun ./setup dashboard to rebuild')
+    if receipt.get('files') != runtime_files(core):
+        raise ValueError('Dashboard build is not intact; rerun ./setup dashboard to rebuild')
+    return receipt
+
+
+def native_patch(stage, patch):
     args = ['patch', '--batch', '--fuzz=0', '--no-backup-if-mismatch', '--reject-file=-',
-            '-p1', '-d', str(stage), '-i', str(patch)]
-    args.append('--reverse' if reverse else '--forward')
-    # Dry-run first: a failed hunk must never leave a partially patched install.
+            '-p1', '-d', str(stage), '-i', str(patch), '--forward']
     command(*args, '--dry-run')
     command(*args)
 
 
-def destinations(relative, core, components):
-    parts = relative.parts
-    if len(parts) < 3 or parts[0] != 'packages':
-        raise ValueError(f'Patch changed an unsupported path: {relative}')
-    component = parts[1]
-    if component == 'client' and len(parts) > 3 and parts[2] == 'dist':
-        return [root / 'dist' / Path(*parts[3:]) for root in components['web']]
-    if component not in ('server', 'shared', 'extension') or parts[2] != 'src':
-        raise ValueError(f'Patch changed an unsupported source path: {relative}')
-    return [core / relative, *(root / Path(*parts[2:]) for root in components[component])]
+def copy_checkout(checkout, destination):
+    # Git selects tracked files (including edits) and non-ignored untracked
+    # files. A directory's name alone cannot tell source from build output.
+    listing = subprocess.run(['git', '-C', str(checkout), 'ls-files', '--cached',
+                              '--others', '--exclude-standard', '-z'],
+                             check=True, capture_output=True).stdout
+    destination.mkdir()
+    for name in sorted(set(listing.split(b'\0')) - {b''}):
+        relative = Path(os.fsdecode(name))
+        source = checkout / relative
+        target = destination / relative
+        if source.is_dir():
+            shutil.copytree(source, target, ignore=shutil.ignore_patterns('.git', '.jj', 'node_modules'))
+        elif source.exists():
+            # Dereference input symlinks: patches/builds must only write copies.
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
 
 
-def postinstall():
-    version = pin()
-    if os.environ.get('MISE_TOOL_VERSION') != version or not os.environ.get('MISE_TOOL_INSTALL_PATH'):
-        raise ValueError('Dashboard patch must run as the matching mise postinstall hook')
-    install = Path(os.environ['MISE_TOOL_INSTALL_PATH']).resolve()
-    patch = patch_file(version)
-    patch_bytes = patch.read_bytes()  # Missing versioned patch fails closed.
-    core = installed_core(install)
-    components = component_roots(core)
-    validate_roots(core, components, version, install)
-    extension = runtime_extension(core, components)
-    state_file = install / STAMP
-    previous = json.loads(state_file.read_text()) if state_file.exists() else None
-    if previous:
-        if previous.get('version') != version:
-            raise ValueError('Dashboard patch receipt has a different upstream version')
-        for path, expected in previous['files'].items():
-            target = install / path
-            actual = digest(target.read_bytes()) if target.exists() else None
-            if actual != expected:
-                raise ValueError(f'Installed Dashboard drifted since patching: {target}')
-        if previous['patch_sha256'] == digest(patch_bytes):
-            publish_symlink(install / EXTENSION_ALIAS, extension)
-            return
-    # Work on copies, never pnpm's hard-linked content-addressable store files.
-    # Core source and resolved split components both execute in this release.
-    with tempfile.TemporaryDirectory(prefix='dashboard-patch-') as temporary:
-        stage = Path(temporary) / 'stage'
-        shutil.copytree(core, stage, ignore=shutil.ignore_patterns('node_modules'))
-        shutil.copytree(components['web'][0] / 'dist', stage / 'packages/client/dist')
-        before = files(stage)
-        if previous:
-            old = Path(temporary) / 'previous.patch'
-            old.write_text(previous['patch'])
-            native_patch(stage, old, reverse=True)
-        pristine = files(stage)
-        # Apply exactly the bytes named by the receipt even if the checkout's
-        # patch is regenerated while this installation hook is running.
-        selected_patch = Path(temporary) / 'reviewed.patch'
-        selected_patch.write_bytes(patch_bytes)
-        native_patch(stage, selected_patch)
-        after = files(stage)
-        # Match upstream precompress.mjs: compressible assets and index.html
-        # at least 1 KiB, best gzip compression. Also refresh existing sidecars
-        # if a changed source shrinks, and remove generated sidecars whose
-        # source was removed when reversing an older patch.
-        compressible = {'.js', '.css', '.html', '.svg', '.json', '.map', '.txt'}
-        for path in before.keys() | after.keys():
-            if path.parts[:3] != ('packages', 'client', 'dist'):
-                continue
-            contents = after.get(path)
-            compressed = Path(str(path) + '.gz')
-            if contents is None:
-                (stage / compressed).unlink(missing_ok=True)
-            elif pristine.get(path) != contents or before.get(path) != contents:
-                eligible = path.parts[3] == 'assets' or path.name == 'index.html'
-                if compressed in before or (eligible and path.suffix in compressible and len(contents) >= 1024):
-                    (stage / compressed).write_bytes(gzip.compress(contents, compresslevel=9, mtime=0))
-        after = files(stage)
-        changed = {path for path in pristine.keys() | after.keys()
-                   if pristine.get(path) != after.get(path)}
-        # Include restored files when the reviewed patch changes or shrinks.
-        changed |= {path for path in before.keys() | after.keys()
-                    if before.get(path) != after.get(path)}
-        updates = {}
-        for path in sorted(changed):
-            for target in destinations(path, core, components):
-                actual = target.read_bytes() if target.exists() else None
-                if actual != before.get(path):
-                    raise ValueError(f'Dashboard component differs from canonical source: {target}')
-                updates[target] = after.get(path)
-        receipt = {}
-        for target, contents in updates.items():
-            if contents is None:
-                target.unlink(missing_ok=True)
-            else:
-                publish(target, contents, target.stat().st_mode & 0o777 if target.exists() else 0o644)
-            receipt[str(target.relative_to(install))] = digest(contents) if contents is not None else None
-        publish(state_file, (json.dumps({
-            'version': version, 'patch_sha256': digest(patch_bytes),
-            'packages': json.loads(command('node', str(ROOT / 'libexec/setup/setup_dashboard_roots.mjs'),
-                                           str(core), '--versions')),
-            'patch': patch_bytes.decode(), 'files': receipt,
+def build_source(checkout=None, home=None):
+    """Build in owned storage; never patch, install, or build in the input checkout.
+
+    Return a complete workspace without changing active links or runtime policy.
+    A checkout supplies current tracked and non-ignored untracked files, not
+    HEAD. Managed builds reuse an intact matching pin.
+    """
+    home = home if home is not None else Path.home()
+    specification, patches = source_inputs()
+    source = {'repository': specification['repository'], 'revision': specification['revision']}
+    state = home / '.local/share/pi-dashboard'
+    current = state / 'current'
+    if checkout is None and current.is_symlink():
+        core = current.resolve()
+        try:
+            receipt = validate_build(core)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            # Build a replacement without touching the damaged active tree.
+            pass
+        else:
+            if receipt.get('source') == source and receipt.get('patches') == patch_receipts(patches):
+                return core
+    if checkout is not None:
+        checkout = Path(checkout).expanduser().resolve(strict=True)
+        validate_source(checkout)
+        source = {'checkout': str(checkout)}
+    builds = state / 'builds'
+    builds.mkdir(parents=True, exist_ok=True)
+    generation = Path(tempfile.mkdtemp(prefix='build-', dir=builds))
+    core = generation / 'source'
+    try:
+        if checkout is None:
+            print(f"Dashboard: acquire upstream {specification['revision'][:12]}", file=sys.stderr)
+            clone({'url': specification['repository'], 'revision': specification['revision']}, core)
+            shutil.rmtree(core / '.git')
+        else:
+            print(f'Dashboard: copy checkout {checkout}', file=sys.stderr)
+            copy_checkout(checkout, core)
+        validate_source(core)
+        # Freeze patch bytes as well as source; editing dotfiles during a long
+        # build cannot change which patch a later step applies.
+        for index, (name, contents) in enumerate(patches):
+            print(f'Dashboard: apply {name}', file=sys.stderr)
+            patch = generation / f'{index}.patch'
+            patch.write_bytes(contents)
+            native_patch(core, patch)
+        print('Dashboard: install locked dependencies and build', file=sys.stderr)
+        environment = os.environ.copy()
+        # The workspace's prepare scripts build the browser during installation too.
+        environment['NODE_OPTIONS'] = (environment.get('NODE_OPTIONS', '') + ' --max-old-space-size=4096').strip()
+        run(['pnpm', 'install', '--frozen-lockfile'], cwd=core, env=environment)
+        run(['pnpm', 'run', 'build'], cwd=core, env=environment)
+        validate_workspace(core)
+        publish(core / STAMP, (json.dumps({
+            'source': source, 'patches': patch_receipts(patches), 'files': runtime_files(core),
         }, indent=2) + '\n').encode())
-        publish_symlink(install / EXTENSION_ALIAS, extension)
+        return core
+    except BaseException:
+        shutil.rmtree(generation)
+        raise
+
+
+def activate(core, home):
+    current = home / '.local/share/pi-dashboard/current'
+    launcher = home / '.local/bin/pi-dashboard'
+    bridge = home / '.pi/agent/pi-dashboard'
+    check_link(current)
+    check_link(launcher)
+    check_link(bridge)
+    publish_symlink(launcher, ROOT / 'bin/pi-dashboard')
+    publish_symlink(current, core)
+    # Migrate an already-enabled release bridge even for --install-only.
+    # A fresh package installation must not enable a bridge or require policy.
+    if bridge.is_symlink():
+        publish_symlink(bridge, current)
 
 
 def read_object(path):
@@ -327,24 +329,9 @@ def apply_policy(config):
                 existing.append(value)
 
 
-def configure(core, install, home, bind_host=None):
-    version = pin()
-    components = component_roots(core)
-    validate_roots(core, components, version, install)
-    # The split package owns the bridge's runtime dependencies. The bundled
-    # core sources are still patched for native CLI use, but are not loadable
-    # as a Pi package without unpublished development dependencies.
-    extension = runtime_extension(core, components)
-    extension_alias = install / EXTENSION_ALIAS
-    receipt = json.loads((install / STAMP).read_text())
-    if receipt.get('version') != version or receipt.get('patch_sha256') != digest(patch_file(version).read_bytes()):
-        raise ValueError('Dashboard patch changed; reinstall the mise tool before configuring')
-    for path, expected in receipt['files'].items():
-        target = install / path
-        if (digest(target.read_bytes()) if target.exists() else None) != expected:
-            raise ValueError(f'Installed Dashboard patch is not intact: {target}')
-    if not extension_alias.is_symlink() or extension_alias.resolve() != extension:
-        publish_symlink(extension_alias, extension)
+def configure(core, home, bind_host=None):
+    validate_build(core)
+    current = home / '.local/share/pi-dashboard/current'
     if not shutil.which('tmux'):
         raise ValueError('Dashboard requires tmux for interactive sandbox sessions')
     directory = home / '.pi/dashboard'
@@ -379,41 +366,41 @@ def configure(core, install, home, bind_host=None):
     link = home / '.pi/agent/pi-dashboard'
     if link.exists() and not link.is_symlink():
         raise ValueError(f'Refusing to replace an existing Pi package: {link}')
+    check_link(current)
+    check_link(home / '.local/bin/pi-dashboard')
     publish(config_path, (json.dumps(config, indent=2) + '\n').encode())
     publish(overrides_path, (json.dumps(overrides, indent=2) + '\n').encode())
-    link.parent.mkdir(parents=True, exist_ok=True)
-    if not link.is_symlink() or link.resolve() != extension:
-        publish_symlink(link, extension_alias)
+    activate(core, home)
+    publish_symlink(link, current)
 
 
-def setup():
-    # mise owns installation and patch application. Never repair package source
-    # here: a stale/failed patch must stop before exposing the bridge to Pi.
-    # `config_source` can resolve through the active global-config symlink even
-    # when this helper belongs to an isolated worktree. Carry the actual owner
-    # into the hook instead of letting mise select another checkout.
-    hook_env = os.environ | {'DOTFILES_DASHBOARD_ROOT': str(ROOT)}
-    command('mise', 'install', '--yes', TOOL, env=hook_env)
-    install = Path(command('mise', 'where', TOOL)).resolve()
-    # A fresh shell may not have activated mise yet. Resolve the installed
-    # dependencies through their owner rather than requiring a shell reload.
+def setup(checkout=None, install_only=False):
+    # Resolve configured tools even before the caller activates a new shell.
     directories = [str(Path(command('mise', 'which', tool)).parent) for tool in ('node', 'pnpm')]
     os.environ['PATH'] = os.pathsep.join([*directories, os.environ['PATH']])
-    configure(installed_core(install), install, Path.home())
+    home = Path.home()
+    core = build_source(checkout, home)
+    if install_only:
+        activate(core, home)
+    else:
+        configure(core, home)
+    print(f'Dashboard source: {core}')
+    print('Stop Dashboard, start it again, and reload Pi to use the selected build.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--checkout', type=Path, help='copy current checkout files, then apply the normal patches')
+    parser.add_argument('--install-only', action='store_true', help='build and select without configuring policy or enabling the bridge')
+    arguments = parser.parse_args()
+    try:
+        setup(arguments.checkout, arguments.install_only)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        detail = error.stderr or error.stdout if isinstance(error, subprocess.CalledProcessError) else ''
+        print(f'Dashboard setup failed: {error}\n{detail}'.rstrip(), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
-    try:
-        if sys.argv[1:] == ['postinstall']:
-            postinstall()
-        elif not sys.argv[1:]:
-            setup()
-        else:
-            raise ValueError('usage: setup_dashboard.py [postinstall]')
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
-        print(f'Dashboard setup failed: {error}', file=sys.stderr)
-        if isinstance(error, subprocess.CalledProcessError):
-            for output in (error.stdout, error.stderr):
-                if output:
-                    print(output, file=sys.stderr, end='' if output.endswith('\n') else '\n')
-        raise SystemExit(1)
+    raise SystemExit(main())

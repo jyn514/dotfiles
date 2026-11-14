@@ -1,0 +1,746 @@
+# Downstream prompt-queue; ordered against Dashboard 13fea27249e8b00fc6600c1e91437e22b859b8d2.
+--- a/packages/client/src/components/__tests__/SelectRenderer.test.tsx
++++ b/packages/client/src/components/__tests__/SelectRenderer.test.tsx
+@@ -265,3 +265,31 @@
+     ).not.toThrow();
+   });
+ });
++
++
++describe("queue-backed SelectRenderer", () => {
++  it("treats Cancel as a literal answer and always provides multiline free text", () => {
++    const onRespond = vi.fn();
++    const onCancel = vi.fn();
++    render(<SelectRenderer {...baseProps} params={{ title: "Queue", options: ["Cancel", "Other"], kind: "queue-question" }} status="pending" onRespond={onRespond} onCancel={onCancel} />);
++    fireEvent.click(screen.getByText("Cancel"));
++    expect(onRespond).toHaveBeenLastCalledWith({ value: "Cancel" });
++    expect(onCancel).not.toHaveBeenCalled();
++    const input = screen.getByRole("textbox");
++    fireEvent.change(input, { target: { value: "line one\nline two" } });
++    fireEvent.keyDown(input, { key: "Escape" });
++    expect(onCancel).not.toHaveBeenCalled();
++    fireEvent.click(screen.getByText("Submit"));
++    expect(onRespond).toHaveBeenLastCalledWith({ value: "line one\nline two" });
++  });
++  it("has no Cancel affordance without a literal option; blank submit is disabled and unmount is inert", () => {
++    const onCancel = vi.fn();
++    const onRespond = vi.fn();
++    const view = render(<SelectRenderer {...baseProps} params={{ title: "Queue", options: [], kind: "queue-question" }} status="pending" onRespond={onRespond} onCancel={onCancel} />);
++    expect(screen.queryByText("Cancel")).toBeNull();
++    expect((screen.getByText("Submit") as HTMLButtonElement).disabled).toBe(true);
++    view.unmount();
++    expect(onCancel).not.toHaveBeenCalled();
++    expect(onRespond).not.toHaveBeenCalled();
++  });
++});
+--- a/packages/client/src/components/interactive-renderers/SelectRenderer.tsx
++++ b/packages/client/src/components/interactive-renderers/SelectRenderer.tsx
+@@ -6,11 +6,13 @@
+ import { MarkdownContent } from "../preview/MarkdownContent.js";
+ import { AnsweredOption } from "./AnsweredOption.js";
+ import { InlineMarkdown } from "./InlineMarkdown.js";
++import { InputComposer } from "./InputComposer.js";
+ import { OtherOption } from "./OtherOption.js";
+ import { isCancelOption, parseOption } from "./parseOption.js";
+ import type { InteractiveRendererProps } from "./types.js";
+ 
+ export function SelectRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
++  const queueQuestion = params.kind === "queue-question";
+   const title = params.title as string;
+   const message = params.message as string | undefined;
+   // Non-string options are dropped (parseOption would throw on them). See change: add-ask-user-inline-other (X2).
+@@ -80,7 +82,7 @@
+       )}
+       <div className="flex flex-col gap-1.5 ml-6">
+         {options.map((option) => {
+-          const cancel = isCancelOption(option);
++          const cancel = !queueQuestion && isCancelOption(option);
+           const { title: oTitle, description } = parseOption(option);
+           return (
+             <OptionRow
+@@ -92,8 +94,27 @@
+             />
+           );
+         })}
+-        {otherAllowed && (
++        {queueQuestion && (
+           <>
++            <InputComposer
++              value={otherText}
++              images={[]}
++              onChange={(next) => setOtherText(next.value)}
++              onSubmit={() => { if (otherTrimmed) onRespond({ value: otherText }); }}
++              placeholder={i18nT("common.otherPlaceholder", undefined, "Type your answer")}
++            />
++            <button
++              type="button"
++              disabled={!otherTrimmed}
++              onClick={() => onRespond({ value: otherText })}
++              className="focus-ring self-start px-3 min-h-[44px] text-xs rounded bg-[var(--accent-solid)] text-white disabled:opacity-40"
++            >
++              {i18nT("common.submit", undefined, "Submit")}
++            </button>
++          </>
++        )}
++        {!queueQuestion && otherAllowed && (
++          <>
+             <OtherOption
+               variant="radio"
+               active={otherActive}
+@@ -114,7 +135,7 @@
+             )}
+           </>
+         )}
+-        {!hasCancelOption && (
++        {!queueQuestion && !hasCancelOption && (
+           <OptionRow title={i18nT("common.cancel", undefined, "Cancel")} cancel onClick={onCancel} />
+         )}
+       </div>
+--- a/packages/client/src/components/questions/QuestionDialog.tsx
++++ b/packages/client/src/components/questions/QuestionDialog.tsx
+@@ -202,6 +202,7 @@
+             method={detail.type}
+             params={{
+               title: detail.question,
++              kind: detail.kind,
+               options: detail.options,
+               questions: detail.questions,
+               ...(detail.allowOther ? { allowOther: true } : {}),
+--- a/packages/client/src/hooks/__tests__/useMessageHandler.plugin-meta.test.tsx
++++ b/packages/client/src/hooks/__tests__/useMessageHandler.plugin-meta.test.tsx
+@@ -89,6 +89,11 @@
+   }) as ServerToBrowserMessage;
+ 
+ describe("prompt_request metadata.plugin (task 4.2)", () => {
++  it("carries queue-question kind into renderer params", () => {
++    const { dispatch, sessionStatesRef } = setup();
++    dispatch(promptWith("queue", { kind: "queue-question", questionId: "q1" }));
++    expect(sessionStatesRef.current.get(SID)?.interactiveRequests[0]?.params.kind).toBe("queue-question");
++  });
+   it("copies metadata.plugin into params._pluginMeta, next to the core fields", () => {
+     const { dispatch, sessionStatesRef } = setup();
+     dispatch(promptWith("p1", { message: "m", plugin }));
+--- a/packages/client/src/hooks/__tests__/useSessionState.test.ts
++++ b/packages/client/src/hooks/__tests__/useSessionState.test.ts
+@@ -127,6 +127,13 @@
+     );
+   });
+ 
++  it("carries queue-question kind into the independent embedded renderer fold", () => {
++    const added = applySessionMessage(createSessionAccumulator(), {
++      type: "prompt_request", sessionId: SID, promptId: "queue", prompt: { type: "select", question: "Q", metadata: { kind: "queue-question" } }, component: { type: "generic-dialog", props: {} }, placement: "inline",
++    } as ServerToBrowserMessage);
++    expect(added.state.interactiveRequests[0].params.kind).toBe("queue-question");
++  });
++
+   it("prompt_request copies metadata.allowOther === true into params (test-plan #E16)", () => {
+     const mk = (promptId: string, metadata?: Record<string, unknown>) =>
+       ({
+--- a/packages/client/src/hooks/useMessageHandler.ts
++++ b/packages/client/src/hooks/useMessageHandler.ts
+@@ -1899,6 +1899,7 @@
+               title: msg.prompt?.question,
+               message: msg.prompt?.metadata?.message as string | undefined,
+               options: msg.prompt?.options,
++              kind: msg.prompt?.metadata?.kind,
+               defaultValue: msg.prompt?.defaultValue,
+               // For method "batch": sub-questions travel in metadata.questions.
+               // See change: redesign-ask-user-question-cards.
+--- a/packages/client/src/hooks/useSessionState.ts
++++ b/packages/client/src/hooks/useSessionState.ts
+@@ -170,6 +170,7 @@
+       title: msg.prompt?.question,
+       message: msg.prompt?.metadata?.message as string | undefined,
+       options: msg.prompt?.options,
++              kind: msg.prompt?.metadata?.kind,
+       defaultValue: msg.prompt?.defaultValue,
+       questions: msg.prompt?.metadata?.questions,
+       // Inline "Other" opt-in (core metadata key). See change: add-ask-user-inline-other.
+--- /dev/null
++++ b/packages/extension/src/__tests__/prompt-bus-events.test.ts
+@@ -0,0 +1,53 @@
++import { describe, expect, it, vi } from "vitest";
++import { PromptBus, type PromptResponse } from "../prompt-bus.js";
++import { connectPromptBusEvents } from "../prompt-bus-events.js";
++
++function events() {
++  const handlers = new Map<string, Set<(p: any) => void>>();
++  return {
++    on(name: string, handler: (p: any) => void) {
++      const set = handlers.get(name) ?? new Set();
++      handlers.set(name, set);
++      set.add(handler);
++      return () => { set.delete(handler); };
++    },
++    emit(name: string, payload: unknown) { for (const fn of [...handlers.get(name) ?? []]) fn(payload); },
++    count(name: string) { return handlers.get(name)?.size ?? 0; },
++  };
++}
++
++describe("session-scoped PromptBus discovery", () => {
++  it.each([true, false])("discovers either extension order (owner first: %s), replaces the adapter and detaches old callbacks", async (ownerFirst) => {
++    const eventBus = events();
++    const shown = vi.fn();
++    const bus = new PromptBus({ onDashboardRequest: shown });
++    let request: any;
++    let respond: (r: PromptResponse) => void = () => {};
++    const adapter = { name: "dotfiles-ask-user", onRequest: () => ({}), onResponse: vi.fn(), onCancel: vi.fn(), setRespond: (fn: typeof respond) => { respond = fn; } };
++    const discover = () => eventBus.on("prompt:set-bus-request", payload => {
++      request = payload.request;
++      eventBus.emit("prompt:register-adapter", adapter);
++    });
++    if (ownerFirst) discover();
++    const dispose = connectPromptBusEvents(eventBus, bus, () => true);
++    if (!ownerFirst) { discover(); eventBus.emit("prompt:request-bus", undefined); }
++    for (let i = 0; i < 5; i++) eventBus.emit("prompt:register-adapter", adapter);
++    expect(bus.adapterNames).toEqual(["dotfiles-ask-user"]);
++    const answer = request({ type: "select", pipeline: "dotfiles-ask-user", question: "Q", metadata: { kind: "queue-question" } });
++    const id = shown.mock.calls[0][0].id;
++    const staleRespond = respond;
++    dispose();
++    expect(eventBus.count("prompt:register-adapter")).toBe(0);
++    expect(eventBus.count("prompt:request-bus")).toBe(0);
++    staleRespond({ id, answer: "stale", source: "dotfiles-ask-user" });
++    expect(bus.pendingCount).toBe(1);
++    const staleRequest = request;
++    const replacement = new PromptBus();
++    const end = connectPromptBusEvents(eventBus, replacement, () => true);
++    expect(await staleRequest({ type: "select", pipeline: "x", question: "late" })).toMatchObject({ cancelled: true });
++    expect(replacement.pendingCount).toBe(0);
++    bus.cancel(id);
++    await answer;
++    end();
++  });
++});
+--- a/packages/extension/src/__tests__/prompt-bus.test.ts
++++ b/packages/extension/src/__tests__/prompt-bus.test.ts
+@@ -526,3 +526,30 @@
+     });
+   });
+ });
++
++
++describe("queue-backed questions", () => {
++  it("survives ordinary expiry, replays, ignores blank/navigation cancellation and answers once", async () => {
++    vi.useFakeTimers();
++    try {
++      const shown = vi.fn();
++      const dismiss = vi.fn();
++      const bus = new PromptBus({ timeoutMs: 300_000, onDashboardRequest: shown, onDashboardDismiss: dismiss });
++      const observer = createMockAdapter("queue-owner");
++      bus.registerAdapter(observer);
++      const result = bus.request({ pipeline: "dotfiles-ask-user", type: "select", question: "Pick", options: ["Cancel"], metadata: { kind: "queue-question", questionId: "q1" } });
++      const id = shown.mock.calls[0][0].id;
++      await vi.advanceTimersByTimeAsync(600_000);
++      expect(bus.pendingCount).toBe(1);
++      expect(bus.getPendingRequests()[0].request.metadata?.questionId).toBe("q1");
++      bus.respond({ id, cancelled: true, source: "dashboard-default" });
++      bus.respond({ id, answer: "  ", source: "dashboard-default" });
++      expect(bus.pendingCount).toBe(1);
++      bus.respond({ id, answer: "Cancel", source: "dashboard-default" });
++      bus.respond({ id, answer: "late", source: "dashboard-default" });
++      expect(await result).toMatchObject({ answer: "Cancel" });
++      expect(observer.onResponse).toHaveBeenCalledTimes(1);
++      expect(dismiss).toHaveBeenCalledTimes(1);
++    } finally { vi.useRealTimers(); }
++  });
++});
+--- a/packages/extension/src/__tests__/tui-prompt-adapter.test.ts
++++ b/packages/extension/src/__tests__/tui-prompt-adapter.test.ts
+@@ -218,3 +218,14 @@
+     expect(claim?.component).toBeUndefined();
+   });
+ });
++
++
++it("leaves queue-question presentation to its external terminal owner", async () => {
++  const ui = { select: vi.fn(async () => "Cancel"), input: vi.fn(), confirm: vi.fn(), editor: vi.fn() };
++  const respond = vi.fn();
++  const adapter = createTuiPromptAdapter(ui, { respond });
++  adapter.onRequest({ id: "q1", pipeline: "dotfiles-ask-user", type: "select", question: "Question", options: ["Cancel"], metadata: { kind: "queue-question" } });
++  await Promise.resolve();
++  expect(ui.select).not.toHaveBeenCalled();
++  expect(respond).not.toHaveBeenCalled();
++});
+--- a/packages/extension/src/bridge-handlers/lifecycle.ts
++++ b/packages/extension/src/bridge-handlers/lifecycle.ts
+@@ -13,10 +13,11 @@
+ import { Loader } from "@earendil-works/pi-tui";
+ import { cleanupAttachmentsForSession, } from "../ask-user-attachments.js";
+ import { registerAskUserTool } from "../ask-user-tool.js";
++import { connectPromptBusEvents } from "../prompt-bus-events.js";
+ import { extractFirstMessage, filterHiddenCommands, getCurrentModelString, isHeadlessRpcSession, safeCwd } from "../bridge-context.js";
+ import { hasExplicitModelArg, shouldApplyDefaultModel } from "../bridge-default-model-gate.js";
+-import { drainDisposables } from "../bridge-polling.js";
+ import { registerCanvasTool } from "../canvas-tool.js";
++import { ensureDisposable, drainDisposables } from "../bridge-polling.js";
+ import { buildUserMessageContent } from "../command-handler.js";
+ import { DashboardDefaultAdapter } from "../dashboard-default-adapter.js";
+ import { decideRetarget } from "../endpoint-resolution.js";
+@@ -240,6 +241,8 @@
+ /** `session_start`: register the session, build the PromptBus, patch `ctx.ui`, arm timers. */
+ export function registerSessionStart(inst: BridgeInstance): void {
+   const pi = inst.pi;
++  let disconnectPromptEvents = () => {};
++  const disposePromptEvents = () => disconnectPromptEvents();
+   pi.on("session_start", inst.safe(async (_event: any, ctx: any) => {
+ 
+     // Bail out if a newer bridge instance has taken over
+@@ -415,25 +418,6 @@
+ 
+     // Listen for adapter registrations from other extensions (e.g. pi-flows)
+     if (pi.events) {
+-      pi.events.on("prompt:register-adapter", (adapter: any) => {
+-        if (inst.promptBus && adapter && typeof adapter.name === "string") {
+-          inst.promptBus.registerAdapter(adapter);
+-          // Inject respond/cancel functions so cross-package adapters can talk back
+-          if (typeof adapter.setRespond === "function") {
+-            adapter.setRespond((response: any) => inst.promptBus!.respond(response));
+-          }
+-          if (typeof adapter.setCancel === "function") {
+-            adapter.setCancel((id: string) => inst.promptBus!.cancel(id));
+-          }
+-        }
+-      });
+-
+-      // Expose bus request function for pi-flows to use via emitPromptAndAwait
+-      pi.events.emit("prompt:set-bus-request", {
+-        request: (options: any) => inst.promptBus!.request(options),
+-      });
+-
+-      // Generic system-follow-up channel: any plugin bridge entry can request
+       // a system-originated continuation through the single drain path by
+       // emitting `dashboard:enqueue-followup`. Inert when no plugin emits it.
+       // See change: add-goal-continuation-plugin (Decision 2).
+@@ -442,6 +426,10 @@
+           inst.enqueueSystemFollowup(payload.text);
+         }
+       });
++      disconnectPromptEvents();
++      const bus = inst.promptBus;
++      disconnectPromptEvents = connectPromptBusEvents(pi.events, bus, () => inst.isActive() && inst.promptBus === bus);
++      ensureDisposable(inst.shared, disposePromptEvents);
+ 
+       // Generic plugin bridge→server channel: a plugin bridge entry emits
+       // `dashboard:plugin-message` and the main bridge wraps it in a
+--- /dev/null
++++ b/packages/extension/src/prompt-bus-events.ts
+@@ -0,0 +1,42 @@
++/** Session-scoped, optional cross-extension PromptBus discovery. No queue ownership. */
++import type { PromptAdapter, PromptBus, PromptRequest, PromptResponse } from "./prompt-bus.js";
++
++interface Events {
++  on(event: string, handler: (payload: any) => void): (() => void) | void;
++  emit(event: string, payload: unknown): void;
++}
++
++type ExternalAdapter = PromptAdapter & {
++  setRespond?: (respond: (response: PromptResponse) => void) => void;
++  setCancel?: (cancel: (id: string) => void) => void;
++};
++
++export function connectPromptBusEvents(events: Events, bus: PromptBus, isCurrent: () => boolean): () => void {
++  let disposed = false;
++  const active = () => !disposed && isCurrent();
++  const adapters = new Map<string, () => void>();
++  const offAdapter = events.on("prompt:register-adapter", (adapter: ExternalAdapter) => {
++    if (!active() || !adapter || typeof adapter.name !== "string") return;
++    adapters.get(adapter.name)?.();
++    adapters.set(adapter.name, bus.registerAdapter(adapter));
++    adapter.setRespond?.(response => { if (active()) bus.respond(response); });
++    adapter.setCancel?.(id => { if (active()) bus.cancel(id); });
++  });
++  const publish = () => {
++    if (!active()) return;
++    events.emit("prompt:set-bus-request", {
++      request: (options: Omit<PromptRequest, "id">) => active()
++        ? bus.request(options)
++        : Promise.resolve({ id: "", cancelled: true, source: "__bus__" } satisfies PromptResponse),
++    });
++  };
++  const offDiscovery = events.on("prompt:request-bus", publish);
++  publish();
++  return () => {
++    disposed = true;
++    if (typeof offAdapter === "function") offAdapter();
++    if (typeof offDiscovery === "function") offDiscovery();
++    for (const off of adapters.values()) off();
++    adapters.clear();
++  };
++}
+--- a/packages/extension/src/prompt-bus.ts
++++ b/packages/extension/src/prompt-bus.ts
+@@ -31,6 +31,7 @@
+   question: string;
+   options?: string[];
+   defaultValue?: string;
++  /** kind: "queue-question" opts into browser-only, nonblocking, non-expiring presentation. */
+   metadata?: Record<string, unknown>;
+ }
+ 
+@@ -148,7 +149,9 @@
+     const request: PromptRequest = { id, ...options };
+ 
+     return new Promise<PromptResponse>((resolve) => {
+-      const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
++      const timeoutMs = request.metadata?.kind === "queue-question"
++        ? 0
++        : this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+       // timeoutMs <= 0 means infinite — never fire a cancellation timer.
+       const timer = timeoutMs > 0
+         ? setTimeout(() => { this.cancel(id); }, timeoutMs)
+@@ -203,6 +206,10 @@
+   respond(response: PromptResponse): void {
+     const entry = this.pending.get(response.id);
+     if (!entry) return; // Already resolved or unknown
++
++    // Navigation/blank browser input cannot consume an externally owned question.
++    if (entry.request.metadata?.kind === "queue-question" &&
++        (response.cancelled || !response.answer?.trim())) return;
+ 
+     this.pending.delete(response.id);
+     clearTimeout(entry.timer);
+--- a/packages/extension/src/tui-prompt-adapter.ts
++++ b/packages/extension/src/tui-prompt-adapter.ts
+@@ -57,6 +57,7 @@
+     name: "tui",
+ 
+     onRequest(prompt) {
++      if (prompt.metadata?.kind === "queue-question") return;
+       const controller = new AbortController();
+       activeControllers.set(prompt.id, controller);
+ 
+--- a/packages/server/src/__tests__/prompt-derived-tool-state.integration.test.ts
++++ b/packages/server/src/__tests__/prompt-derived-tool-state.integration.test.ts
+@@ -143,6 +143,33 @@
+ 
+   // ── M2: direct writes in the prompt_* branches ──
+ 
++  it("queue questions stay nonblocking through live updates and replay, and replay to the browser", async () => {
++    await boot();
++    const bridge = await openBridge();
++    register(bridge, "queue-session");
++    promptRequest(bridge, "queue-session", "q1", { prompt: { type: "select", question: "Queue", options: ["Cancel"], metadata: { kind: "queue-question" } }, component: { type: "generic-dialog", props: {} }, placement: "inline" });
++    replayComplete(bridge, "queue-session");
++    await wait(150);
++    let state = server.sessionManager.get("queue-session");
++    expect(state?.currentTool ?? null).toBeNull();
++    fwd(bridge, "queue-session", "agent_start");
++    fwd(bridge, "queue-session", "agent_end");
++    await wait(100);
++    state = server.sessionManager.get("queue-session");
++    expect(state?.currentTool ?? null).toBeNull();
++    const browser = proofWebSocket(`ws://127.0.0.1:${browserPort}/ws`);
++    sockets.push(browser);
++    const frames: any[] = [];
++    browser.on("message", raw => frames.push(JSON.parse(String(raw))));
++    await new Promise<void>(resolve => browser.on("open", resolve));
++    send(browser, { type: "subscribe", sessionId: "queue-session" });
++    await waitFor(() => frames.some(f => f.type === "prompt_request" && f.promptId === "q1"));
++    expect(frames.filter(f => f.type === "prompt_request" && f.promptId === "q1")).toHaveLength(1);
++    const response = await proofFetch(`http://127.0.0.1:${browserPort}/api/questions`);
++    const payload = await response.json() as any;
++    expect(JSON.stringify(payload)).toContain("Queue");
++  });
++
+   it("#E12 a flow-raised prompt with no ask_user tool call sets currentTool", async () => {
+     await boot();
+     const bridge = await openBridge();
+@@ -561,6 +588,21 @@
+   const notifies = (messages: any[], sessionId: string) =>
+     messages.filter((m) => m.type === "notify" && m.sessionId === sessionId);
+ 
++  it.each([notify, legacyNotify])("delivers info live without retaining or replaying it (%#)", async (emit) => {
++    await boot();
++    const bridge = await openBridge();
++    const { messages } = await connectBrowser("s1");
++    await registerLive(bridge, "s1");
++    fwd(bridge, "s1", "agent_start");
++    emit(bridge, "s1", "transient", "peer joined", "info");
++    await waitFor(() => notifies(messages, "s1").length === 1);
++    expect(notifies(messages, "s1")[0]).toMatchObject({ message: "peer joined", level: "info" });
++    expect(server.sessionManager.get("s1")?.notifyLog ?? []).toEqual([]);
++    const reconnected = await connectBrowser("s1");
++    await waitFor(() => reconnected.messages.some((msg) => msg.type === "event_replay" && msg.isLast));
++    expect(notifies(reconnected.messages, "s1")).toEqual([]);
++  });
++
+   it("#X3 no re-arm after a turn — new notify shape", async () => {
+     await boot();
+     const bridge = await openBridge();
+@@ -646,7 +688,7 @@
+     await boot();
+     const bridge = await openBridge();
+     await registerLive(bridge, "s1");
+-    notify(bridge, "s1", "n1");
++    notify(bridge, "s1", "n1", "retained problem", "warning");
+     await wait(150);
+ 
+     server.sessionManager.unregister("s1");
+@@ -742,7 +784,7 @@
+     fwd(bridge, "s1", "agent_start");
+     await wait(80);
+ 
+-    for (let i = 1; i <= 50; i++) notify(bridge, "s1", `n${i}`, `m${i}`);
++    for (let i = 1; i <= 50; i++) notify(bridge, "s1", `n${i}`, `m${i}`, "warning");
+     await wait(300);
+     const atCap = await connectBrowser("s1");
+     await wait(200);
+@@ -750,7 +792,7 @@
+     expect(first).toHaveLength(50);
+     expect(first[0].notifyId).toBe("n1");
+ 
+-    notify(bridge, "s1", "n51", "m51");
++    notify(bridge, "s1", "n51", "m51", "warning");
+     await wait(200);
+     const pastCap = await connectBrowser("s1");
+     await wait(250);
+@@ -770,10 +812,10 @@
+     // rows while the gateway's in-memory log is still empty (cold hydration
+     // happens lazily). The first append MUST NOT clobber the restored history.
+     server.sessionManager.update("s1", {
+-      notifyLog: [{ notifyId: "restored", message: "from disk", level: "info" }],
++      notifyLog: [{ notifyId: "restored", message: "from disk", level: "warning" }],
+     });
+ 
+-    notify(bridge, "s1", "n1", "live");
++    notify(bridge, "s1", "n1", "live", "warning");
+     await wait(200);
+ 
+     const log = server.sessionManager.get("s1")!.notifyLog!;
+@@ -788,7 +830,7 @@
+ 
+   /** Send one notify frame with a raw (possibly hostile) `ts`. */
+   function notifyWithTs(ws: WebSocket, sessionId: string, notifyId: string, ts: unknown) {
+-    send(ws, { type: "notify", sessionId, notifyId, message: `m-${notifyId}`, ...(ts === ABSENT ? {} : { ts }) });
++    send(ws, { type: "notify", sessionId, notifyId, message: `m-${notifyId}`, level: "warning", ...(ts === ABSENT ? {} : { ts }) });
+   }
+   const ABSENT = Symbol("absent");
+ 
+@@ -857,7 +899,7 @@
+     const before = Date.now();
+     // Infinity cannot survive JSON; send the raw overflow literal so the server
+     // parses `1e999` → Infinity itself.
+-    bridge.send('{"type":"notify","sessionId":"s1","notifyId":"inf","message":"m","ts":1e999}');
++    bridge.send('{"type":"notify","sessionId":"s1","notifyId":"inf","message":"m","level":"warning","ts":1e999}');
+     notifyWithTs(bridge, "s1", "str", "1758650000000");
+     notifyWithTs(bridge, "s1", "obj", {});
+     await waitFor(() => notifies(messages, "s1").length === 3);
+@@ -884,8 +926,8 @@
+     // the gateway's in-memory log is cold and hydrates on first replay.
+     server.sessionManager.update("s1", {
+       notifyLog: [
+-        { notifyId: "timed", message: "has ts", level: "info", ts: 111 },
+-        { notifyId: "legacy", message: "no ts", level: "info" },
++        { notifyId: "timed", message: "has ts", level: "warning", ts: 111 },
++        { notifyId: "legacy", message: "no ts", level: "warning" },
+       ],
+     });
+ 
+@@ -902,7 +944,7 @@
+     const bridge = await openBridge();
+     await registerLive(bridge, "s1");
+ 
+-    for (let i = 0; i < 10_000; i++) notify(bridge, "s1", `n${i}`, "spam");
++    for (let i = 0; i < 10_000; i++) notify(bridge, "s1", `n${i}`, "spam", "warning");
+     await waitFor(() => (server.sessionManager.get("s1")?.notifyLog?.length ?? 0) > 0, 15000);
+     await wait(500);
+     expect(server.sessionManager.get("s1")!.notifyLog!.length).toBeLessThanOrEqual(50);
+--- a/packages/server/src/event-wiring.ts
++++ b/packages/server/src/event-wiring.ts
+@@ -401,6 +401,7 @@
+     },
+   });
+   const FILE_ACCESS_KINDS = ["agent-path-gate", "agent-path-gate-confirm"] as const;
++  const NONBLOCKING_KINDS = [...FILE_ACCESS_KINDS, "queue-question"] as const;
+   /**
+    * Re-derive `awaitingFileAccess` from the pending-prompt registry (live,
+    * replayed and resynced prompts all land there) and broadcast only on change.
+@@ -921,7 +922,7 @@
+     browserGateway.reconcilePromptRequests(sessionId, [...(collected ?? [])]);
+     // File-access prompts are excluded from the fold: they must never overwrite the
+     // in-flight tool (`awaitingFileAccess` carries them). See change: ask-agent-file-access-in-chat.
+-    if (browserGateway.hasPendingPromptOtherThan(sessionId, FILE_ACCESS_KINDS)) {
++    if (browserGateway.hasPendingPromptOtherThan(sessionId, NONBLOCKING_KINDS)) {
+       sessionManager.update(sessionId, { currentTool: "ask_user" });
+     }
+     // Re-derive from the reconciled registry (flag only; `currentTool` keeps its
+@@ -1283,7 +1284,7 @@
+       // See change: restore-ask-user-tool-state-on-reconnect (D1/D4).
+       const hasPendingPrompt =
+         !replayed &&
+-        browserGateway.hasPendingPromptOtherThan(sessionId, FILE_ACCESS_KINDS);
++        browserGateway.hasPendingPromptOtherThan(sessionId, NONBLOCKING_KINDS);
+       // The replay window can also contain live model selections. Only the
+       // bridge's explicit marker makes a selection historical.
+       const updates = extractSessionUpdates(msg.event, hasPendingPrompt, msg.replay === true);
+@@ -1573,7 +1574,7 @@
+             // the same gate `extractSessionUpdates` applies via
+             // `hasPendingPrompt` (design D10).
+             const applied =
+-              updates.currentTool === null && browserGateway.hasPendingPromptOtherThan(sessionId, FILE_ACCESS_KINDS)
++              updates.currentTool === null && browserGateway.hasPendingPromptOtherThan(sessionId, NONBLOCKING_KINDS)
+                 ? { status: updates.status }
+                 : updates;
+             // `streaming`/`idle` disagreements mean a run-boundary event was
+@@ -2506,7 +2507,7 @@
+         // is folded to "ask_user".
+         const promptKind = (msg as any).prompt?.metadata?.kind;
+         const isFileAccessPrompt = typeof promptKind === "string" && (FILE_ACCESS_KINDS as readonly string[]).includes(promptKind);
+-        if (sessionBefore && !sessionBefore.currentTool && !isFileAccessPrompt) {
++        if (sessionBefore && !sessionBefore.currentTool && !isFileAccessPrompt && promptKind !== "queue-question") {
+           sessionManager.update(sessionId, { currentTool: "ask_user" });
+           browserGateway.broadcastSessionUpdated(sessionId, { currentTool: "ask_user" });
+         }
+@@ -2570,7 +2571,7 @@
+       // derived value — a real tool that started meanwhile must not be stomped.
+       if (
+         !replayingSessions.has(sessionId) &&
+-        !browserGateway.hasPendingPromptOtherThan(sessionId, FILE_ACCESS_KINDS) &&
++        !browserGateway.hasPendingPromptOtherThan(sessionId, NONBLOCKING_KINDS) &&
+         sessionManager.get(sessionId)?.currentTool === "ask_user"
+       ) {
+         sessionManager.update(sessionId, { currentTool: null });
+--- a/packages/server/src/questions/__tests__/question-routes.test.ts
++++ b/packages/server/src/questions/__tests__/question-routes.test.ts
+@@ -268,6 +268,10 @@
+       ["confirm false", { type: "confirm", options: undefined }, { answer: "false" }, 200],
+       ["confirm junk", { type: "confirm", options: undefined }, { answer: "yes" }, 400],
+       ["select option", { type: "select" }, { answer: "Resume" }, 200],
++      ["queue multiline", { type: "select", metadata: { kind: "queue-question" } }, { answer: "line one\nline two" }, 200],
++      ["queue literal Cancel", { type: "select", options: ["Cancel"], metadata: { kind: "queue-question" } }, { answer: "Cancel" }, 200],
++      ["queue blank", { type: "select", metadata: { kind: "queue-question" } }, { answer: "  " }, 400],
++      ["queue cancellation refused", { type: "select", metadata: { kind: "queue-question" } }, { cancelled: true }, 400],
+       ["select non-option", { type: "select" }, { answer: "Nope" }, 400],
+       ["multiselect ok", { type: "multiselect" }, { answer: '["Resume"]' }, 200],
+       ["multiselect empty", { type: "multiselect" }, { answer: "[]" }, 200],
+--- a/packages/server/src/questions/__tests__/question-store.test.ts
++++ b/packages/server/src/questions/__tests__/question-store.test.ts
+@@ -66,6 +66,18 @@
+   }
+   const settle = () => new Promise<void>((r) => setImmediate(r));
+ 
++  it("projects queue-backed questions in the native stack without persistence or generated briefs", async () => {
++    const { store, generate } = make();
++    const record = store.onTracked("s1", promptMsg("s1", "queue-prompt", { options: ["Cancel"], metadata: { kind: "queue-question", questionId: "q1" } }))!;
++    await settle();
++    expect(store.listRows()).toHaveLength(1);
++    expect(store.getDetail(record.id)).toMatchObject({ kind: "queue-question", options: ["Cancel"], answerable: true });
++    expect(filesOnDisk()).toEqual([]);
++    expect(generate).not.toHaveBeenCalled();
++    store.reconcileSession("s1", []);
++    expect(store.listRows()).toEqual([]);
++  });
++
+   describe("tracking + ids (test-plan #E5)", () => {
+     it("tracked prompt → record; same id on re-send; new id for another prompt", () => {
+       const { store } = make();
+--- a/packages/server/src/questions/question-answer.ts
++++ b/packages/server/src/questions/question-answer.ts
+@@ -45,11 +45,16 @@
+  */
+ export function relayBrowserPromptResponse(
+   store: QuestionStore | undefined,
+-  msg: { sessionId: string; promptId: string },
++  msg: { sessionId: string; promptId: string; answer?: string; cancelled?: boolean },
+   send: () => boolean,
+ ): boolean {
+   const claim = store?.claimPrompt(msg.sessionId, msg.promptId);
+   if (!store || !claim || claim.status === "unknown") return send();
+   if (claim.status === "answered") return false;
++  const rec = store.get(claim.id);
++  if (rec?.kind === "queue-question" && (msg.cancelled || !msg.answer?.trim())) {
++    store.releaseClaim(claim.id);
++    return false;
++  }
+   return transmitClaimed(store, claim.id, send);
+ }
+--- a/packages/server/src/questions/question-routes.ts
++++ b/packages/server/src/questions/question-routes.ts
+@@ -93,9 +93,11 @@
+     const rec = open.record;
+     if (rec.origin === "file") return fail(reply, 403, "file-access prompts are answered on the access approval surface");
+ 
++    if (rec.kind === "queue-question" && body.answer === undefined) return fail(reply, 400, "queue questions are cancelled by their owner");
++
+     if (body.answer !== undefined) {
+       const valid = validateQuestionAnswer(
+-        { type: rec.type, ...(rec.options ? { options: rec.options } : {}), ...(rec.allowOther ? { allowOther: true } : {}), ...(rec.questions ? { metadata: { questions: rec.questions } } : {}) },
++        { type: rec.type, kind: rec.kind, ...(rec.options ? { options: rec.options } : {}), ...(rec.allowOther ? { allowOther: true } : {}), ...(rec.questions ? { metadata: { questions: rec.questions } } : {}) },
+         body.answer,
+       );
+       if (!valid.ok) return fail(reply, 400, valid.reason);
+--- a/packages/server/src/questions/question-store.ts
++++ b/packages/server/src/questions/question-store.ts
+@@ -78,6 +78,7 @@
+   options?: string[];
+   /** Inline "Other" opt-in from the live prompt metadata; never persisted. See change: add-ask-user-inline-other. */
+   allowOther?: true;
++  kind?: "queue-question";
+   questions?: BatchQuestion[];
+   origin?: QuestionOrigin;
+   /** Context message (`metadata.message`); in memory only, never persisted. */
+@@ -168,6 +169,7 @@
+   }
+ 
+   function persist(rec: QuestionRecord): void {
++    if (rec.kind === "queue-question") return;
+     const file: QuestionFile = {
+       version: 1,
+       id: rec.id,
+@@ -273,6 +275,7 @@
+       question: rec.question,
+       ...(rec.options ? { options: rec.options } : {}),
+       ...(rec.allowOther ? { allowOther: true as const } : {}),
++      ...(rec.kind ? { kind: rec.kind } : {}),
+       ...(rec.brief !== undefined ? { brief: rec.brief } : {}),
+       ...(rec.briefLabel ? { briefLabel: rec.briefLabel } : {}),
+       snapshot: rec.snapshot,
+@@ -324,6 +327,7 @@
+         question: typeof prompt.question === "string" ? prompt.question : "",
+         ...(Array.isArray(prompt.options) ? { options: prompt.options.filter((o): o is string => typeof o === "string") } : {}),
+         ...(metadata?.allowOther === true ? { allowOther: true as const } : {}),
++        ...(metadata?.kind === "queue-question" ? { kind: "queue-question" as const } : {}),
+         ...(Array.isArray(metadata?.questions) ? { questions: batchQuestionsOf(metadata!.questions as unknown[]) } : {}),
+         ...(originOf(msg, session) ? { origin: originOf(msg, session) } : {}),
+         ...(message !== undefined ? { message } : {}),
+@@ -355,7 +359,7 @@
+           rec.briefLabel = "provided";
+         } else if (decision.kind === "disabled") {
+           rec.briefStatus = "unavailable";
+-        } else if (rec.origin === "file") {
++        } else if (rec.kind === "queue-question" || rec.origin === "file") {
+           rec.briefStatus = "unavailable"; // file-access prompts are read-only: never send them to a model
+         } else {
+           needsGeneration = true;
+--- a/packages/shared/src/prompt-answer.ts
++++ b/packages/shared/src/prompt-answer.ts
+@@ -53,6 +53,7 @@
+ 
+ export interface ValidatablePrompt {
+   type: string;
++  kind?: "queue-question";
+   options?: string[];
+   /** Inline "Other" opt-in. See change: add-ask-user-inline-other. */
+   allowOther?: boolean;
+@@ -146,6 +147,9 @@
+  * `prompt`. Text-only: batch `input` entries carrying `images` are rejected.
+  */
+ export function validateQuestionAnswer(prompt: ValidatablePrompt, answer: string): AnswerValidation {
++  if (prompt.kind === "queue-question" || prompt.metadata?.kind === "queue-question") {
++    return answer.trim() ? OK : fail("answer must not be blank");
++  }
+   const options = prompt.options ?? [];
+   const other = isOtherAllowed({ allowOther: prompt.allowOther, options });
+   switch (prompt.type) {
+--- a/packages/shared/src/question-types.ts
++++ b/packages/shared/src/question-types.ts
+@@ -50,6 +50,8 @@
+ }
+ 
+ export interface QuestionDetail extends QuestionRow {
++  /** Ephemeral projection of an externally owned asynchronous queue. */
++  kind?: "queue-question";
+   question: string;
+   options?: string[];
+   /** Inline "Other" opt-in from the live prompt (never persisted). See change: add-ask-user-inline-other. */

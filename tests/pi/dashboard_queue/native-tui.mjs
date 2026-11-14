@@ -59,17 +59,6 @@ const resourceLoaderOptions = {
   extensionFactories: [pi => pi.registerProvider(faux.provider)],
   systemPrompt: "Disposable offline integration regression. No external services.",
 };
-if (process.argv.includes("--probe-core-package")) {
-  const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, ...resourceLoaderOptions });
-  await loader.reload();
-  const errors = loader.getExtensions().errors;
-  log("core-package-load", { errors });
-  if (errors.length > 0) {
-    assert.match(JSON.stringify(errors), /pi-dashboard-shared[^\n]*config\.js|shared\/config\.js/);
-  }
-  writeFileSync(process.env.PROBE_INFO, JSON.stringify({ loaded: errors.length === 0, errors }, null, 2));
-  process.exit(0);
-}
 const modelRuntime = await sdk.ModelRuntime.create({
   credentials: new ai.InMemoryCredentialStore(), modelsPath: null,
   modelsStorePath: join(agentDir, "models-store.json"), allowModelNetwork: false, refreshOnCreate: false,
@@ -86,7 +75,6 @@ const createRuntime = async ({ cwd, sessionManager, sessionStartEvent }) => {
   assert.deepEqual(loaded.errors, []);
   const publicPackageRoot = realpathSync(join(agentDir, "pi-dashboard"));
   const publicManifest = JSON.parse(readFileSync(join(publicPackageRoot, "package.json"), "utf8"));
-  assert.equal(publicManifest.name, "@blackbelt-technology/pi-dashboard-extension");
   for (const entry of publicManifest.pi.extensions) {
     const declared = realpathSync(resolve(publicPackageRoot, entry));
     assert.ok(loadedExtensionPaths.some(path => existsSync(path) && realpathSync(path) === declared),

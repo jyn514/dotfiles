@@ -17,6 +17,7 @@ Keep this index current when adding, renaming, or removing a helper.
 ### Launchers
 
 - [`pi`](../bin/pi) launches host Pi with sandboxed tools through `codex-sandbox`; ordinary interactive startup can start the sandbox runtime.
+- [`pi-dashboard`](../bin/pi-dashboard) launches the active source-built Dashboard CLI; see [browser and phone access](../config/pi-agent/README.md#browser-and-phone-access).
 - [`codex`](../bin/codex) launches Codex with shared instructions, generated permissions, and the dotfiles profile; interactive startup repairs the session index.
 - [`claude`](../bin/claude) launches Claude Code with expanded shared instructions and generated permission settings; it writes generated settings and can remove the legacy settings symlink.
 

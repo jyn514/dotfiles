@@ -128,7 +128,7 @@ being changed; a test dependency update does not update the running application.
 | Libraries used by dotfiles tests | [Manifest](../../package.json) and [lockfile](../../package-lock.json) | Update the manifest and lockfile, then install locked dependencies through the [testing guide](../../dev/README.md#testing-and-probes). |
 | Dotfiles' local extensions | [Extension bundle](pi-extensions/README.md) | Setup links new files; `/reload` loads code changes in Pi. |
 | Maintained extension packages | [Package references](settings.json) and [setup links](../../install.conf.json) | Setup links `tools/pi-link` and the tracked goal, session-search, and subagent packages; `/reload` loads their checkout changes. The latter three use `~/.pi/agent/packages/<name>`. |
-| Dashboard application and bridge | [Mise pin](../mise.toml) and [versioned patch](../../libexec/setup/patches/) | Ordinary package setup installs the patched application; `./setup services` reconciles its machine-local configuration. See [Browser and phone access](#browser-and-phone-access). |
+| Dashboard application and bridge | [Source pin and patches](../pi-dashboard-source.json) | Ordinary package setup installs the patched source build; `./setup services` reconciles its machine-local configuration. See [Browser and phone access](#browser-and-phone-access). |
 
 For package-update options, use the installed Pi's `pi update --help`.
 The sandbox [runtime documentation](../../tools/codex-sandbox/README.md#prerequisites-and-setup)
@@ -143,7 +143,9 @@ Those are human-operated host controls, not additional sandboxed model tools.
 
 ### Install and configure
 
-Install the ordinary dotfiles prerequisites first, including mise, Node, pnpm, tmux, and the Pi fork.
+Install the ordinary dotfiles prerequisites first, including Git, mise, Node, pnpm, tmux, and the Pi fork.
+Dashboard's pinned source requires Node 26; before running `./setup dashboard` directly, run `mise install node` to install the refreshed Node version.
+Ordinary local package setup already installs the configured tools.
 Run `./setup dotfiles` if the Pi settings links are not installed.
 Tailscale must be running and connected before configuring Dashboard.
 Use the existing services entrypoint from the repository root:
@@ -153,8 +155,8 @@ Use the existing services entrypoint from the repository root:
 ```
 
 This also performs the existing [user-services setup](../../README.md#user-services), including tmux startup and Obsidian Sync configuration.
-Its Dashboard step ensures the patched mise package is installed and reconciles the native daemon configuration without starting it.
-Ordinary local package setup installs Dashboard too, but does not activate its bridge or require an online tailnet.
+Its Dashboard step runs `./setup dashboard` and reconciles the native daemon configuration without starting it.
+Ordinary local package setup uses `./setup dashboard --install-only`; even on first install it does not activate the bridge or policy and does not require Tailscale.
 No Dashboard login hook, user service, reverse proxy, or public tunnel is installed.
 Automatic login startup remains deferred until after the trial.
 
@@ -163,10 +165,9 @@ It requires native device pairing, disables the public tunnel, selects tmux sess
 The tailnet range permits pairing requests; it does not bypass device authentication.
 Dashboard's Pi connection still uses its native local gateway and discovery, not a connection through the guest container.
 
-The settings package entry `./pi-dashboard` resolves through a machine-local symlink to the mise-installed extension package.
-Its public package manifest declares the bridge; `skills: []` excludes the package's separate skill declarations.
+The settings package entry `./pi-dashboard` resolves through a machine-local symlink to the active source build; the `pi-dashboard` CLI wrapper uses that same build.
+Its package manifest declares the bridge; `skills: []` excludes the package's separate skill declarations.
 The Pi fork must include its canonical-package-path loader fix; older installs pass the lexical symlink path to Jiti and fail to resolve the bridge's runtime dependencies.
-Do not point this link at the core package: its bundled extension source lacks the split package's pnpm dependency scope.
 Neither setup nor Dashboard registration replaces `~/.pi/agent/settings.json` or its symlink.
 Tracked Dashboard policy lives in `config/pi-dashboard.json`.
 Setup merges those managed fields into the real runtime configuration under `~/.pi/dashboard/`; it does not symlink that mutable file.
@@ -178,11 +179,12 @@ Stored preferences cannot re-enable automatic session naming or automatic worktr
 Info-level extension notifications appear as three-second toasts, not chat rows, and do not replay when you reopen a session.
 Success, warning, and error notifications remain in chat; questions are unchanged.
 The global **Extension notifications** setting and per-session overrides apply to info toasts too.
-The patch also backports upstream #1098: an unpaired remote browser shows **Network not allowed** with **Request access** instead of **Offline**.
+Upstream #1098 lets an unpaired remote browser show **Network not allowed** with **Request access** instead of **Offline**.
 
-The mise pin selects the root release, not a fully locked transitive dependency graph.
-Setup checks that every patched Dashboard component matches that release and records the resolved component and Pi SDK versions in its installation receipt.
-A missing patch, mismatched component, failed hunk, or modified installed file stops setup before bridge activation.
+The source pin and ordered patch list live in `config/pi-dashboard-source.json`; mise provides Node and pnpm, not a Dashboard npm tool.
+Setup applies those patches to an owned source copy, installs the workspace dependency graph with the frozen pnpm lockfile, and builds it.
+A conflicting or already-applied patch fails before activation; setup never skips it.
+The build receipt records the source, patch paths and hashes, and file hashes; runtime integrity checks remain in place.
 Review the [patch maintenance instructions](../../libexec/setup/patches/README.md) before changing the pin.
 
 ### Start, pair, and stop
@@ -247,17 +249,31 @@ See [Asynchronous questions](pi-extensions/README.md#asynchronous-questions-ask_
 
 ### Update and removal
 
-For an update, review and regenerate the versioned patch, change the mise pin and lock together, then run `./setup services`.
+For an update, review the source pin and ordered patches in `config/pi-dashboard-source.json`, then run `./setup dashboard`.
+For a local trial, run `./setup dashboard --checkout PATH`: it copies current tracked files and non-ignored untracked files, applies the same patches, and builds the copy without fetching, rebasing, patching, installing, or building in the supplied checkout.
+Deleted files are omitted, and input symlinks are copied as owned files.
+There is no persistent override; the next `./setup dashboard` returns to the upstream pin.
+The active build is `~/.local/share/pi-dashboard/current`; builds live under `~/.local/share/pi-dashboard/builds/build-*/source`.
+Old builds remain available to running processes; remove them manually only after those processes stop.
 Do not use `pi update --extensions` to update this machine-local bridge.
 Setup neither restarts Dashboard nor reloads live Pi processes.
-Explicitly restart Dashboard afterwards and `/reload` affected Pi sessions so they use the new bridge code.
+After switching builds, stop and start Dashboard to load the active build and Node runtime:
+
+```sh
+pi-dashboard stop
+pi-dashboard start --no-tunnel
+```
+
+Do not use `pi-dashboard restart` for a source switch: the running daemon restarts its existing build and Node executable.
+For a code-only update, `/reload` affected Pi sessions to load the new bridge code.
+After a Node upgrade, start a fresh Pi process instead: `/reload` cannot change the runtime of an existing process.
 Reload browser pages to load the updated UI.
-A Dashboard restart alone does not replace an already loaded Pi extension.
 
 To remove the integration, first set native `autoStart` to `false` in `~/.pi/dashboard/config.json` and stop Dashboard.
 Remove only the `./pi-dashboard` package entry from the tracked Pi settings, then `/reload` affected Pi sessions.
 Remove the managed `~/.pi/agent/pi-dashboard` symlink.
-If uninstalling the application too, remove its mise declaration and lock entry before uninstalling the tool.
+If uninstalling the application too, remove `~/.local/share/pi-dashboard` after all Dashboard processes using its builds have stopped.
+Local package setup and `./setup services` install it again.
 Keep session files, pairing data, unrelated settings, and the rest of `~/.pi/` unless their deletion is intentional.
 Running `./setup services` again reconciles the configured policy; restore the package entry first if it was removed.
 
@@ -317,16 +333,14 @@ The discovery check verifies catalog eligibility and description delivery, not m
 The opt-in browser regression needs the patched Dashboard installation, the installed Pi fork SDK,
 Python with POSIX PTY support, Playwright, and Chromium.
 It uses a disposable home, an offline test provider, and a real native Pi TUI on a PTY; it does not contact a model provider.
-Point `DASHBOARD_TEST_CORE` at the installed core package and `DASHBOARD_TEST_INSTALL` at its owning mise installation.
+Point `DASHBOARD_TEST_CORE` at the built Dashboard workspace, normally `~/.local/share/pi-dashboard/current`.
 The check runs setup against disposable settings, then loads the selected extension through the persisted `./pi-dashboard` declaration.
 Run from the repository root with the actual resolved installation paths:
 
 ```sh
 env DOTFILES_TEST_DASHBOARD_QUEUE=1 \
   PI_PACKAGE_DIR=/path/to/pi/packages/coding-agent \
-  DASHBOARD_TEST_CLI=/path/to/installed/bin/pi-dashboard \
-  DASHBOARD_TEST_CORE=/path/to/pi-agent-dashboard \
-  DASHBOARD_TEST_INSTALL=/path/to/mise/installs/npm-blackbelt-technology-pi-agent-dashboard/0.11.0 \
+  DASHBOARD_TEST_CORE="$HOME/.local/share/pi-dashboard/current" \
   DASHBOARD_TEST_PLAYWRIGHT=/path/to/playwright/index.mjs \
   DASHBOARD_TEST_CHROMIUM=/path/to/chromium \
   DASHBOARD_TEST_ARTIFACT_DIR="$PWD/target/dashboard-queue-integration" \
