@@ -68,7 +68,9 @@ Otherwise, request the minimum upstream change, if needed, and compare its work 
 ## Gather evidence
 
 Use jyn's latest corrections and experiments.
-Distinguish jyn's reports, agent-run checks, and source inspection.
+Distinguish jyn's reports, agent-run checks, and source inspection without turning the main text into investigation narration.
+For a symptom jyn reports, write “Saving the file leaves the preview unchanged,” not “The reporter confirmed that saving the file leaves the preview unchanged.”
+Label agent-run checks and source-based expectations separately; keep provenance in supporting detail unless it changes the main conclusion.
 Give commands and captured results for agent checks; never say jyn ran them or invent checks, logs, or environment details.
 Include relevant patches, forks, nonstandard configuration, and prior attempts with their results.
 
@@ -88,6 +90,8 @@ Merely marking the check “unverified” does not satisfy this requirement.
 
 Reduce to the smallest verified operation retaining the failure; keep the original application when its behavior matters.
 Remove unrelated setup and update prerequisites accordingly.
+After simplifying the reproducer, revisit the whole report.
+Remove setup, caveats, and verification details that mattered only to the discarded configuration.
 Include useful working controls: one picker order failing while the reverse works can replace redundant checks.
 
 Give the installation or invocation, relevant inputs and configuration, and point of failure.
@@ -132,11 +136,14 @@ Use `#123` for issues and pull requests in the same GitHub repository.
 Separate expected behavior from the visible failure and its consequence; explain the cause only if established.
 Without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
 A supported fix suggestion is optional, not an implementation plan.
+Describe the requested behavior without adding unrequested design constraints or compatibility promises.
+Keep optional preferences optional: “Ideally it would save my place,” not a requirement to preserve reading position.
 When motivation or upstream responsibility is unclear, use the template field or add a motivation section.
 Locate processes and data when execution boundaries matter; “guest” alone does not distinguish a VM from a container.
 A maintainer can recommend keeping a solution downstream without supplying an alternative.
 
 Keep required fields and supported conclusions about upstream versus downstream responsibility visible.
+When a related issue or PR helps distinguish the request from existing work, link it near the opening and explain the remaining difference.
 Use `<details>` for supporting setup, source tracing, and output.
 Unless the template requires otherwise, collect versions, provenance, dependencies, and source analysis in a final `<details>` block.
 Repeat versions only to distinguish results; do not repeat hashes supplied by permalinks.
