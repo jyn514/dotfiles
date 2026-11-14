@@ -31,3 +31,4 @@ tools/proc-hardening/tests/desktop_test.py
 tools/proc-hardening/tests/prepare_desktop_test.py
 tools/proc-hardening/tests/skeleton_failure_test.py
 tools/remote-git-url/tests/test_literal_resources.py
+tools/view/tests/view_cache_test.py

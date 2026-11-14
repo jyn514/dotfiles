@@ -15,6 +15,14 @@ dependencies = [
 dotfiles-rst = "dotfiles_metabrowser_rst:rst_plugin_dir"
 dotfiles-markdown-mermaid = "dotfiles_metabrowser_rst:markdown_mermaid_plugin_dir"
 
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "src/dotfiles_metabrowser_rst/**/*.py" },
+    { file = "src/dotfiles_metabrowser_rst/plugin/**/*" },
+    { file = "src/dotfiles_metabrowser_rst/markdown_mermaid_plugin/**/*" },
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true

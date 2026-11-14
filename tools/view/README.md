@@ -18,7 +18,16 @@ It only runs in trusted rendered Markdown views; `--untrusted` and `--no-active-
 After changing a plugin manifest, packaged asset, or entry point, run a fresh plugin discovery check from the repository root:
 
 ```sh
-uvx --no-cache --from metabrowser==0.12.0 --with tools/view metab --doctor
+bin/view --doctor
 ```
 
-The `--no-cache` flag matters for uncommitted local edits because uvx can otherwise reuse an older wheel for the same local package version.
+The package's uv cache keys cover its Python sources, plugin manifests, and packaged assets.
+Restart `view` after edits; unchanged packages still reuse uv's cache.
+
+The cache regression test runs the real launcher against a disposable package copy and checks that source and asset edits reach the installed plugin:
+
+```sh
+dev/test-environment python3 tools/view/tests/view_cache_test.py
+```
+
+It requires uvx and package-index access and runs with `dev/test --integration`.
