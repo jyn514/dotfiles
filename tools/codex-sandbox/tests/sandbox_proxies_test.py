@@ -2403,6 +2403,23 @@ class ManifestTest(unittest.TestCase):
         self.assertFalse(any(call.args[0][0] in {"kill", "rm"}
                              for call in owner.run.call_args_list))
 
+    def test_unknown_command_resource_status_is_recoverable_but_not_admissible(self) -> None:
+        for resource in ("volume", "container", "forward"):
+            with self.subTest(resource=resource):
+                proxy = self.managed_proxy("jj")
+                proxy["lifecycle-state"] = "failed"
+                proxy["resource-status"][resource] = "unknown"
+                if resource == "forward":
+                    proxy["forwarding"] = {"owner": proxy["service-owner"], "target": "/owned/socket"}
+                state = {"runtime": {"provider": "container"}, "proxies": [proxy]}
+                with mock.patch.object(sandbox_proxies, "state_runtime") as runtime, \
+                        mock.patch.object(sandbox_proxies, "remove_stopped_sandbox_holders", return_value=[]), \
+                        mock.patch.object(sandbox_proxies, "_cleanup_proxy_service") as cleanup:
+                    sandbox_proxies.stop_state(state)
+                cleanup.assert_called_once_with(runtime.return_value, proxy)
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, "recovery record is invalid"):
+                    sandbox_proxies._managed_proxy_record(proxy)
+
     def test_managed_podman_cleanup_rejects_preexisting_mismatched_volume(self) -> None:
         service_owner = "a" * 32
         command = self.command()
@@ -2416,7 +2433,7 @@ class ManifestTest(unittest.TestCase):
             "implementation-identity": resolved.implementation_identity, "state-schema": 1,
             "lifecycle-state": "failed",
             "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
-            "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
+            "resource-status": {"volume": "unknown", "container": "intended", "forward": "absent"},
         }
         owner = mock.Mock(provider="container")
         def run(arguments, **_kwargs):

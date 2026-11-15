@@ -2051,7 +2051,7 @@ def _managed_proxy_record(proxy: Any, *, recovery: bool = False) -> dict[str, An
                 {"volume", "container", "forward", "network", "socket-volume",
                  "helper-container", "caddy-container", "configuration"}) or
             any(value not in ({"absent", "intended", "created", "unknown"}
-                              if proxy.get("name") == "zulip" else
+                              if recovery or proxy.get("name") == "zulip" else
                               {"absent", "intended", "created"}) for value in statuses.values()) or
             any(not isinstance(proxy[field], str) or not proxy[field] for field in
                 ("name", "volume", "container", "image"))):
