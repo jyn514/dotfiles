@@ -35,7 +35,9 @@ If following the instructions caused the problem, change those instructions rath
 
 What fact or counterexample should have changed the choice?
 Teach the agent how to find that fact and what to do with each possible answer.
+Teach the decision an example illustrates, not every detail of its situation.
 Keep a session's particular answer in an example unless evidence supports it as a general rule.
+An illustrative detail does not by itself justify a required check, default concern, or scope restriction.
 If repeated corrections don't help, consider whether the framing of the question or task is wrong, not just the procedure.
 
 ## Put discovery where agents can see it
