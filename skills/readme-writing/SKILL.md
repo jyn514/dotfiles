@@ -30,14 +30,7 @@ Read the [real and constructed examples](references/examples.md) before drafting
 
 ## Decide what you will write
 
-Before drafting, decide what you want to accomplish for this reader and how the writing will accomplish it:
-
-- What should they understand or be able to do afterward?
-- What part of the project will you develop to bring them there?
-- Which comparisons, examples, explanations, and routes will help them make that progress?
-
-Choose the material, its depth, and its order from those answers, then give it headings that help readers follow or find it.
-Keep existing prose that serves the account you've chosen.
+Before drafting, [choose how the writing will accomplish its purpose](../holistic-writing/references/editorial-pass.md#choose-how-the-writing-will-accomplish-its-purpose).
 
 For a reader familiar with shell filters, jq's comparison can establish its role briefly and lead into documentation or experimentation.
 For someone choosing among Python tooling workflows, uv's comparisons help locate familiar tasks; examples then explain how uv performs them.

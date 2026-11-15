@@ -18,7 +18,7 @@ Reuse context and decisions already supplied by another procedure.
 A review request authorizes findings, not edits.
 Leave specialized decisions with their owners; prose work does not authorize selecting a design, changing requirements, or rewriting a human-owned product brief.
 
-## Read and revise
+## Write and revise
 
 Read and follow the [shared editorial pass](references/editorial-pass.md).
 Dedicated skills also call that pass directly; do not restart this entry point when they have established the task.

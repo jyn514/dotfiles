@@ -6,6 +6,7 @@ Reuse settled decisions; this pass does not restart their workflows or authorize
 A review request means findings, not edits.
 Keep the destination unless relocation is requested.
 If a needed specialized review is unavailable, say so rather than claiming this pass supplies it.
+For new writing, start by [choosing how the writing will accomplish its purpose](#choose-how-the-writing-will-accomplish-its-purpose), then draft and read through this pass.
 
 ## 1. Read as the intended reader
 
@@ -32,6 +33,13 @@ Describe the prose's effects, not the author's identity or effort.
 
 ## 2. Develop the explanation
 
+### Choose how the writing will accomplish its purpose
+
+Before drafting or choosing a revision, decide what this reader should understand, feel, or do afterward, using the reader and purpose already established.
+Choose what to develop and which examples, comparisons, or explanations will bring them there.
+Choose what background to assume and which relationships need attention.
+Let those choices determine the material, depth, and order; keep existing prose that serves that purpose.
+
 Make the title and opening intelligible without session context.
 What needs explaining before this reader can follow the next passage?
 Define unfamiliar terms before consequential use, but keep deliberate concrete-to-general development.
@@ -43,6 +51,10 @@ For a proposal, name the requested change before explaining workarounds unless t
 Read the title and opening together: do they ask for the same thing?
 Do not turn a change request into general advice-seeking, require a fix proposal for a support question, or ask someone to design an alternative the author did not request.
 See the [request-before-workaround contrast](reading-examples.md#state-the-request-before-the-workaround).
+
+What does the wording ask of the reader beyond its explicit request?
+Consider whether an explanation sounds like an excuse, context creates an obligation to respond, or a question assigns work the writer could do.
+Judge those implications in the actual relationship and situation; do not presume the reader's reaction.
 
 When writing supports a choice, explain what each relevant option changes for this reader and when that difference matters.
 An inventory of settings does not explain their consequences; a recommendation without reasons does not either.
