@@ -58,38 +58,6 @@ export function writeGroup(file: string, group: SuspensionGroup, io: GroupFileIO
   }
 }
 
-/** Conservative lock: neither age nor a PID probe grants authority to steal it. */
-export class ParentScopeClaim {
-  private token?: string;
-  private identity?: { dev: number; ino: number };
-  constructor(readonly file: string) {}
-  acquire(): void {
-    if (this.token) return;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
-    const token = randomUUID();
-    let fd: number;
-    try { fd = fs.openSync(this.file, "wx", 0o600); }
-    catch (error: any) {
-      if (error.code !== "EEXIST") throw error;
-      throw new Error(`Suspension scope is already claimed: ${this.file}. Close the other parent first. After verifying no parent/restore process owns it, manually remove this claim; PID alone is not proof of abandonment.`);
-    }
-    // Retain ownership even if writing diagnostics fails, so ordinary shutdown can release it.
-    this.token = token;
-    const { dev, ino } = fs.fstatSync(fd);
-    this.identity = { dev, ino };
-    try { fs.writeFileSync(fd, JSON.stringify({ token, pid: process.pid, createdAt: new Date().toISOString() })); fs.fsyncSync(fd); }
-    finally { fs.closeSync(fd); }
-  }
-  release(): void {
-    if (!this.token) return;
-    const stat = fs.statSync(this.file);
-    if (stat.dev !== this.identity?.dev || stat.ino !== this.identity?.ino) throw new Error(`Suspension claim ownership changed: ${this.file}`);
-    fs.unlinkSync(this.file);
-    this.token = undefined;
-    this.identity = undefined;
-  }
-}
-
 function canonicalFile(file: string): string {
   try { return fs.realpathSync(file); }
   catch (error: any) {
@@ -124,7 +92,6 @@ function parseGroup(value: unknown): SuspensionGroup {
 /** Extension-owned orchestration only; no lifecycle callback awaits fresh admission. */
 export class SuspensionCoordinator {
   private group?: SuspensionGroup;
-  private claim?: ParentScopeClaim;
   private file?: string;
   private busy = false;
   // Live diagnostics only: a reopened group cannot prove which operation is running.
@@ -152,14 +119,12 @@ export class SuspensionCoordinator {
 
   /** Called synchronously, before session_start's first await or automatic work. */
   discover(ctx: any): void {
-    this.claim?.release();
     this.commandContext = undefined;
     this.legacyDelivery.clear();
     this.discoveryError = undefined;
     this.group = undefined;
     this.liveGeneration = false;
     this.file = path.join(this.runsDir(), parentScopeKey(ctx.sessionManager.getSessionId()), "group.json");
-    this.claim = new ParentScopeClaim(path.join(path.dirname(this.file), ".group.claim"));
     if (!fs.existsSync(this.file)) return;
     try {
       const group = parseGroup(JSON.parse(fs.readFileSync(this.file, "utf8")));
@@ -168,7 +133,6 @@ export class SuspensionCoordinator {
       if (revoked(group)) return;
       this.pi.requestPause();
       this.validate(ctx, false);
-      this.claim.acquire();
       this.validate(ctx);
       this.manager.beginPause(group.parentId);
       this.manager.restoreCompletionState(group.parentId, group.completions);
@@ -262,7 +226,6 @@ export class SuspensionCoordinator {
       const id = ctx.sessionManager.getSessionId();
       if (!this.file) this.discover(ctx);
       this.assertDiscardCleanupComplete();
-      this.claim!.acquire();
       if (!this.group || revoked(this.group)) {
         const sessionFile = ctx.sessionManager.getSessionFile();
         if (!sessionFile) throw new Error("Durable suspension requires a persisted parent session.");
@@ -272,7 +235,7 @@ export class SuspensionCoordinator {
         this.liveGeneration = true;
       }
       this.validate(ctx);
-      if (!this.liveGeneration && !this.group.parent) throw new Error("Parent capture is missing after restart; retain this incomplete generation for recovery or explicitly discard it.");
+      if (!this.liveGeneration && !this.group.parent) throw new Error("Parent capture is missing after restart; retain this incomplete generation for recovery, or run /pause --discard to revoke its saved pending inputs.");
       if (!this.liveGeneration && !this.group.inventoryComplete) throw new Error("Incomplete child inventory after restart; retain captured payloads for manual recovery or explicitly discard them.");
       for (const state of restart) {
         if (this.liveGeneration) await state.capture(ctx);
@@ -361,9 +324,8 @@ export class SuspensionCoordinator {
     this.commandContext = ctx;
     const group = this.group;
     try {
-      this.claim!.acquire();
       this.validate(ctx);
-      if (!group.parent && !this.liveGeneration) throw new Error("Parent capture is missing after restart; no continuation admission can be inferred.");
+      if (!group.parent && !this.liveGeneration) throw new Error("Parent capture is missing after restart; cannot resume. Retain this incomplete generation for recovery, or run /pause --discard to revoke its saved pending inputs.");
       if (!this.liveGeneration) this.assertChildrenAccountedFor();
       const unresolved = (saved: SavedSession) => saved.marker === "unknown" || (!this.liveGeneration && saved.marker === "started") || saved.items.some(item => item.status === "unknown");
       for (const [id, saved] of Object.entries(group.children)) {
@@ -410,12 +372,10 @@ export class SuspensionCoordinator {
           // A visible revocation must never be overwritten by an incomplete/replayable manifest.
           group.error = message(error);
           this.manager.endPause(group.parentId);
-          this.claim!.release();
         } else group.phase = "incomplete";
         throw error;
       }
       this.manager.endPause(group.parentId);
-      this.claim!.release();
       // Catch completions that arrived while an awaited admission was draining the earlier mailbox snapshot.
       this.scheduleCompletions(ctx);
       ctx.ui?.notify?.(this.status(), "info");
@@ -436,7 +396,6 @@ export class SuspensionCoordinator {
     }
     // Explicit revocation survives navigation behind/off the saved anchor.
     this.validate(ctx, false);
-    this.claim!.acquire();
     const phase = this.group.phase, pending = this.group.discardCleanupPending;
     this.group.phase = "discarded";
     this.group.discardCleanupPending = true;
@@ -459,7 +418,7 @@ export class SuspensionCoordinator {
       this.group.error = `Discard cleanup incomplete: ${message(error)}`;
       try { this.persist(); } catch { /* revocation is already published; never erase its payload */ }
       throw error;
-    } finally { this.busy = false; this.claim!.release(); }
+    } finally { this.busy = false; }
   }
 
   /** Called from Manager's void callback. Never await admission in a boundary handler. */
@@ -506,13 +465,11 @@ export class SuspensionCoordinator {
   }
 
   shutdown(ctx?: any): void {
-    try {
-      if (ctx && this.group && !revoked(this.group) && !this.discoveryError) {
-        try { this.validate(ctx); }
-        catch (error) {
-          this.group.phase = "incomplete"; this.group.error = message(error); this.persist();
-        }
+    if (ctx && this.group && !revoked(this.group) && !this.discoveryError) {
+      try { this.validate(ctx); }
+      catch (error) {
+        this.group.phase = "incomplete"; this.group.error = message(error); this.persist();
       }
-    } finally { this.claim?.release(); }
+    }
   }
 }

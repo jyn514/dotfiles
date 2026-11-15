@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { SettingsManager, type ExtensionAPI, type ExtensionCommandContext, type SessionHandoff } from "@earendil-works/pi-coding-agent";
 import { parentScopeKey, type AgentManager } from "./core.js";
 import { snapshotHandoff } from "./handoff.js";
-import { GroupPublicationUncertainError, ParentScopeClaim, SuspensionCoordinator, writeGroup, type SuspensionGroup } from "./suspension.js";
+import { GroupPublicationUncertainError, SuspensionCoordinator, writeGroup, type SuspensionGroup } from "./suspension.js";
 
 function snapshot(file: string, id = "parent", active = false) {
   return snapshotHandoff({ requestId: "capture", sessionId: id, sessionFile: file, leafId: "anchor", wasActive: active,
@@ -130,19 +130,21 @@ test("restart restore is not invoked before saved-generation validation succeeds
   } finally { f.close(); }
 });
 
-test("exclusive claims fail closed even for implausible PIDs; ordinary release permits a new owner", () => {
-  const root = mkdtempSync(join(tmpdir(), "scope-claim-"));
-  const file = join(root, "claim");
-  const a = new ParentScopeClaim(file), b = new ParentScopeClaim(file);
-  try {
-    a.acquire();
-    const record = JSON.parse(readFileSync(file, "utf8")); record.pid = 999999999;
-    writeFileSync(file, JSON.stringify(record));
-    expect(() => b.acquire()).toThrow("manually remove");
-    a.release(); b.acquire(); b.release();
-    expect(existsSync(file)).toBe(false);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
+for (const operation of ["unpause", "discard"] as const) {
+  test(`legacy claim files do not block reopening and ${operation}`, async () => {
+    const f = fixture();
+    try {
+      await f.coordinator.pause(f.ctx);
+      writeFileSync(join(f.root, parentScopeKey("parent"), ".group.claim"), JSON.stringify({ pid: process.pid, token: "legacy" }));
+      const reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, e => e, () => f.root);
+      reopened.discover(f.ctx);
+      expect(reopened.status()).toContain("saved");
+      await reopened[operation](f.ctx);
+      expect(f.read().phase).toBe(operation === "unpause" ? "consumed" : "discarded");
+      expect(f.events).toContain("resume");
+    } finally { f.close(); }
+  });
+}
 
 test("capture callback persists equal child inputs before close; a later failure stays not saved and retry keeps captures", async () => {
   const f = fixture();
@@ -847,7 +849,7 @@ sourceTest("real core: pending-only parent saves, reopens held, and idle unpause
   } finally { coordinator?.shutdown(); session?.dispose(); f.close(); rmSync(root, { recursive: true, force: true }); }
 }, 15000);
 
-sourceTest("production index controls save/reopen/unpause a real parent and release the exclusive claim on ordinary shutdown", async () => {
+sourceTest("production index controls save/reopen/unpause a real parent without persistent claims", async () => {
   const { default: extension } = await import("./index.js");
   const { fauxProvider, fauxAssistantMessage } = await import("@earendil-works/pi-ai/providers/faux");
   const { ModelRuntime, SessionManager, SettingsManager, createAgentSessionServices, createAgentSessionFromServices, createAgentSessionRuntime } = await import("@earendil-works/pi-coding-agent");
@@ -876,7 +878,7 @@ sourceTest("production index controls save/reopen/unpause a real parent and rele
     const file = join(scope, "group.json"), claim = join(scope, ".group.claim");
     await runtime.session.prompt("/pause");
     expect(JSON.parse(readFileSync(file, "utf8")).phase).toBe("saved");
-    expect(existsSync(claim)).toBe(true);
+    expect(existsSync(claim)).toBe(false);
     const sessionFile = runtime.session.sessionFile;
     await runtime.dispose(); runtime = undefined;
     expect(existsSync(claim)).toBe(false);

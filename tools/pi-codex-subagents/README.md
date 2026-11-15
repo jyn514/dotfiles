@@ -534,9 +534,9 @@ Restart authority requires the original parent ID, canonical file path, and an a
 Copies, forks, imports, and navigation behind/off that anchor cannot replay the saved generation.
 Consumption and discard remain revoked across transcript navigation.
 
-An exclusive `.group.claim` prevents concurrent restoration.
-Normal shutdown releases it.
-After a crash, remove a stale claim only after verifying that no parent or restore process still owns it; a PID alone is insufficient proof.
+Use one writer per parent session, as with Pi's transcript.
+Suspension does not lock sessions against concurrent writers.
+Legacy `.group.claim` files are ignored and do not block recovery after a crash.
 Keep the group record and transcripts for recovery.
 
 ## Output limits
