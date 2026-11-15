@@ -49,6 +49,7 @@ class ToolInstallTest(unittest.TestCase):
             log = root / "commands"
             for machine, target in (("x86_64", "x86_64"), ("aarch64", "aarch64"),
                                     ("arm64", "aarch64")):
+                log.unlink(missing_ok=True)
                 with self.subTest(machine=machine):
                     environment = os.environ | {
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -65,7 +66,6 @@ class ToolInstallTest(unittest.TestCase):
                         "https://github.com/astral-sh/uv/releases/download/fixture-version/"
                         f"uv-{target}-unknown-linux-musl.tar.gz", calls[1][-1])
                     self.assertEqual([], list(root.glob("tmp.*")))
-                    log.unlink()
 
 
 if __name__ == "__main__":
