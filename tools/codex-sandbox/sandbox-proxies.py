@@ -2031,31 +2031,52 @@ def _managed_proxy_record(proxy: Any, *, recovery: bool = False) -> dict[str, An
         raise ConfigError("proxy recovery record must be an object")
     if "service-owner" not in proxy:
         return None
+    name = proxy.get("name")
+    label = name if isinstance(name, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name) else "unnamed"
+
+    def invalid(field: str) -> ConfigError:
+        return ConfigError(f"managed proxy recovery record is invalid: proxy {label}, field {field}")
+
     if set(proxy) - (_MANAGED_PROXY_REQUIRED | _MANAGED_PROXY_OPTIONAL) or not _MANAGED_PROXY_REQUIRED <= set(proxy):
-        raise ConfigError("managed proxy recovery record has invalid fields")
+        missing = _MANAGED_PROXY_REQUIRED - set(proxy)
+        if missing:
+            raise invalid(sorted(missing)[0] + " (missing)")
+        raise ConfigError(f"managed proxy recovery record has invalid fields: proxy {label}, unexpected field")
     owner = proxy["service-owner"]
     parameters = proxy["identity-parameters"]
     statuses = proxy["resource-status"]
-    if (not isinstance(owner, str) or re.fullmatch(r"[0-9a-f]{32}", owner) is None or
-            not isinstance(proxy["implementation-identity"], str) or
-            IMAGE_RE.fullmatch(proxy["implementation-identity"]) is None or
-            proxy["state-schema"] != COMMAND_PROXY_STATE_SCHEMA or
-            proxy["lifecycle-state"] not in {"starting", "ready", "failed"} or
-            not isinstance(parameters, dict) or set(parameters) != {"uid", "gid", "network"} or
-            not isinstance(parameters["uid"], int) or not isinstance(parameters["gid"], int) or
-            not isinstance(parameters["network"], str) or not parameters["network"] or
-            not isinstance(statuses, dict) or set(statuses) not in (
+    if not isinstance(owner, str) or re.fullmatch(r"[0-9a-f]{32}", owner) is None:
+        raise invalid("service-owner")
+    if (not isinstance(proxy["implementation-identity"], str) or
+            IMAGE_RE.fullmatch(proxy["implementation-identity"]) is None):
+        raise invalid("implementation-identity")
+    if proxy["state-schema"] != COMMAND_PROXY_STATE_SCHEMA:
+        raise invalid("state-schema")
+    if proxy["lifecycle-state"] not in {"starting", "ready", "failed"}:
+        raise invalid("lifecycle-state")
+    if not isinstance(parameters, dict) or set(parameters) != {"uid", "gid", "network"}:
+        raise invalid("identity-parameters")
+    for field in ("uid", "gid"):
+        if not isinstance(parameters[field], int):
+            raise invalid("identity-parameters." + field)
+    if not isinstance(parameters["network"], str) or not parameters["network"]:
+        raise invalid("identity-parameters.network")
+    if not isinstance(statuses, dict) or set(statuses) not in (
                 {"volume", "container", "forward"},
                 {"volume", "container", "forward", "source-view"},
                 {"volume", "container", "forward", "network"},
                 {"volume", "container", "forward", "network", "socket-volume",
-                 "helper-container", "caddy-container", "configuration"}) or
-            any(value not in ({"absent", "intended", "created", "unknown"}
-                              if recovery or proxy.get("name") == "zulip" else
-                              {"absent", "intended", "created"}) for value in statuses.values()) or
-            any(not isinstance(proxy[field], str) or not proxy[field] for field in
-                ("name", "volume", "container", "image"))):
-        raise ConfigError("managed proxy recovery record is invalid")
+                 "helper-container", "caddy-container", "configuration"}):
+        raise invalid("resource-status")
+    allowed_statuses = ({"absent", "intended", "created", "unknown"}
+                        if recovery or proxy.get("name") == "zulip" else
+                        {"absent", "intended", "created"})
+    for field, value in statuses.items():
+        if value not in allowed_statuses:
+            raise invalid("resource-status." + field)
+    for field in ("name", "volume", "container", "image"):
+        if not isinstance(proxy[field], str) or not proxy[field]:
+            raise invalid(field)
     if "workspaces" in proxy or "workspace-source-view" in proxy:
         if proxy["name"] != "jj" or not {"workspaces", "workspace-source-view"} <= set(proxy):
             raise ConfigError("workspace authority belongs only to the JJ service")
@@ -2067,10 +2088,10 @@ def _managed_proxy_record(proxy: Any, *, recovery: bool = False) -> dict[str, An
                 source_view.parent.parent != base or "source-view" not in statuses):
             raise ConfigError("workspace source-view recovery path is invalid")
     if proxy.get("volume-owner", owner) != owner:
-        raise ConfigError("managed proxy volume owner changed")
+        raise ConfigError(f"managed proxy volume owner changed: proxy {label}, field volume-owner")
     forwarding = proxy.get("forwarding")
     if forwarding is not None and (not isinstance(forwarding, dict) or forwarding.get("owner") != owner):
-        raise ConfigError("managed proxy forwarding owner changed")
+        raise ConfigError(f"managed proxy forwarding owner changed: proxy {label}, field forwarding.owner")
     if (forwarding is None) != (statuses["forward"] == "absent"):
         raise ConfigError("managed proxy forwarding status is inconsistent")
     if proxy["name"] == "zulip":

@@ -2403,6 +2403,37 @@ class ManifestTest(unittest.TestCase):
         self.assertFalse(any(call.args[0][0] in {"kill", "rm"}
                              for call in owner.run.call_args_list))
 
+    def test_reset_identifies_invalid_proxy_fields_without_opening_runtime(self) -> None:
+        cases = (
+            ("service-owner", "service-owner", "private-value"),
+            ("implementation-identity", "implementation-identity", "private-value"),
+            ("state-schema", "state-schema", 999),
+            ("lifecycle-state", "lifecycle-state", "private-value"),
+            ("identity-parameters.uid", "identity-parameters.uid", "private-value"),
+            ("identity-parameters.network", "identity-parameters.network", ""),
+            ("resource-status.volume", "resource-status.volume", "private-value"),
+            ("volume-owner", "volume-owner", "private-value"),
+        )
+        metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
+        for path, diagnostic, value in cases:
+            with self.subTest(field=path):
+                proxy = self.managed_proxy("jj")
+                target = proxy
+                parts = path.split(".")
+                for part in parts[:-1]:
+                    target = target[part]
+                target[parts[-1]] = value
+                state = {"runtime": {"provider": "container"}, "proxies": [proxy]}
+                contents = json.dumps({"version": 2, "state": state})
+                metadata.write_text(contents)
+                with mock.patch.object(sandbox_proxies, "state_runtime") as runtime, \
+                        mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    self.assertEqual(1, sandbox_proxies.main(["reset", "--repo", str(self.repo)]))
+                self.assertIn("proxy jj, field " + diagnostic, stderr.getvalue())
+                self.assertNotIn("private-value", stderr.getvalue())
+                self.assertEqual(contents, metadata.read_text())
+                runtime.assert_not_called()
+
     def test_unknown_command_resource_status_is_recoverable_but_not_admissible(self) -> None:
         for resource in ("volume", "container", "forward"):
             with self.subTest(resource=resource):
