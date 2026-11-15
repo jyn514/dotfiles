@@ -537,7 +537,11 @@ require('blink.cmp').setup {
 	completion = {
 		keyword = { range = 'full' },
 		list = { selection = { preselect = false } },
-		menu = { auto_show = true, },
+		menu = {
+			auto_show = function(ctx)
+				return ctx.get_bounds('prefix').length >= 3
+			end,
+		},
 	},
 	fuzzy = { implementation = "lua" },
 	-- See https://github.com/rafamadriz/friendly-snippets/tree/main/snippets for a list of
