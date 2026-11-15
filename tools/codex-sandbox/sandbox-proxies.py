@@ -171,6 +171,13 @@ def validate_sandbox_tree(sandbox: Path) -> None:
                 raise ConfigError(f"protected sandbox configuration contains a hard link: {candidate}")
 
 
+def _default_dockerfile(sandbox: Path) -> bool:
+    # Legacy builders often keep their Dockerfile beside the executable owner.
+    return (sandbox / "Dockerfile").is_file() and not any(
+        (sandbox / legacy).exists() for legacy in ("bake", "base-image")
+    )
+
+
 def load_manifest(repo: Path) -> dict[str, Any]:
     repo = repo.resolve(strict=True)
     sandbox = optional_sandbox_directory(repo)
@@ -181,7 +188,10 @@ def load_manifest(repo: Path) -> dict[str, Any]:
     validate_sandbox_tree(sandbox)
     repository_identity(repo)
     bake = sandbox / "docker-bake.hcl"
-    manifest = load_manifest_file(path, default_bake=bake.is_file())
+    manifest = load_manifest_file(
+        path, default_bake=bake.is_file(),
+        default_dockerfile=_default_dockerfile(sandbox),
+    )
     if manifest["version"] == 2:
         for legacy in ("bake", "base-image"):
             if (sandbox / legacy).exists():
@@ -211,18 +221,25 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
         raise ConfigError(f"proxy manifest must not be symlinked: {path}")
     if not path.exists():
         bake = sandbox / "docker-bake.hcl"
-        if not bake.exists():
-            validate_sandbox_tree(sandbox)
-            return load_manifest_file(None)
-        _regular_unlinked(bake, "default Bake resolver")
+        dockerfile = sandbox / "Dockerfile"
         validate_sandbox_tree(sandbox)
-        return load_manifest_file(None, default_bake=True)
+        for candidate in (bake, dockerfile):
+            if candidate.exists():
+                _regular_unlinked(candidate, "default image build definition")
+        return load_manifest_file(
+            None, default_bake=bake.is_file(), default_dockerfile=_default_dockerfile(sandbox),
+        )
     return load_manifest(repo)
 
 
-def load_manifest_file(path: Path | None, *, default_bake: bool = False) -> dict[str, Any]:
+def load_manifest_file(
+    path: Path | None, *, default_bake: bool = False, default_dockerfile: bool = False,
+) -> dict[str, Any]:
     """Parse an external repository declaration, not accepted launch authority."""
-    return _parse_manifest(_manifest_data(path), default_bake=default_bake, accepted=False)
+    return _parse_manifest(
+        _manifest_data(path), default_bake=default_bake,
+        default_dockerfile=default_dockerfile, accepted=False,
+    )
 
 
 def load_accepted_manifest(path: Path | None = None, *, data: Any = None) -> dict[str, Any]:
@@ -243,7 +260,9 @@ def _manifest_data(path: Path | None, *, data: Any = None) -> Any:
         raise ConfigError(f"invalid proxy manifest: {error}") from error
 
 
-def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) -> dict[str, Any]:
+def _parse_manifest(
+    data: Any, *, default_bake: bool = False, default_dockerfile: bool = False, accepted: bool,
+) -> dict[str, Any]:
     if not isinstance(data, dict) or "version" not in data:
         raise ConfigError("proxy manifest must contain a version")
     version = data["version"]
@@ -286,13 +305,15 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
                 "resolver": {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
                 "base": "base",
             }
+        elif default_dockerfile and images is None:
+            images = {"resolver": {"kind": "dockerfile"}, "base": "base"}
     else:
         raise ConfigError(f"unsupported proxy manifest version: {version!r}")
     if images is not None:
         if not isinstance(images, dict) or set(images) != {"resolver", "base"}:
             raise ConfigError("proxy manifest images must contain exactly resolver and base")
         resolver = images["resolver"]
-        if not isinstance(resolver, dict) or resolver.get("kind") not in {"bake", "command"}:
+        if not isinstance(resolver, dict) or resolver.get("kind") not in {"bake", "dockerfile", "command"}:
             raise ConfigError("proxy manifest has an invalid image resolver")
         if resolver["kind"] == "bake":
             if not set(resolver) <= {"kind", "file"}:
@@ -303,6 +324,9 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
             }
             _plain_relative(resolver["file"], "Bake resolver file")
             images = {**images, "resolver": resolver}
+        elif resolver["kind"] == "dockerfile":
+            if set(resolver) != {"kind"} or images["base"] != "base":
+                raise ConfigError("Dockerfile resolver supports only kind and base image name base")
         else:
             if set(resolver) != {"kind", "argv"}:
                 raise ConfigError("command resolver must contain exactly kind and argv")
@@ -386,6 +410,10 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
         if version == 2:
             normalized["image-target"] = normalized.pop("image")
         commands[name] = normalized
+    if images is not None and images["resolver"]["kind"] == "dockerfile":
+        if any(command["image-target"] != "base" for command in commands.values()
+               if "image-target" in command):
+            raise ConfigError("Dockerfile resolver supplies only image base")
     result = {"version": version, "commands": commands}
     capabilities.pop("host-editor", None)
     if version == 2 or capabilities:
@@ -398,7 +426,7 @@ def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) ->
 def bind_manifest(repo: Path, manifest: dict[str, Any], runtime: Any) -> dict[str, Any]:
     """Reject unsupported resolver/provider pairs before image or service work."""
     policy = manifest.get("images")
-    uses_bake = (policy["resolver"]["kind"] == "bake" if policy is not None else
+    uses_bake = (policy["resolver"]["kind"] in {"bake", "dockerfile"} if policy is not None else
                  any(command.get("image-target") for command in manifest["commands"].values()) or
                  (repo / ".agents/sandbox/bake").is_file() and
                  not (repo / ".agents/sandbox/base-image").is_file())

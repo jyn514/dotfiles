@@ -298,7 +298,7 @@ Nested-container clients tolerate delayed best-effort listener startup for a
 bounded readiness interval. Retries stop before the first request byte; after transmission starts,
 transport failure is terminal and a possibly accepted operation is never replayed. Flower R2 does
 not yet perform this pre-connection retry; see [Flower R2 Keychain access](#flower-r2-keychain-access).
-Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
+Version 2 images declare one Bake file, conventional Dockerfile, or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures local inputs, assigns private content keys, and pins mutable upstream images by provider and platform.
 Main contexts apply `.dockerignore`; a `<Dockerfile>.dockerignore` beside the
@@ -314,7 +314,13 @@ Ordinary resolution reuses saved pins, then local image digests, and queries the
 It saves each ordinary resolution immediately so failed builds do not repeat registry lookups.
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
 a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
-An explicit image resolver overrides this convention.
+If no Bake file or legacy executable builder exists, `.agents/sandbox/Dockerfile` supplies image `base`, with `.agents/sandbox` as its build context.
+It uses the same capture, pinning, and cache lifecycle as Bake; `{"kind": "dockerfile"}` explicitly selects this convention.
+The Dockerfile resolver supplies only image `base` and accepts no build options; use Bake for arguments, named stages, other contexts, or multiple images.
+An explicit image resolver overrides automatic discovery.
+A Dev Containers configuration can point `build.dockerfile` and `build.context` at that same Dockerfile and directory without invoking the launcher.
+Dev Containers owns its own build cache and runtime settings; this does not reproduce the launcher's proxies, credentials, or isolation policy.
+For more involved builds, keep Bake as the build owner and configure Dev Containers with `image` naming the locally built image.
 Every project base image must provide a compatible `node` executable on `PATH` for Pi runtime staging and runtime checks.
 The base does not need to provide npm; the agent build mounts its pinned npm toolchain separately.
 Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported for external repositories.

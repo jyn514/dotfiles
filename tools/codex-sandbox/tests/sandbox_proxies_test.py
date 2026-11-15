@@ -533,11 +533,11 @@ class ManifestTest(unittest.TestCase):
 
     def test_resolver_provider_binding_rejects_bake_without_running_it(self):
         for provider in ("container", "lima", "lima-docker"):
-            for kind in ("command", "bake"):
+            for kind in ("command", "bake", "dockerfile"):
                 with self.subTest(provider=provider, kind=kind):
                     policy = {"commands": {}, "images": {"base": "base", "resolver": {"kind": kind}}}
                     runtime = mock.Mock(provider=provider)
-                    if kind == "bake" and provider != "lima-docker":
+                    if kind in {"bake", "dockerfile"} and provider != "lima-docker":
                         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "lima-docker"):
                             sandbox_proxies.bind_manifest(self.repo, policy, runtime)
                     else:
@@ -609,6 +609,79 @@ class ManifestTest(unittest.TestCase):
             {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
             manifest["images"]["resolver"],
         )
+
+    def test_dockerfile_discovery_round_trips_and_preserves_precedence(self) -> None:
+        (self.sandbox / "Dockerfile").write_text("FROM scratch\n")
+        dockerfile_policy = {"resolver": {"kind": "dockerfile"}, "base": "base"}
+        for with_manifest in (False, True):
+            for with_bake in (False, True):
+                with self.subTest(manifest=with_manifest, bake=with_bake):
+                    path = self.sandbox / "proxy-commands.json"
+                    if with_manifest:
+                        self.write(version=2)
+                    elif path.exists():
+                        path.unlink()
+                    bake = self.sandbox / "docker-bake.hcl"
+                    if with_bake:
+                        bake.write_text('target "base" { context = ".agents/sandbox" }\n')
+                    elif bake.exists():
+                        bake.unlink()
+                    expected = ({
+                        "resolver": {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
+                        "base": "base",
+                    } if with_bake else dockerfile_policy)
+                    policy = sandbox_proxies.load_optional_manifest(self.repo)
+                    self.assertEqual(expected, policy["images"])
+                    output = self.repo / "snapshot.json"
+                    self.assertEqual(0, sandbox_proxies.main([
+                        "snapshot", "--repo", str(self.repo), "--output", str(output),
+                    ]))
+                    self.assertEqual(expected, sandbox_proxies.load_accepted_manifest(output)["images"])
+        self.write(version=2, images={
+            "resolver": {"kind": "command", "argv": ["custom-builder"]}, "base": "custom",
+        })
+        self.assertEqual("custom", sandbox_proxies.load_optional_manifest(self.repo)["images"]["base"])
+        self.write()
+        self.assertNotIn("images", sandbox_proxies.load_optional_manifest(self.repo))
+
+    def test_dockerfile_resolver_rejects_unsupported_options_and_names(self) -> None:
+        for resolver, base in (
+            ({"kind": "dockerfile", "file": "other"}, "base"),
+            ({"kind": "dockerfile", "argv": ["builder"]}, "base"),
+            ({"kind": "dockerfile"}, "other"),
+        ):
+            with self.subTest(resolver=resolver, base=base):
+                self.write(version=2, images={"resolver": resolver, "base": base})
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, "Dockerfile resolver"):
+                    sandbox_proxies.load_manifest(self.repo)
+        command = self.command()
+        command.pop("image-command")
+        command["image"] = "missing"
+        self.write({"example": command}, version=2, images={
+            "resolver": {"kind": "dockerfile"}, "base": "base",
+        })
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "only image base"):
+            sandbox_proxies.load_manifest(self.repo)
+        command["image"] = "base"
+        self.write({"example": command}, version=2, images={
+            "resolver": {"kind": "dockerfile"}, "base": "base",
+        })
+        self.assertEqual("base", sandbox_proxies.load_manifest(self.repo)["commands"]["example"]["image-target"])
+
+    def test_dockerfile_discovery_does_not_replace_legacy_builders(self) -> None:
+        (self.sandbox / "Dockerfile").write_text("FROM scratch\n")
+        for name in ("bake", "base-image"):
+            with self.subTest(builder=name):
+                path = self.sandbox / name
+                path.touch()
+                self.assertNotIn("images", sandbox_proxies.load_optional_manifest(self.repo))
+                path.unlink()
+
+    def test_conventional_dockerfile_remains_protected_configuration(self) -> None:
+        dockerfile = self.sandbox / "Dockerfile"
+        dockerfile.symlink_to(self.repo / "outside")
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "symlink"):
+            sandbox_proxies.load_optional_manifest(self.repo)
 
     def test_bake_resolver_defaults_to_conventional_file(self) -> None:
         self.sandbox.joinpath("proxy-commands.json").write_text(json.dumps({
@@ -1139,6 +1212,20 @@ class ManifestTest(unittest.TestCase):
         command = sandbox_proxies.load_accepted_manifest(snapshot)["commands"]["jj"]
         self.assertEqual([str(builder.resolve())], command["image-command"])
         self.assertEqual("read-write", command["mounts"][0]["proxy"])
+
+    def test_dockerfile_snapshot_preserves_independent_trusted_jj_builder(self) -> None:
+        (self.sandbox / "Dockerfile").write_text("FROM scratch\n")
+        builder = self.repo / "trusted-jj-image"
+        builder.write_text("#!/bin/sh\n")
+        builder.chmod(0o700)
+        snapshot = self.repo / "snapshot"
+        sandbox_proxies.snapshot_main(SimpleNamespace(
+            repo=str(self.repo), output=str(snapshot), jj_image_command=str(builder),
+            zulip_image_command=None, zuliprc=None))
+        manifest = sandbox_proxies.load_accepted_manifest(snapshot)
+        self.assertEqual("dockerfile", manifest["images"]["resolver"]["kind"])
+        self.assertEqual([str(builder)], manifest["commands"]["jj"]["image-command"])
+        self.assertNotIn("image-target", manifest["commands"]["jj"])
 
     def test_snapshot_adds_trusted_zulip_with_secure_credentials(self) -> None:
         builder = self.repo / "trusted-zulip-image"

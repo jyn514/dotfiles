@@ -210,10 +210,15 @@ def resolve_policy(runtime, repo, image_policy, requested, *, operation='resolve
         return resolve_command(runtime, repo, resolver['argv'], set(requested), operation=operation)
     if runtime.provider != 'lima-docker':
         raise ResolverError('the bundled Bake resolver requires Lima-Docker')
+    if resolver['kind'] == 'dockerfile':
+        # Keep capture, upstream pinning and cache lifecycle in the build owner.
+        options = {'declaration': {'target': {'base': {'context': '.agents/sandbox'}}}}
+    else:
+        options = {'file': resolver['file']}
     return {
         name: runtime.verify_builder_image(image)
         for name, image in runtime.bake(
-            repo, requested, file=resolver['file'], operation=operation,
+            repo, requested, operation=operation, **options,
         ).items()
     }
 

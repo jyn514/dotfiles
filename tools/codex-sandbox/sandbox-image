@@ -62,7 +62,7 @@ def execute():
         return
     if args.operation in {'refresh', 'clean'}:
         repo = args.repo.resolve(strict=True)
-        manifest = policy_module().load_manifest(repo)
+        manifest = policy_module().load_optional_manifest(repo)
         policy = manifest.get('images')
         if policy is None:
             raise ValueError('refresh and clean require a version 2 image resolver')

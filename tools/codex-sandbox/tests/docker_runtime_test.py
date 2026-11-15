@@ -45,6 +45,19 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_dockerfile_policy_reaches_bake_through_real_backend(self):
+        from image_resolver import resolve_policy
+        runtime = backend()
+        runtime.verify_builder_image = lambda image: image
+        image = 'sha256:' + '1' * 64
+        declaration = {'target': {'base': {'context': '.agents/sandbox'}}}
+        with patch('bake.resolve', return_value={'base': image}) as resolve:
+            result = resolve_policy(runtime, Path('/repo'),
+                                    {'resolver': {'kind': 'dockerfile'}}, ['base'])
+        self.assertEqual({'base': image}, result)
+        resolve.assert_called_once_with(runtime, Path('/repo'), ['base'],
+                                        declaration=declaration, file=None, operation='resolve')
+
     @staticmethod
     def external_image_snapshot(manifest):
         return {

@@ -84,6 +84,32 @@ class ProjectBakeTest(unittest.TestCase):
                     declaration='target "base" {}\n', operation=mode,
                 )
 
+    def test_lifecycle_discovers_dockerfile_without_manifest(self):
+        runtime = mock.Mock(provider="lima-docker")
+        runtime.bake.return_value = {"base": "sha256:" + "1" * 64}
+        runtime.verify_builder_image.side_effect = lambda ref: mock.Mock(reference=ref)
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory).resolve()
+            sandbox = repo / ".agents/sandbox"
+            sandbox.mkdir(parents=True)
+            (sandbox / "Dockerfile").write_text("FROM scratch\n")
+            policy = sandbox_image.policy_module()
+            # This test owns build discovery, not JJ repository initialization.
+            with mock.patch.object(policy, "repository_identity", return_value="fixture"), \
+                    mock.patch.object(sandbox_image, "policy_module", return_value=policy), \
+                    mock.patch.object(sandbox_image, "image_runtime", return_value=runtime):
+                for mode in ("refresh", "clean"):
+                    with self.subTest(mode=mode), \
+                            mock.patch.object(sys, "argv", [
+                                "sandbox-image", mode, "--repo", str(repo), "base",
+                            ]), mock.patch.object(sys, "stdout", io.StringIO()) as output:
+                        sandbox_image.execute()
+                        self.assertEqual({"base": "sha256:" + "1" * 64}, json.loads(output.getvalue()))
+                        runtime.bake.assert_called_with(
+                            repo, {"base"}, operation=mode,
+                            declaration={"target": {"base": {"context": ".agents/sandbox"}}},
+                        )
+
     def test_wrong_engine_or_platform_never_invokes_bake(self):
         for provider, platform in [('container', 'linux/arm64'), ('lima-docker', 'linux/amd64')]:
             runtime = mock.Mock(provider=provider)

@@ -341,8 +341,10 @@ Other command proxies retain active-project scope.
 == Configuration belongs to the loader
 
 The configuration loader reads `.agents/sandbox/proxy-commands.json` when present.
-Otherwise, `.agents/sandbox/docker-bake.hcl` supplies the bundled Bake resolver with
-base target `base`. The loader returns validated capability and command-execution
+When version 2 omits `images`, `.agents/sandbox/docker-bake.hcl` supplies the bundled Bake resolver with
+base target `base`.
+If that file and legacy `bake`/`base-image` builders are absent, `.agents/sandbox/Dockerfile` supplies image `base` with `.agents/sandbox` as its build context.
+Both conventions also work without a manifest; explicit `images` takes precedence. The loader returns validated capability and command-execution
 policy plus a bound image resolver.
 It owns declaration versions, defaults, path validation, image-name bindings,
 and resolver construction. Loading configuration does not invoke a resolver.
@@ -391,9 +393,9 @@ command. Its argv is executed directly in the validated repository root during
 resolution, never through a shell. Resolver file paths are repository-relative;
 the Bake file above is not relative to the configuration file's directory.
 
-Version 2 requires `version`; omitted `images` uses the conventional Bake file when
-present and otherwise retains installed default image policy. Omitted `capabilities`
-and `commands` mean empty objects. A repository with only the conventional Bake file
+Version 2 requires `version`; omitted `images` uses conventional build discovery in the order above
+and otherwise retains installed default image policy. Omitted `capabilities`
+and `commands` mean empty objects. A repository with only a conventional build definition
 needs no manifest.
 For example, disabling the default Zulip service needs no image declaration:
 
@@ -420,9 +422,13 @@ disable required services or authorize an undeclared service through host
 availability alone.
 
 When present, `images` contains exactly `resolver` and `base`. The resolver is either
-`{"kind": "bake", "file": STRING}`, `{"kind": "bake"}`, or
+`{"kind": "bake", "file": STRING}`, `{"kind": "bake"}`, `{"kind": "dockerfile"}`, or
 `{"kind": "command", "argv": NONEMPTY_STRING_ARRAY}`; the forms cannot be mixed.
 An omitted Bake `file` means `.agents/sandbox/docker-bake.hcl`.
+The Dockerfile resolver accepts no other fields and supplies only image `base`; `images.base` and any command image must name `base`.
+It translates the conventional context into a single Bake target, preserving the bundled resolver's capture, pinning, and refresh/clean behavior.
+Use Bake or a project command for custom build settings.
+Dev Containers may consume the same Dockerfile and context independently; its runtime configuration is not launcher policy.
 `base` is a nonempty resolver-owned image name. Each project command uses an
 `image` field naming its image in the same resolver, replacing version 1's
 `image-command`/`image-target` fields. Its `argv`, `workdir`, `network`, and

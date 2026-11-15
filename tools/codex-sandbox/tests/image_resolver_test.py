@@ -798,6 +798,27 @@ class ImageResolverTest(unittest.TestCase):
         with self.assertRaisesRegex(OSError, "engine unavailable"):
             owned_images.resolve_agent(runtime, 501, 20, "base@sha256:" + "a" * 64)
 
+    def test_dockerfile_base_uses_captured_builder_and_lifecycle(self):
+        runtime = mock.Mock(provider="lima-docker")
+        runtime.bake.return_value = {"base": "resolved@sha256:base"}
+        runtime.verify_builder_image.side_effect = lambda ref: Image(ref, ref, ref, ref)
+        policy = {"base": "base", "resolver": {"kind": "dockerfile"}}
+        for operation in ("resolve", "refresh", "clean"):
+            with self.subTest(operation=operation):
+                result = image_resolver.resolve_policy(
+                    runtime, Path.cwd(), policy, {"base"}, operation=operation,
+                )
+                self.assertEqual("resolved@sha256:base", result["base"].reference)
+                runtime.bake.assert_called_with(
+                    Path.cwd(), {"base"}, operation=operation,
+                    declaration={"target": {"base": {"context": ".agents/sandbox"}}},
+                )
+        runtime.provider = "lima"
+        runtime.bake.reset_mock()
+        with self.assertRaisesRegex(image_resolver.ResolverError, "Lima-Docker"):
+            image_resolver.resolve_policy(runtime, Path.cwd(), policy, {"base"})
+        runtime.bake.assert_not_called()
+
     def test_project_and_installed_helper_resolvers_overlap(self):
         project_started = threading.Event()
         helper_started = threading.Event()

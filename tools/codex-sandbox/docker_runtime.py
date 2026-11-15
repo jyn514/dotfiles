@@ -451,9 +451,9 @@ class Docker(VMRuntime):
         repository = reference.split('@', 1)[0].rsplit(':', 1)[0] if ':' in reference.rsplit('/', 1)[-1] else reference.split('@', 1)[0]
         return repository + '@' + value
 
-    def bake(self, repo, targets, *, file=None, operation='resolve'):
+    def bake(self, repo, targets, *, declaration=None, file=None, operation='resolve'):
         from bake import resolve
-        return resolve(self, repo, targets, file=file, operation=operation)
+        return resolve(self, repo, targets, declaration=declaration, file=file, operation=operation)
 
     def run_builder(self, command, *, cwd=None, capture=True):
         """Return one builder's status, optionally capturing its image reference."""
