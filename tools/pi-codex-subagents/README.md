@@ -487,7 +487,9 @@ For source-backed native and guest regression commands, see [changed-core tests]
 ## Durable pause
 
 Use `/pause --exit` to save the parent and its children, then exit only after saving succeeds.
-Reopen the **same parent session file**, which starts paused, and run `/unpause`.
+Reopen the **same parent session file** and run `/unpause` to restore saved work.
+An idle parent saved without queued inputs, children, or pending completions unpauses automatically when reopened.
+Incomplete saves and uncertain replay state still require explicit recovery.
 `/resume` remains Pi's session picker.
 In RPC mode, `/pause --exit` may need a subsequent command or stdin EOF before the process exits; see [source-test limits](test/SOURCE-CORE.md#coverage-and-limits).
 

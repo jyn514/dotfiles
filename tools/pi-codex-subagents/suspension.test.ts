@@ -57,6 +57,67 @@ function fixture(writer?: typeof writeGroup) {
   };
 }
 
+test("reopened empty idle parent unpauses without submitting input", async () => {
+  const f = fixture();
+  let reopened: SuspensionCoordinator | undefined;
+  try {
+    await f.coordinator.pause(f.ctx);
+    f.coordinator.shutdown();
+    reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, () => ({}), () => f.root);
+    reopened.discover(f.ctx);
+    expect(reopened.resumeEmptyParent(f.ctx)).toBe(true);
+    expect(reopened.isPaused("parent")).toBe(false);
+    expect(f.read().phase).toBe("consumed");
+    expect(f.starts).toBe(0);
+    expect(reopened.resumeEmptyParent(f.ctx)).toBe(false);
+  } finally { reopened?.shutdown(); f.close(); }
+});
+
+test("automatic unpause retains the fence when consumption cannot be persisted", async () => {
+  const f = fixture();
+  let reopened: SuspensionCoordinator | undefined;
+  try {
+    await f.coordinator.pause(f.ctx);
+    f.coordinator.shutdown();
+    reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, () => ({}), () => f.root,
+      () => { throw new Error("disk full"); });
+    reopened.discover(f.ctx);
+    const resumes = f.events.filter(event => event === "resume").length;
+    expect(() => reopened!.resumeEmptyParent(f.ctx)).toThrow("disk full");
+    expect(reopened.isPaused("parent")).toBe(true);
+    expect(f.events.filter(event => event === "resume")).toHaveLength(resumes);
+    expect(f.read().phase).toBe("saved");
+  } finally { reopened?.shutdown(); f.close(); }
+});
+
+for (const condition of ["active", "pending", "child", "inventory", "mailbox", "uncertain", "incomplete"]) {
+  test(`automatic unpause retains ${condition} suspension`, async () => {
+    const f = fixture();
+    let reopened: SuspensionCoordinator | undefined;
+    try {
+      await f.coordinator.pause(f.ctx);
+      f.coordinator.shutdown();
+      const group = f.read();
+      if (condition === "active") group.parent.handoff.wasActive = true;
+      if (condition === "pending") {
+        group.parent.handoff.pending.deferred.push({ kind: "raw", text: "keep me" });
+        group.parent = snapshotHandoff(group.parent.handoff);
+      }
+      if (condition === "child") group.children.child = snapshot(f.sessionFile, "child");
+      if (condition === "inventory") group.inventoryComplete = false;
+      if (condition === "mailbox") group.completions.mailbox.push({ id: "completion" });
+      if (condition === "uncertain") group.parent.marker = "unknown";
+      if (condition === "incomplete") group.phase = "incomplete";
+      writeFileSync(f.groupFile, JSON.stringify(group));
+      reopened = new SuspensionCoordinator(f.pi, f.manager as unknown as AgentManager, () => ({}), () => f.root);
+      reopened.discover(f.ctx);
+      expect(reopened.resumeEmptyParent(f.ctx)).toBe(false);
+      expect(reopened.isPaused("parent")).toBe(true);
+      expect(f.starts).toBe(0);
+    } finally { reopened?.shutdown(); f.close(); }
+  });
+}
+
 test("restart state is captured by the live owner and retained across a reopened pause retry", async () => {
   const f = fixture();
   let reopened: SuspensionCoordinator | undefined;
@@ -849,7 +910,7 @@ sourceTest("real core: pending-only parent saves, reopens held, and idle unpause
   } finally { coordinator?.shutdown(); session?.dispose(); f.close(); rmSync(root, { recursive: true, force: true }); }
 }, 15000);
 
-sourceTest("production index controls save/reopen/unpause a real parent without persistent claims", async () => {
+sourceTest("production index automatically unpauses a reopened empty idle parent without provider input", async () => {
   const { default: extension } = await import("./index.js");
   const { fauxProvider, fauxAssistantMessage } = await import("@earendil-works/pi-ai/providers/faux");
   const { ModelRuntime, SessionManager, SettingsManager, createAgentSessionServices, createAgentSessionFromServices, createAgentSessionRuntime } = await import("@earendil-works/pi-coding-agent");
@@ -884,9 +945,7 @@ sourceTest("production index controls save/reopen/unpause a real parent without 
     expect(existsSync(claim)).toBe(false);
     runtime = await createAgentSessionRuntime(factory, { cwd: root, agentDir, sessionManager: SessionManager.open(sessionFile) });
     await runtime.session.bindExtensions({ mode: "rpc" });
-    expect(runtime.session.pauseState).toBe("paused");
-    await runtime.session.prompt("/pause --status");
-    await runtime.session.prompt("/unpause");
+    expect(runtime.session.pauseState).toBe("unpaused");
     expect(JSON.parse(readFileSync(file, "utf8")).phase).toBe("consumed");
     expect(existsSync(claim)).toBe(false);
     expect(calls).toBe(0);

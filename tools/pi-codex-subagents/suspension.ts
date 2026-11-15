@@ -150,6 +150,26 @@ export class SuspensionCoordinator {
     }
   }
 
+  /** Release a reopened, fully saved idle parent when there is no work to replay. */
+  resumeEmptyParent(ctx: any): boolean {
+    const group = this.group;
+    if (this.discoveryError || this.liveGeneration || !group || group.phase !== "saved"
+      || !group.inventoryComplete || group.requiredChildren.length || Object.keys(group.children).length
+      || group.completions.mailbox.length || group.completions.targets.length
+      || !group.parent || group.parent.handoff.wasActive || group.parent.items.length
+      || !["pending", "none"].includes(group.parent.marker)) return false;
+    this.validate(ctx);
+    group.phase = "consumed";
+    try { this.persist(); }
+    catch (error) {
+      if (!(error instanceof GroupPublicationUncertainError)) group.phase = "saved";
+      throw error;
+    }
+    this.manager.endPause(group.parentId);
+    this.pi.resume();
+    return true;
+  }
+
   private assertNativeCapabilities(ctx: ExtensionCommandContext): void {
     const missing = [
       ["ctx.handoff", ctx?.handoff], ["ctx.submitInput", ctx?.submitInput],

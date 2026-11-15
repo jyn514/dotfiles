@@ -480,6 +480,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     pi.registerTool(spawnAgentTool);
     await manager.ready();
     if (activeContext !== ctx) return;
+    try { suspension.resumeEmptyParent(ctx); }
+    catch (error) { ctx.ui?.notify?.(`Automatic unpause failed: ${error instanceof Error ? error.message : String(error)}`, "error"); }
     for (const entry of manager.listAgents(undefined, parentSessionId(ctx))) {
       if (entry.agent_status === "starting" || entry.agent_status === "running") activeAgents.add(entry.agent_name);
     }
