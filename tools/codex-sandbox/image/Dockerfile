@@ -23,10 +23,6 @@ FROM tool-deps AS bb-tool
 ARG BB_VERSION=1.13.219
 RUN install-agent-tools bb "${BB_VERSION}"
 
-FROM tool-deps AS uv-tool
-ARG UV_VERSION=0.9.10
-RUN install-agent-tools uv "${UV_VERSION}"
-
 FROM tool-deps AS gh-tool
 ARG GH_VERSION=2.76.1
 RUN install-agent-tools gh "${GH_VERSION}"
@@ -44,7 +40,6 @@ ARG TYPST_VERSION=0.15.1
 RUN install-agent-tools typst "${TYPST_VERSION}"
 
 FROM alpine:3.22 AS tools
-COPY --from=uv-tool /usr/local/bin/uv /usr/local/bin/uvx /opt/agent-tools/bin/
 COPY --from=bb-tool /usr/local/bin/bb /opt/agent-tools/libexec/bb
 COPY --from=gh-tool /usr/local/bin/gh /opt/agent-tools/bin/gh
 COPY --from=docker-tool /usr/local/bin/docker /opt/agent-tools/libexec/docker
