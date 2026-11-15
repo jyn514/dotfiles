@@ -15,6 +15,8 @@ case "$(uname -m)" in
 		buildx_arch=amd64
 		buildx_sha256=ae43fa08c796b44efc86d7a63c55f73f7c35f3101188dea7bf93bcd6f99577ba
 		typst_arch=x86_64
+		uv_arch=x86_64
+		uv_sha256=e614681a150d52446eb8f4cf34f90b5d42b609bd1f2615da049449d795bfe5b4
 		;;
 	aarch64|arm64)
 		bb_arch=aarch64
@@ -25,6 +27,8 @@ case "$(uname -m)" in
 		buildx_arch=arm64
 		buildx_sha256=d263ce31bd2c9e9210aaa2c7537c67802bccabcd342e4c9fe4907085ddb41aa5
 		typst_arch=aarch64
+		uv_arch=aarch64
+		uv_sha256=9dda17fe2261a16ce0d267617e5898b9678ba6c5f1c8528b7fe48d32d839f427
 		;;
 	*)
 		echo "Unsupported architecture: $(uname -m)" >&2
@@ -36,6 +40,18 @@ download_dir=$(mktemp -d)
 trap 'rm -rf "$download_dir"' EXIT HUP INT TERM
 
 case "$tool" in
+	uv)
+		# The static musl build also runs on glibc bases; the GNU build fails on Alpine.
+		target="${uv_arch}-unknown-linux-musl"
+		archive="uv-${target}.tar.gz"
+		curl -fsSL -o "$download_dir/$archive" \
+			"https://github.com/astral-sh/uv/releases/download/${version}/$archive"
+		printf '%s  %s\n' "$uv_sha256" "$download_dir/$archive" | sha256sum -c -
+		tar -xzf "$download_dir/$archive" --strip-components=1 -C /usr/local/bin \
+			"uv-${target}/uv" "uv-${target}/uvx"
+		uv --version
+		uvx --version
+		;;
 	bb)
 		archive="babashka-${version}-linux-${bb_arch}-static.tar.gz"
 		curl -fsSL -o "$download_dir/$archive" \

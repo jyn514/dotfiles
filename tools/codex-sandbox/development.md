@@ -15,6 +15,19 @@ The launcher keeps service ordering and concurrency, while `TicBrokerLaunch` kee
 Import the host owner from the sandbox tool directory; it has no standalone CLI.
 Owner-specific tests live in `tests/host_gateway_test.py`; launcher composition and real-stream tests remain in their existing integration suites.
 
+## Python bootstrap
+
+The shared agent image packages `uv` and `uvx` on PATH for every project, including projects without `.agents/sandbox`.
+The image installer uses checksum-verified static musl releases for both Alpine and glibc bases, on x86-64 and ARM64.
+The version lives in `image/Dockerfile`; update its checksums in `image/install-tools.sh` together with it.
+Project images do not need to install pip or a shared test environment.
+Create test environments under `$SANDBOX_WORK` with `uv venv`, then install the project's test requirements with `uv pip install --python ENV/bin/python`.
+Use the project's required Python version; Alpine's system Python may be newer than a project's supported dependencies.
+
+The existing image-runtime integration check creates an offline disposable environment using the image's system Python in both runtime variants.
+It runs under the final image user and fails if `uv`, `uvx`, or environment creation is unavailable.
+Run it through `dev/test --containers` against an admitted build engine; it is not part of the default unit suite.
+
 ## Guest work cleanup acceptance
 
 The default pytest discovery includes `tests/work_cleanup_test.py` for native JJ preservation, volume admission, and failed-cleanup recovery.

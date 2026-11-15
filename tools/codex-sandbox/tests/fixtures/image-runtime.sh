@@ -2,6 +2,10 @@
 set -eu
 probe_root=$(mktemp -d)
 tar -xf - -C "$probe_root"
+uv --version >/dev/null
+uvx --version >/dev/null
+uv venv --offline --no-python-downloads --python python3 "$probe_root/python-env"
+"$probe_root/python-env/bin/python" -c 'import sys; assert sys.prefix != sys.base_prefix'
 test -L /opt/agent-pi/standalone
 if [ -e /etc/alpine-release ]; then
     test ! -e /opt/agent-pi/standalone/pi
