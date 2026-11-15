@@ -5,6 +5,7 @@ import type { ExtensionAPI, MessageRenderer, SessionShutdownEvent, Theme } from 
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
+  SettingsManager,
   formatSize,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
@@ -655,7 +656,10 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
     catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); return; }
 
     while (true) {
-      const navigation = await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: any) => new SubagentPeekOverlay(tui, theme, info, done), {
+      const navigation = await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: any) => new SubagentPeekOverlay(tui, theme, info, done, {
+        settings: SettingsManager.inMemory(pi.getSettings()),
+        toolsExpanded: ctx.ui.getToolsExpanded(),
+      }), {
         overlay: true,
         overlayOptions: { anchor: "right-center", width: "45%", minWidth: 50, maxHeight: 60, margin: { right: 2, top: 2, bottom: 2 } },
       });

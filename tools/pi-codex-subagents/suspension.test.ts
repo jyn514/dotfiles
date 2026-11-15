@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, SessionHandoff } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, type ExtensionAPI, type ExtensionCommandContext, type SessionHandoff } from "@earendil-works/pi-coding-agent";
 import { parentScopeKey, type AgentManager } from "./core.js";
 import { snapshotHandoff } from "./handoff.js";
 import { GroupPublicationUncertainError, ParentScopeClaim, SuspensionCoordinator, writeGroup, type SuspensionGroup } from "./suspension.js";
@@ -373,7 +373,8 @@ test("read-only peek labels suspended work instead of a completed/done child", a
   const overlay = new SubagentPeekOverlay({ terminal: { rows: 30 }, requestRender() {} } as any,
     { fg: (_color: string, text: string) => text } as any,
     { id: "00000000-0000-4000-8000-000000000001", taskName: "held", sessionFile: f.sessionFile, cwd: f.root,
-      modelId: "faux", provider: "faux", status: "suspended" } as any, () => {});
+      modelId: "faux", provider: "faux", status: "suspended" } as any, () => {},
+    { settings: SettingsManager.inMemory(), toolsExpanded: false });
   try {
     const header = overlay.render(80)[0];
     expect(header).toContain("suspended");

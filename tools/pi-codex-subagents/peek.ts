@@ -1,4 +1,4 @@
-import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { SettingsManager, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   AssistantMessageComponent,
   createBashToolDefinition,
@@ -34,7 +34,6 @@ import {
 
 const TOOL_DEFINITION_FACTORIES = new Map<string, (cwd: string) => ToolDefinition>([
   ["bash", createBashToolDefinition],
-  ["edit", createEditToolDefinition],
   ["find", createFindToolDefinition],
   ["grep", createGrepToolDefinition],
   ["ls", createLsToolDefinition],
@@ -77,11 +76,13 @@ export class SubagentPeekOverlay {
   private cachedLines: string[] | null = null;
   private cachedWidth: number | null = null;
 
+  /** Use the parent's effective display settings captured when this viewer opens, not the child's configuration. */
   constructor(
     private readonly tui: TUI,
     private readonly theme: Theme,
     private readonly info: AgentInfo,
     private readonly done: (navigation?: "previous" | "next") => void,
+    private readonly display: { settings: SettingsManager; toolsExpanded: boolean },
   ) {
     this.sessionFile = info.sessionFile;
     this.cwd = info.cwd;
@@ -111,11 +112,11 @@ export class SubagentPeekOverlay {
     for (const message of context.messages) {
       if (message.role === "user") {
         const text = this.getUserText(message);
-        if (text) this.chatContainer.addChild(new UserMessageComponent(text, getMarkdownTheme()));
+        if (text) this.chatContainer.addChild(this.createUserComponent(text));
         continue;
       }
       if (message.role === "assistant") {
-        this.chatContainer.addChild(new AssistantMessageComponent(message, true, getMarkdownTheme()));
+        this.chatContainer.addChild(this.createAssistantComponent(message));
         for (const content of message.content) {
           if (content.type !== "toolCall") continue;
           const component = this.createToolComponent(content.name, content.id, content.arguments);
@@ -141,9 +142,37 @@ export class SubagentPeekOverlay {
     }
   }
 
+  private markdownTheme() {
+    return { ...getMarkdownTheme(), codeBlockIndent: this.display.settings.getCodeBlockIndent() };
+  }
+
+  private createUserComponent(text: string): UserMessageComponent {
+    const { settings } = this.display;
+    return new UserMessageComponent(text, this.markdownTheme(), settings.getOutputPad(), [], settings.getOutputPadY());
+  }
+
+  private createAssistantComponent(message?: AssistantMessage): AssistantMessageComponent {
+    const { settings } = this.display;
+    return new AssistantMessageComponent(
+      message, settings.getHideThinkingBlock(), this.markdownTheme(), undefined,
+      settings.getOutputPad(), [], settings.getOutputPadY(),
+    );
+  }
+
   private createToolComponent(name: string, id: string, args: any): ToolExecutionComponent {
-    const definition = TOOL_DEFINITION_FACTORIES.get(name)?.(this.cwd);
-    return new ToolExecutionComponent(name, id, args, {}, definition, this.tui, this.cwd);
+    const { settings, toolsExpanded } = this.display;
+    const definition = name === "edit"
+      ? createEditToolDefinition(this.cwd, { contextLines: settings.getEditContextLines() })
+      : TOOL_DEFINITION_FACTORIES.get(name)?.(this.cwd);
+    const component = new ToolExecutionComponent(name, id, args, {
+      showImages: settings.getShowImages(),
+      imageWidthCells: settings.getImageWidthCells(),
+      outputPad: settings.getOutputPad(),
+      outputPadY: settings.getOutputPadY(),
+      toolPreviewLines: settings.getToolPreviewLines(),
+    }, definition, this.tui, this.cwd);
+    component.setExpanded(toolsExpanded);
+    return component;
   }
 
   private getUserText(message: any): string {
@@ -190,7 +219,7 @@ export class SubagentPeekOverlay {
       this.status = event.status || "done";
       if (event.userMessage) {
         const text = this.getUserText(event.userMessage);
-        if (text) this.chatContainer.addChild(new UserMessageComponent(text, getMarkdownTheme()));
+        if (text) this.chatContainer.addChild(this.createUserComponent(text));
       }
       if (event.partialMessage) {
         const streamStatus: RpcAssistantStreamStatus = event.status === "streaming" || event.status === "calling"
@@ -198,7 +227,7 @@ export class SubagentPeekOverlay {
           : "thinking";
         this.assistantStream.resume(event.partialMessage, streamStatus, event.toolArguments);
         this.streamingMessage = this.assistantStream.message;
-        this.streamingComponent = new AssistantMessageComponent(undefined, true, getMarkdownTheme());
+        this.streamingComponent = this.createAssistantComponent();
         this.chatContainer.addChild(this.streamingComponent);
         this.streamingComponent.updateContent(this.streamingMessage!);
         this.syncToolComponentsFromMessage();
@@ -220,12 +249,12 @@ export class SubagentPeekOverlay {
     } else if (event.type === "message_start") {
       if (event.message?.role === "user") {
         const text = this.getUserText(event.message);
-        if (text) this.chatContainer.addChild(new UserMessageComponent(text, getMarkdownTheme()));
+        if (text) this.chatContainer.addChild(this.createUserComponent(text));
       } else if (event.message?.role === "assistant") {
         this.cleanupStreaming();
         this.assistantStream.start(event.message);
         this.streamingMessage = this.assistantStream.message;
-        this.streamingComponent = new AssistantMessageComponent(undefined, true, getMarkdownTheme());
+        this.streamingComponent = this.createAssistantComponent();
         this.chatContainer.addChild(this.streamingComponent);
         this.streamingComponent.updateContent(this.streamingMessage!);
         this.status = "thinking";
@@ -319,7 +348,7 @@ export class SubagentPeekOverlay {
       timestamp: Date.now(),
     };
     this.assistantStream.start(this.streamingMessage);
-    this.streamingComponent = new AssistantMessageComponent(undefined, true, getMarkdownTheme());
+    this.streamingComponent = this.createAssistantComponent();
     this.chatContainer.addChild(this.streamingComponent);
     this.streamingComponent.updateContent(this.streamingMessage);
   }
