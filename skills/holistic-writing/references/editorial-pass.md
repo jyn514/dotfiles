@@ -69,11 +69,18 @@ Do not invent confusion to justify a lesson.
 
 ### Show why one step leads to the next
 
-For a nontrivial mechanism, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
+For a mechanism or relationship, walk through a concrete case from its starting conditions through the relevant steps to the outcome.
+Explain why one step leads to the next.
+Use definitions and implementation details where they support that account.
+For a nontrivial design, explain the problem, show a concrete example or trace, then explain the solution and its invariant.
 Explain the property that makes a detail relevant, not just its name.
 For a loop, walk through one iteration: how does its end leave the condition for another?
-Numbered steps, source links, and “therefore” cannot supply a missing connection.
+Definitions, component tables, numbered steps, source links, and “therefore” cannot supply a missing connection.
 Compare the [property-and-consequence and feedback-loop examples](reading-examples.md#explain-what-the-detail-changes-for-the-reader) when facts remain disconnected.
+
+Do not infer a necessary conceptual distinction from separate implementation mechanisms.
+Explain overlapping roles, independent policies, and historical exceptions as they are.
+If an explanation fails, change how it develops the relationship rather than repeating the categories with new names.
 
 Develop a hypothesis's proposed mechanism without claiming confirmation.
 Keep observations distinguishable from the diagnosis so they remain useful if it changes.

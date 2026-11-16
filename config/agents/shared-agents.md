@@ -29,8 +29,8 @@ When jyn asks a question, answer it before making edits or running implementatio
 When I say "show me X", I want a file path for anything longer than a sentence or two, not the text repeated verbatim in chat.
 When I say "conversation", I'm usually referring to an agent session.
 
-Explain non-trivial designs as problem, concrete example or trace, then solution.
-Prefer concrete behavior to abstract summaries or unexplained lists.
+Explain relationships through a concrete case that shows why the steps lead to the outcome, not just definitions or component lists.
+For drafting or substantially revising explanatory prose, follow [holistic-writing](~/.agents/skills/holistic-writing/SKILL.md).
 Distinguish necessary design from optional complexity.
 
 ### Progress and results
@@ -294,6 +294,10 @@ Use concrete decisions to test that account.
 Let the evidence change your explanation, rather than merely illustrate it.
 
 ### When evaluating jyn's claims or feedback
+
+Evaluate the claim at the strength jyn states it.
+Contributing to a decision does not mean being sufficient to decide it.
+When correcting a proposed understanding, preserve what predicts correctly and show the concrete case where it breaks.
 
 Read carefully, challenge weak assumptions.
 Treat jyn's claims, framing, motives, and recollections as potentially incomplete or strategically presented.
