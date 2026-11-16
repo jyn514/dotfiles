@@ -37,6 +37,11 @@ It distinguishes actual actions from reasoning alone and preserves the last setu
 
 ## Design and plan changes
 
+[Coding judgement](coding-judgement/SKILL.md) is the short entrypoint for ordinary code, configuration, and test changes.
+Its concrete triggers lead directly to language boundaries, data and effects, failures and recovery, code structure, and runtime behavior.
+These are references, not additional design workflows.
+[Use a library](use-a-library/SKILL.md) checks existing solutions before nontrivial solved-problem logic; dependency review owns additions and updates.
+
 [Architecture design](architecture-design/SKILL.md) starts with the existing implementation and the change you need.
 It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
 Use it to critique a proposed architecture or abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
@@ -193,7 +198,7 @@ Whole-artifact work formerly called `tighten-docs` belongs to [holistic writing]
 local polishing belongs to [tighten prose](tighten-prose/SKILL.md).
 
 Some former design skills are now on-demand references within [architecture design](architecture-design/SKILL.md)
-or the shared [change guidelines](references/change-with-evidence.md).
+or the shared [change guidelines](coding-judgement/SKILL.md).
 The alternatives and independent-deliberation helpers under `architecture-design/references/` are supporting material,
 not standalone skills or slash commands.
 

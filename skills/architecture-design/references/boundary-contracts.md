@@ -53,6 +53,6 @@ Choose persistence, deduplication, or compensation only for a supported recovery
 ### Record the contract
 
 Name APIs across which ownership, identity, representation, or lifecycle assumptions must not leak.
-Apply [Compatibility](../../references/change-with-evidence.md#compatibility) to independently deployed or persisted contracts.
+Apply [Compatibility](../../references/code-structure.md#compatibility) to independently deployed or persisted contracts.
 Prefer falsifiable guarantees such as “X is the sole writer of Y,” with applicable non-goals.
 Surface ambiguity before implementation expands around it; record the contract, not a separate inventory or plan.

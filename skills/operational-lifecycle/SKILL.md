@@ -60,8 +60,8 @@ Check the authority of the resulting running process and privileged hooks, not j
 Resolve consequential unsettled choices before implementing dependent work, without adding a separate approval process for routine applications of established decisions.
 
 For independently updated components, persisted formats, migrations, or rollback, read [Deployment and evolution](../references/deployment-and-evolution.md).
-For interrupted or multi-step effects, use the existing [partial-failure and recovery checks](../architecture-design/references/design-risks.md#partial-failure-and-recovery).
-For identifying an unsuccessful operation and its safe next action, use [Diagnosability](../architecture-design/references/design-risks.md#diagnosability).
+For interrupted or multi-step effects, use the existing [partial-failure and recovery checks](../references/failures-and-recovery.md#partial-failure-and-recovery).
+For identifying an unsuccessful operation and its safe next action, use [Diagnosability](../references/failures-and-recovery.md#diagnosability).
 These are conditional checks, not a requirement to add compatibility layers, transactions, monitoring, or recovery machinery.
 
 ## Work through the recurring case

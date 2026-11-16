@@ -7,6 +7,8 @@ description: "Design, critique, or choose a bounded software architecture: subsy
 
 Choose responsibilities that meet the required outcome and earn their implementation and maintenance cost.
 Start with a caller-to-result path, not a proposed component diagram.
+Use [Coding judgement](../coding-judgement/SKILL.md) for the common coding obligations and every applicable topic reference before making design or critique decisions.
+This skill owns the architecture workflow, not a second coding checklist.
 For critique, report supported findings, consequences, and the smallest useful corrections; a review request does not authorize edits or require a replacement design.
 
 Use [operational lifecycle](../operational-lifecycle/SKILL.md) to establish installation, recurring operation, startup, update, and recovery workflows.
@@ -42,69 +44,12 @@ For example, an existing save-and-exit operation and verifiable saved record may
 They cannot acknowledge a specific save while the session continues running.
 Read the [contrasting examples](references/simplicity-examples.md) when a proposed mechanism obscures the simpler complete path.
 
-## Inspect the gap that remains
+## Decide whether boundary development is needed
 
-Let the unmet behavior determine what to inspect next.
-The aim is to find which responsibility must change, not to complete an inventory of surrounding systems.
-
-**Is a capability missing, or merely behind another interface?**
-For an intermediary, compare retaining, replacing, and bypassing it against required capabilities.
-Inspect the native interface and an analogous adapter before choosing what to forward or restrict.
-If the native interface is insufficient, compare a narrow extension with an adapter, including maintenance, packaging, and upstream delay.
-
-**Does work need a new owner, or does an existing owner already do it?**
-For repeated construction, follow constructors and factories into configuration, discovery, admission, process launches, and network requests.
-Locate existing owners and apply the [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms) before adding discovery or resources.
-This establishes what can be shared; its lifetime determines whether reuse is correct.
-
-**What must stay bound together, and what must refresh?**
-For resource bindings, establish the owner, lifetime, and replacement event, including later-loaded executable contents.
-Check producer and consumer deployment lifetimes; a shared checkout does not make updates atomic.
-Reuse selection for its established lifetime, retain fresh admission checks where required, and identify dynamic observations such as identity, credentials, and contents.
-For ordered discovery caches, read the [unsuccessful-lookup example](references/caching-examples.md); for reuse or equality changes, read [Reuse and invalidation](references/design-risks.md#reuse-and-invalidation).
-
-Inspect adjacent systems, generated contracts, issues, or prepared work when they can settle the choice or prevent duplication.
-Use `pain-axis` when recurring historical pain can change it.
-Read [Map design alternatives](references/alternatives.md) for genuine alternatives and [independent deliberation](references/deliberation.md) when independent elaboration and critique earn their cost.
-Use [complexity justification](../references/complexity-justification.md) for unclear necessity or variability, and the [non-narrowing check](../spec-review/references/non-narrowing.md) for possible requirement narrowing.
-
-## Principles
-
-A boundary is an interface across which caller intent, ownership, data, effects, or lifecycle must remain clear.
-These principles also apply to critique without a full design workflow.
-
-When possible, let one owner decide and pass its result across systems rather than making consumers decide again.
-Expose caller intent rather than callee details, separate policy from effects as declarative data, and group responsibilities by their reasons to change.
-Keep single-consumer policy with its domain owner.
-A coherent lifecycle or shared contract makes a stronger owner than convenient helpers.
-
-Prefer arrangements that work without ongoing intervention.
-Before adding coordination, retries, monitoring, or lifecycle state, compare changing ownership or batching to remove the interaction.
-Test whether removing a candidate's hardest part preserves required behavior, timing, coverage, and constraints.
-Simplicity does not authorize narrower requirements.
-
-## Develop and test the boundary
-
-Use the inspected gap to define what moves, what remains, and why.
-Identify data, effect owners, and dynamic state before naming components.
-Define allowed dependencies, forbidden reverse edges, API treatment, and any facade's purpose and removal condition.
-A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests.
-A cycle fails it unless an existing public adapter owns the composition.
-
-For an existing system, demonstrate a payoff: a removed cycle, dependency, broad fixture, or recurring coupled edit.
-Check previous separations when history could reveal a correctness constraint; churn alone is not pain.
-For greenfield work, derive seams from approved requirements and lifecycle ownership.
-Line count, symmetry, and hypothetical reuse do not establish a payoff.
-Consider deleting obsolete or lossy APIs rather than preserving facades that discard diagnostics, provenance, lifecycle state, or results.
-
-Use [boundary contracts](references/boundary-contracts.md) for changed or unresolved guarantees and [design-risk checks](references/design-risks.md#applicability) for the actual subsystem and boundary.
-For independently deployed components or persisted state, use the shared [deployment and evolution checks](../references/deployment-and-evolution.md).
-Carry settled contracts forward.
-Run the cheapest check that could disprove the seam: a dependency trace, load check, effect inventory, or focused caller/test probe.
-
-Keep consumer behavior stable during extraction.
-Separate schema redesign, message rewrites, new frameworks, and public API expansion unless explicitly in scope.
-When tests or fixtures move, use [test partitioning](../references/testing.md#partition-tests-alongside-an-extraction) to preserve owner-specific cases and assembled integration coverage.
+If the trace leaves unmet behavior requiring a choice about ownership, dependencies, interface guarantees, or resource lifetimes, read [Develop a boundary design](references/develop-boundaries.md) before developing or critiquing that choice.
+Its gap inspection, ownership principles, contract development, and focused checks are mandatory for applicable boundary work.
+Do not invent new boundaries when the existing path or a local change meets the outcome.
+Carry settled contracts forward, then assess the gain and report the result below.
 
 ## Decide whether the gain earns the cost
 

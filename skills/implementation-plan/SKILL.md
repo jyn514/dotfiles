@@ -48,7 +48,7 @@ Reference existing ownership, effects, representations, lifecycle, and compatibi
 Use the [boundary-contract questions](../architecture-design/references/boundary-contracts.md) for decision-changing gaps.
 
 Before treating preservation as required, cite its source and check whether affected consumers change and deploy together.
-Apply [Compatibility](../references/change-with-evidence.md#compatibility); unknown preservation requirements remain unresolved, not conservative defaults.
+Apply [Compatibility](../references/code-structure.md#compatibility); unknown preservation requirements remain unresolved, not conservative defaults.
 
 Trace affected setup, error, cancellation, cleanup, concurrency, shutdown, and consumer-specific transitions without reopening unchanged behavior.
 For example, suppose an export must not publish a file after cancellation.

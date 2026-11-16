@@ -100,7 +100,7 @@ Reject changes whose improvement is smaller than ordinary run-to-run variation u
 ## Implement and verify
 
 For diagnosis-only requests, report the measured cause and remaining uncertainty; do not make a change merely to complete this workflow.
-When implementation is authorized, follow the repository change guidelines and `change-with-evidence`.
+When implementation is authorized, follow the repository change guidelines and `coding-judgement`.
 Preserve startup cancellation, partial-failure cleanup, shared-session ownership, endpoint isolation, and terminal ownership unless the user explicitly changes those requirements.
 Do not infer a security or lifecycle requirement from architecture alone; find its documented owner or history.
 

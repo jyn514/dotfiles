@@ -101,7 +101,7 @@ class AgentSkillsPackageTest(unittest.TestCase):
     def test_package_readme_relocates_only_supported_inline_links(self) -> None:
         relocate = runpy.run_path(str(ROOT / "dev/publish-skills"))["package_readme"]
         source = """[Skill](property-based-testing/SKILL.md)
-[Reference](references/change-with-evidence.md#example)
+[Reference](references/code-structure.md#example)
 [Same page](#example) [External](https://example.com/example.md)
 [Protocol relative](//example.com/example.md) [Absolute](/example.md)
 [Mail](mailto:example.md) [Reference link][skill]
@@ -121,8 +121,8 @@ class AgentSkillsPackageTest(unittest.TestCase):
             "[Skill](property-based-testing/SKILL.md)",
             "[Skill](skills/property-based-testing/SKILL.md)",
         ).replace(
-            "[Reference](references/change-with-evidence.md#example)",
-            "[Reference](skills/references/change-with-evidence.md#example)",
+            "[Reference](references/code-structure.md#example)",
+            "[Reference](skills/references/code-structure.md#example)",
         ).replace(
             "[After code](mutation-testing/README.md)",
             "[After code](skills/mutation-testing/README.md)",
@@ -166,7 +166,7 @@ class AgentSkillsPackageTest(unittest.TestCase):
             self.assertTrue(staged["has_claude_plugin"])
             self.assertTrue(staged["has_claude_marketplace"])
             self.assertTrue(staged["has_skills"])
-            self.assertIn("skills/references/change-with-evidence.md", staged["reference_files"])
+            self.assertIn("skills/references/code-structure.md", staged["reference_files"])
             self.assertEqual(staged["reference_files"], {
                 str(path.relative_to(ROOT)): path.read_text(encoding="utf-8")
                 for path in (ROOT / "skills").rglob("references/*.md")
@@ -208,6 +208,11 @@ class AgentSkillsPackageTest(unittest.TestCase):
                 files = {member.name for member in archive.getmembers() if member.isfile()}
                 readme = archive.extractfile("package/README.md").read().decode("utf-8")
                 self.assertEqual(source, archive.extractfile("package/skills/README.md").read())
+                coding_skill = "skills/coding-judgement/SKILL.md"
+                self.assertEqual((ROOT / coding_skill).read_bytes(),
+                                 archive.extractfile(f"package/{coding_skill}").read())
+                self.assertNotIn("package/skills/references/change-with-evidence.md", files)
+                self.assertIn("package/skills/architecture-design/references/develop-boundaries.md", files)
                 links = re.findall(r"\]\(([^)]+)\)", readme)
                 local_links = [link for link in links if not link.startswith(("#", "https://"))]
                 self.assertTrue(local_links)

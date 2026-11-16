@@ -218,8 +218,8 @@ Before editing documentation, prose source, or agent instructions, or drafting G
 ## Writing code
 
 Before designing, implementing, or reviewing code, configuration, or tests, read
-[Change with evidence](~/.agents/skills/references/change-with-evidence.md) for language separation,
-compatibility, single authority, CLI output, and API guarantees.
+[Coding judgement](~/.agents/skills/coding-judgement/SKILL.md), the short coding entrypoint,
+and follow its concrete topic triggers before the relevant implementation decisions.
 
 ## Jujutsu and commits
 

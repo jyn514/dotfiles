@@ -103,7 +103,7 @@ Use [delegation](../delegation/SKILL.md) for shared responsibility, evidence han
 Builders and QA use these companion procedures for implementation when their conditions apply.
 Executive acceptance bookkeeping does not transfer their checks or completion audits to the executive:
 
-- Use [change guidelines](../references/change-with-evidence.md#design-choices) for unresolved modeling, interface, ownership, or invariant decisions, and [testing guidance](../references/testing.md) for test-strategy choices.
+- Use [change guidelines](../coding-judgement/SKILL.md#choose-guidance-at-the-decision) for unresolved modeling, interface, ownership, or invariant decisions, and [testing guidance](../references/testing.md) for test-strategy choices.
   For an established pattern, follow the surrounding code and tests without another design procedure.
 - [Review evidence standards](../references/review-evidence.md) distinguish local/component checks, integration, and required real-input evidence.
   Consult them for milestone readiness; run the full audit only after substantial owned implementation is complete.

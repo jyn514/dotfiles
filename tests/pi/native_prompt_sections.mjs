@@ -536,7 +536,7 @@ test("native prompt expands shared instructions but reads task evidence only exp
     if (entry.defaults) defaults.push(entry);
     for (const [destination, spec] of Object.entries(entry.link ?? {})) {
       assert.notEqual(destination, "$HOME/.agents/change-with-evidence.md", "no new top-level link");
-      assert.notEqual(destination, "$HOME/.agents/skills/references/change-with-evidence.md", "no individual link");
+      assert.notEqual(destination, "$HOME/.agents/skills/coding-judgement/SKILL.md", "no individual link");
       if (!destinations.includes(destination)) continue;
       assert.equal(links[destination], undefined, "one authority per installed role");
       links[destination] = spec;
@@ -557,7 +557,7 @@ test("native prompt expands shared instructions but reads task evidence only exp
   await copyFile(join(repository, "config/pi-agent/AGENTS.md"), instructionsPath);
   const client = await readFile(instructionsPath, "utf8");
   const shared = await readFile(join(home, ".agents/shared.md"), "utf8");
-  const routes = [...shared.matchAll(/\[Change with evidence\]\(([^)]+)\)/g)];
+  const routes = [...shared.matchAll(/\[Coding judgement\]\(([^)]+)\)/g)];
   const referenceTargets = new Set(routes.map(([, route]) => {
     assert.ok(route.startsWith("~/"), "task references address the installed HOME");
     return fileURLToPath(new URL(route.slice(2), pathToFileURL(`${home}/`)));
@@ -566,8 +566,9 @@ test("native prompt expands shared instructions but reads task evidence only exp
   const [referencePath] = referenceTargets;
   assert.ok(referencePath.startsWith(`${skillsPath}/`), "task reference uses the whole-directory skills installation");
   const reference = await readFile(referencePath, "utf8");
-  assert.ok(!reference.startsWith("---"), "plain Markdown reference has no skill frontmatter");
-  const referenceParagraphs = reference.trim().split(/\n\s*\n/)
+  assert.ok(reference.startsWith("---\nname: coding-judgement\n"), "coding entrypoint is a skill");
+  const referenceBody = reference.replace(/^---\n[\s\S]*?\n---\n/, "");
+  const referenceParagraphs = referenceBody.trim().split(/\n\s*\n/)
     .filter((paragraph) => !paragraph.startsWith("#"));
   assert.ok(referenceParagraphs.length > 0, "reference must contain task rules");
   const faux = fauxProvider({ provider: "native-evidence-route", api: "anthropic-messages" });
@@ -581,7 +582,7 @@ test("native prompt expands shared instructions but reads task evidence only exp
   faux.setResponses([capture, (context) => {
     requests.push({ messages: JSON.parse(JSON.stringify(context.messages)) });
     return fauxAssistantMessage([fauxToolCall("read", { path: referencePath })], { stopReason: "toolUse" });
-  }, capture]);
+  }, capture, capture, capture]);
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
   const modelRuntime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(), modelsPath: null,
@@ -601,7 +602,9 @@ test("native prompt expands shared instructions but reads task evidence only exp
   assert.ok(skillMetadata.length > 0, "whole skills directory is actually scanned");
   assert.ok(skillMetadata.every((skill) => !skill.filePath.includes("/references/")),
     "references must not become startup skill metadata");
-  assert.ok(!JSON.stringify(loader.getSkills()).includes(reference.trim()), "reference body is not metadata");
+  assert.equal(skillMetadata.filter((skill) => skill.name === "coding-judgement").length, 1);
+  assert.equal(skillMetadata.filter((skill) => skill.name === "change-with-evidence").length, 0);
+  assert.ok(!JSON.stringify(loader.getSkills()).includes(referenceBody.trim()), "skill body is not metadata");
   const { session, extensionsResult } = await createAgentSession({
     cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
     sessionManager: SessionManager.inMemory(cwd), model: faux.getModel(), tools: ["read"],
@@ -618,12 +621,26 @@ test("native prompt expands shared instructions but reads task evidence only exp
     assert.ok(!prepared.includes(paragraph), "task reference body must not enter the startup prompt");
   }
   assert.equal(session.messages.some((message) => message.role === "toolResult"), false);
-  await session.prompt("Explicitly read the Change with evidence reference now.");
+  await session.prompt("Explicitly read the Coding judgement reference now.");
   assert.equal(requests.length, 3, "the explicit read and its result reach the offline provider");
   const readResult = requests[2].messages.find((message) => message.role === "toolResult" && message.toolName === "read");
   assert.ok(readResult, "the real native read tool returns the installed reference");
   assert.equal(readResult.isError, false);
   assert.ok(readResult.content.some((block) => block.type === "text" && block.text.includes(reference.trim())));
+  await session.prompt("/skill:coding-judgement Rename a local variable.");
+  assert.equal(requests.length, 4);
+  const codingInvocation = requests[3].messages.filter((message) => message.role === "user").at(-1);
+  assert.ok(JSON.stringify(codingInvocation).includes(JSON.stringify(referenceBody.trim()).slice(1, -1)),
+    "explicit coding invocation loads the common core and router");
+  const architecture = await readFile(join(skillsPath, "architecture-design/SKILL.md"), "utf8");
+  const architectureBody = architecture.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+  await session.prompt("/skill:architecture-design Assess this subsystem boundary.");
+  assert.equal(requests.length, 5);
+  const architectureInvocation = requests[4].messages.filter((message) => message.role === "user").at(-1);
+  assert.ok(JSON.stringify(architectureInvocation).includes(JSON.stringify(architectureBody).slice(1, -1)),
+    "explicit architecture invocation loads its workflow and coding dependency");
+  assert.ok(!JSON.stringify(architectureInvocation).includes("## Develop and test the boundary"),
+    "boundary development remains conditional, not command-expanded");
   for (const request of requests) {
     for (const system of systems(request)) {
       assert.ok(!getSystemMessageText(system).includes(reference.trim()), "explicit reading must not auto-include the body");

@@ -3,7 +3,7 @@
 Use these checks when components update independently, persisted state outlives code, or live work can survive a deployment.
 They apply to architecture decisions and operator workflows; they do not require support for version combinations outside the task's requirements.
 
-Apply [Compatibility](change-with-evidence.md#compatibility) to establish what deploys together, persists, or upgrades independently.
+Apply [Compatibility](code-structure.md#compatibility) to establish what deploys together, persists, or upgrades independently.
 Trace required old/new pairs and persisted-data transitions through release order, interrupted migration, and rollback where applicable.
 Reverting code may not undo data changes.
 Name rollout or migration decisions needed to preserve data or authority before endorsing the boundary; mixed-version support needs an actual requirement.

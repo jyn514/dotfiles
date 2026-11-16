@@ -47,7 +47,7 @@ Acceptance means the resumed result contains the same records as an uninterrupte
 Check that the specification supports this expected result; an agent-proposed scenario cannot add a requirement the governing decisions omit.
 The scenario tests the outcome without requiring a particular storage format or checkpoint implementation.
 
-For a concrete lifecycle, effect, or failure question, consult the relevant [design-risk check](../architecture-design/references/design-risks.md#applicability).
+For a concrete lifecycle, effect, or failure question, choose the applicable [implementation contract reference](../coding-judgement/SKILL.md#choose-guidance-at-the-decision); reading it does not start an architecture workflow.
 Match it to the contract and maturity; do not start a separate design workflow.
 For requirements and implementation specifications, apply the [non-narrowing check](references/non-narrowing.md): downstream agreement can conceal a shared restriction unsupported upstream.
 

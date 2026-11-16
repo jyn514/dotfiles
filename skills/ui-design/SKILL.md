@@ -23,7 +23,7 @@ For a new surface, inspect adjacent screens or the selected design system before
 
 Identify what the task must preserve: routes, shortcuts, fields, legal text, analytics semantics, accessibility, and other external contracts.
 Check test selectors and callers when component structure changes; preserve behavior rather than freezing incidental markup.
-Apply the [shared change guidelines](../references/change-with-evidence.md) to implementation and dependency choices.
+Apply the [shared change guidelines](../coding-judgement/SKILL.md) to implementation and dependency choices.
 
 ## State the basis for material choices
 

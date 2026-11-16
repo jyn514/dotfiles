@@ -15,7 +15,7 @@ from urllib.parse import urldefrag
 ROOT = Path(__file__).resolve().parents[2]
 SHARED = "$HOME/.agents/shared.md"
 SKILLS = "$HOME/.agents/skills"
-REFERENCE = "$HOME/.agents/skills/references/change-with-evidence.md"
+REFERENCE = "$HOME/.agents/skills/coding-judgement/SKILL.md"
 TOOL_REFERENCE = "$HOME/.agents/skills/references/tool-use.md"
 
 
@@ -72,7 +72,7 @@ class AgentInstructionTests(unittest.TestCase):
     def routed_reference(self) -> Path:
         shared = self.installed(SHARED).read_text()
         routes = {urldefrag(route)[0] for route in
-                  re.findall(r"\[Change with evidence\]\(([^)]+)\)", shared)}
+                  re.findall(r"\[Coding judgement\]\(([^)]+)\)", shared)}
         self.assertEqual(1, len(routes), "reference routes must use one installed authority")
         route = next(iter(routes))
         self.assertTrue(route.startswith("~/"), "route must address the installed HOME")
@@ -113,10 +113,11 @@ class AgentInstructionTests(unittest.TestCase):
                 if source.is_file():
                     self.assertEqual(source.read_bytes(), installed.read_bytes())
         self.assertEqual(self.installed(REFERENCE), self.routed_reference())
-        reference = self.sources[SKILLS] / "references/change-with-evidence.md"
+        reference = self.sources[SKILLS] / "coding-judgement/SKILL.md"
         self.assertEqual(reference.read_bytes(), self.routed_reference().read_bytes())
         self.assertFalse(self.routed_reference().is_symlink(), "no individual reference link")
-        self.assertFalse(reference.read_text().startswith("---"), "plain Markdown, not a skill")
+        self.assertTrue(reference.read_text().startswith("---\nname: coding-judgement\n"),
+                        "coding entrypoint is a discoverable skill")
         tool_reference = self.sources[SKILLS] / "references/tool-use.md"
         self.assertEqual(self.installed(TOOL_REFERENCE), self.routed_tool_reference())
         self.assertEqual(tool_reference.read_bytes(), self.routed_tool_reference().read_bytes())
@@ -127,7 +128,7 @@ class AgentInstructionTests(unittest.TestCase):
         shared_before = self.installed(SHARED).read_bytes()
         manifest_before = self.config.read_bytes()
         skills_link_before = os.readlink(self.installed(SKILLS))
-        reference = self.sources[SKILLS] / "references/change-with-evidence.md"
+        reference = self.sources[SKILLS] / "coding-judgement/SKILL.md"
         updated = reference.read_bytes() + b"\nTemporary authoritative reference revision.\n"
         reference.write_bytes(updated)
         self.assertEqual(updated, self.routed_reference().read_bytes(), "content edits propagate without reinstall")
@@ -138,7 +139,7 @@ class AgentInstructionTests(unittest.TestCase):
         # installed role and the shared client's Markdown route stay stable.
         replacement = self.repository / "relocated-skills"
         shutil.copytree(self.sources[SKILLS], replacement)
-        replacement_reference = replacement / "references/change-with-evidence.md"
+        replacement_reference = replacement / "coding-judgement/SKILL.md"
         replacement_reference.write_bytes(updated + b"Relocated authoritative skills source.\n")
         spec = self.configuration[-1]["link"][SKILLS]
         if isinstance(spec, str):

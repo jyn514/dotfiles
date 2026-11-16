@@ -1688,7 +1688,7 @@ class CodexSandboxTest(unittest.TestCase):
         source = self.root / "tracked-skills"
         shutil.copytree(ROOT / "skills", source)
         skills.symlink_to(source, target_is_directory=True)
-        relative_reference = Path("references/change-with-evidence.md")
+        relative_reference = Path("coding-judgement/SKILL.md")
         reference = source / relative_reference
         self.assertEqual((ROOT / "skills" / relative_reference).read_bytes(), reference.read_bytes())
 
@@ -1709,7 +1709,7 @@ class CodexSandboxTest(unittest.TestCase):
         mount = f"type=bind,src={source},dst=/home/codex/.agents/skills"
         self.assertIn(mount, self.final_run())
         self.assertNotIn(mount + ",readonly", self.final_run())
-        self.assertFalse(any("change-with-evidence.md" in argument for argument in self.final_run()),
+        self.assertFalse(any("coding-judgement/SKILL.md" in argument for argument in self.final_run()),
                          "the existing whole-directory mount carries references, not a new file mount")
         # The fake runtime proves mount selection, not a real guest read. Inspect
         # its live bind source directly: no staged copy or launcher rerun needed.

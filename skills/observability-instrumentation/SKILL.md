@@ -22,7 +22,7 @@ Logs can explain individual events; metrics can show rates or distributions acro
 For a single-process batch task, a completion or failure log with a reason and a way to find that run may answer the operator's question without metrics or tracing.
 For a request crossing services, if logs cannot show which hop stalls, propagated trace context and spans around those hops may justify tracing; verify that the operator can actually inspect the resulting trace.
 Do not add correlation fields, structured formats, or telemetry types merely because the example uses them.
-For human-facing CLI output, follow the [logging guidance](../references/change-with-evidence.md#logging); operational telemetry need not replace readable output.
+For human-facing CLI output, follow the [logging guidance](../references/failures-and-recovery.md#logging); operational telemetry need not replace readable output.
 
 ## Make the chosen signals usable
 

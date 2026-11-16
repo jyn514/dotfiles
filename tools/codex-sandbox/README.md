@@ -218,8 +218,9 @@ Guest visibility depends on how the resource is exposed:
   Start a fresh sandbox to add this mount; `/reload` alone does not expose it to an existing worker.
 
 Put on-demand guidance under the existing skills directory when it should remain
-live, such as `~/.agents/skills/references/change-with-evidence.md`. Plain reference
-files do not need skill registration or an additional mount.
+live, such as `~/.agents/skills/coding-judgement/SKILL.md`.
+The skill catalog exposes its description, while the body loads on demand.
+Plain reference files do not need skill registration or an additional mount.
 
 After changing an instruction route, reload host instructions, confirm guest
 routing is active, and use the agent's guest `read` tool on the advertised path.

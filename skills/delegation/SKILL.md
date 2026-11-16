@@ -161,7 +161,7 @@ Supply the observed mismatch and installation paths so the worker can compare on
 If supported setup recreates the mismatch, fixing its source may be necessary; leftover state from a one-time operation does not establish a need for persistent automation.
 A required host operation that a worker cannot execute can return as a command rather than become a new guest-writable mechanism.
 
-When an assignment would add a runtime resource or lifecycle owner, include the dispositions required by the [runtime-resource reuse check](../references/change-with-evidence.md#justify-new-mechanisms).
+When an assignment would add a runtime resource or lifecycle owner, include the dispositions required by the [runtime-resource reuse check](../references/code-structure.md#justify-new-mechanisms).
 If the comparison is missing, assign bounded inspection rather than encode the new resource as a settled choice.
 For full-file coverage, specify bounded read calls and continue from the last line actually returned, not the requested end of a truncated range.
 Finish retrievable gaps before returning; report exact unread ranges and the blocker when access or tool failure prevents completion.
