@@ -1,6 +1,6 @@
 ---
 name: behavioral-testing
-description: Create and minimize behavioral tests of AI agents. Use when reproducing agent failures, building evaluations of agent decisions or actions, or reducing a behavioral reproducer while preserving its measured outcome. Covers repeatability and nearby controls. Not for ordinary application unit tests, software crash reduction, conversation summaries, or textual skill review without behavioral trials.
+description: Create and minimize behavioral tests of AI agents. Use when reproducing agent failures, building evaluations of agent decisions or actions, or reducing a behavioral reproducer while preserving its measured outcome. Covers repeatability and positive/negative cases. Not for ordinary application unit tests, software crash reduction, conversation summaries, or textual skill review without behavioral trials.
 ---
 
 # Behavioral testing
@@ -26,12 +26,12 @@ Complaints, snippets, quoted histories, and retrospective accounts are leads, no
 Establish the requirements, permission changes, and information available at the choice.
 Check the actual action and result against those requirements, not the agent's account.
 What evidence should have changed its inference?
-Choose an observable outcome distinguishing the violation from a legitimate alternative, and pair it with a nearby control.
+Choose an observable outcome distinguishing the violation from a legitimate alternative, and pair it with a nearby negative case.
 
 Literal test values can express a fixed contract or synthetic input; copying mutable configuration into another consumer tests a different choice.
 Updating obsolete specification text can be correct; deleting a requirement because implementation lacks it is different.
 Retrying a late producer can help; waiting for a representation it never creates cannot.
-These distinctions produce controls, not blanket judgments about literals, documentation edits, or retries.
+Use these distinctions to choose negative cases, rather than making blanket judgments about literals, documentation edits, or retries.
 
 Match the starting state to the claim.
 Testing whether an agent introduces literal assertions from scratch requires a starting state without a suite supplying them.
@@ -44,7 +44,7 @@ For new evaluations, prefer local files, small interfaces, and controlled comman
 Two configurations sharing an installer can test whether a repository-local dependency request changes only that repository, without a real image build.
 That does not reproduce the historical incident.
 Treat the fixture as a hypothesis until it reproduces through the assembled path.
-Establish one representative case and control before expanding the collection.
+Establish one positive/negative pair, as defined in the trial protocol, before expanding the collection.
 
 ## Define what counts
 
@@ -102,7 +102,7 @@ Separate expected worker errors from authentication, transport, initialization, 
 Retain invalid-run evidence and fix infrastructure before drawing behavioral conclusions.
 Invalidity establishes neither reproduction nor correct behavior.
 
-Score the baseline and nearby control against the criterion.
+Score both cases under the baseline instructions against their expected behavior.
 For a fresh evaluation, no observed failure is a valid result: report it and finish.
 For reproduction, report an unmet repeatability check as unreproduced rather than weakening the criterion.
 Minimize only after failure meets both criterion and repeatability check.
@@ -139,7 +139,8 @@ Name untested dimensions; a bounded search establishes no global minimum.
 ## Leave a reproducible result
 
 Provide a runnable entry point and fixture with model/settings, effective instructions, tool behavior, and state identity.
-Preserve baseline, controls, reduction lineage, valid/invalid status, raw action evidence, and counts—including unsuccessful samples.
+Preserve baseline conditions, positive and negative cases, reduction lineage, valid/invalid status, raw action evidence, and counts.
+Include unsuccessful samples.
 Record retained changes separately from transient edits and completion claims.
 
 Distinguish historical observations, fresh original-baseline trials, and derived-fixture trials.

@@ -10,10 +10,20 @@ State the question being tested and what observations could change the answer.
 Distinguish what is being evaluated from its surrounding setup.
 Name what may vary and what must remain fixed; simplifying the fixture must not silently change that boundary.
 
+Prefer an available real task and system before inventing substitutes.
+First ask whether the actual question and existing checkout or service suffice.
+Use synthetic fixtures or extra evaluation machinery when needed to exercise the claim, isolate effects, or minimize a demonstrated failure.
+
 For example, suppose a trial asks whether a compiler-reporting agent recommends against filing a crash already fixed on a newer toolchain.
 A small standalone Rust input compiled with prebuilt toolchains can avoid a full Rust checkout and compiler build while preserving that decision.
 Replacing it with a CSV-encoding bug in a Rust application changes the owner of the defect: correctly routing the application bug away from Rust does not exercise the intended compiler-reporting decision.
 Keeping the skill text, implementation language, and expected recommendation unchanged does not preserve the experiment.
+
+Preserve normal agent tools, skills, extensions, context, and native completion delivery by default.
+Do not strip capabilities merely to simplify measurement; change them when they are the variable under test or part of a scoped reduction.
+Removing tools can force extra delegation; manual result bridging can introduce pauses absent from the real workflow.
+If isolation changes capabilities or result delivery, record the differences.
+Do not attribute behavior caused by those changes to the guidance under test.
 
 Do not turn an action being measured into a setup requirement.
 For example, when testing whether an agent chooses an available tool, preserve availability but leave the choice to the agent.
@@ -22,10 +32,12 @@ When testing how it interprets a supplied tool result, that result belongs in th
 Distinguish a useful answer, a changed research action, and reliable compliance; they require different evidence.
 Use the trial criteria to construct and interpret it; do not add a separate scoring rubric unless requested.
 
-For a failure-driven comparison, begin with the failure task and a nearby control before adding variants or domains.
+Pair a positive case where the behavior under test is needed with a nearby negative case where it would be unnecessary or wrong.
+Positive and negative describe whether the behavior is appropriate, not whether the response should succeed or fail.
+For a failure-driven comparison, use the failure task as the positive case before adding variants or domains.
 For a fresh paired comparison, run the baseline first.
 Treat the fixture as a hypothesis until it reaches the intended decision through the assembled path.
-Establish one representative case and control before expanding the collection; passing setup and producing an answer are not enough.
+Establish one positive/negative pair before expanding the collection; passing setup and producing an answer are not enough.
 
 If the baseline does not reproduce a failure, do not credit the revision with fixing it.
 Choose one of these outcomes:
@@ -39,6 +51,9 @@ When it depends on transfer, add a task outside the originating domain instead.
 Repetition does not remove confounding from changing retrieval results, task state, or instruction exposure.
 
 ## No leading questions
+
+Do not announce the evaluation or disclose its criteria to the agent under test.
+Keep evaluation framing out of model-visible setup, including system preambles, user prompts, tool descriptions, and fixture files.
 
 When testing judgment under ambiguity, give a realistic task rather than a question that names the intended distinction.
 Apply this to imperatives and fixture helpers too: “check this archive” supplies the inspection task, and a script that compares toolchains supplies the comparison decision.
@@ -100,8 +115,7 @@ Label that substitution and limit the conclusion; it does not test deployment or
 
 When observing ongoing work, inspect the existing transcript, artifacts, and ordinary completion events.
 
-Do not announce the evaluation or disclose its criteria to the observed agent.
-Do not request evaluation-specific reports from that agent.
+Do not request evaluation-specific reports from the observed agent.
 When a result is not yet available, wait for normal completion evidence rather than asking the observed agent to produce monitoring callbacks.
 
 When the comparison assumes loaded instructions, deliver the change and request loading if needed to establish that condition.
@@ -162,12 +176,12 @@ A separately rendered debug request is not necessarily the request actually subm
 Inspect the full relevant continuation, including earlier responses and actions at the tested decision.
 An interface that shows only the latest final response may hide those earlier outputs.
 
-Preserve normal coordinator tools and native completion delivery when assessing delegation, coordination, or latency.
-Removing tools can force extra delegation; manual result bridging can introduce pauses absent from the real workflow.
-If isolation changes either, record the differences and do not attribute the resulting delegation or waiting to the guidance under test.
-
 Before paired trials, fix the comparison question, outcome criteria, and conditions that will be held constant.
 Vary only what the comparison is intended to test.
+Distinguish the original baseline from a preceding revision used as an incremental control.
+A rerun keeps the same reference condition unless the comparison question changes.
+If a previous treatment becomes the new control, state that change before execution.
+Use stable version names in reports rather than “old” and “new,” and identify which versions each result compares.
 For a prompt-only comparison, replace the original prompt at the same point in otherwise unchanged context.
 Appending a corrective message, removing prior investigation, or moving evidence earlier tests a different intervention.
 Disclosing those differences does not restore comparability.
@@ -182,9 +196,9 @@ Search queries and page-open records show research targeting, not everything ret
 An independent post-run source check can support an answer's factual claims, but cannot establish that the worker performed the same investigation.
 
 For a failure-driven revision, use the inputs available at the recorded failure decision point.
-Include a nearby control that should retain its existing path.
+Include a nearby negative case that should retain its existing path.
 For example, pair a decision about replacing custom profiling instrumentation with an obvious mechanical repair that needs no redesign.
-Test whether the new guidance changes the failure decision without adding unnecessary steps to the control.
+Test whether the new guidance changes the failure decision without adding unnecessary steps to the negative case.
 
 ## Example: revising an artifact-writing skill
 
@@ -192,15 +206,15 @@ Suppose an introductory README task requires a whole-document reading-quality sc
 Choose a difficult README and a nearby case that the previous skill handled well before generating a large batch.
 The new draft may explain one mechanism through a satisfying example while the remaining configuration inventory still makes the complete reading experience a 2.
 That is a useful passage-level improvement, not acceptance of the complete artifact.
-Generate and judge the control again under the revised skill; its saved earlier 3 does not establish what the revised skill produces.
-If the new control is a 2, withhold a broad success claim and inspect the actual prose before expanding the batch.
+Generate and judge the previously successful case again under the revised skill; its saved earlier 3 does not establish the new result.
+If the new answer is a 2, withhold a broad success claim and inspect the actual prose before expanding the batch.
 One generation does not establish that the skill caused the difference rather than sampling variation.
 
 Keep three comparisons distinct:
 
 - The original document establishes whether the revision improves on what the user already had.
 - An earlier skill's generated output preserves a usable partial result and evidence about that earlier condition.
-- A freshly generated control tests the revised skill on a previously successful task.
+- A freshly generated answer on a previously successful task tests whether the revised skill preserves that success.
 
 Without the original-document comparison, report acceptable candidate quality rather than demonstrated improvement over the original.
 A skill change does not erase an earlier useful artifact, but its score cannot stand in for newly required evidence about the changed skill.
@@ -212,6 +226,8 @@ A fresh reader can provide another perspective; neither fresh agents nor a fixed
 Record feedback supplied between passes so you do not attribute improvement to repetition or the skill alone.
 
 ## Report scope and cost
+
+Lead with the exact comparison performed, and distinguish within-round differences from changes observed across rounds.
 
 Retain available raw events and tool results, including exit statuses, rather than keeping only a rendered summary.
 For CLI trials, retain the stdout event stream and stderr separately, including partial output from failed runs.
