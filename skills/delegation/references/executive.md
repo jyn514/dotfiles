@@ -42,6 +42,9 @@ As independent work finishes and remaining tasks converge on the same shared cor
 Keep one technical integration owner and required independent QA rather than parallel approval rounds across every group.
 Have affected owners answer bounded questions or check affected outcomes, and keep outstanding acceptance obligations explicitly assigned.
 Retire discharged responsibilities and release obsolete holds without stopping genuinely independent work.
+Retain responsibility for unfinished outcomes, not necessarily the original agent.
+Use [fresh-owner replacement](../SKILL.md#replace-a-confused-owner) when corrected confusion makes retaining that owner counterproductive.
+Replacement preserves valid work and evidence; it does not itself require restarting the investigation or repeating valid checks.
 
 Send changed evidence and usable artifacts to their actual consumers, without making yourself a mandatory relay.
 Return technical gaps to their responsible owners even after their first reports.

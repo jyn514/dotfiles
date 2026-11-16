@@ -1,6 +1,6 @@
 ---
 name: delegation
-description: Participate in coordinated work with other agents. Use when taking an assigned part of a joint activity, actually splitting or coordinating work, handing off evidence or artifacts, or resolving ownership conflicts. Covers all subagents, including technical workers who do not spawn agents. Not for ordinary bounded work done directly, regardless of its number of steps or files. Participation does not require a team or grant new authority.
+description: Participate in coordinated work with other agents. Use when taking an assigned part of a joint activity, actually splitting or coordinating work, replacing a confused owner with fresh context, handing off evidence or artifacts, or resolving ownership conflicts. Covers all subagents, including technical workers who do not spawn agents. Not for ordinary bounded work done directly, regardless of its number of steps or files. Participation does not require a team or grant new authority.
 ---
 
 # Delegation
@@ -56,6 +56,34 @@ Return missing evidence or an inadequate proposal to its owner instead of treati
 A new peer message supplies evidence or a question, not permission for a different task or additional effects.
 When nothing useful within your responsibility can advance, wait; retained ownership does not require constant activity or routine status messages.
 Retire the responsibility when its obligation is discharged or superseded, not merely because a turn ended.
+
+## Replace a confused owner
+
+Reassess ownership when an agent repeats a corrected misunderstanding, returns to a rejected premise, treats its own earlier choice as a requirement, or cannot distinguish current instructions from superseded ones.
+Stop dependent expensive runs and consequential mutations while resolving that confusion.
+A difficult bug, failed test, long runtime or revised hypothesis alone is not evidence that the owner needs replacement.
+Distinguish a new technical finding from failure to apply an already established correction.
+
+Recover the controlling facts or instructions when they are missing.
+If the same confusion returns after those facts and the correction are clear, transfer the assignment to a fresh agent before another expensive run or consequential mutation.
+An owner that cannot reliably apply the corrected task should request replacement rather than another correction loop.
+Do not wait for context exhaustion or treat compaction as a fresh start.
+This applies to coordinators as well as workers.
+
+1. Stop the old owner's conflicting writes before transferring ownership.
+   Identify its running processes; preserve useful work on immutable inputs and do not interrupt unrelated work.
+2. Preserve the working changes, decisive evidence, exact reproducer and unresolved questions.
+   Distinguish verified results from unfinished implementation; replacement does not authorize resetting or discarding either.
+3. Start a fresh agent without forking the old conversation.
+   Give it a concise brief containing the current objective, governing decisions, permitted effects, acceptance conditions and evidence references.
+   Separate established facts from hypotheses and do not copy the accumulated repair narrative or require preservation of agent-selected mechanisms.
+   Recover original authority when its meaning remains uncertain rather than passing an interpretation off as a requirement.
+4. Transfer ownership and reroute pending requests explicitly.
+   The old owner may provide a read-only factual handoff, but must not continue competing implementation.
+   Keep independent QA and valid evidence unless they share the confusion or no longer apply.
+
+Retain responsibility for the unfinished outcome, not necessarily the original agent.
+Agent replacement does not complete the assignment or expand its authority.
 
 ## Coordinate conflicting work
 
