@@ -68,8 +68,9 @@ Say what request the skill handles, what it leaves to other skills, and what the
 If a request omits scope, give a usable default or say what the agent must ask.
 For a multi-phase task, say where this skill starts and stops.
 
-Link to other procedure owners instead of copying their steps.
-Use the [consolidation check](../holistic-writing/references/consolidation.md) when removing duplicated policy.
+Link to the owners of existing rules, standards, decision criteria, and procedures instead of copying them.
+Keep task-specific workflow and application guidance without repeating canonical standards already required by the skill.
+Use the [consolidation check](../holistic-writing/references/consolidation.md) to distinguish duplication from useful summaries and point-of-action safeguards.
 Keep a warning beside an action when following that action alone would otherwise be unsafe.
 For uncertainty about supported cases or who may act, consult the [non-narrowing check](../spec-review/references/non-narrowing.md).
 
@@ -188,7 +189,8 @@ Report separately what you predict from the text, what you observed agents do, a
 
 Choose checks for what changed:
 
-- **Body or reference:** review the changed instructions and affected links; reuse evidence for unchanged discovery.
+- **Body or reference:** review the changed instructions against linked or required owners as well as the skill itself.
+  Check affected links; reuse evidence for unchanged discovery.
 - **Caller route:** read caller and description together, follow intended and excluded requests, and check paths.
 - **Description meaning:** review which requests it claims and check frontmatter limits; reuse loader evidence when syntax, fields, installation, and configuration are unchanged.
 - **New skill:** check frontmatter and links, then load it in the current harness.
