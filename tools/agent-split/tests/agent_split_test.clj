@@ -32,6 +32,41 @@
           {:exit (:exit (ex-data ex))
            :err (str err)})))))
 
+(deftest snapshot-safety-reports-git-check-ignore-results
+  (let [root (fs/create-temp-dir {:prefix "agent-split-ignore"})
+        patch (fs/file root "selection.patch")
+        main (ns-resolve 'scripts.jj-split-patch 'main)
+        route (ns-resolve 'scripts.jj-split-patch 'split-route)
+        snapshot (ns-resolve 'scripts.jj-split-patch 'snapshot-workspace!)
+        revision (ns-resolve 'scripts.jj-split-patch 'revision-commit-id)
+        split (ns-resolve 'scripts.jj-split-patch 'run-split!)
+        calls (atom 0)
+        invoke (fn []
+                 (with-redefs-fn {route (constantly {:workspace (str root) :backend "native"})
+                                  snapshot (constantly nil)
+                                  revision (fn [& _] (swap! calls inc) (throw (ex-info "past ignore check" {})))
+                                  split (fn [& _] (throw (ex-info "unexpected split" {})))}
+                   #(captured-failure (fn [] (main [(str patch) "-m" "selected"])))))
+        git (fn [& args]
+              (apply babashka.process/shell {:dir (str root) :out :string :err :string :continue true} "git" args))]
+    (try
+      (spit (str patch) "patch")
+      (let [fatal (git "check-ignore" "-q" "target/jj-split/.jj-split-ignore-probe")
+            result (invoke)]
+        (is (= 128 (:exit fatal)))
+        (is (= 1 (:exit result)))
+        (is (= (str "snapshot safety: git check-ignore failed (exit 128)\n" (:err fatal)) (:err result)))
+        (is (zero? @calls)))
+      (is (zero? (:exit (git "init" "-q"))))
+      (let [result (invoke)]
+        (is (= 1 (:exit result)))
+        (is (= "snapshot safety: target/jj-split is not ignored by version control\n" (:err result)))
+        (is (zero? @calls)))
+      (spit (str (fs/file root ".gitignore")) "target/\n")
+      (is (nil? (:exit (invoke))))
+      (is (= 1 @calls))
+      (finally (fs/delete-tree root)))))
+
 (deftest jj-split-patch-git-tool-dir-uses-shared-temp-root
   (let [tmpdir-root (str (fs/file (scripts.temp/temp-root)
                                   (str "flower-jj-split-tmpdir-" (random-uuid))))

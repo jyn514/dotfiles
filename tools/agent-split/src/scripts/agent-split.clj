@@ -238,9 +238,14 @@
                                :shutdown nil
                                :continue true}
                               "git" "check-ignore" "-q" probe)]
-    (when-not (zero? (:exit result))
+    (case (:exit result)
+      0 nil
+      1 (fail! "snapshot safety"
+               "target/jj-split is not ignored by version control")
       (fail! "snapshot safety"
-             "target/jj-split is not ignored by version control"))))
+             (str "git check-ignore failed (exit " (:exit result) ")"
+                  (when (seq (:err result))
+                    (str "\n" (str/trim-newline (:err result)))))))))
 
 (defn- check-snapshot-safety! [repo-root artifact-root patch helper-root]
   (doseq [[label path] {"patch file" patch
