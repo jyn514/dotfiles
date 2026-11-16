@@ -9,7 +9,7 @@ Branch or catch only for the failure the contract permits to fall back.
 Missing configuration may use a default; malformed configuration or permission denial must not silently become “missing.”
 Use the narrowest exception type or structured error condition that represents that case and propagate unrelated failures.
 Use structured error fields, parser metadata, or diagnostics when available; do not parse human-readable messages to recover those values.
-User-facing errors should name the violated rule or broken assumption, not only the internal operation.
+When writing user-facing errors, follow [diagnostic design](diagnostic-design.md#state-the-known-failure) for naming the violated rule and separating diagnosis from repair.
 
 Prefer scoped resource cleanup or a `finally`-style construct over cleanup that runs only in a catch path.
 Preserve the original failure if best-effort cleanup also fails, while reporting material cleanup status.
@@ -51,10 +51,4 @@ Trace required evidence from effect owner to recovery owner without exposing sen
 Distinguish pending work, failure, committed effects, and unknown outcomes so “request failed” cannot imply that repeating an effect is safe.
 Use existing errors, status queries, or records when sufficient.
 
-## Logging
-
-Default CLI output must be human-scannable.
-Show the action, material inputs, current phase, result, and next action; keep hashes and internal data in receipts or explicit machine-readable output.
-Report failures once, stating what failed, why, cleanup/publication status, and recovery action.
-Use stdout for results and stderr for progress or diagnostics.
-Test representative success and failure output as a user-facing contract.
+When presenting these outcomes in a command-line interface, follow [CLI output guidance](cli-design.md#human-output-and-automation).

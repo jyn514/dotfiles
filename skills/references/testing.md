@@ -124,6 +124,9 @@ Use `architecture-design` if test partitioning exposes an unsettled production o
 
 - At failure boundaries, check what the real provider changes before it throws.
   A mock that throws before mutation cannot establish post-failure state, retry, or restore behavior when the provider mutates first.
+- When failure must preserve prior state, seed distinct existing state at every protected destination, induce the failure, and assert that the promised state survives.
+  A failed-export check that only asserts no new export exists can pass after the old export was deleted, truncated, or overwritten.
+  Compare logical values or exact bytes according to the preservation contract; distinct values expose accidental copying between destinations.
 - Test both failure directions: accepting invalid results and losing required valid results. Include representative non-special-cased inputs where general behavior is required. For bounded algorithms, test forced work separately from branching work; small fixtures must not conceal the required input-population constraint. Preserve validation and publication constraints rather than relaxing them for a passing test.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
 - State concurrency requirements as states and ordering, independently of the callbacks used to pause the fixture.

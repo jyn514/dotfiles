@@ -23,6 +23,10 @@ Leave specialized decisions with their owners; prose work does not authorize sel
 Read and follow the [shared editorial pass](references/editorial-pass.md).
 Dedicated skills also call that pass directly; do not restart this entry point when they have established the task.
 
+For user-facing diagnostic writing or review, read [diagnostic design](../references/diagnostic-design.md) for the jobs of messages and labels and the distinction between diagnosis and proposed repair.
+For CLI help writing or review, read [CLI design](../references/cli-design.md) for the execution and interface contracts the text must describe.
+These routes apply to prose-only work; they do not require a coding workflow or authorize changing command behavior.
+
 For documentation-specific forms, prerequisites, commands, and reader workflows, read the [documentation checks](references/documentation.md).
 For placement alone, use [documentation placement](../references/documentation-placement.md).
 An introductory README belongs to `readme-writing`; existing page splits, renames, and navigation belong to `reorganize-docs`.
