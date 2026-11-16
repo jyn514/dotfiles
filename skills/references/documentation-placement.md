@@ -45,6 +45,22 @@ covers documentation-specific reader tasks, forms, prerequisites, and workflow c
 Use `readme-writing` independently for an introductory README; no sequence of writing
 skills is required.
 
+## Keep session state out of maintained documentation
+
+Document reusable behavior, current contracts, adopted decisions and their rationale in impersonal terms.
+Describe the resulting rule, not who approved it or the conversation that selected it.
+Do not include agent or session identifiers, approval-message quotations, conversational instructions, worker status, or a session's temporary workspace names, one-off debugging commands and repair chronology.
+Source citations, adoption dates and product versions belong only when they serve the reader's task; approval transcripts are not a substitute for stating the decision.
+
+A documented command must serve a maintained, repeatable reader workflow with declared inputs and prerequisites.
+Do not copy a successful session command into a guide merely because it worked once.
+Use the workflow's supported interfaces and parameters rather than a session's temporary paths or helper scripts.
+Do not turn a temporary helper into a maintained tool just to justify documenting it.
+
+Before retaining session-derived material, identify its use for a reader without access to that session.
+If it has no such use, leave it out of the documentation.
+Use [durable records](durable-records.md) to place necessary investigation and authorization evidence without creating a parallel session history in maintained pages.
+
 ## Prose source formatting
 
 In prose source, use one sentence per line when rendering joins those lines into paragraphs, so diffs are easier to review.

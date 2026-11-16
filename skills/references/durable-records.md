@@ -1,6 +1,6 @@
 # Durable records
 
-Use the project's issue tracker for unresolved work, maintained documentation for settled guidance, and `work/` for temporary scratch.
+Use the project's issue tracker for unresolved work, maintained documentation for settled guidance, and the project's designated scratch area for temporary work.
 Do not use `notes/` as a durable record or handoff.
 
 ## Choose what to retain
@@ -14,6 +14,14 @@ Unresolved work includes bugs, decisions, investigations, validation gaps, and m
 “This needs to be documented” is a valid ticket; it does not require writing documentation now.
 Name the missing reader task or guidance and preserve the facts and rationale its author will need.
 Put settled guidance in its maintained documentation when that documentation work is authorized.
+
+## Separate session state from durable evidence
+
+Keep live coordination, temporary command attempts and execution state in the session or scratch area.
+Do not copy a session log into a ticket merely to keep it out of documentation.
+Retain only the observations, reproduction details and rationale a future decision or investigation needs.
+When an authorization trail is necessary, preserve that evidence in the existing issue rather than narrating approval exchanges in a policy page.
+Use [documentation placement](documentation-placement.md#keep-session-state-out-of-maintained-documentation) for the boundary between settled guidance and session material.
 
 ## Preserve evidence in the ticket
 
