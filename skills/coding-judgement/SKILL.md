@@ -18,6 +18,8 @@ Prefer fewer interfaces, representations, and ownership boundaries, not weaker c
 Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
 When sufficiency is uncertain, use the cheapest decision-changing check rather than a larger architecture.
 Routine edits with an established shape need no separate design workflow.
+Write new and changed code so its names and structure explain the concepts, not just the sequence of operations.
+Keep clarity improvements within the authorized change; deliberate refactoring of existing code for readability uses [Refactor for clarity](../refactor-for-clarity/SKILL.md).
 
 ### Change authoritative sources
 
@@ -33,7 +35,7 @@ Before editing outside the active repository, verify that the user intends work 
 | Parsing, regex or hand scanning, encoding, escaping, generated source, command arguments, or shell scripts | [Language boundaries](../references/language-boundaries.md): accepted input, parser/writer ownership, downstream interpretation, separate language files |
 | Shared values or records, options, defaults, types/schemas, configuration, reuse, cache invalidation, state equality, trust or privilege crossings, environment access, collaborators, or validation before effects | [Data and effects](../references/data-and-effects.md): identity and authority, narrow dependencies versus forwarding records, absence, preflight, reuse and invalidation |
 | Catching or suppressing errors, supplying fallback behavior, cleanup, retry, publication, CLI output, or interrupted multi-step work | [Failures and recovery](../references/failures-and-recovery.md): exact failure conditions, structured errors, equivalent substitutes, partial and unknown outcomes, readable CLI results |
-| Adding or moving helpers/modules, choosing macros or abstractions, changing API/compatibility/resource contracts, editing live-loaded source, writing comments or caller documentation, or diagnosing cross-component failures | [Code structure](../references/code-structure.md): caller contracts, function/macro choice, editing locality, compatibility and live-loaded code, existing resource owners |
+| Writing or reshaping implementation logic, adding or moving helpers/modules, choosing macros or abstractions, changing API/compatibility/resource contracts, editing live-loaded source, writing comments or caller documentation, or diagnosing cross-component failures | [Code structure](../references/code-structure.md): concept-visible code, caller contracts, function/macro choice, editing locality, compatibility and live-loaded code, existing resource owners |
 | Traversal, worklists, growing inputs, numerical calculations, threads, callbacks, queues, concurrency, cancellation, optimization, caching, or restricted execution | [Runtime behavior](../references/runtime-behavior.md): stack and deferred depth, context propagation, ordering, progress, resource and arithmetic bounds |
 | Implementing nontrivial solved-problem logic such as parsing, file walking, date handling, diffing, graph traversal, or retry/backoff | [Use a library](../use-a-library/SKILL.md): find an existing solution before writing a new one |
 | Choosing subsystem ownership, an unsettled contract, or whether a split earns its cost | [Architecture design](../architecture-design/SKILL.md): trace the gap and compare boundaries; settled local implementation uses the references above |

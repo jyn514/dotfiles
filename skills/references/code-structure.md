@@ -1,6 +1,26 @@
 # Code structure
 
-Read when adding or moving helpers, modules, macros, APIs, compatibility paths, abstractions, or runtime resources.
+Read when writing or reshaping implementation logic, adding or moving helpers, modules, macros, APIs, compatibility paths, abstractions, or runtime resources.
+
+## Make concepts visible
+
+Write code a careful reader can understand without reconstructing its intent from each operation.
+Let names, data shapes, and control flow explain the domain concepts and the relationships between them.
+Prefer direct expression over clever compression; concision removes distraction, not meaning.
+
+Name values for what they mean at this point in the operation, not just their storage type or how they were computed.
+Keep distinctions visible when they affect the contract: requested versus resolved settings, source identity versus display text, or pending versus published results.
+For example, `requested_timeout` and `effective_timeout` explain why two durations coexist; `timeout1` and `timeout2` leave the reader to infer that relationship.
+Do not invent new representations merely to label distinctions that names can express.
+
+Arrange a function so a reader can follow its input, important transformations, and result.
+Use intermediate names when they reveal a meaningful stage or invariant; remove aliases that only repeat an expression.
+Choose helpers that let the caller express the operation at a consistent conceptual level, without hiding the ordering or effects needed to understand it.
+A shorter caller is not clearer if understanding it requires jumping through trivial wrappers.
+Explain non-obvious invariants and reasons using the comment guidance below; do not narrate each statement.
+
+Apply these choices to the code the task requires you to write or change.
+They do not authorize a surrounding-code cleanup; use [Refactor for clarity](../refactor-for-clarity/SKILL.md) for an authorized existing-code clarity pass.
 
 ## Compatibility
 

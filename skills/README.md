@@ -42,6 +42,10 @@ Its concrete triggers lead directly to language boundaries, data and effects, fa
 These are references, not additional design workflows.
 [Use a library](use-a-library/SKILL.md) checks existing solutions before nontrivial solved-problem logic; dependency review owns additions and updates.
 
+[Refactor for clarity](refactor-for-clarity/SKILL.md) improves existing code so names, structure, and explanations expose its concepts and invariants.
+Use it for an authorized readability pass or implementation work for a walkthrough, while preserving behavior and supported contracts.
+Readable new and changed code is already part of coding judgement; that default does not authorize a broader rewrite.
+
 [Architecture design](architecture-design/SKILL.md) starts with the existing implementation and the change you need.
 It traces a real caller through the code, identifies who owns the behavior, and compares the smallest sufficient change with alternatives.
 Use it to critique a proposed architecture or abstraction, choose an API or subsystem boundary, or decide whether a refactor is worth doing.
