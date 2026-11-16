@@ -116,6 +116,16 @@ Name each assignment's question or decision, usable output, evidence need, and s
 Distinct role names do not make two unbounded versions of the same inquiry independent.
 An intentionally independent check can revisit the same question; make its purpose explicit.
 
+**Bound uncertain judgment before delegating repeated work.**
+Identify which decisions the worker must make and what establishes a good choice.
+If consequential choices remain unsettled, authorize one representative result before authorizing repeated implementation.
+Keep the overall objective distinct from the worker's current execution authority.
+The worker returns after that result; the caller reviews it before deciding whether to authorize expansion.
+Review the actual result and its rationale against the intended activity—not its reports, counts or passing checks.
+Expand only when that review supports a reusable decision rule.
+Ask jyn when the missing criterion depends on her intent; do not require approval for established routine choices.
+Reuse an already demonstrated approach rather than imposing a pilot on mechanical work.
+
 Keep implementation, integration, and intended-consumer checks assigned through completion, not merely through an isolated patch.
 Keep coupled creation and integration coherent; establish the format of a separately useful output early enough for its preparation to overlap consumption.
 For coupled changes, name an integration owner and use the [shared-contract check](references/shared-contracts.md).
