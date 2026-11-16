@@ -33,6 +33,13 @@ Read the recorded decision, the instructions available then, and the alternative
 Did it ignore a rule, follow a bad rule, invent a restriction, or lack information needed to choose?
 If following the instructions caused the problem, change those instructions rather than adding “use judgment.”
 
+Before recommending an instruction change, identify the concrete decision it should change.
+Compare what the existing guidance and proposed guidance would make the agent do at that point, using the information available then.
+Explain how the agent would recognize the relevant condition and choose differently.
+If the existing guidance already requires that action, do not present restating it as prevention; examine why it was missed.
+For example, narrowing an assignment, setting a stopping condition, or reviewing an early result may address a failure without adding another prohibition.
+Distinguish an expected effect from demonstrated improvement.
+
 What fact or counterexample should have changed the choice?
 Teach the agent how to find that fact and what to do with each possible answer.
 Teach the decision an example illustrates, not every detail of its situation.
