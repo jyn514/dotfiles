@@ -14,7 +14,7 @@ FIXTURE = Path(__file__).parent / "fixtures/dependency-command.py"
 
 
 class InstallDependenciesTest(unittest.TestCase):
-    def test_patch_is_installed_and_checked_for_each_package_manager(self):
+    def test_runtime_packages_and_patch_check_for_each_package_manager(self):
         for manager in ("apt-get", "apk", "microdnf"):
             for check_status in (0, 17):
                 with self.subTest(manager=manager, patch_check_status=check_status):
@@ -40,6 +40,8 @@ class InstallDependenciesTest(unittest.TestCase):
                                     and call[1] in {"install", "add"}]
                         self.assertEqual(1, len(installs), calls)
                         self.assertIn("patch", installs[0])
+                        self.assertIn("git", installs[0])
+                        self.assertIn("curl", installs[0])
                         self.assertEqual(1, calls.count(["patch", "--version"]))
                         if check_status:
                             self.assertEqual(["patch", "--version"], calls[-1])

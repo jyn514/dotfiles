@@ -21,6 +21,7 @@ RUNTIME_PROBE = Path(__file__).with_name('fixtures') / 'image-runtime.sh'
 IMAGE_PREFIX = 'codex-sandbox'
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
 from owned_images import jj_release_args
+from git_runtime_integration import probe_git
 from shared_workspace_probe import (
     prepare_fixture_work_volumes, probe_shared_workspaces, relocate_fixture_mounts,
 )
@@ -211,6 +212,9 @@ def main() -> None:
     jj_image = tags['jj'][0]
     try:
         build_images(args.expected_revision, tags)
+        for variant in ('pi-alpine', 'pi-debian'):
+            if variant in tags:
+                probe_git(tags[variant][0])
         probe_jj_mounts(jj_image)
         cleanup_image = args.cleanup_image or (tags['pi-alpine'][0] if 'pi-alpine' in tags else None)
         probe_shared_workspaces(jj_image, cleanup_image=cleanup_image)

@@ -376,6 +376,24 @@ Runtime imports still use the published entrypoints in `dist/`.
 Build tools, tests, build configuration, and unrelated workspaces stay in the build stage.
 The standalone entrypoint shares the coding-agent `dist` tree through a symlink, including its binary assets.
 
+### Git compatibility
+
+The shared image installs Git through the selected base's package manager.
+Repositories using `extensions.relativeWorktrees` require Git 2.48 or later.
+Older bases need a compatible newer Git package; the image does not compile Git.
+
+Run the focused runtime check without rebuilding Pi:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/git_runtime_integration.py
+```
+
+This builds the production `agent-deps` target on Alpine, Debian Bookworm/Trixie and Fedora.
+It exercises relative linked worktrees after relocation, local helper transport and HTTPS fetching.
+Bases with Git too old to support relative worktrees fail the check.
+It requires Docker, Buildx and network access, removes per-run tags and retains cache aliases.
+The full image-runtime check below also runs the Git probe in its final sandbox images.
+
 Before building images or requesting a host rerun, run the native fixture checks:
 
 ```sh

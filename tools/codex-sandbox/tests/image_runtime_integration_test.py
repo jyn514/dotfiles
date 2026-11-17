@@ -222,9 +222,11 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
 
         mount_probe = mock.Mock()
         shared_probe = mock.Mock()
+        git_probe = mock.Mock()
         with mock.patch.dict(main.__globals__, {'build_images': build, 'run': run,
                                                'probe_jj_mounts': mount_probe,
                                                'probe_shared_workspaces': shared_probe,
+                                               'probe_git': git_probe,
                                                'IMAGE_PREFIX': 'renamed-runtime'}), \
                 mock.patch('sys.argv', ['integration', '--expected-revision', revision]), \
                 mock.patch('subprocess.run', side_effect=cleanup):
@@ -247,6 +249,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
             self.assertIsInstance(errors[0], expected)
         self.assertTrue(cleaned.is_set())
         mount_probe.assert_called_once_with(tags['jj'][0])
+        self.assertEqual([mock.call(tags['pi-alpine'][0]), mock.call(tags['pi-debian'][0])],
+                         git_probe.call_args_list)
         self.assertEqual([mock.call(tags['jj'][0], cleanup_image=tags['pi-alpine'][0]),
                           mock.call(tags['jj'][0], linked=True, cleanup_image=tags['pi-alpine'][0])],
                          shared_probe.call_args_list)
