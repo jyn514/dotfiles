@@ -152,9 +152,6 @@ Name the deciding difference in contribution or remaining cost and its evidence 
 A finding, completed batch, or investigator's report does not itself establish priority.
 Missing evidence is not demonstrated failure, and investigation need not justify follow-up work.
 
-If the deciding difference remains uncertain, make the smallest useful check or choose provisionally with the uncertainty stated.
-Do not commission another investigation merely to make every ranking conclusive.
-Stop deliberating when evidence supports an authorized action or identifies a concrete blocker; there is no fixed lookup limit.
 Continue when the existing approach wins.
 Keep comparisons in working reasoning by default and explanations within recommendations, not routine checklists, prediction ledgers, or separate reports.
 When abandoning a route, remove its prerequisites without claiming its unmet criteria passed.
@@ -185,6 +182,5 @@ Reuse accumulated context when it matters more than fresh independent judgment.
 Without a compatible template, a technical worker may inspect an activity example and outcome evidence within its responsibility, read-only.
 Name unavailable evidence and do not claim independence for this fallback.
 An executive instead arranges a compatible owner or reports the staffing dependency; absence does not transfer inquiry to it.
-Keep investigation bounded to the decision; new calls, unchanged evidence, or completeness alone do not justify repetition or a project-wide audit.
 
 For skill evaluation, read [behavioral checks](references/behavioral-checks.md), not as another stage of ordinary work.
