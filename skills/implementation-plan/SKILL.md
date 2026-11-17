@@ -40,7 +40,7 @@ Sketch how the caller reaches the required result through existing facilities an
 Include known error, lifecycle, and compatibility requirements, not just the successful request.
 Use this candidate to direct inspection, not as an extra document or approval stage.
 Investigate unknowns that could change the path or its verification; do not fill them with speculative components or interfaces.
-Keep observations separate from assumptions, and stop investigating an unknown when the evidence settles it.
+Keep observations separate from assumptions.
 
 Follow the entry points, data flow, side effects, and deployed consumers, including affected paths that bypass the main entry point.
 Inspect relevant tests, docs, and dependencies to establish which facilities suffice.

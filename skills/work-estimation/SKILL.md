@@ -8,7 +8,7 @@ description: Estimate or revise how long agent work will take, including task ET
 Give a useful planning prediction for the requested result, not a proven duration bound.
 Lead with a rounded central estimate when the task is understood well enough to make one.
 Ground its scale in the actual route and comparable agent work where available, then use judgment for the differences.
-Breaking a task into steps does not calibrate the durations, but lack of a measurement for every step is not a reason to withhold an estimate.
+Breaking a task into steps does not calibrate the durations.
 
 An estimate request alone authorizes read-only investigation, not implementation, prototypes, benchmarks, or starting workers to try the work.
 Use existing evidence and the smallest inspection that could change the estimate.
@@ -43,11 +43,9 @@ Those facts matter only when they change the actual work or feedback time.
 
 Find a basis for the scale before choosing the number.
 Reuse relevant comparisons, known command costs, and direct knowledge of the current execution path already in context.
-When the scale is uncertain, use available history tools for a focused search and inspect one or two promising comparisons.
+When the scale is uncertain, use available history tools for a focused search and inspect promising comparisons.
 Read promising matches rather than treating search snippets as evidence.
-Stop when the evidence supports a useful planning judgment or another search is unlikely to improve it.
-Do not turn estimation into a research project.
-If useful history is unavailable, estimate from the inspected route and say the scale is less certain; no separate permission to make a judgment is needed.
+For a prediction based on the inspected route rather than useful history, say which parts of its scale remain uncertain.
 A known command duration grounds that command, not automatically the whole task.
 
 For each useful comparison, establish:
@@ -93,15 +91,14 @@ For example, 30 minutes of estimated active work plus a known 10-minute test run
 Do not halve recorded actual durations or reapply the correction to an already-corrected forecast.
 Treat this as a practical bias correction, not a universal law; revise it when prospective results show a different pattern.
 
-Give a rounded central prediction and name the concrete condition most likely to change it.
+When the evidence supports a useful prediction, give a rounded central prediction and name the concrete condition most likely to change it.
 A narrow range can help when it changes the scheduling decision; do not widen it merely to make being wrong less likely.
 Do not claim a confidence percentage without a calibrated basis.
-Unknown duration is normal; withhold a full-task number only when the route, feasibility, or scope is too unresolved for a useful prediction.
-In that case, explain the missing premise and give a conditional total or clearly labeled known-portion estimate where useful.
+When the route, feasibility, or scope is too unresolved for a useful prediction, explain the missing premise and give a conditional total or clearly labeled known-portion estimate where useful.
 
 ## 5. Answer briefly and revise against evidence
 
-Lead with a usable prediction such as “about 5 minutes, including focused tests,” whose time it measures, and the completion boundary.
+When the evidence supports a useful prediction, lead with an estimate such as “about 5 minutes, including focused tests,” whose time it measures, and the completion boundary.
 Use sensible rounding rather than false precision.
 “Minutes-scale” is not an adequate substitute when the inspected task supports a central estimate useful for planning.
 Briefly state the basis, the judgment involved in the adjustment, and the main reason to revise.
@@ -112,7 +109,6 @@ Revise when observed throughput, review findings, scope, or command costs invali
 When challenged, reconsider the reasoning and identify what changes the estimate.
 Evidence already inspected can justify a correction; another tool call is not required.
 Do not change the number merely to accommodate pressure, but do not defend a poor estimate just because no new measurement arrived.
-If the route remains understood, make a better planning judgment and explain it; retract the total only when that route cannot support a useful prediction.
 Estimate remaining work from the current state rather than repeating the original duration.
 When comparing a past forecast with its result, preserve the original scope and report incomplete verification instead of choosing whichever endpoint makes the estimate look best.
 A revised method is not calibrated merely because it explains past errors.

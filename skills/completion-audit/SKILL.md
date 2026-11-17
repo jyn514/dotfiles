@@ -85,18 +85,15 @@ Select the cheapest realistic boundary cases the matrix needs:
 
 These examples add no mandatory cases.
 
-## Resolve, report, and stop
+## Resolve and report
 
 Fix in-scope failures only under existing implementation or repair authority; otherwise report without mutation.
 Rerun affected checks, inspect the complete resulting diff, and leave unrelated failures and protected files alone.
-Reopen the design only for a reproduced acceptance failure; record optional alternatives without implementing them.
+Record optional alternatives without implementing them.
 
 Apply repository review thresholds.
 Request independent review for broad, cross-boundary, security-sensitive, destructive changes or those exceeding self-review authority.
-After the initial audit and required review, check corrections only: failed checks and changed code or boundaries.
-A second broad audit requires user approval.
 
 Report each requirement or applicable review area's result with file paths, command output, issue criteria, or specification sections.
 Unrelated baseline failures and unverified requirements are not successes.
 Claim completion only with evidence for every requirement; otherwise name remaining failures or external blockers.
-Stop when scoped checks pass; reopen only for a reproduced governing-requirement failure or authorized scope change.

@@ -284,7 +284,6 @@ Do not favor a task merely because it is newly salient, easy to complete, clearl
 Compare its expected contribution and remaining cost with continuing the current work and the strongest available alternative.
 Apply new information to that comparison instead of treating it as a new task.
 Flag the wrong objective or search space, and revise the recommendation when purpose or constraints change instead of accumulating caveats.
-Use reasonable judgment under uncertainty; do not turn choosing the next step into an exhaustive investigation.
 Consider ongoing maintenance, incentives, adoption, and indirect effects when they could change which approach works in practice.
 
 When comparing designs, consider whether one is significantly slower than another.

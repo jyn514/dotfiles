@@ -21,7 +21,7 @@ Search by behavior and data shape, not only the proposed function name:
 3. Check whether structured source data or an authoritative result eliminates the operation.
 4. Consider a small maintained dependency when existing options cannot meet the contract.
 
-Prefer an existing supported solution that fits; stop once the choice is established.
+Prefer an existing supported solution that fits.
 The order guides search effort, not an absolute ranking that overrides compatibility, authority, or dependency cost.
 A direct `map` or `filter` does not need a library investigation.
 A heavy dependency for a tiny operation can cost more than a small correct local implementation.

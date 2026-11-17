@@ -5,7 +5,7 @@ description: Diagnose unexpected execution delay, hangs, observed contention, an
 
 # Performance investigation
 
-Choose a measurement that can settle the performance decision, then stop when it does.
+Choose a measurement that can settle the performance decision.
 An unexpectedly stalled build needs investigation; a quiet build progressing within its expected duration does not.
 
 ## Choose the question and boundary
@@ -45,8 +45,7 @@ When a command exceeds its expected duration or stays unexpectedly silent for 30
    Separate setup, dependency resolution, discovery/loading, execution, reporting, and shutdown.
 4. For a hang, take a JVM thread dump or bounded stack/syscall sample for other runtimes before attempting a completion run.
    Save diagnostic logs and samples in the evidence directory.
-5. Stop when the sample answers the question.
-   If terminating a wrapper, clean up only its invocation's descendants; preserve shared daemons and pre-existing workers.
+5. If terminating a wrapper, clean up only its invocation's descendants; preserve shared daemons and pre-existing workers.
 
 For progressing CPU-heavy work, prefer an existing profiler over sampling hooks.
 Completion-only profiling suits work that finishes or safely unwinds on timeout, not a hang.

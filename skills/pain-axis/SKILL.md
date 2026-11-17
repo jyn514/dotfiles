@@ -100,7 +100,7 @@ Distinguish that contribution from what remains unresolved.
 When applicability is weak, compare changing the application target with changing the idea using `work-selection`.
 Do not require each source to yield a bug or scan every repository before drawing a bounded conclusion.
 
-## Report and stop
+## Report
 
 Keep the result proportional to the question and link conclusions to concrete revisions, files, tests, or discussions.
 For pre-redesign analysis, report the supported `pain_axes`, `historical_examples`, `cochange_signals`, `candidate_invariants`, and `uncertainties`.
@@ -109,6 +109,5 @@ a focused bug investigation, a worked example, a candidate skill change, further
 For a change or repair, include prior attempts and repair adequacy where relevant.
 Separate newly suspected defects from the recorded historical failures.
 
-Stop the bounded investigation when the evidence answers its question or identifies a precise unresolved dependency.
-Further research must serve an open question that can change the conclusion; an interesting case alone does not require a new process or rule.
+An interesting case alone does not require a new process or rule.
 Do not infer broad exhaustion from a few poor fits or absence of an immediate local bug.
