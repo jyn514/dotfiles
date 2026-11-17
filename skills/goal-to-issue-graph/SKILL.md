@@ -27,7 +27,7 @@ Inspect the existing graph and reuse matching issues.
 Do not require separate approval to materialize the graph within that work; an explicit read-only or proposal-only request still forbids tracker mutation.
 Use `implementation-plan` when explicitly asked to work out or review one ticket's implementation plan.
 An already-actionable ticket needs no separate plan; keep any needed implementation detail in its existing record rather than a parallel artifact.
-Represent an unsettled architecture as a decision task; use [independent design deliberation](../architecture-design/references/deliberation.md) when design selection is also authorized.
+Represent an unsettled architecture as a decision task.
 For a staged new-tool project, follow `new-tool-development` rather than inventing a parallel approval process.
 
 ## 1. Recover the governing goal

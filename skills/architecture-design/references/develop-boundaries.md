@@ -26,7 +26,7 @@ For ordered discovery caches, read the [unsuccessful-lookup example](caching-exa
 
 Inspect adjacent systems, generated contracts, issues, or prepared work when they can settle the choice or prevent duplication.
 Use `pain-axis` when recurring historical pain can change it.
-Read [Map design alternatives](alternatives.md) for genuine alternatives and [independent deliberation](deliberation.md) when independent elaboration and critique earn their cost.
+Read [Map design alternatives](alternatives.md) for genuine alternatives.
 Use [complexity justification](../../references/complexity-justification.md) for unclear necessity or variability, and the [non-narrowing check](../../spec-review/references/non-narrowing.md) for possible requirement narrowing.
 
 ## Principles

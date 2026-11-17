@@ -59,19 +59,6 @@ class AgentSkillsPackageTest(unittest.TestCase):
         self.assertEqual(plugin["skills"], "./skills/")
         self.assertEqual(package["pi"]["skills"], ["skills"])
 
-    def test_design_phase_helpers_are_linked_references_not_skills(self) -> None:
-        skill_directory = ROOT / "skills/architecture-design"
-        workflow = (skill_directory / "references/deliberation.md").read_text(encoding="utf-8")
-        for name in ("independent-plan", "cross-critic", "fusion-candidate", "council-review"):
-            with self.subTest(phase=name):
-                relative_path = f"references/{name}.md"
-                reference = skill_directory / relative_path
-                self.assertTrue(reference.is_file())
-                self.assertIn(f"]({name}.md)", workflow)
-                self.assertFalse(reference.read_text(encoding="utf-8").startswith("---"))
-                self.assertFalse((ROOT / "skills" / name).exists())
-                self.assertFalse(list(skill_directory.rglob("references/**/SKILL.md")))
-
     def test_standalone_prompt_preserves_skill_owned_discovery_descriptions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
@@ -213,6 +200,12 @@ class AgentSkillsPackageTest(unittest.TestCase):
                                  archive.extractfile(f"package/{coding_skill}").read())
                 self.assertNotIn("package/skills/references/change-with-evidence.md", files)
                 self.assertIn("package/skills/architecture-design/references/develop-boundaries.md", files)
+                for retired in ("deliberation", "independent-plan", "cross-critic",
+                                "fusion-candidate", "council-review"):
+                    with self.subTest(retired=retired):
+                        self.assertFalse(
+                            f"package/skills/architecture-design/references/{retired}.md" in files,
+                            f"Retired design-deliberation prompt still ships: {retired}")
                 links = re.findall(r"\]\(([^)]+)\)", readme)
                 local_links = [link for link in links if not link.startswith(("#", "https://"))]
                 self.assertTrue(local_links)

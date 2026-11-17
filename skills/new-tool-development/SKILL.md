@@ -85,7 +85,6 @@ Use these normal contributors:
 
 - **`architecture-design`** handles consequential subsystem decomposition or architecture boundaries that need separate analysis.
 - [Design alternatives](../architecture-design/references/alternatives.md) covers unresolved architectural choices.
-  Use [independent deliberation](../architecture-design/references/deliberation.md) only when independent comparison is needed.
 - [Boundary-contract questions](../architecture-design/references/boundary-contracts.md) cover unresolved or changed contracts.
   Reuse the selected design rather than starting another declaration phase.
 - [Complexity justification](../references/complexity-justification.md) applies when a mechanism's necessity or required variability remains unclear.

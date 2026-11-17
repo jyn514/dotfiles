@@ -203,8 +203,8 @@ local polishing belongs to [tighten prose](tighten-prose/SKILL.md).
 
 Some former design skills are now on-demand references within [architecture design](architecture-design/SKILL.md)
 or the shared [change guidelines](coding-judgement/SKILL.md).
-The alternatives and independent-deliberation helpers under `architecture-design/references/` are supporting material,
-not standalone skills or slash commands.
+The alternatives guide under `architecture-design/references/` is supporting material,
+not a standalone skill or slash command.
 
 ### Publishing a release
 

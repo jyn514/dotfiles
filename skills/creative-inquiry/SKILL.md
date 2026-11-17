@@ -63,7 +63,6 @@ Play can change structure as well as appearance.
 
 For concrete software-design alternatives, consult [architecture alternatives](../architecture-design/references/alternatives.md).
 Before recommending a replacement interface, follow `architecture-design`'s native-interface and adjacent-implementation checks without starting its full workflow.
-Use [independent deliberation](../architecture-design/references/deliberation.md) when the unresolved choice needs independent elaboration and critique, not as an automatic phase.
 
 ## Follow discoveries far enough to use them
 
