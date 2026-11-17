@@ -141,6 +141,7 @@ before committing the session's work and ending it.
 | Enforce an established rule while reducing existing violations | [Ratchet](ratchet/SKILL.md) |
 | Work with TicGit tickets | [TicGit](ticgit/SKILL.md) |
 | Read Rust Zulip discussions | [Zulip API](zulip-api/SKILL.md) |
+| Read and discuss a YouTube video's captions | [YouTube captions](youtube-captions/SKILL.md) |
 | Find and test Rust compiler diagnostic gaps | [Rustc diagnostic gap tests](rustc-diagnostic-gap-tests/SKILL.md) |
 | Write Typst markup or diagrams | [Typst](typst/SKILL.md), [Typst diagrams](typst-diagrams/SKILL.md) |
 | Review and rename past Pi sessions | [Session title curation](session-title-curation/SKILL.md) |
