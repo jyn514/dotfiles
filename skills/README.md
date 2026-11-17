@@ -61,8 +61,8 @@ Use it for mockups, redesigns, and usability reviews, not trivial styling correc
 
 [Creative inquiry](creative-inquiry/SKILL.md) questions the framing of the task itself.
 Use it when exploring possibilities, examining assumptions, or asking whether the current approach solves the right problem.
-[Work selection](work-selection/SKILL.md) makes a more immediate comparison: whether another investigation, workaround, or prerequisite
-is a better next action than a smaller way to reach the requested outcome.
+[Work selection](work-selection/SKILL.md) compares complete routes to the requested outcome before adding another investigation, workaround, or prerequisite.
+It also supports reconsidering an existing recommendation during follow-up discussion, without treating a question as a new requirement.
 
 [Implementation planning](implementation-plan/SKILL.md) works out how to implement one ticket when a plan or plan review is explicitly requested.
 Ordinary code investigation during implementation does not require this skill.

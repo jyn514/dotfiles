@@ -11,6 +11,7 @@ Move between interpreting the task and making something that can challenge the i
 
 Use [work-selection](../work-selection/SKILL.md) before adding another substantive prerequisite, workaround, or diagnostic round.
 It owns next-action comparison and scouting; return here when framing needs exploration.
+Before endorsing a replacement recommendation during follow-up discussion, use its [recommendation comparison](../work-selection/SKILL.md#reconsider-a-recommendation).
 For precise, settled work, complete the task without adding an inquiry.
 
 ## Imagine a successful encounter

@@ -1,6 +1,6 @@
 ---
 name: work-selection
-description: Reassess the next action before adding another substantive prerequisite, workaround, or diagnostic round—even when earlier steps succeeded—or when a supposedly settled approach gains dependencies, results challenge its assumptions, or slow feedback lets supporting activity displace the requested outcome. Compare faster, smaller approaches without weakening requirements. Expected runtime can still be an unacceptable feedback loop. Not for obvious mechanical repairs or straightforward execution of a settled change.
+description: Reassess the next action or an existing recommendation when follow-up discussion challenges its assumptions, costs, or alternatives. Use before endorsing a replacement recommendation or adding another substantive prerequisite, workaround, or diagnostic round—even when earlier steps succeeded—or when an approach gains dependencies, results challenge its assumptions, or slow feedback displaces the requested outcome. Compare complete routes, including faster or smaller approaches, without weakening requirements. Expected runtime can still be an unacceptable feedback loop. Not for mere factual clarification, explaining an unchanged recommendation, obvious mechanical repairs, or straightforward execution of a settled change.
 ---
 
 # Work selection
@@ -71,6 +71,30 @@ What observed fact rules out the strongest competitor?
 Would the remaining costs and evidence favor this route if you had not started it?
 If correcting a premise removes the reason for a preference, reconsider the ranking rather than preserve it with a caveat.
 Continuing can win; do not invent a competitor to force a change.
+
+## Reconsider a recommendation
+
+Use this comparison before endorsing a replacement when follow-up discussion calls an existing recommendation into question.
+A factual clarification or explanation of an unchanged recommendation needs no new selection exercise.
+
+1. Identify what the message establishes: a question, corrected fact, preference, or requirement.
+   Do not infer a preference from a question or turn a suggested alternative into a requirement.
+2. Recover the intended outcome and the deciding reason for the current recommendation.
+   Identify which premise the new information changes; a flaw in the explanation need not invalidate the design.
+3. Compare the complete replacement with the current route before endorsing it.
+   Account for responsibilities the old route fulfilled, including work moved to another owner or stage.
+   Moving a cost does not eliminate it, and a smaller proposal must still meet the full outcome.
+4. Retain, qualify, or replace the recommendation according to that comparison.
+   Explain the deciding difference when the recommendation changes; do not preserve a bad choice merely for consistency.
+
+For example, a short coding entrypoint supplies common obligations and routes to detailed guidance.
+A question about its hidden topic triggers suggests advertising separate skills in the catalog.
+Before recommending removal of the entrypoint, account for how an ordinary edit still receives the common obligations.
+If the separate-skills design still needs a common read, compare that complete loading path rather than crediting it with eliminating the read.
+The comparison may support either design; the question alone settles neither.
+
+Keep this reasoning in the working context and answer the question directly.
+Do not turn every follow-up into a checklist report or ask the user to restate goals already established.
 
 ## Make the next check useful
 

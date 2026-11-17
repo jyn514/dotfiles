@@ -9,6 +9,7 @@ Choose responsibilities that meet the required outcome and earn their implementa
 Start with a caller-to-result path, not a proposed component diagram.
 Use [Coding judgement](../coding-judgement/SKILL.md) for the common coding obligations and every applicable topic reference before making design or critique decisions.
 This skill owns the architecture workflow, not a second coding checklist.
+Before endorsing a replacement recommendation during follow-up discussion, use [work-selection](../work-selection/SKILL.md#reconsider-a-recommendation).
 For critique, report supported findings, consequences, and the smallest useful corrections; a review request does not authorize edits or require a replacement design.
 
 Use [operational lifecycle](../operational-lifecycle/SKILL.md) to establish installation, recurring operation, startup, update, and recovery workflows.
