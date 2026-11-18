@@ -47,6 +47,17 @@ export default function heldToolExtension(pi: ExtensionAPI): void {
       appendFileSync(templateStartsFile(sessionFile), `${JSON.stringify({ pid: process.pid, pause: pi.getPauseState() })}\n`);
     }
   });
+  pi.on("turn_end", event => {
+    if (event.message.content.some(part => part.type === "text" && part.text === "stopped text before continuation")) {
+      return { entries: [...event.entries, { type: "custom_message", customType: "fixture-continuation",
+        content: "Continue the scripted child task.", display: false }], continue: true };
+    }
+  });
+  pi.registerTool({
+    name: "faux_terminate", label: "Terminating integration tool", description: "Finish without another provider response.", defaultActive: false,
+    parameters: Type.Object({}),
+    async execute() { return { content: [{ type: "text", text: "terminated" }], details: {}, terminate: true }; },
+  });
   pi.registerTool({
     name: "faux_nested_send", label: "Nested integration send", description: "Exercise the public nested tool path into production steer_subagent.",
     parameters: Type.Object({ target: Type.String(), message: Type.String() }),

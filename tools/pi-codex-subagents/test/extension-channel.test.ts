@@ -69,6 +69,8 @@ sourceTest("named channels round-trip real RPC with authoritative identity, nest
     expect(await request).toEqual({ admitted: true });
     await until(() => jsonl(providerCallsFile(raced.sessionFile)).at(-1)?.text === "race-user-input", "racing answer starts actual child run");
     await until(() => manager.getAgentInfo("raced", parentId).status === "completed" && manager.getAgentInfo("raced", parentId).finalResponse?.includes("race-user-input"), "manager tracks raced second completion");
+    expect(completions.filter(event => event.agentName === raced.canonicalName)).toHaveLength(2);
+    expect(completions.filter(event => event.commentary !== undefined)).toHaveLength(0);
 
     const interrupted = await spawn("interrupted", "hold-tool:" + join(cwd, "interrupted"));
     await until(() => existsSync(heldToolFiles(join(cwd, "interrupted")).started), "held worker started");

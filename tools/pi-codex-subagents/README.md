@@ -1,6 +1,6 @@
 # pi-codex-subagents
 
-Codex-shaped, session-scoped subagents for [Pi](https://github.com/earendil-works/pi). Spawn isolated child Pi processes, receive their final responses automatically, steer active work, and inspect sessions in a live overlay.
+Codex-shaped, session-scoped subagents for [Pi](https://github.com/earendil-works/pi). Spawn isolated child Pi processes, receive completed commentary and final responses automatically, steer active work, and inspect sessions in a live overlay.
 
 Ordinary subagent tools require Pi 0.80.4 or newer and Node.js 22.19 or newer.
 [Durable pause](#durable-pause) additionally requires Pi's native handoff and fresh-input admission APIs in both parent and children.
@@ -16,7 +16,11 @@ The maintained fork's path history through `jyn514/pi-extensions` commit `af2e51
 The original authors, author dates, and commit messages remain in the imported patch series.
 The upstream package is `@ogulcancelik/pi-codex-subagents`; install only one copy to avoid duplicate tools.
 
-Updating package source files does not replace an already-loaded parent manager.
+Updating package source files does not replace an already-loaded parent manager; parent commentary delivery requires a newly loaded manager.
+A bare `/reload` shuts down that manager and interrupts active children, so reload only after its children settle.
+To preserve active work, use the existing durable `/pause` and parent-session reopen workflow instead.
+Starting a fresh parent process also loads the change.
+Restarting only a child does not activate it; no child-helper update or saved-record migration is required.
 Each new worker process loads the child helper from the package path, so restarting only a worker can pair a new helper with an old manager.
 That helper can advertise tools its parent does not support.
 After the `link_reply` → `link_send` migration, reload the parent before spawning or recreating workers with explicit tool lists.
@@ -279,6 +283,18 @@ Its provider extension must load through native discovery or the template's expl
 A thinking level written into an `enabledModels` pattern, such as `anthropic/claude-opus-4-6:high`, is ignored here. `thinking` stays a separate argument, and the child clamps it to what its model supports.
 
 ## Completion delivery
+
+Completed, nonempty assistant commentary from parent-assigned work also reaches the parent model while the child continues.
+These notifications are informational worker updates, not new user instructions or permission to expand the assignment.
+They do not complete the child or satisfy a completion wait; their steering delivery can release an active `wait_agent` with its ordinary interrupted result.
+Thinking, tool arguments, tool results, empty text and streaming token deltas are not forwarded.
+Tool-calling text is delivered when its assistant message completes, before the tools finish.
+Other completed text is held until another assistant response proves it was intermediate; the last text remains the final response when the child settles.
+If a terminating tool settles on text already reported as commentary, the automatic completion identifies that fact instead of repeating the text.
+`read_agent_response` and completion waits still return the full final text.
+Pending updates use the existing delivery and durable-pause records, and resume with the parent after `/unpause`.
+Acknowledged updates do not add a manager-side message history.
+Routine commentary from a peer-follow-up episode stays out of the parent model, like that episode's private final answer.
 
 A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
 
@@ -551,7 +567,7 @@ Keep the group record and transcripts for recovery.
 
 ## Output limits
 
-Automatic completions, wait tools, and response tools follow Pi's standard 50 KB / 2,000-line output limit. Oversized output is truncated and the complete text is written beside the runtime data; the returned notice includes a path that can be read with Pi's `read` tool.
+Automatic commentary, completions, wait tools, and response tools follow Pi's standard 50 KB / 2,000-line output limit. Oversized output is truncated and the complete text is written beside the runtime data; the returned notice includes a path that can be read with Pi's `read` tool.
 
 ## Environment
 

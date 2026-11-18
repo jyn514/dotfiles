@@ -205,6 +205,8 @@ interface LiveAgent {
   termination?: Promise<void>;
   candidateResponse: string;
   candidateError?: string;
+  candidateReported?: boolean;
+  candidateParentOwned?: boolean;
   modelResponseTimer?: ReturnType<typeof setTimeout>;
   lastActivityPersistedAt: number;
   handoffGeneration?: string;
@@ -221,6 +223,10 @@ interface LiveAgent {
 }
 
 export interface AgentCompletionEvent {
+  /** Informational text shares delivery/pause ownership, never completion waits. */
+  commentary?: string;
+  /** A terminating tool can settle on text already delivered as commentary. */
+  finalResponseReported?: true;
   /** Peer escalation/failure delivery is independent of parent assignment waits. */
   attention?: true;
   id: string;
@@ -1150,7 +1156,7 @@ function targetMatches(event: AgentCompletionEvent, targets?: Set<string>): bool
 }
 
 export function consumeFirstMatchingMailboxEvent(events: AgentCompletionEvent[], parentSessionId: string, targets?: Set<string>): AgentCompletionEvent | undefined {
-  const index = events.findIndex((event) => !event.attention && event.parentSessionId === parentSessionId && targetMatches(event, targets));
+  const index = events.findIndex((event) => !event.attention && event.commentary === undefined && event.parentSessionId === parentSessionId && targetMatches(event, targets));
   if (index === -1) return undefined;
   return events.splice(index, 1)[0];
 }
@@ -1280,7 +1286,10 @@ export class AgentManager {
   }
 
   markCompletionDelivered(id: string): void {
-    this.deliveredCompletions.add(id);
+    const index = this.mailbox.findIndex(event => event.id === id && event.commentary !== undefined);
+    // Acknowledged updates need no retained history; pending updates still survive pause.
+    if (index !== -1) this.mailbox.splice(index, 1);
+    else this.deliveredCompletions.add(id);
   }
 
   private clearChildOwnership(info: AgentInfo, expectedToken: string): void {
@@ -1732,6 +1741,8 @@ export class AgentManager {
     live.finalizedRun = false;
     live.candidateResponse = "";
     live.candidateError = undefined;
+    live.candidateReported = false;
+    live.candidateParentOwned = !live.info.peerEpisode;
     delete live.info.finalResponse;
     delete live.info.error;
     delete live.info.completedAt;
@@ -2497,6 +2508,11 @@ export class AgentManager {
     // of a new run, not the handler's opaque JSON result.
     if (event.type === "agent_start" && live.extensionDeliveries && live.info.status === "completed") {
       live.finalizedRun = false;
+      // This is fresh native input, not continuation of the already reported final.
+      live.candidateResponse = "";
+      live.candidateError = undefined;
+      live.candidateReported = false;
+      live.candidateParentOwned = !live.info.peerEpisode;
     }
     if (event.type === "agent_start" && live.releasing) {
       live.finalizedRun = false;
@@ -2506,14 +2522,17 @@ export class AgentManager {
     if (event.type === "agent_start") {
       live.info.status = "running";
       live.info.lastActivity = Date.now();
-      live.candidateResponse = "";
-      live.candidateError = undefined;
       saveInfo(live.info);
       live.lastActivityPersistedAt = live.info.updatedAt;
       this.notifyStatusChange(live.info);
       return;
     }
     if (event.type === "message_start" && event.message?.role === "assistant") {
+      // A further assistant response proves the preceding completed text was not final.
+      this.reportCommentary(live);
+      live.candidateResponse = "";
+      live.candidateError = undefined;
+      live.candidateReported = false;
       this.startModelResponseTimer(live);
       return;
     }
@@ -2539,6 +2558,10 @@ export class AgentManager {
       live.candidateError = event.message.stopReason === "error" || event.message.stopReason === "aborted"
         ? event.message.errorMessage || `Agent ended with ${event.message.stopReason}.`
         : undefined;
+      live.candidateReported = false;
+      live.candidateParentOwned = !live.info.peerEpisode;
+      // Tool-calling text must arrive before a possibly long-running tool finishes.
+      if (event.message.stopReason === "toolUse") this.reportCommentary(live);
       return;
     }
     if (event.type === "agent_end") {
@@ -2571,6 +2594,17 @@ export class AgentManager {
         live.logger.info("hibernate", "failed to terminate settled child", { error: error instanceof Error ? error.message : String(error) });
       });
     }
+  }
+
+  private reportCommentary(live: LiveAgent): void {
+    if (!live.candidateResponse || live.candidateError || live.candidateReported
+      || !live.candidateParentOwned || live.info.peerEpisode || live.restoredHeld) return;
+    live.candidateReported = true;
+    this.pushMailbox({
+      id: randomUUID(), parentSessionId: live.info.parentSessionId,
+      agentName: live.info.canonicalName, status: "running",
+      commentary: live.candidateResponse, createdAt: Date.now(),
+    });
   }
 
   private adoptTerminalState(live: LiveAgent, persisted: AgentInfo): void {
@@ -2617,6 +2651,7 @@ export class AgentManager {
       agentName: live.info.canonicalName,
       status: "completed",
       finalResponse: live.info.finalResponse,
+      ...(live.candidateReported ? { finalResponseReported: true as const } : {}),
       createdAt: Date.now(),
     });
   }
@@ -2658,12 +2693,12 @@ export class AgentManager {
   private removeMailboxEvents(parentSessionId: string, agentName: string): void {
     for (let index = this.mailbox.length - 1; index >= 0; index--) {
       const event = this.mailbox[index];
-      if (!event.attention && event.parentSessionId === parentSessionId && event.agentName === agentName) this.mailbox.splice(index, 1);
+      if (!event.attention && event.commentary === undefined && event.parentSessionId === parentSessionId && event.agentName === agentName) this.mailbox.splice(index, 1);
     }
   }
 
   private pushMailbox(event: AgentCompletionEvent, notify = true): void {
-    if (event.attention) {
+    if (event.attention || event.commentary !== undefined) {
       this.mailbox.push(event);
       if (notify) this.notifyUnclaimedCompletion(event);
       return;
@@ -2807,7 +2842,7 @@ export class AgentManager {
       for (const response of responses) this.finishWaitTarget(parentSessionId, response.agent_name);
       for (let index = this.mailbox.length - 1; index >= 0; index--) {
         const event = this.mailbox[index];
-        if (!event.attention && event.parentSessionId === parentSessionId && responses.some((response) => response.agent_name === event.agentName)) this.mailbox.splice(index, 1);
+        if (!event.attention && event.commentary === undefined && event.parentSessionId === parentSessionId && responses.some((response) => response.agent_name === event.agentName)) this.mailbox.splice(index, 1);
       }
       return {
         message: pending.length ? "Wait timed out; child agents were not stopped." : "All target agents reached final status.",

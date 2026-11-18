@@ -1,10 +1,11 @@
 /** A real public-SDK AgentSession and the shipped RPC loop; only model I/O is faux.
  * Accepts the extension manager's CLI-shaped argv, not a replacement production API.
  */
-import { appendFileSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { setTimeout as delay } from "node:timers/promises";
 import { CHILD_BUILTIN_EXTENSION_NAMES } from "../core.ts";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { providerCallsFile } from "./held-tool-extension.ts";
@@ -46,11 +47,48 @@ function messageText(message: { content: unknown } | undefined): string {
 }
 // An unlimited deterministic responder permits steer/resume without paid APIs.
 // Fixed fixture task texts exercise production tools, not a fixture-only agent API.
-const respond: FauxResponseFactory = (context, options, _state, model) => {
+const respond: FauxResponseFactory = async (context, options, _state, model) => {
   faux.appendResponses([respond]);
   const last = context.messages.findLast((message) => message.role === "user");
   const text = messageText(last);
   if (sessionFile) appendFileSync(providerCallsFile(sessionFile), `${JSON.stringify({ pid: process.pid, text, provider: model.provider, modelId: model.id, thinking: options?.reasoning, systemPrompt: getCurrentSystemPrompt(context.messages), lastRole: context.messages.at(-1)?.role, tools: getCurrentTools(context.messages).map(tool => tool.name), ...(process.env.PI_TEST_CAPTURE_CONTEXT === "1" ? { messages: context.messages } : {}) })}\n`);
+  const parentCommentary = context.messages.filter(message => message.role === "user").map(messageText)
+    .map(text => text.match(/^parent-commentary-task:(.+)$/m)).find(Boolean);
+  if (parentCommentary) {
+    const task = JSON.parse(parentCommentary[1]);
+    const results = context.messages.filter(message => message.role === "toolResult");
+    if (!results.some(message => message.toolName === "spawn_agent")) return fauxAssistantMessage(fauxToolCall("spawn_agent", {
+      task_name: "commentary-child", agent_type: "source-commentary", message: `commentary-task:${JSON.stringify(task)}`,
+    }), { stopReason: "toolUse" });
+    const hasUpdate = context.messages.some(message => message.role === "user" && messageText(message).includes('"commentary":'));
+    if (hasUpdate && !results.some(message => message.toolName === "read_agent_response")) {
+      return fauxAssistantMessage(fauxToolCall("read_agent_response", { target: "commentary-child" }), { stopReason: "toolUse" });
+    }
+    if (hasUpdate) return fauxAssistantMessage("parent observed child update");
+    if (task.mode) return fauxAssistantMessage("parent leaves completion to automatic delivery");
+    return fauxAssistantMessage(fauxToolCall("wait_agent", { targets: ["commentary-child"], until: task.wait ?? "any" }), { stopReason: "toolUse" });
+  }
+  const commentaryTask = context.messages.filter(message => message.role === "user").map(messageText)
+    .map(text => text.match(/^commentary-task:(.+)$/m)).find(Boolean);
+  if (commentaryTask) {
+    const task = JSON.parse(commentaryTask[1]);
+    const holds = context.messages.filter(message => message.role === "toolResult" && message.toolName === "faux_hold").length;
+    if (task.mode === "terminate") return fauxAssistantMessage([
+      { type: "text", text: "terminal tool text" }, fauxToolCall("faux_terminate", {}),
+    ], { stopReason: "toolUse" });
+    if (task.mode === "stop-continuation" && !context.messages.some(message => message.role === "assistant"
+      && messageText(message) === "stopped text before continuation")) return fauxAssistantMessage("stopped text before continuation");
+    if (holds === 0 && task.holdResponse) {
+      writeFileSync(`${task.path}.response-started`, "provider response in flight");
+      while (!existsSync(`${task.path}.response-release`)) await delay(5, undefined, { signal: options?.signal });
+    }
+    if (holds < 3) return fauxAssistantMessage([
+      { type: "thinking", thinking: "PRIVATE_THINKING_DO_NOT_FORWARD" },
+      { type: "text", text: holds === 0 ? "child blocker and ETA" : holds === 1 ? "   " : "second child update" },
+      fauxToolCall("faux_hold", { path: `${task.path}.${holds}` }),
+    ], { stopReason: "toolUse" });
+    return fauxAssistantMessage("child final result");
+  }
   if (text === "peer-provider-failure") return fauxAssistantMessage("", { stopReason: "error", errorMessage: "peer provider failure" });
   const peerTask = context.messages.filter(message => message.role === "user").map(messageText)
     .map(text => text.match(/^peer-detective:(auto|explicit|escalate|failure)$/m)).find(Boolean);
@@ -61,7 +99,8 @@ const respond: FauxResponseFactory = (context, options, _state, model) => {
     const lastIndex = context.messages.findLastIndex(message => message === last);
     if (peerTask[1] === "explicit" && reference && !context.messages.slice(lastIndex + 1)
       .some(message => message.role === "toolResult" && message.toolName === "link_send")) {
-      return fauxAssistantMessage(fauxToolCall("link_send", { to: { authorOf: reference }, message: "faux:explicit-detective-answer" }), { stopReason: "toolUse" });
+      return fauxAssistantMessage([{ type: "text", text: "PRIVATE_PEER_COMMENTARY" },
+        fauxToolCall("link_send", { to: { authorOf: reference }, message: "faux:explicit-detective-answer" })], { stopReason: "toolUse" });
     }
     if (peerTask[1] === "escalate" && !context.messages.slice(lastIndex + 1)
       .some(message => message.role === "toolResult" && message.toolName === "peer_escalate")) {

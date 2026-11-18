@@ -164,15 +164,18 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
 
   let suspension: SuspensionCoordinator;
   const completionMessage = (event: AgentCompletionEvent) => {
+    const commentary = event.commentary !== undefined;
     const payload = JSON.stringify({
       agent_name: event.agentName,
       status: event.status,
-      ...(event.finalResponse !== undefined ? { final_response: event.finalResponse } : {}),
+      ...(commentary ? { commentary: event.commentary, informational: true } : {}),
+      ...(event.finalResponseReported ? { final_response_reported_as_commentary: true } : {}),
+      ...(event.finalResponse !== undefined && !event.finalResponseReported ? { final_response: event.finalResponse } : {}),
       ...(event.error ? { error: event.error } : {}),
     }, null, 2);
     const bounded = boundedText(payload, DEFAULT_MAX_BYTES - 1024, DEFAULT_MAX_LINES - 4);
     return {
-      customType: completionMessageType,
+      customType: commentary ? "pi-codex-subagent-commentary" : completionMessageType,
       content: `<subagent_notification>\n${bounded.text}\n</subagent_notification>`,
       display: true,
       details: {

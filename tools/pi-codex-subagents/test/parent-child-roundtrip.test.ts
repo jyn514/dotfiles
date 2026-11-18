@@ -207,3 +207,175 @@ sourceTest.each(["direct", "nested", "blocked"])("production index/coordinator s
     rmSync(cwd, { recursive: true, force: true });
   }
 }, 30000);
+
+sourceTest.each(["any", "all"])("completed commentary reaches parent model during held child tools (%s wait)", async (wait) => {
+  const { getAgent } = await import("../core.ts");
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "commentary-"));
+  const parentFile = join(cwd, "parent.jsonl");
+  const marker = join(cwd, "child");
+  const templates = join(getAgentDir(), "pi-codex-subagents", "agents");
+  mkdirSync(templates, { recursive: true });
+  const templateFile = join(templates, "source-commentary.md");
+  writeFileSync(templateFile, `---\nname: source-commentary\nprovider: faux\nmodel: faux-1\nextensions: ${heldExtension}\n---\n`);
+  const rpc = sourceRpc(cwd, parentFile, false, [productionIndex], { PI_TEST_CAPTURE_CONTEXT: "1" });
+  const updates = () => SessionManager.open(parentFile).getBranch().filter((entry: any) =>
+    entry.type === "custom_message" && entry.customType === "pi-codex-subagent-commentary") as any[];
+  const modelUpdates = () => jsonl(providerCallsFile(parentFile)).filter(call => call.messages?.some((message: any) =>
+    message.role === "user" && text(message.content).includes('"commentary":')));
+  try {
+    const { sessionId } = await rpc.request({ type: "get_state" });
+    await rpc.request({ type: "prompt", message: `parent-commentary-task:${JSON.stringify({ path: marker, wait })}` });
+    await until(() => existsSync(heldToolFiles(`${marker}.0`).started) && modelUpdates().length > 0,
+      "parent provider receives completed commentary before held child finishes");
+    const child = getAgent("commentary-child", sessionId)!;
+    expect(child.status).toBe("running");
+    expect(existsSync(heldToolFiles(`${marker}.0`).ended)).toBe(false);
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0].content).toContain("child blocker and ETA");
+    expect(updates()[0].content).not.toContain("PRIVATE_THINKING_DO_NOT_FORWARD");
+    expect(updates()[0].content).not.toContain("faux_hold");
+    expect(updates()[0].content).not.toContain('"final_response"');
+    expect(completions(parentFile)).toHaveLength(0);
+    await until(() => toolResults(parentFile, "read_agent_response").length === 1,
+      "parent reads unchanged final-response API while child still runs");
+    const response = text(toolResults(parentFile, "read_agent_response")[0].message.content);
+    expect(response).toContain('"status": "running"');
+    expect(response).not.toContain("child blocker and ETA");
+    expect(response).not.toContain("finalResponse");
+    for (const call of modelUpdates()) {
+      const notifications = call.messages.filter((message: any) => message.role === "user"
+        && text(message.content).includes('"commentary":'));
+      expect(notifications).toHaveLength(1);
+    }
+    // Empty completed text and tool arguments do not create another notification.
+    writeFileSync(heldToolFiles(`${marker}.0`).release, "release first");
+    await until(() => existsSync(heldToolFiles(`${marker}.1`).started), "empty commentary tool starts");
+    expect(updates()).toHaveLength(1);
+    expect(completions(parentFile)).toHaveLength(0);
+    writeFileSync(heldToolFiles(`${marker}.1`).release, "release empty");
+    await until(() => existsSync(heldToolFiles(`${marker}.2`).started) && updates().length === 2,
+      "second distinct completed message arrives once");
+    expect(updates()[1].content).toContain("second child update");
+    writeFileSync(heldToolFiles(`${marker}.2`).release, "finish child");
+    await until(() => completions(parentFile).length === 1 && getAgent("commentary-child", sessionId)!.status === "completed",
+      "one final completion remains separate from updates");
+    await until(async () => !(await rpc.request({ type: "get_state" })).isStreaming, "parent consumes final");
+    expect(updates()).toHaveLength(2);
+    expect(completions(parentFile)[0].content).toContain('"final_response": "child final result"');
+    expect(getAgent("commentary-child", sessionId)!.finalResponse).toBe("child final result");
+    const inputs = jsonl(providerCallsFile(parentFile)).at(-1).messages.filter((message: any) => message.role === "user")
+      .map((message: any) => text(message.content));
+    expect(inputs.filter((value: string) => value.includes('"commentary": "child blocker and ETA"'))).toHaveLength(1);
+    expect(inputs.filter((value: string) => value.includes('"commentary": "second child update"'))).toHaveLength(1);
+    expect(inputs.filter((value: string) => value.includes('"final_response": "child final result"'))).toHaveLength(1);
+    expect(inputs.join("\n")).not.toContain("PRIVATE_THINKING_DO_NOT_FORWARD");
+  } finally {
+    await rpc.close();
+    rmSync(templateFile, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 30000);
+
+sourceTest("commentary completed during pause survives save/reopen and reaches the parent once on unpause", async () => {
+  const { getAgent, getRunsDir, parentScopeKey } = await import("../core.ts");
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "paused-commentary-"));
+  const parentFile = join(cwd, "parent.jsonl");
+  const marker = join(cwd, "child");
+  const templates = join(getAgentDir(), "pi-codex-subagents", "agents");
+  mkdirSync(templates, { recursive: true });
+  const templateFile = join(templates, "source-commentary.md");
+  writeFileSync(templateFile, `---\nname: source-commentary\nprovider: faux\nmodel: faux-1\nextensions: ${heldExtension}\n---\n`);
+  let rpc = sourceRpc(cwd, parentFile, false, [productionIndex], { PI_TEST_CAPTURE_CONTEXT: "1" });
+  const updates = () => SessionManager.open(parentFile).getBranch().filter((entry: any) =>
+    entry.type === "custom_message" && entry.customType === "pi-codex-subagent-commentary") as any[];
+  try {
+    const { sessionId } = await rpc.request({ type: "get_state" });
+    const groupFile = join(getRunsDir(), parentScopeKey(sessionId), "group.json");
+    const group = () => JSON.parse(readFileSync(groupFile, "utf8"));
+    await rpc.request({ type: "prompt", message: `parent-commentary-task:${JSON.stringify({ path: marker, holdResponse: true })}` });
+    await until(() => existsSync(`${marker}.response-started`) && rpc.records.some(record =>
+      record.type === "tool_execution_start" && record.toolName === "wait_agent"),
+      "child provider in flight and parent waiting before pause");
+    const callsBeforePause = jsonl(providerCallsFile(parentFile)).length;
+    const pause = rpc.request({ type: "prompt", message: "/pause" });
+    void pause.catch(() => {});
+    await until(() => existsSync(groupFile) && group().phase === "preparing", "parent pause owns subsequent delivery");
+    writeFileSync(`${marker}.response-release`, "complete admitted provider response after pause");
+    await until(() => existsSync(heldToolFiles(`${marker}.0`).pauseRequested), "child held tool observes native pause");
+    expect(updates()).toHaveLength(0);
+    writeFileSync(heldToolFiles(`${marker}.0`).release, "finish admitted tool");
+    await pause;
+    expect(group().phase).toBe("saved");
+    expect(group().completions.mailbox.filter((event: any) => event.commentary === "child blocker and ETA")).toHaveLength(1);
+    expect(jsonl(providerCallsFile(parentFile))).toHaveLength(callsBeforePause);
+    expect(await rpc.close()).toBe(0);
+    rpc = sourceRpc(cwd, parentFile, false, [productionIndex], { PI_TEST_CAPTURE_CONTEXT: "1" });
+    expect((await rpc.request({ type: "get_state" })).pauseState).toBe("paused");
+    expect(updates()).toHaveLength(0);
+    writeFileSync(heldToolFiles(`${marker}.1`).release, "future empty tool");
+    writeFileSync(heldToolFiles(`${marker}.2`).release, "future commentary tool");
+    await rpc.request({ type: "prompt", message: "/unpause" });
+    await until(() => completions(parentFile).length === 1 && getAgent("commentary-child", sessionId)!.status === "completed",
+      "restored child completes and parent receives buffered update and final");
+    await until(async () => !(await rpc.request({ type: "get_state" })).isStreaming, "restored parent consumes notifications");
+    expect(updates().filter(entry => entry.content.includes("child blocker and ETA"))).toHaveLength(1);
+    expect(updates()).toHaveLength(2);
+    expect(completions(parentFile)[0].content).toContain("child final result");
+    const finalInput = jsonl(providerCallsFile(parentFile)).at(-1).messages.filter((message: any) => message.role === "user")
+      .map((message: any) => text(message.content));
+    expect(finalInput.filter((value: string) => value.includes('"commentary": "child blocker and ETA"'))).toHaveLength(1);
+    const calls = jsonl(providerCallsFile(parentFile)).length;
+    await rpc.request({ type: "prompt", message: "/unpause" });
+    expect(updates()).toHaveLength(2);
+    expect(jsonl(providerCallsFile(parentFile))).toHaveLength(calls);
+  } finally {
+    await rpc.close();
+    rmSync(templateFile, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 30000);
+
+sourceTest.each(["terminate", "stop-continuation"])("native %s distinguishes intermediate text from final delivery", async mode => {
+  const { AgentManager, getAgent } = await import("../core.ts");
+  const cwd = mkdtempSync(join(process.env.PI_TEST_OWNED_ROOT!, "commentary-terminal-"));
+  const parentFile = join(cwd, "parent.jsonl");
+  const marker = join(cwd, "child");
+  const templates = join(getAgentDir(), "pi-codex-subagents", "agents");
+  mkdirSync(templates, { recursive: true });
+  const templateFile = join(templates, "source-commentary.md");
+  writeFileSync(templateFile, `---\nname: source-commentary\nprovider: faux\nmodel: faux-1\ntools: +faux_terminate\nextensions: ${heldExtension}\n---\n`);
+  for (let index = 0; index < 3; index++) writeFileSync(heldToolFiles(`${marker}.${index}`).release, "complete tool");
+  const rpc = sourceRpc(cwd, parentFile, false, [productionIndex], { PI_TEST_CAPTURE_CONTEXT: "1" });
+  try {
+    const { sessionId } = await rpc.request({ type: "get_state" });
+    await rpc.request({ type: "prompt", message: `parent-commentary-task:${JSON.stringify({ path: marker, mode })}` });
+    await until(() => completions(parentFile).length === 1 && getAgent("commentary-child", sessionId)!.status === "completed",
+      "child genuinely settles after native terminal/continuation boundary");
+    await until(async () => !(await rpc.request({ type: "get_state" })).isStreaming, "parent consumes final notification");
+    const lastInput = jsonl(providerCallsFile(parentFile)).at(-1).messages.filter((message: any) => message.role === "user")
+      .map((message: any) => text(message.content));
+    const expected = mode === "terminate" ? "terminal tool text" : "child final result";
+    expect(lastInput.filter((value: string) => value.includes(expected)), JSON.stringify({ lastInput,
+      completion: completions(parentFile)[0].content, child: getAgent("commentary-child", sessionId) })).toHaveLength(1);
+    if (mode === "terminate") {
+      expect(completions(parentFile)[0].content).toContain('"final_response_reported_as_commentary": true');
+      expect(completions(parentFile)[0].content).not.toContain("terminal tool text");
+    } else {
+      expect(lastInput.filter((value: string) => value.includes('"commentary": "stopped text before continuation"'))).toHaveLength(1);
+      expect(completions(parentFile)[0].content).toContain('"final_response": "child final result"');
+    }
+    // New Manager reads persisted final state through the same final-only response
+    // and wait interfaces, without adopting or modifying the live parent's work.
+    const reader = new AgentManager();
+    try {
+      await reader.ready();
+      expect(reader.readAgentResponse("commentary-child", sessionId).finalResponse).toBe(expected);
+      expect((await reader.waitAgent(sessionId, ["commentary-child"])).event?.finalResponse).toBe(expected);
+      expect((await reader.waitAllAgents(sessionId, ["commentary-child"])).responses[0].finalResponse).toBe(expected);
+    } finally { await reader.shutdown(); }
+  } finally {
+    await rpc.close();
+    rmSync(templateFile, { force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 30000);
