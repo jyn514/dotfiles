@@ -1,7 +1,7 @@
 //! Guest-only file collection and one authenticated exchange. No native execution.
 use crate::policy;
 use crate::protocol::*;
-use clap::{ArgMatches, FromArgMatches};
+use clap::{Arg, ArgMatches, CommandFactory, FromArgMatches};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
@@ -20,6 +20,9 @@ type Failure = (i32, String);
 /// second option grammar. Unknown future fields are included in the comparison.
 pub fn normalize(argv: &[String]) -> Result<(Vec<String>, Option<PathBuf>), String> {
     validate_argv(argv).map_err(|e| e.to_string())?;
+    if let Some(result) = normalize_comment_file(argv)? {
+        return Ok(result);
+    }
     let mut original = match policy::parse(argv) {
         Ok(cli) => cli,
         // Help/version (and errors) go to broker policy without native help output.
@@ -68,9 +71,75 @@ pub fn normalize(argv: &[String]) -> Result<(Vec<String>, Option<PathBuf>), Stri
     Ok((normalized, Some(path)))
 }
 
+// The native comment parser has no file option. Extend that parser only in the
+// guest, then reconstruct and compare all native fields before collecting input.
+fn normalize_comment_file(
+    argv: &[String],
+) -> Result<Option<(Vec<String>, Option<PathBuf>)>, String> {
+    let parser = Cli::command().mut_subcommand("comment", |cmd| {
+        cmd.arg(
+            Arg::new("file")
+                .short('F')
+                .long("file")
+                .value_name("FILE")
+                .conflicts_with("body"),
+        )
+    });
+    let matches = match parser
+        .try_get_matches_from(std::iter::once("ti").chain(argv.iter().map(String::as_str)))
+    {
+        Ok(matches) => matches,
+        Err(_) => return Ok(None),
+    };
+    let Some(("comment", comment)) = matches.subcommand() else {
+        return Ok(None);
+    };
+    let Some(path) = comment.get_one::<String>("file") else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(path);
+    let mut native = vec!["comment".to_owned()];
+    if let Some(ticket) = comment.get_one::<String>("ticket") {
+        native.extend(["--ticket".into(), ticket.clone()]);
+    }
+    if comment.get_flag("edit") {
+        native.push("--edit".into());
+    }
+    if comment.get_flag("json") {
+        native.push("--json".into());
+    }
+    if comment.get_flag("markdown") {
+        native.push("--markdown".into());
+    }
+    native.extend(["--".into(), "placeholder".into()]);
+    let parsed =
+        policy::parse_matches(&native).map_err(|_| "cannot normalize comment arguments")?;
+    if !same_except_file_and_body(&matches, &parsed) {
+        return Err("cannot preserve comment arguments".into());
+    }
+    policy::classify(&native, "")?;
+    native.pop();
+    Ok(Some((native, Some(path))))
+}
+
 fn same_except_file(left: &ArgMatches, right: &ArgMatches) -> bool {
-    let mut left_ids: Vec<_> = left.ids().map(|id| id.as_str()).collect();
-    let mut right_ids: Vec<_> = right.ids().map(|id| id.as_str()).collect();
+    same_matches(left, right, false)
+}
+fn same_except_file_and_body(left: &ArgMatches, right: &ArgMatches) -> bool {
+    same_matches(left, right, true)
+}
+fn same_matches(left: &ArgMatches, right: &ArgMatches, ignore_body: bool) -> bool {
+    let include = |id: &str| id != "file" && !(ignore_body && (id == "body" || id == "Args"));
+    let mut left_ids: Vec<_> = left
+        .ids()
+        .map(|id| id.as_str())
+        .filter(|id| include(id))
+        .collect();
+    let mut right_ids: Vec<_> = right
+        .ids()
+        .map(|id| id.as_str())
+        .filter(|id| include(id))
+        .collect();
     left_ids.sort_unstable();
     right_ids.sort_unstable();
     if left_ids != right_ids {
@@ -89,7 +158,7 @@ fn same_except_file(left: &ArgMatches, right: &ArgMatches) -> bool {
     }
     match (left.subcommand(), right.subcommand()) {
         (None, None) => true,
-        (Some((ln, l)), Some((rn, r))) => ln == rn && same_except_file(l, r),
+        (Some((ln, l)), Some((rn, r))) => ln == rn && same_matches(l, r, ignore_body),
         _ => false,
     }
 }
@@ -120,8 +189,9 @@ fn exchange(
     token: String,
     deadline: Instant,
 ) -> Result<Response, Failure> {
-    let (argv, file) = normalize(&argv).map_err(|e| (2, e))?;
-    let stdin = match file {
+    let (mut argv, file) = normalize(&argv).map_err(|e| (2, e))?;
+    let comment_file = file.is_some() && argv.first().is_some_and(|arg| arg == "comment");
+    let mut stdin = match file {
         None => String::new(),
         Some(path) if path == std::path::Path::new("-") => collect(&mut std::io::stdin().lock())?,
         Some(path) => {
@@ -130,6 +200,10 @@ fn exchange(
             collect(&mut file)?
         }
     };
+    if comment_file {
+        argv.push(std::mem::take(&mut stdin));
+        policy::classify(&argv, "").map_err(|e| (2, e))?;
+    }
     remaining(deadline)?;
     let request = AuthenticatedRequest {
         token,

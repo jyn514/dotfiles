@@ -72,6 +72,77 @@ fn relative_guest_only_files_and_literal_dash_cross_as_bytes_not_paths() {
     }
 }
 #[test]
+fn comment_files_and_stdin_are_sent_as_literal_positional_bodies() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("draft"), "--text 雪\n").unwrap();
+    for (option, input, expected) in [
+        ("--file=draft", None, "--text 雪\n"),
+        ("-F-", Some("stdin α\n"), "stdin α\n"),
+    ] {
+        let (endpoint, broker) = server();
+        let mut cmd = command(dir.path());
+        cmd.env("SANDBOX_TIC_ENDPOINT", endpoint)
+            .env("SANDBOX_TIC_TOKEN", "secret")
+            .args(["comment", "-t", "ticket-id", option]);
+        if input.is_some() {
+            cmd.stdin(Stdio::piped());
+        }
+        let mut child = cmd.spawn().unwrap();
+        if let Some(input) = input {
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(input.as_bytes())
+                .unwrap();
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(7),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let request = broker.join().unwrap();
+        assert_eq!(
+            request.request.argv,
+            ["comment", "--ticket", "ticket-id", "--", expected]
+        );
+        assert_eq!(request.request.stdin, "");
+    }
+}
+
+#[test]
+fn invalid_comment_file_inputs_never_connect() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("invalid"), [0xff]).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    for args in [
+        vec!["comment", "-F", "invalid"],
+        vec!["comment", "-F", "missing"],
+        vec!["comment", "-F", "invalid", "body"],
+        vec!["comment", "-F", "invalid", "-F", "invalid"],
+        vec!["comment", "-e", "-F", "invalid"],
+    ] {
+        let output = command(dir.path())
+            .env(
+                "SANDBOX_TIC_ENDPOINT",
+                listener.local_addr().unwrap().to_string(),
+            )
+            .env("SANDBOX_TIC_TOKEN", "secret")
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_ne!(output.status.code(), Some(0), "{args:?}");
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+}
+
+#[test]
 fn caller_stdin_is_collected_only_for_native_stdin_file_operand() {
     let dir = tempfile::tempdir().unwrap();
     let (endpoint, broker) = server();

@@ -46,6 +46,7 @@ For example, with `ti edit TICKET -F draft.md`, the guest client reads `draft.md
 Replace `TICKET` with the ticket to edit.
 The host receives `edit TICKET -F -` and those UTF-8 bytes, not a pathname to open.
 Use `-F -` to read caller stdin; the specification describes the full file-input contract.
+For comments, `ti comment -t TICKET -F draft.md` sends the file as the comment body; do not also provide positional body text.
 Input-loading failure does not cause a host-file read instead.
 
 TicGit defaults on for new sessions; explicit `capabilities.tic: false` opts out.

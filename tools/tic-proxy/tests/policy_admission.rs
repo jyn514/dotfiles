@@ -3,6 +3,20 @@ use tic_proxy::protocol::{AuthenticatedRequest, Request};
 fn args(a: &[&str]) -> Vec<String> {
     a.iter().map(|s| (*s).into()).collect()
 }
+#[test]
+fn agent_help_advertises_comment_file_and_its_body_conflict() {
+    let help = tic_proxy::policy::agent_help();
+    let comment = help
+        .lines()
+        .find(|line| line.starts_with("comment:"))
+        .unwrap();
+    assert!(
+        comment.contains("--file") && comment.contains("-F"),
+        "{comment}"
+    );
+    assert!(help.contains("Comment --file and positional body text cannot be combined."));
+}
+
 // Exercise the same typed envelope a client bypass uses, not client normalization.
 fn direct(a: &[&str], stdin: &str) -> Result<Decision, String> {
     let raw = serde_json::to_vec(&AuthenticatedRequest {

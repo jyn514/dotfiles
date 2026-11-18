@@ -89,6 +89,30 @@ fn native_parser_proves_exact_file_replacement_not_virtual_index_mapping() {
     }
 }
 #[test]
+fn comment_file_uses_native_options_and_rejects_ambiguous_input() {
+    for input in [
+        vec!["comment", "-t", "abc", "-F", "draft"],
+        vec!["comment", "--ticket=abc", "--file=draft"],
+        vec!["comment", "-tabc", "-Fdraft"],
+    ] {
+        assert_eq!(
+            normalize(&a(&input)).unwrap(),
+            (
+                a(&["comment", "--ticket", "abc", "--"]),
+                Some("draft".into())
+            ),
+            "{input:?}"
+        );
+    }
+    for input in [
+        vec!["comment", "-F", "draft", "body"],
+        vec!["comment", "-F", "draft", "-F", "other"],
+        vec!["comment", "-e", "-F", "draft"],
+    ] {
+        assert!(normalize(&a(&input)).is_err(), "{input:?}");
+    }
+}
+#[test]
 fn text_and_double_dash_are_not_file_grammars() {
     for input in [
         vec![],

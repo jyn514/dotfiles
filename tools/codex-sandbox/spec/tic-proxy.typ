@@ -206,7 +206,7 @@ In the inspected native interface, this includes the following invocation condit
 
 - `new` requires a nonblank explicit title or an admitted input file; reject `--comment-edit`.
 - `edit` requires an admitted input file.
-- `comment` requires at least one positional body value; reject `-e` / `--edit`.
+- `comment` requires positional body text or guest `-F` / `--file` input, but not both; reject `-e` / `--edit`.
 - `spec` requires explicit text, an admitted input file, or `--clear`.
 - `writeup new` requires a nonblank explicit title and an explicit body or admitted file.
 - `writeup edit` requires an explicit body or admitted file.
@@ -222,7 +222,8 @@ Preserve ordinary host help and commands; agent help must advertise only admitte
 Explain native argument conflicts using the exported parser's metadata and structured errors, without publishing excluded administrative or editor guidance.
 Help must explain that `list --open` shows all open tickets without truncation and identify its native conflicting arguments.
 Export the fork's existing parser as library code rather than maintaining a second argv grammar.
-The guest client owns file-to-stdin normalization; the broker owns admission rules and agent help.
+The guest client owns file-input normalization; the broker owns admission rules and agent help.
+For comments, the guest extends the native parser with the file option and converts the loaded text to a positional body before dispatch.
 Do not add policy annotations or an execution mode to TicGit.
 The exact parser export remains to be specified; it is not a native server interface.
 Help/version do not open the store.
@@ -248,12 +249,14 @@ It sends the file contents as request stdin, not the original pathname.
 For `ti edit -F -`, the guest reads caller stdin instead; `ti edit -F ./-` reads a literal guest file named `-`.
 The broker validates the normalized command, then forwards exactly that argv unchanged and supplies the bounded stdin bytes.
 Native TicGit parses the content; neither client nor broker interprets ticket syntax.
+For `ti comment -t TICKET -F draft.md`, the guest reads the file using the same rules, then sends its contents as one positional comment body, with no request stdin.
+The broker admits and executes the resulting native comment command as usual.
 Guest-only input files are allowed because their contents, not their paths, cross the execution boundary.
 The host never opens the supplied guest pathname, so workspace mapping and host safe-open/symlink-race machinery are unnecessary.
 Do not silently substitute a host read when guest file loading fails.
 
 Use the exported native parser to identify file operands, including attached values, short clusters, option-looking data, and `--`.
-Every admitted file operand must be `-`; reject a direct authenticated request naming any other file.
+Every native file operand admitted by the broker must be `-`; reject a direct authenticated request naming any other file.
 Do not replace operands after admission or stage input in host files.
 Reject nonempty stdin when the parsed command has no admitted file operand.
 An empty input file still supplies empty stdin; leave content validation to native TicGit rather than confusing empty content with an omitted file option.

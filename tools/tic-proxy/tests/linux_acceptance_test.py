@@ -288,9 +288,9 @@ class LinuxAcceptanceNativeComponents(unittest.TestCase):
         try:
             environment = dict(fixture.environment, **launch.environment())
             commands = []
-            def client(*argv):
+            def client(*argv, input=None):
                 output = subprocess.run([str(build.guest_client_executable), *argv], cwd=fixture.main,
-                                        env=environment, text=True, capture_output=True, timeout=50)
+                                        env=environment, input=input, text=True, capture_output=True, timeout=50)
                 item = dict(argv=list(argv), exit=output.returncode,
                             stdout=output.stdout, stderr=output.stderr)
                 commands.append(item)
@@ -299,8 +299,23 @@ class LinuxAcceptanceNativeComponents(unittest.TestCase):
             self.assertEqual(0, shown['exit'], shown)
             self.assertIn(host['title'], shown['stdout'])
             comment = 'actual component client comment α'
-            changed = client('comment', '--ticket', host['id'], comment)
+            (fixture.main / 'comment.md').write_text(comment, encoding='utf-8')
+            changed = client('comment', '--ticket', host['id'], '-F', 'comment.md')
             self.assertEqual(0, changed['exit'], changed)
+            stdin_comment = '--stdin comment 雪\n'
+            changed = client('comment', '-t', host['id'], '--file', '-', input=stdin_comment)
+            self.assertEqual(0, changed['exit'], changed)
+            def comments():
+                ticket = json.loads(fixture.ti(native, fixture.linked, 'show', host['id'], '--json')['stdout'])
+                return [entry['body'] for entry in ticket['comments']]
+            before = comments()
+            self.assertEqual([comment, stdin_comment], before)
+            (fixture.main / 'invalid.md').write_bytes(b'\xff')
+            for args in (('-F', 'invalid.md'), ('-F', 'missing.md'),
+                         ('-F', 'comment.md', 'ambiguous')):
+                rejected = client('comment', '-t', host['id'], *args)
+                self.assertNotEqual(0, rejected['exit'], rejected)
+                self.assertEqual(before, comments(), args)
             # Independently dispatched local writer loops; this smoke test
             # checks their successful results, not the timing of interleaving.
             import threading

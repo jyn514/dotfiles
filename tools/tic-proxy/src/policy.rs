@@ -218,7 +218,7 @@ fn argument_error(error: &clap::Error) -> String {
 pub fn agent_help() -> String {
     let mut native = Cli::command();
     native.build();
-    let mut out = String::from("TicGit agent interface\nUsage: ti <command> [options]\nNo arguments means list. Files are collected in the guest; - reads stdin.\nExplicit input is required for new, edit, comment, state/status, spec and writeup new/edit.\nWriteup --body is literal text; writeup edit --file reads title then body.\n\n");
+    let mut out = String::from("TicGit agent interface\nUsage: ti <command> [options]\nNo arguments means list. Files are collected in the guest; - reads stdin.\nExplicit input is required for new, edit, comment, state/status, spec and writeup new/edit.\nComment --file and positional body text cannot be combined.\nWriteup --body is literal text; writeup edit --file reads title then body.\n\n");
     for cmd in native
         .get_subcommands()
         .filter(|c| admitted_name(c.get_name()))
@@ -254,6 +254,9 @@ fn help_line(cmd: &clap::Command, name: &str, out: &mut String) {
         if arg.get_long().is_none() && arg.get_short().is_none() {
             out.push_str(&format!(" <{}>", arg.get_id()));
         }
+    }
+    if name == "comment" {
+        out.push_str(" --file -F");
     }
     out.push('\n');
     for arg in cmd.get_arguments().filter(|a| advertised_arg(a)) {
