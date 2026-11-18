@@ -98,6 +98,13 @@ Escalation has an explicit authority boundary:
 
 Also escalate unresolved security, trust, destructive-boundary, dependency/operational-cost, reusable-framework, or other blocking decisions; record the escalation and decision rather than silently choosing.
 
+Before marking the specification `ready`, make its verification plan concrete:
+connect required behaviors and mechanisms to cases that distinguish correct behavior from plausible partial implementations.
+Identify each case's independent expected-result source and test boundary, including important interactions.
+Identify which real-input/consumer checks run early rather than waiting for feature completion.
+Reuse existing tests and group obligations where appropriate; keep this mapping in the existing verification section, not a separate exhaustive test catalogue.
+These are planned checks, not a requirement to implement or pass tests before implementation is authorized.
+
 A spec becomes `ready` only after required routed work, validation, and resolution of blocking questions. `ready` does not itself authorize implementation.
 
 You may perform experiments or develop prototypes to inform your decisions, but these must be temporary and discarded once the spec is complete.
