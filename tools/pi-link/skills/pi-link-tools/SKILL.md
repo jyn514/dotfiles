@@ -9,9 +9,6 @@ description: "Coordinate Pi sessions with link_set_identity, link_send, link_lis
 
 - Each terminal knows only its own conversation and acts with its own tools and access.
   Sending a message does not share the rest of your context.
-- The user sees tool results and incoming panels in the transcript.
-  Do not repeat exchanges in your ordinary reply merely to report them.
-  Tell the user only new conclusions, decisions, or questions needing their attention.
 - Send no acknowledgment unless requested.
   Ask a question only when its answer can change your next action.
 - Cwd is a hint, not proof of shared workspace, branch, or access.
