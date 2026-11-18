@@ -18,6 +18,13 @@ Use [review evidence standards](review-evidence.md) to state what the inspected 
 
 ## Choose the test shape
 
+Choose the smallest test or benchmark that exercises the behavior responsible for the observed result.
+Trace where the result changes before choosing the test boundary; the same symptom can originate in different stages.
+Use focused checks for iteration, and retain broader checks for interactions and population effects that focused checks cannot establish.
+Do not make a full build the default feedback loop merely because it covers every stage.
+For example, an absent dictionary entry can mean construction failed or a later collision displaced a valid candidate.
+Test construction and collision selection separately, then check their composition; neither focused test alone establishes full-vocabulary coverage.
+
 Split meaningful business logic and likely bugs where they can be tested. Prefer running most of the system in memory so generated tests can cover many cases cheaply. If database behavior or subtle invariants belong to the trusted computing base, run the real database in memory when practical instead of mocking it. The plan-execute pattern often helps.
 
 ## Execution and case coverage

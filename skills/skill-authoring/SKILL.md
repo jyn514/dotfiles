@@ -174,6 +174,8 @@ Read through the task from first action to completion.
 Where could the agent get stuck, follow conflicting rules, or call the work finished too early?
 If two instructions conflict, state which wins or what the agent should do next.
 If a bad choice follows reasonably from the text, fix the instruction that permits it.
+Try a concrete counterexample: could an agent do what this guidance is meant to prevent while plausibly claiming to follow it?
+Check exceptions and qualifiers against that case; do not assume the agent shares the writer's intent.
 
 For a claim such as “another worker is needed,” what supports it, and what quick check could show otherwise?
 When revising collaboration guidance, use the proposed responsibilities where practical and authorized.

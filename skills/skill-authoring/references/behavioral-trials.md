@@ -29,6 +29,11 @@ Do not turn an action being measured into a setup requirement.
 For example, when testing whether an agent chooses an available tool, preserve availability but leave the choice to the agent.
 When testing how it interprets a supplied tool result, that result belongs in the starting state.
 
+For a self-direction trial, a workspace with several genuine possibilities leaves the pursuit for the agent to choose.
+Assigning the evaluator's preferred project instead tests execution of that assignment.
+Inspect whether the agent acts on its chosen goal and revises its approach when evidence changes, within the governing constraints.
+Choosing a different pursuit from the one the evaluator anticipated is not itself a failure.
+
 Distinguish a useful answer, a changed research action, and reliable compliance; they require different evidence.
 Use the trial criteria to construct and interpret it; do not add a separate scoring rubric unless requested.
 
