@@ -33,6 +33,18 @@ Separate open, settled, and deferred decisions, and identify decisions that are 
 Resolve factual and procedural questions from records and tools you can access before asking for human judgment.
 When a decision depends on how a rule or category applies, follow [Rule scope and applicability](references/rule-scope.md).
 
+Before asking jyn a question, imagine plausible follow-up questions she could ask about its premises: “Why is that necessary?”, “Didn't we already decide this?”, or “Why doesn't the existing mechanism handle it?”
+Use them to expose false premises, agent-selected restrictions presented as requirements, settled choices, or options that don't address the problem.
+Investigate follow-up questions that available evidence can answer.
+If that resolves the original question, take the authorized action instead of asking.
+Ask only for the judgment or information that remains.
+Imagined questions guide investigation; they do not establish jyn's preferences or grant authority.
+Do this silently; don’t turn the check into another report or approval step.
+
+For example, a warning is meant to appear whenever the selected sandbox backend blocks privilege escalation.
+Before asking whether to reword its Linux-only message, consider “Why doesn't macOS show it when using the same restricted backend?”
+If tracing confirms that the condition checks the host OS instead of the backend restriction, correct that condition if already authorized rather than ask about wording.
+
 Choose what the reader needs to judge or understand, and what their answer would change.
 Default to one decision or consequence per explanation and the smallest useful batch; separate independent choices.
 Resolve unclear approval scope before drafting.
