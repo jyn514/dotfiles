@@ -35,7 +35,12 @@ Inspect whether the agent acts on its chosen goal and revises its approach when 
 Choosing a different pursuit from the one the evaluator anticipated is not itself a failure.
 
 Distinguish a useful answer, a changed research action, and reliable compliance; they require different evidence.
+Judge actual decisions and actions, not just formatting or workflow compliance.
 Use the trial criteria to construct and interpret it; do not add a separate scoring rubric unless requested.
+
+For example, a coding-guidance revision must improve discovery while preserving shared obligations on demand.
+A discoverable replacement skill that still delivers those obligations can meet that outcome even if the agent never explicitly compares it with retaining the old router.
+Omitting a required comparison may show procedural noncompliance; it does not establish that the shared obligations were lost.
 
 Pair a positive case where the behavior under test is needed with a nearby negative case where it would be unnecessary or wrong.
 Positive and negative describe whether the behavior is appropriate, not whether the response should succeed or fail.
@@ -153,6 +158,12 @@ Include preceding diagnostic results, user corrections, and recorded compaction 
 Do not include the original faulty plan or action when testing whether the continuation independently chooses it.
 A later-stage trial of carrying out an existing plan measures follow-through, not independent choice; label it separately.
 
+For example, a historical root receives a complaint and then a clarification before recommending a design, with no intervening worker reply.
+A replay forks after the complaint, omits the clarification, and later adopts a fresh worker's different design.
+These are not matched observations of the root's decision: the user inputs differ, and worker feedback contributes only to the replay's outcome.
+To compare that root decision, retain the clarification and cut before the recommendation.
+Testing how the worker responds is a separate question.
+
 ### Choose the state and handoff method for the tested behavior
 
 Use a real handoff packet instead only when the handoff or receiver behavior is itself the subject of the trial.
@@ -192,7 +203,6 @@ Appending a corrective message, removing prior investigation, or moving evidence
 Disclosing those differences does not restore comparability.
 If the available harness cannot perform the replacement, report that limitation before substituting a different trial.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
-Judge actual decisions and actions afterward, not just formatting or workflow compliance.
 For compound outcomes, distinguish evidence for individual causal links from evidence that the links occur together.
 Do not require one example to demonstrate every link when separate evidence could already change the assessment.
 Separate examples do not establish the combined outcome.
