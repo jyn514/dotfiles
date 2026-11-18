@@ -6,22 +6,32 @@ description: How to use TicGit (`ti`) to track Git-native tickets in a local rep
 # TicGit Agent Guide
 
 Use `ti` for planning, progress notes, triage, and resolving work.
-Use plain `ti list` for compact tables, `--markdown` for detailed inspection, and `--json` for programmatic queries.
+Use plain `ti list` for compact tables and `ti show <id> --filter <path>` for selected fields.
+Use `--json` for programmatic queries and `--markdown` when the full ticket history is needed.
 Use explicit ticket and writeup IDs; do not rely on current-ticket defaults.
 Native Markdown can suggest commands unavailable through the proxy; follow the supported workflows below instead.
 
 ## Inspect a ticket
 
-Inspect the assigned ticket.
-Use listing to locate tickets when needed:
+Start with the ticket's current description, not its full comment history.
+Use the compact listing to locate tickets and check their current state:
 
 ```sh
 ti list
+ti show <id> --filter .description
+```
+
+Inspect `.spec` or relevant comments when requirements, authority or acceptance depend on them.
+Read the governing requirements and relevant acceptance record before drawing conclusions about completion.
+Tracker state alone does not prove that the required outcome is accepted.
+
+Use the full view when investigating history, recovering a decision or checking whether later evidence supersedes the description:
+
+```sh
 ti show <id> --markdown
 ```
 
-Read its current requirements and acceptance record before drawing conclusions about completion.
-Tracker state alone does not prove that the required outcome is accepted.
+This view includes all comments; do not make it the default for a current-state check.
 Stop after the requested inspection or summary when no tracker change is authorized.
 
 ## Select further operations
