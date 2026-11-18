@@ -1260,7 +1260,7 @@ vim.api.nvim_create_autocmd("FileType", {
 		}, { buffer = args.buf })
 		-- match obsidian bindings
 		vim.keymap.set({ 'n', 'v' }, '<C-b>', ":Mdn formatting strong_toggle<CR>", { desc = 'Toggle bold', buffer = true })
-		vim.keymap.set({ 'n', 'v' }, '<C-i>', ":Mdn formatting emphasis_toggle<CR>",
+		vim.keymap.set({ 'n', 'v' }, '<C-p>', ":Mdn formatting emphasis_toggle<CR>",
 			{ desc = 'Toggle italics', buffer = true })
 		vim.keymap.set({ 'n', 'v' }, '<C-l>', ":Mdn formatting task_list_toggle<CR>",
 			{ desc = 'Toggle checkbox', buffer = true })
