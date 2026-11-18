@@ -1,6 +1,6 @@
 ---
 name: behavioral-testing
-description: Create and minimize behavioral tests of AI agents. Use when reproducing agent failures, building evaluations of agent decisions or actions, or reducing a behavioral reproducer while preserving its measured outcome. Covers repeatability and positive/negative cases. Not for ordinary application unit tests, software crash reduction, conversation summaries, or textual skill review without behavioral trials.
+description: Create and minimize behavioral tests of AI agents. Use when reproducing agent failures, building evaluations of agent decisions or actions, or reducing a behavioral reproducer while preserving its measured outcome. Covers repeatability and positive/negative cases. Not for deterministic harness or infrastructure checks where an agent merely supplies test input, such as message delivery, persistence, or rendering. Not for ordinary application unit tests, software crash reduction, conversation summaries, or textual skill review without behavioral trials.
 ---
 
 # Behavioral testing
