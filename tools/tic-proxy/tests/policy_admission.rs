@@ -22,7 +22,8 @@ fn direct(a: &[&str], stdin: &str) -> Result<Decision, String> {
     let raw = serde_json::to_vec(&AuthenticatedRequest {
         token: "owned-test-token".into(),
         request: Request {
-            version: 1,
+            version: tic_proxy::protocol::WIRE_VERSION,
+            cwd: "/guest/workspace".into(),
             command: "tic".into(),
             argv: args(a),
             stdin: stdin.into(),

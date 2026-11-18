@@ -94,11 +94,12 @@ def main():
     with os.fdopen(descriptor, 'r+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         # Fresh private captures avoid compiling previous build-context edits.
-        with tempfile.TemporaryDirectory(prefix='source-', dir=base) as source:
+        with tempfile.TemporaryDirectory(prefix='tic-source-') as source:
             with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                 tar.extractall(source, filter='data')
             env = os.environ.copy()
-            env['CARGO_TARGET_DIR'] = str(base / 'cargo')
+            cargo_target = Path(env.get('CARGO_TARGET_DIR', base / 'cargo')).resolve()
+            env['CARGO_TARGET_DIR'] = str(cargo_target)
             # Normal launcher builds use Cargo's dev profile, but its debug
             # payload dominated bundle copying and repeated SHA-256 validation
             # (including the broker's native binding check). Omit only debug
@@ -108,7 +109,7 @@ def main():
             cargo = os.environ.get('CARGO', 'cargo')
             profile_args = ['--release'] if '--release' in args else []
             subprocess.run([cargo, 'build', '--locked', '--manifest-path', source + '/Cargo.toml', '-p', 'ticgit', '--bin', 'ti', *profile_args], env=env, check=True)
-            output = base / 'cargo' / ('release' if profile_args else 'debug')
+            output = cargo_target / ('release' if profile_args else 'debug')
             native = output / 'ti'
             binding = {'native_revision': pin, 'policy_version': 1, 'sha256': sha256(native)}
             native.with_name(native.name + '.tic-proxy.json').write_text(json.dumps(binding) + '\n')
@@ -140,7 +141,7 @@ def main():
                                     '--target', target, *profile_args,
                                     '--manifest-path', str(root / 'Cargo.toml'), *overrides],
                                    env=env, check=True)
-                    client = base / 'cargo' / target / ('release' if profile_args else 'debug') / 'ti-proxy'
+                    client = cargo_target / target / ('release' if profile_args else 'debug') / 'ti-proxy'
             arch = guest_platform(client)
             if options.guest_platform and arch != options.guest_platform:
                 raise ValueError('guest artifact architecture does not match --guest-platform')

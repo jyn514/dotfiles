@@ -616,6 +616,12 @@ Explicit `false` opts out; existing accepted sessions retain their recorded choi
 Each selected launch attempts its own host broker. Startup failure warns and allows Pi to start with TicGit unavailable, even when `true` was explicit.
 No failed startup projects its endpoint, token, client mount, or network attachment, and the guest `ti` entrypoint never searches PATH for a native fallback.
 Ready-broker request failures remain fail-closed without replacement or replay.
+TicGit uses the same admitted writable workspace roots as JJ, including launcher dotfiles, with one broker per launch.
+Guest cwd selects the most specific admitted root; commands outside those roots refuse rather than falling back to the active tracker.
+Each context retains its captured author, namespace, invocation root and common store.
+An unsupported context identifies the affected repository and disables TicGit for the whole launch, not just that root.
+The active project still owns capability selection; no additional dotfiles services start.
+Deploy the matching rebuilt bundle and launcher through a fresh sandbox; `/reload` does not expand the running broker.
 Linked worktrees share ticket data, not broker authority.
 The native fork selects the common-directory store and removes automatic setup; guest file inputs are sent as bytes through stdin.
 The broker uses the exported native parser to enforce command and option policy, without a second argv grammar, OS confinement, a native server, or store aliases.

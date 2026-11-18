@@ -342,7 +342,8 @@ class GatewayHandle:
         ), True, True)
 
     def start(self, *, image: str, network_flags: list[str],
-              tic_port: int | None = None, tic_client: Path | None = None) -> None:
+              tic_port: int | None = None, tic_client: Path | None = None,
+              tic_cwd: Path | None = None) -> None:
         """Start once after prepare and inspect both networks before admission.
 
         This establishes container ownership and build-bridge peer admission, not
@@ -368,6 +369,10 @@ class GatewayHandle:
         arguments = [
             "--label", f"dev.codex.service-owner={self.owner}",
             "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+            # The runtime creates this empty directory before applying the
+            # read-only root. It gives the readiness client an admitted guest cwd
+            # without exposing repository files to the transport container.
+            *(["--workdir", str(tic_cwd)] if tic_cwd is not None else []),
             "--network", self.resources.egress_network,
             "--network", self.resources.link_network, *network_flags,
             *([] if isinstance(self.runtime, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),

@@ -163,6 +163,7 @@ struct Broker {
     child: Child,
     lifetime: Option<OwnedFd>,
     address: String,
+    cwd: String,
 }
 impl Broker {
     fn command(repos: &Repos, workspace: &Path, native: &Path) -> (Command, OwnedFd, OwnedFd) {
@@ -171,7 +172,7 @@ impl Broker {
             "config-{}.json",
             workspace.file_name().unwrap().to_string_lossy()
         ));
-        fs::write(&path, serde_json::to_vec(&json!({"version":1,"workspace":workspace,"common_dir":repos.main.join(".git"),"native_executable":native,"native_sha256":sha256,"user_name":"Broker Fixture","user_email":"broker@example.invalid","namespace":"tickets","token":TOKEN})).unwrap()).unwrap();
+        fs::write(&path, serde_json::to_vec(&json!({"version":2,"repositories":[{"workspace":workspace,"common_dir":repos.main.join(".git"),"guest_root":workspace,"user_name":"Broker Fixture","user_email":"broker@example.invalid","namespace":"tickets"}],"native_executable":native,"native_sha256":sha256,"token":TOKEN})).unwrap()).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         let (read, write) = nix::unistd::pipe().unwrap();
         // Keep only the broker read end inheritable; parent owns the write end.
@@ -204,6 +205,12 @@ impl Broker {
         Self::start_command(command, read, write)
     }
     fn start_command(mut command: Command, read: OwnedFd, write: OwnedFd) -> Self {
+        let config_path = PathBuf::from(command.get_args().nth(1).unwrap());
+        let config: Value = serde_json::from_slice(&fs::read(config_path).unwrap()).unwrap();
+        let cwd = config["repositories"][0]["guest_root"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         let mut child = command.spawn().unwrap();
         drop(read);
         let mut out = child.stdout.take().unwrap();
@@ -223,6 +230,7 @@ impl Broker {
             child,
             lifetime: Some(write),
             address: String::new(),
+            cwd,
         };
         let line = rx
             .recv_timeout(Duration::from_secs(10))
@@ -255,7 +263,7 @@ impl Broker {
         serde_json::from_slice(&body).unwrap()
     }
     fn request(&self, argv: &[&str], stdin: &str) -> Response {
-        self.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":argv,"stdin":stdin}})).unwrap())
+        self.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":3,"cwd":self.cwd,"command":"tic","argv":argv,"stdin":stdin}})).unwrap())
     }
     fn stop(&mut self) {
         self.lifetime.take();
@@ -404,8 +412,8 @@ fn direct_auth_framing_and_policy_rejections_do_not_spawn() {
     ] {
         assert_eq!(broker.request(&argv, input).exit, 2);
     }
-    assert_eq!(broker.raw(br#"{"token":"wrong","request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}"#).exit, 2);
-    assert_eq!(broker.raw(format!(r#"{{"token":"{TOKEN}","token":"{TOKEN}","request":{{"version":2,"command":"tic","argv":[],"stdin":""}}}}"#).as_bytes()).exit, 2);
+    assert_eq!(broker.raw(br#"{"token":"wrong","request":{"version":3,"cwd":"/guest/workspace","command":"tic","argv":["list"],"stdin":""}}"#).exit, 2);
+    assert_eq!(broker.raw(format!(r#"{{"token":"{TOKEN}","token":"{TOKEN}","request":{{"version":3,"cwd":"/guest/workspace","command":"tic","argv":[],"stdin":""}}}}"#).as_bytes()).exit, 2);
     assert!(!repos.main.join("fixture-started").exists());
     // Version one used mandatory request EOF; it must never execute here.
     assert_eq!(broker.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":1,"command":"tic","argv":["list"],"stdin":""}})).unwrap()).exit, 2);
@@ -470,7 +478,7 @@ fn lifetime_eof_cancels_reaps_native_and_closes_listener_without_affecting_other
     let other = Broker::start(&repos, &repos.main, &native);
     let mut stream = TcpStream::connect(&broker.address).unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
@@ -708,7 +716,7 @@ fn graceful_fin_cancels_and_reaps_live_child() {
     let broker = Broker::start(&repos, &repos.main, &native);
     let mut stream = TcpStream::connect(&broker.address).unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["new", "-F", "-"],"stdin":"x".repeat(1024 * 1024)}}),
+        &json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["new", "-F", "-"],"stdin":"x".repeat(1024 * 1024)}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
@@ -762,7 +770,7 @@ fn blocked_response_delivery_expires_instead_of_retaining_worker() {
             },
             0
         );
-        let bytes = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
+        let bytes = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
         write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
         blocked.push(stream);
     }
@@ -773,7 +781,7 @@ fn blocked_response_delivery_expires_instead_of_retaining_worker() {
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     write_frame(&mut stream, &bytes, MAX_REQUEST).unwrap();
@@ -790,7 +798,7 @@ fn saturated_workers_reject_new_requests_without_queueing_or_spawning() {
     let mut broker = Broker::start(&repos, &repos.main, &native);
     let mut active = Vec::new();
     let bytes = serde_json::to_vec(
-        &json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}}),
+        &json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["list"],"stdin":""}}),
     )
     .unwrap();
     for _ in 0..8 {
@@ -896,7 +904,7 @@ fn trailing_input_before_or_after_spawn_is_terminal_never_a_second_execution() {
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let body = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":2,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
+        let body = serde_json::to_vec(&json!({"token":TOKEN,"request":{"version":3,"cwd":broker.cwd,"command":"tic","argv":["list"],"stdin":""}})).unwrap();
         let mut frame = Vec::new();
         write_frame(&mut frame, &body, MAX_REQUEST).unwrap();
         if after_spawn {
@@ -946,7 +954,7 @@ fn trailing_input_before_or_after_spawn_is_terminal_never_a_second_execution() {
 fn real_client_broker_and_native_preserve_store_and_exact_status_without_halfclose() {
     let repos = Repos::new();
     let native = native(&repos);
-    let broker = Broker::start(&repos, &repos.main, &native);
+    let broker = Broker::start(&repos, &repos.linked, &native);
     let run = |argv: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
             .current_dir(&repos.linked)
@@ -970,6 +978,7 @@ fn real_client_broker_and_native_preserve_store_and_exact_status_without_halfclo
     let native = repos.fake("exit");
     let broker = Broker::start(&repos, &repos.main, &native);
     let output = Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
+        .current_dir(&repos.main)
         .env_clear()
         .env("SANDBOX_TIC_ENDPOINT", &broker.address)
         .env("SANDBOX_TIC_TOKEN", TOKEN)
@@ -988,7 +997,7 @@ fn open_diagnostics_and_help_reach_guest_and_direct_broker_consumers() {
     let broker = Broker::start(&repos, &repos.main, &native);
     let guest = |argv: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_ti-proxy"))
-            .current_dir(&repos.linked)
+            .current_dir(&repos.main)
             .env_clear()
             .env("SANDBOX_TIC_ENDPOINT", &broker.address)
             .env("SANDBOX_TIC_TOKEN", TOKEN)
@@ -1046,4 +1055,106 @@ fn open_diagnostics_and_help_reach_guest_and_direct_broker_consumers() {
     ] {
         assert!(!direct.contains(excluded), "{excluded}: {direct}");
     }
+}
+
+#[test]
+fn admitted_repository_selection_is_finite_longest_root_and_keeps_worktree_context() {
+    let repos = Repos::new();
+    let native = repos.fake("environment");
+    fs::write(repos.linked.join("fixture-mode"), "environment").unwrap();
+    let (command, read, write) = Broker::command(&repos, &repos.main, &native);
+    let config_path = PathBuf::from(command.get_args().nth(1).unwrap());
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["repositories"] = json!([
+        {"workspace":repos.main,"common_dir":repos.main.join(".git"),"guest_root":"/guest/project",
+         "user_name":"main".repeat(10_000),"user_email":"main@example.invalid","namespace":"main-meta"},
+        {"workspace":repos.linked,"common_dir":repos.main.join(".git"),"guest_root":"/guest/project/nested",
+         "user_name":"linked".repeat(7_000),"user_email":"linked@example.invalid","namespace":"linked-meta"}
+    ]);
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let broker = Broker::start_command(command, read, write);
+    for (cwd, host, email, namespace) in [
+        (
+            "/guest/project/src",
+            &repos.main,
+            "main@example.invalid",
+            "main-meta",
+        ),
+        (
+            "/guest/project/nested/src",
+            &repos.linked,
+            "linked@example.invalid",
+            "linked-meta",
+        ),
+    ] {
+        let response = broker.raw(
+            &serde_json::to_vec(&json!({"token":TOKEN,"request":{
+                "version":3,"command":"tic","cwd":cwd,"argv":["new","-F","-"],"stdin":"guest bytes"}
+            }))
+            .unwrap(),
+        );
+        assert_eq!(response.exit, 0, "{}", response.stderr);
+        let output: Value = serde_json::from_str(&response.stdout).unwrap();
+        assert_eq!(output["cwd"], host.to_str().unwrap());
+        assert_eq!(output["stdin"], "guest bytes");
+        assert_eq!(output["argv"], json!(["new", "-F", "-"]));
+        assert_eq!(output["env"]["GIT_CONFIG_VALUE_1"], email);
+        assert_eq!(output["env"]["GIT_CONFIG_VALUE_2"], namespace);
+    }
+    let before = [
+        fs::read(repos.main.join("fixture-pids")).unwrap(),
+        fs::read(repos.linked.join("fixture-pids")).unwrap(),
+    ];
+    for cwd in [
+        "/guest/readonly",
+        "/guest/project-other",
+        "/guest/project/../readonly",
+        "/guest/project//nested",
+        "relative",
+        "/host/arbitrary",
+        "/guest/project/.",
+    ] {
+        let response = broker.raw(
+            &serde_json::to_vec(&json!({"token":TOKEN,"request":{
+                "version":3,"command":"tic","cwd":cwd,"argv":["list"],"stdin":""}
+            }))
+            .unwrap(),
+        );
+        assert_eq!(response.exit, 2, "selector {cwd}: {}", response.stderr);
+    }
+    for request in [
+        json!({"version":2,"command":"tic","argv":["list"],"stdin":""}),
+        json!({"version":3,"command":"tic","argv":["list"],"stdin":""}),
+        json!({"version":2,"command":"tic","cwd":"/guest/project","argv":["list"],"stdin":""}),
+        json!({"version":3,"command":"tic","cwd":"/guest/project","workspace":repos.main,"argv":["list"],"stdin":""}),
+    ] {
+        let response =
+            broker.raw(&serde_json::to_vec(&json!({"token":TOKEN,"request":request})).unwrap());
+        assert_eq!(response.exit, 2, "{}", response.stderr);
+    }
+    assert_eq!(
+        before,
+        [
+            fs::read(repos.main.join("fixture-pids")).unwrap(),
+            fs::read(repos.linked.join("fixture-pids")).unwrap()
+        ]
+    );
+}
+
+#[test]
+fn legacy_single_context_config_is_refused_before_readiness() {
+    let repos = Repos::new();
+    let native = repos.fake("environment");
+    let (mut command, read, _write) = Broker::command(&repos, &repos.main, &native);
+    let path = PathBuf::from(command.get_args().nth(1).unwrap());
+    let config = json!({"version":1,"workspace":repos.main,"common_dir":repos.main.join(".git"),
+        "native_executable":native,"native_sha256":"0".repeat(64),"user_name":"Old",
+        "user_email":"old@example.invalid","namespace":"tickets","token":TOKEN});
+    fs::write(path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let child = command.spawn().unwrap();
+    drop(read);
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!repos.main.join("fixture-started").exists());
 }

@@ -98,12 +98,14 @@ class Fixture:
         return ['strace', '-f', '-qq', '-s', '2048', '-e', 'trace=%process,%file,%network',
                 '-o', str(self.trace), str(executable), *args]
 
-    def start(self, native=None, reject=False):
+    def start(self, native=None, reject=False, *, guest_root=None):
         native = native or self.case.bundle / 'native/ti'
-        config = {'version': 1, 'workspace': str(self.workspace), 'common_dir': str(self.common),
+        self.guest_root = guest_root or self.workspace
+        config = {'version': 2, 'repositories': [dict(workspace=str(self.workspace), common_dir=str(self.common),
+                  guest_root=str(self.guest_root), user_name='Boundary Accepted', user_email='accepted@example.invalid',
+                  namespace='accepted-boundary')],
                   'native_executable': str(native), 'native_sha256': digest(native),
-                  'user_name': 'Boundary Accepted', 'user_email': 'accepted@example.invalid',
-                  'namespace': 'accepted-boundary', 'token': TOKEN}
+                  'token': TOKEN}
         config_path = self.root / 'broker.json'
         config_path.write_text(json.dumps(config))
         config_path.chmod(0o600)
@@ -141,7 +143,7 @@ class Fixture:
                 self.case.assertFalse(os.path.lexists(directory / name), str(directory / name))
 
     def request(self, argv, stdin='', oversize=False):
-        envelope = {'token': TOKEN, 'request': {'version': 2, 'command': 'tic', 'argv': argv, 'stdin': stdin}}
+        envelope = {'token': TOKEN, 'request': {'version': 3, 'cwd': str(self.guest_root), 'command': 'tic', 'argv': argv, 'stdin': stdin}}
         body = json.dumps(envelope, ensure_ascii=False).encode()
         with socket.create_connection(self.address, timeout=8) as connection:
             connection.settimeout(35)
@@ -345,9 +347,12 @@ class BoundaryAcceptance(unittest.TestCase):
             'successful_system_tput_execution_tested': False})
 
     def test_guest_relative_guest_only_stdin_and_literal_dash_file_handoff(self):
-        f = self.fixture('guest-files').start()
+        f = self.fixture('guest-files')
         guest = f.root / 'guest-only' / 'nested'
         guest.mkdir(parents=True)
+        # Model an admitted guest root mapped to a different fixed host root;
+        # input files remain guest-only and must never reach host file opens.
+        f.start(guest_root=guest.parent)
         files = [('draft.md', 'guest relative title\n\nguest body'), ('-', 'literal dash title\n')]
         for filename, content in files:
             (guest / filename).write_text(content)

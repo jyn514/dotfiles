@@ -88,7 +88,8 @@ Reviews remain available to the human but are not admitted through the agent pro
 
 Opening the common directory intentionally selects the common repository's metadata-session configuration, including its author and namespace defaults.
 After repository preflight and before invoking native TicGit, the owning launch captures the ordinary effective host Git settings once, including host configuration and applicable invocation-worktree configuration.
-Freeze the accepted `user.name`, `user.email`, and `meta.namespace` values for that launch; later host configuration changes do not alter them.
+Capture and freeze `user.name`, `user.email`, and `meta.namespace` separately for each admitted invocation workspace; later host configuration changes do not alter them.
+Linked worktrees sharing one common-directory store still retain their distinct accepted invocation cwd and settings.
 This is local operator bootstrap, not a guest API; capture reads configuration without opening or mutating SQLite.
 Native request executions still disable system configuration with broker-owned `GIT_CONFIG_NOSYSTEM=1` and user/XDG Git sources with `GIT_CONFIG_GLOBAL=/dev/null`, and clear inherited configuration overrides.
 Supply the captured accepted values through a broker-created `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` set; requests cannot supply or change them, and `GIT_AUTHOR_*` alone does not control session authorship.
@@ -152,11 +153,21 @@ The copy lives in existing launch-owned skills scratch, outside every actual gue
 Unavailable launches explicitly clear endpoint/token environment values, including stale values baked into an older image.
 Do not soften unrelated repository-policy, accepted-metadata, or provider-admission rejection.
 The owning launch and its execution attachments use that broker; separate launches have separate brokers and endpoints, even when they share ticket data.
-Bind accepted authority to the workspace, canonical common directory, installed fork/build, command policy, identity, and fresh authenticated launch endpoint.
+Bind accepted authority to the launcher's finite admitted writable workspace set, the same roots used for writable mounts and JJ authority.
+The active project's accepted `capabilities.tic` controls this one service; admitting the launcher dotfiles checkout does not activate dotfiles' other optional capabilities.
+For each workspace, freeze its canonical host invocation root, canonical common directory, guest root mapping, identity, and namespace alongside the installed fork/build, command policy, and fresh authenticated launch endpoint.
+Do not infer authority from filesystem write bits or discover additional repositories from request paths.
 No shared-session TicGit publication, broker join, or durable host-process record is required.
 Linked worktrees share ticket data, not accepted workspace authority.
-A request cannot select repository, execution cwd, environment, configuration overrides, executable, or endpoint.
-Use a trusted absolute executable, the accepted host workspace cwd, a cleared inherited environment, bounded request stdin, and no terminal.
+The guest client supplies its physical invocation cwd as an untrusted selector among those accepted contexts.
+The broker independently checks a normalized absolute guest path and chooses the longest component-wise matching admitted root, including nested admitted checkouts.
+Reject missing selectors, paths outside the admitted roots, traversal components, and malformed paths before command execution, including help; never fall back to the active tracker.
+Resolve guest cwd symlinks in the guest, not on the host; `PWD` is not selection authority.
+A direct caller may select any admitted context, but cannot add a repository or supply a host execution path.
+Never canonicalize, open, or discover repositories through a guest-selected host path.
+No request can select environment, configuration overrides, executable, endpoint, common directory, identity, or namespace.
+Use a trusted absolute executable and the selected accepted host workspace root as native cwd, not a host translation of the requested subdirectory.
+Use a cleared inherited environment, bounded request stdin, and no terminal.
 Close native stdin after delivering the request bytes; commands without file input receive EOF immediately.
 Give each request private HOME/XDG and `TICGIT_STATE_FILE` locations so selection and filter state cannot leak between requests or into human use.
 Even `list --json` saves filters; inspection does not imply a read-only native process.
@@ -178,7 +189,11 @@ Use live child ownership for normal termination; do not persist broker PIDs, ado
 If the broker itself dies, an in-flight native command may finish; report the unknown outcome rather than adding a descendant watchdog or replaying the request.
 Provider-owned gateway resources still use the existing lifecycle cleanup rules.
 
-Readiness validates the installed build/policy, fixed authority, supported repository configuration, storage layout, and endpoint without opening or mutating SQLite.
+Readiness validates the installed build/policy, every admitted repository context, supported repository configuration, storage layout, and endpoint without opening or mutating SQLite.
+If any context is unsupported, identify that repository in the startup diagnostic and disable TicGit for the entire launch under the existing best-effort policy.
+Do not silently omit that root, publish partial authority, weaken preflight, or fall back to another tracker.
+The guest transport help probe uses the active admitted guest root.
+Create the gateway with that working directory so the runtime prepares an empty directory before applying its read-only root; do not mount repository files into the transport container.
 The broker must be ready before its execution attachment can use it; best-effort startup never publishes a partially ready TicGit endpoint.
 An absent database is allowed; native TicGit may create it during an admitted command.
 Owning-launch cleanup leaves ticket data, other launches' brokers, and independent host writers alone.
@@ -231,7 +246,12 @@ Help/version do not open the store.
 == File inputs and request outcomes <tic-bounds>
 
 Reuse the #link("proxy-design.typ")[bounded framed request/response and fail-closed transport contracts], with this Tic-specific exception to request EOF admission.
-The request and response wire version is `2`; launcher configuration, readiness, inspect-context, and command policy remain version `1`.
+The request and response wire version is `3`; launcher configuration is version `2`, while readiness, inspect-context, and command policy remain version `1`.
+Both launcher and broker bound the private configuration to 1 MiB, allowing multiple independently inspected identities without retaining the old single-context 64 KiB cap.
+Configuration version `2` contains a nonempty `repositories` array, each with `workspace`, `common_dir`, `guest_root`, `user_name`, `user_email`, and `namespace`, plus one fixed native executable/build and token.
+Reject duplicate guest roots and legacy single-context configuration instead of inventing a default route.
+The bundle build identity binds the wire version and current proxy source identity; old bundles cannot supply the new client/broker pair.
+Existing launches retain their old broker and authority until shutdown; deploy the changed bundle and launcher together through a fresh sandbox, not `/reload`.
 One connection carries one bounded length-prefixed authenticated and policy-validated request, at most one native CLI execution, and one framed response, then closes.
 The client keeps its write side open while waiting; the broker does not wait for request EOF before admission.
 No additional frames, multiplexing, replay, or fallback are allowed.
@@ -240,9 +260,10 @@ Post-frame input is terminal and can race the first spawn: it never authorizes a
 Cancellation is not instantaneous or rollback; the broker still owns child termination and reaping under the bounds below.
 The client still verifies EOF after the response frame.
 Other proxies retain the shared request-EOF contract, and shared bridge reset and half-close handling remains unchanged.
-The application request identifies `tic`, normalized argv, and input text in the existing `stdin` field.
+The application request identifies `tic`, the required guest `cwd` selector, normalized argv, and input text in the existing `stdin` field.
 Encode that text as UTF-8 for native stdin; reject input that cannot be represented by the framed JSON protocol without changing its contents.
-The response carries version, native exit status, stdout, and stderr; no request field selects execution authority.
+The response carries version, native exit status, stdout, and stderr; `cwd` selects only a launcher-admitted context and never extends execution authority.
+Legacy wire-version `2` and missing-cwd requests are refused, not routed to an implicit repository.
 
 For `ti edit -F draft.md`, the guest reads `draft.md` relative to its invocation cwd and normalizes argv to `edit -F -`.
 It sends the file contents as request stdin, not the original pathname.
@@ -252,7 +273,7 @@ Native TicGit parses the content; neither client nor broker interprets ticket sy
 For `ti comment -t TICKET -F draft.md`, the guest reads the file using the same rules, then sends its contents as one positional comment body, with no request stdin.
 The broker admits and executes the resulting native comment command as usual.
 Guest-only input files are allowed because their contents, not their paths, cross the execution boundary.
-The host never opens the supplied guest pathname, so workspace mapping and host safe-open/symlink-race machinery are unnecessary.
+The host never opens the supplied guest input pathname; repository selection uses the separate admitted-root mapping, not file-path translation or host safe-open machinery.
 Do not silently substitute a host read when guest file loading fails.
 
 Use the exported native parser to identify file operands, including attached values, short clusters, option-looking data, and `--`.
@@ -338,6 +359,10 @@ Then verify the complete path with disposable host-local repositories:
   Direct requests naming host files and requests with unexpected or oversize stdin reject before execution.
   Native stdin handles empty and nonempty content at every admitted read site without editor fallback; execution uses the admitted argv unchanged and never stages input files.
   Preserve writeup title/body distinctions between file input and `--body`, including title-only edit input.
+- Multiple admitted repositories support independent ticket creation, inspection, explicit updates and closing, with distinct stores and frozen settings.
+  Guest cwd and relative-file/stdin input select the intended context, nested admitted roots choose the longest match, and linked contexts retain invocation settings while sharing their common store.
+  Requests naming read-only or unlisted source siblings, malformed selectors, legacy versions, and guest symlinks resolving outside the roots reject without tracker fallback.
+  An unsupported secondary context disables the entire service with no endpoint, token, client mount or TicGit network attachment; unrelated tools still start.
 - Startup detects independent legacy databases without modifying them and never migrates implicitly.
 - Authentication, readiness, disconnects, cancellation before and after spawn, blocked stdin/output, and process exit respect their bounds.
   Launch shutdown and launcher death close the lifetime pipe and stop the broker and its native child; attachment exit does not stop an active owning launch.

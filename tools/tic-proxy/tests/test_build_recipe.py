@@ -271,6 +271,7 @@ class BuildRecipeTest(unittest.TestCase):
     def test_old_wire_bundle_and_wrong_native_policy_platform_source_are_rejected(self):
         changes = [lambda v: v.update(version=1), lambda v: v.update(native_revision='0' * 40),
                    lambda v: v.update(policy_version=2), lambda v: v['build'].update(wire_version=1),
+                   lambda v: v['build'].update(wire_version=2),
                    lambda v: v['build'].update(host_platform='darwin/arm64'),
                    lambda v: v['build'].update(proxy_source='0' * 64),
                    lambda v: v['build'].update(guest_platform='linux/arm64'),

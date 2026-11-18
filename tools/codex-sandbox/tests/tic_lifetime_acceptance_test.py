@@ -26,7 +26,7 @@ SANDBOX = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SANDBOX))
 sys.path.insert(0, str(SANDBOX.parent / 'tic-proxy'))
 from bundle import build_identity, host_platform, validate_bundle
-from tic_broker import InstalledTicBuild, TicBrokerLaunch
+from tic_broker import InstalledTicBuild, TicBrokerLaunch, TicRepository
 from gateway_fixture import LocalGateway
 
 
@@ -102,8 +102,8 @@ sys.exit(17)
             manifest['client']['platform'], manifest['native_revision'])
 
     def launch(self, native=None):
-        launch = TicBrokerLaunch(self.build(native), workspace=self.repo, common_dir=self.repo / '.git',
-                                 user_name='Owned Author', user_email='owned@example.invalid', namespace='tickets')
+        launch = TicBrokerLaunch(self.build(native), repositories=[TicRepository(workspace=self.repo, common_dir=self.repo / '.git',
+                                 guest_root=self.repo, user_name='Owned Author', user_email='owned@example.invalid', namespace='tickets')])
         self.addCleanup(launch.stop)
         return launch.start()
 
@@ -118,7 +118,7 @@ sys.exit(17)
         host, port = address.rsplit(':', 1)
         connection = socket.create_connection((host, int(port)), timeout=3)
         self.addCleanup(connection.close)
-        data = json.dumps(dict(token=token, request=dict(version=2, command='tic', argv=list(argv), stdin=stdin))).encode()
+        data = json.dumps(dict(token=token, request=dict(version=3, cwd=str(self.repo), command='tic', argv=list(argv), stdin=stdin))).encode()
         connection.sendall(len(data).to_bytes(4, 'big') + data)
         return connection
 
@@ -178,10 +178,10 @@ sys.exit(17)
         program = '''import json, sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-from tic_broker import InstalledTicBuild, TicBrokerLaunch
+from tic_broker import InstalledTicBuild, TicBrokerLaunch, TicRepository
 build = InstalledTicBuild(**{key: Path(value) if key.endswith('_executable') else value for key,value in json.loads(sys.argv[2]).items()})
 repo = Path(sys.argv[3])
-launch = TicBrokerLaunch(build, workspace=repo, common_dir=repo/'.git', user_name='Owned', user_email='owned@example.invalid', namespace='tickets').start()
+launch = TicBrokerLaunch(build, repositories=[TicRepository(workspace=repo, common_dir=repo/'.git', guest_root=repo, user_name='Owned', user_email='owned@example.invalid', namespace='tickets')]).start()
 print(json.dumps(dict(pid=launch.process.pid,address=launch.address,token=launch.token,directory=str(launch.directory))), flush=True)
 while True: time.sleep(1)
 '''

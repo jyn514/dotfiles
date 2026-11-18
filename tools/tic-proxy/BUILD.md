@@ -46,7 +46,9 @@ built static Linux client may instead be supplied with
 never make a Darwin executable usable in Linux. The helper verifies ELF
 architecture and rejects PT_INTERP, unsupported ABI, and Mach-O.
 
-Build output remains in ignored `target/tic-proxy-build/`. The final
+Build bundles remain in ignored `target/tic-proxy-build/`.
+`CARGO_TARGET_DIR` can select an owned guest-only build-output directory; otherwise Cargo output remains under that build directory.
+Native source captures use temporary storage (`TMPDIR` when set), not a mutable source checkout. The final
 `staged bundle:` line identifies a content-addressed bundle:
 
 ```text
@@ -94,7 +96,9 @@ The builder separately holds a build-output file lock across its Cargo commands,
 native binding, and bundle copy, including direct development builds. These
 locks contain no process identifiers or current-build selection records. An old bundle cannot be selected
 merely because its native pin matches: a changed proxy source or wire version
-has a different source key. There is no global current-build record,
+has a different source key. Wire `3` requires a guest cwd selector and configuration `2` lists the admitted repositories; legacy single-context payloads are refused rather than assigned a default tracker.
+Deploy the matching launcher and bundle with a fresh sandbox; `/reload` does not expand an existing broker's authority.
+There is no global current-build record,
 `installed.json`, absolute-path artifact record, or required manual installation.
 The launcher derives absolute executable paths from the relative manifest.
 
@@ -133,7 +137,9 @@ error rather than silently selecting another source. No host setting is written
 by fetching, building, or testing.
 
 Fetch, build, unsupported repository, inspection, and readiness failures use
-the same warn-and-disable behavior, even with explicit `tic: true`; unrelated
+the same warn-and-disable behavior, even with explicit `tic: true`.
+All admitted writable repository contexts must pass; one unsupported context disables TicGit for the whole launch, with that repository identified in the warning.
+No root is silently omitted or routed to another tracker; unrelated
 metadata/provider rejection
 remains fatal. No failed startup projects a TicGit endpoint, token, client mount,
 or network attachment. The fixed guest `ti` guard reports unavailable and

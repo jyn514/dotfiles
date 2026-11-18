@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tic_broker import InstalledTicBuild, TicBrokerLaunch
+from tic_broker import InstalledTicBuild, TicBrokerLaunch, TicRepository
 from docker_runtime import Docker
 NATIVE_REVISION = (Path(__file__).resolve().parents[2] / "tic-proxy/native-revision").read_text().strip()
 from trusted_services import (LifecycleError, LifecycleState, OwnedResource, OwnerSet,
@@ -58,10 +58,11 @@ class TicBrokerTest(unittest.TestCase):
         return build
 
     def launch(self, build=None, **kwargs):
-        authority = dict(workspace=self.workspace, common_dir=self.common,
+        authority = dict(workspace=self.workspace, common_dir=self.common, guest_root=self.workspace,
                          user_name="Fixture Author", user_email="fixture@example.invalid", namespace="fixture")
+        lifecycle = {key: kwargs.pop(key) for key in ('registry', 'owners', 'owner') if key in kwargs}
         authority.update(kwargs)
-        launch = TicBrokerLaunch(build or self.fixture_build(), **authority)
+        launch = TicBrokerLaunch(build or self.fixture_build(), repositories=[TicRepository(**authority)], **lifecycle)
         self.addCleanup(launch.stop)
         return launch
 
@@ -69,7 +70,7 @@ class TicBrokerTest(unittest.TestCase):
         host, port = address.rsplit(":", 1)
         with socket.create_connection((host, int(port)), timeout=2) as connection:
             request = json.dumps({"token": token, "request": {
-                "version": 2, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
+                "version": 3, "cwd": str(self.workspace), "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
             connection.sendall(struct.pack("!I", len(request)) + request)
             # Wire 2 uses the length, not request EOF. Keep the client alive
             # until the response; FIN intentionally cancels an active request.
@@ -102,10 +103,10 @@ class TicBrokerTest(unittest.TestCase):
         evidence = json.loads((launch.directory / "evidence.json").read_text())
         self.assertEqual(0o600, evidence["mode"])
         self.assertNotIn("SANDBOX_TIC_TOKEN", evidence["environment"])
-        self.assertEqual(str(self.workspace), config["workspace"])
-        self.assertEqual(str(self.common), config["common_dir"])
-        self.assertEqual("Fixture Author", config["user_name"])
-        self.assertEqual("fixture", config["namespace"])
+        self.assertEqual(str(self.workspace), config["repositories"][0]["workspace"])
+        self.assertEqual(str(self.common), config["repositories"][0]["common_dir"])
+        self.assertEqual("Fixture Author", config["repositories"][0]["user_name"])
+        self.assertEqual("fixture", config["repositories"][0]["namespace"])
         bridge = launch.start_bridge({"127.0.0.1"})
         environment = launch.environment(f"127.0.0.1:{bridge.port}")
         launch.attach()
@@ -121,14 +122,33 @@ class TicBrokerTest(unittest.TestCase):
         self.assertFalse(directory.exists())
         self.assertEqual(LifecycleState.REMOVED, launch.lifecycle.state)
 
+    def test_multiple_inspection_sized_identities_survive_serialized_launch(self):
+        secondary = self.root / 'secondary'
+        (secondary / '.git').mkdir(parents=True)
+        contexts = [TicRepository(workspace=workspace, common_dir=workspace / '.git', guest_root=workspace,
+                                  user_name=name, user_email='owned@example.invalid', namespace='tickets')
+                    for workspace, name in ((self.workspace, 'main' * 10_000),
+                                            (secondary, 'linked' * 7_000))]
+        launch = TicBrokerLaunch(self.fixture_build(), repositories=contexts)
+        self.addCleanup(launch.stop)
+        launch.start()
+        encoded = (launch.directory / 'config.json').read_bytes()
+        self.assertGreater(len(encoded), 64 * 1024)
+        config = json.loads(encoded)
+        self.assertEqual([context.user_name for context in contexts],
+                         [context['user_name'] for context in config['repositories']])
+        self.assertEqual(config['repositories'],
+                         [dict(context) for context in launch.plan.fixed_parameters['repositories']])
+        self.assertIsNotNone(launch.process)
+
     def test_empty_and_whitespace_identity_literals_are_preserved_in_private_config(self):
         for literal in ("", " ", " \t\n "):
             with self.subTest(literal=repr(literal)):
                 launch = self.launch(user_name=literal, user_email=literal, namespace=literal).start()
                 config = json.loads((launch.directory / "config.json").read_bytes())
                 for field in ("user_name", "user_email", "namespace"):
-                    self.assertEqual(literal, config[field])
-                    self.assertEqual(literal, launch.plan.fixed_parameters[field])
+                    self.assertEqual(literal, config['repositories'][0][field])
+                    self.assertEqual(literal, launch.plan.fixed_parameters['repositories'][0][field])
                 self.assertFalse(launch.stop().remaining)
 
     def test_identity_validation_rejects_non_strings_nul_and_unrepresentable_values_only(self):
@@ -141,9 +161,9 @@ class TicBrokerTest(unittest.TestCase):
     def test_actual_encoded_config_limit_rejects_before_resources_or_broker_spawn(self):
         # JSON escaping, fixed authority and the fresh token all count toward
         # the existing broker config limit, not just the identity's text length.
-        launch = self.launch(user_name="\n" * 32768)
+        launch = self.launch(user_name="\n" * (512 * 1024))
         with mock.patch("tic_broker.subprocess.Popen") as spawn:
-            with self.assertRaisesRegex(LifecycleError, "configuration exceeds 64 KiB"):
+            with self.assertRaisesRegex(LifecycleError, "configuration exceeds 1 MiB"):
                 launch.start()
         spawn.assert_not_called()
         self.assertIsNone(launch.directory)
@@ -353,7 +373,7 @@ class TicBrokerTest(unittest.TestCase):
 
     def send_active_request(self, launch, connection):
         request = json.dumps({"token": launch.token, "request": {
-            "version": 2, "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
+            "version": 3, "cwd": str(self.workspace), "command": "tic", "argv": ["list"], "stdin": ""}}).encode()
         connection.sendall(struct.pack("!I", len(request)) + request)
         # Hold the request connection open while testing lifetime cancellation.
         deadline = time.monotonic() + 3

@@ -189,6 +189,12 @@ fn exchange(
     token: String,
     deadline: Instant,
 ) -> Result<Response, Failure> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| (125, format!("cannot read guest cwd: {e}")))?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| (2, "guest cwd is not UTF-8".into()))?;
+    validate_cwd(&cwd).map_err(|e| (2, e.to_string()))?;
     let (mut argv, file) = normalize(&argv).map_err(|e| (2, e))?;
     let comment_file = file.is_some() && argv.first().is_some_and(|arg| arg == "comment");
     let mut stdin = match file {
@@ -210,6 +216,7 @@ fn exchange(
         request: Request {
             version: WIRE_VERSION,
             command: COMMAND.into(),
+            cwd,
             argv,
             stdin,
         },

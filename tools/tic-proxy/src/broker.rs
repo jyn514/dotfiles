@@ -41,14 +41,22 @@ const TICK: Duration = Duration::from_millis(5);
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub version: u32,
-    pub workspace: PathBuf,
-    pub common_dir: PathBuf,
+    pub repositories: Vec<Repository>,
     pub native_executable: PathBuf,
     pub native_sha256: String,
+    pub token: String,
+}
+/// One launcher-admitted invocation context. Shared stores do not collapse
+/// distinct worktrees' cwd, identity, namespace, or guest root authority.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Repository {
+    pub workspace: PathBuf,
+    pub common_dir: PathBuf,
+    pub guest_root: String,
     pub user_name: String,
     pub user_email: String,
     pub namespace: String,
-    pub token: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,7 +84,9 @@ pub fn load_config(path: &Path) -> Result<Config> {
         bail!("configuration must be an owner-only regular 0600 file");
     }
     let bytes = fs::read(path)?;
-    if bytes.len() > 64 * 1024 {
+    // The bounded configuration now carries multiple independently accepted
+    // contexts, each of which may contain a full inspection-sized identity.
+    if bytes.len() > 1024 * 1024 {
         bail!("configuration too large");
     }
     Ok(serde_json::from_slice(&bytes)?)
@@ -85,15 +95,7 @@ fn validate(config: &Config) -> Result<()> {
     if config.version != CONFIG_VERSION || config.token.len() < 32 || config.token.len() > 4096 {
         bail!("invalid configuration version or authentication token");
     }
-    for value in [&config.user_name, &config.user_email, &config.namespace] {
-        if value.contains('\0') {
-            bail!("invalid accepted identity or namespace");
-        }
-    }
-    if !config.native_executable.is_absolute()
-        || !config.workspace.is_absolute()
-        || !config.common_dir.is_absolute()
-    {
+    if !config.native_executable.is_absolute() {
         bail!("accepted paths must be absolute");
     }
     let native = fs::canonicalize(&config.native_executable)?;
@@ -133,11 +135,38 @@ fn validate(config: &Config) -> Result<()> {
     {
         bail!("installed native build/policy binding mismatch");
     }
-    let context = repository::preflight(&config.workspace, &config.common_dir)?;
-    if context.workspace != config.workspace || context.common_dir != config.common_dir {
-        bail!("repository authority must be canonical");
+    if config.repositories.is_empty() {
+        bail!("repository authority is empty");
+    }
+    let mut roots = std::collections::HashSet::new();
+    for repo in &config.repositories {
+        validate_cwd(&repo.guest_root)?;
+        if repo.guest_root == "/" || !roots.insert(&repo.guest_root) {
+            bail!("duplicate or unrestricted guest repository root");
+        }
+        for value in [&repo.user_name, &repo.user_email, &repo.namespace] {
+            if value.contains('\0') {
+                bail!("invalid accepted identity or namespace");
+            }
+        }
+        if !repo.workspace.is_absolute() || !repo.common_dir.is_absolute() {
+            bail!("accepted repository paths must be absolute");
+        }
+        let context = repository::preflight(&repo.workspace, &repo.common_dir)?;
+        if context.workspace != repo.workspace || context.common_dir != repo.common_dir {
+            bail!("repository authority must be canonical");
+        }
     }
     Ok(())
+}
+fn select_repository<'a>(config: &'a Config, cwd: &str) -> Result<&'a Repository> {
+    validate_cwd(cwd)?;
+    config
+        .repositories
+        .iter()
+        .filter(|repo| Path::new(cwd).starts_with(&repo.guest_root))
+        .max_by_key(|repo| Path::new(&repo.guest_root).components().count())
+        .context("cwd is outside launcher-admitted writable repositories")
 }
 fn nonblocking(fd: RawFd) -> Result<()> {
     let flags = OFlag::from_bits_truncate(fcntl(fd, FcntlArg::F_GETFL)?);
@@ -244,6 +273,7 @@ fn peer_cancelled(stream: &TcpStream) -> bool {
 fn execute(
     config: &Config,
     request: &Request,
+    repo: &Repository,
     stream: &TcpStream,
     stop: &AtomicBool,
     admission_deadline: Instant,
@@ -256,7 +286,7 @@ fn execute(
     let mut command = Command::new(&config.native_executable);
     command
         .args(&request.argv)
-        .current_dir(&config.workspace)
+        .current_dir(&repo.workspace)
         .env_clear()
         .env("HOME", &home)
         .env("XDG_CONFIG_HOME", &xdg)
@@ -268,11 +298,11 @@ fn execute(
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_COUNT", "3")
         .env("GIT_CONFIG_KEY_0", "user.name")
-        .env("GIT_CONFIG_VALUE_0", &config.user_name)
+        .env("GIT_CONFIG_VALUE_0", &repo.user_name)
         .env("GIT_CONFIG_KEY_1", "user.email")
-        .env("GIT_CONFIG_VALUE_1", &config.user_email)
+        .env("GIT_CONFIG_VALUE_1", &repo.user_email)
         .env("GIT_CONFIG_KEY_2", "meta.namespace")
-        .env("GIT_CONFIG_VALUE_2", &config.namespace);
+        .env("GIT_CONFIG_VALUE_2", &repo.namespace);
     if cancelled(stop, admission_deadline) || peer_cancelled(stream) {
         bail!("cancelled before spawn");
     }
@@ -325,13 +355,16 @@ fn serve(mut stream: TcpStream, config: &Config, stop: &AtomicBool, accepted: In
             } else if let Err(error) = validate_request(&request) {
                 Response::error(2, error.to_string())
             } else {
-                match policy::classify(&request.argv, &request.stdin) {
+                match select_repository(config, &request.cwd) {
+                    Err(error) => Response::error(2, error.to_string()),
+                    Ok(repo) => match policy::classify(&request.argv, &request.stdin) {
                     Err(error) => Response::error(2, error),
                     Ok(_) if cancelled(stop, admission_deadline) => Response::error(125, "cancelled before execution"),
                     Ok(policy::Decision::Respond { exit, stdout, stderr }) => Response { version: WIRE_VERSION, exit, stdout, stderr },
-                    Ok(policy::Decision::Execute) => match execute(config, &request, &stream, stop, admission_deadline) {
+                    Ok(policy::Decision::Execute) => match execute(config, &request, repo, &stream, stop, admission_deadline) {
                         Ok(response) => response,
                         Err(_) => Response::error(125, "native transport/output failure or cancellation; outcome may be unknown; inspect before retrying"),
+                    },
                     },
                 }
             }

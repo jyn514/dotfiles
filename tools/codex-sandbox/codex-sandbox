@@ -50,7 +50,7 @@ from workspace_layout import (
 )
 from work_storage import volume_admission, assign_work_roots
 from keychain_bridge import HostKeychainBridge
-from tic_broker import POLICY_VERSION as TIC_POLICY_VERSION, InstalledTicBuild, TicBrokerLaunch
+from tic_broker import TicRepository, POLICY_VERSION as TIC_POLICY_VERSION, InstalledTicBuild, TicBrokerLaunch
 from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, check_agent_pi_revision, resolve_agent
 from trusted_services import (
@@ -732,7 +732,8 @@ def start_gateway(state: State, tic_port: int | None = None, image: str | None =
         raise LauncherError("gateway was not prepared")
     try:
         handle.start(image=image or state.sidecar_image, network_flags=proxy_flags(),
-                     tic_port=tic_port, tic_client=tic_client)
+                     tic_port=tic_port, tic_client=tic_client,
+                     tic_cwd=state.workspaces[0].guest_root if tic_client is not None else None)
     except GatewayError as error:
         raise LauncherError(str(error)) from error
 
@@ -1053,6 +1054,23 @@ def start_tic(state: State) -> list[str]:
         return []
 
 
+def capture_tic_repositories(build: InstalledTicBuild, workspaces: list[WorkspaceLayout]) -> list[TicRepository]:
+    # Same admitted workspace set as JJ and writable mounts; never rediscover
+    # authority from filesystem modes or a guest-supplied host path.
+    repositories = []
+    for workspace in workspaces:
+        try:
+            context = inspect_tic_context(build, workspace)
+            if set(context) != {'user_name', 'user_email', 'namespace'}:
+                raise LauncherError('TicGit trusted context returned invalid authority')
+        except (LauncherError, OSError, ValueError) as error:
+            raise LauncherError(f'TicGit context for admitted repository {workspace.host_root} '
+                                f'(guest {workspace.guest_root}): {error}') from error
+        repositories.append(TicRepository(workspace=workspace.host_root, common_dir=workspace.common_dir,
+                                          guest_root=workspace.guest_root, **context))
+    return repositories
+
+
 def _start_tic(state: State) -> list[str]:
     try:
         from gateway import TIC_PORT as tic_port
@@ -1068,9 +1086,7 @@ def _start_tic(state: State) -> list[str]:
         build = resolved_tic_build(state)
     check_tic_cancelled(state)
     with service_timing("tic", "context-capture"):
-        context = inspect_tic_context(build, workspace)
-    if set(context) != {'user_name', 'user_email', 'namespace'}:
-        raise LauncherError('TicGit trusted context returned invalid authority')
+        repositories = capture_tic_repositories(build, state.workspaces)
     check_tic_cancelled(state)
     # A Tic-only transport image is optional too. Do not make its build part
     # of required shared-service preparation when no other capability needs it.
@@ -1082,8 +1098,7 @@ def _start_tic(state: State) -> list[str]:
     # Do not publish a Tic-only fallback into shared state while proxy startup
     # reads its immutable image inputs.
     check_tic_cancelled(state)
-    handle = TicBrokerLaunch(build, workspace=workspace.host_root,
-                             common_dir=workspace.common_dir, **context)
+    handle = TicBrokerLaunch(build, repositories=repositories)
     state.tic_handle = handle
     gateway = state.gateway_handle
     if gateway is None:
@@ -1121,7 +1136,8 @@ def _start_tic(state: State) -> list[str]:
         with service_timing('tic', 'guest-help-once'):
             with OUTER_RUNTIME.environment_file(environment) as flags:
                 probe = OUTER_RUNTIME.run(
-                    ['exec', *flags, resources.container, '/opt/agent-tools/bin/ti', '--help'],
+                    ['exec', *flags, '--workdir', str(workspace.guest_root), resources.container,
+                     '/opt/agent-tools/bin/ti', '--help'],
                     capture_output=True, timeout=15, check=False)
             if probe.returncode != 0:
                 raise LauncherError('TicGit guest transport readiness failed; no fallback')
@@ -1851,9 +1867,7 @@ def prepare_cd_tic(state: State, *, sidecar_selected: bool) -> None:
     _workspace_mount_plan(state)
     build = resolved_tic_build(state)
     try:
-        context = inspect_tic_context(build, state.workspaces[0])
-        if set(context) != {'user_name', 'user_email', 'namespace'}:
-            raise LauncherError('TicGit trusted context returned invalid authority')
+        capture_tic_repositories(build, state.workspaces)
     except LauncherError as error:
         # Unsupported optional TicGit context must not prevent Pi from starting.
         # Build/cache and workspace authority errors above remain fatal; target

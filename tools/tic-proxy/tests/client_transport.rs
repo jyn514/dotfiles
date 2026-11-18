@@ -67,6 +67,10 @@ fn relative_guest_only_files_and_literal_dash_cross_as_bytes_not_paths() {
         assert_eq!(output.stderr, b"native error\n");
         let request = broker.join().unwrap();
         assert_eq!(request.token, "test-secret");
+        assert_eq!(
+            request.request.cwd,
+            std::fs::canonicalize(dir.path()).unwrap().to_str().unwrap()
+        );
         assert_eq!(request.request.stdin, text);
         assert_eq!(request.request.argv, ["edit", "-F", "-"]);
     }
@@ -314,5 +318,28 @@ fn blocked_stdin_collection_has_one_absolute_45_second_budget() {
     assert_eq!(
         listener.accept().unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
+    );
+}
+
+#[test]
+fn cwd_uses_physical_guest_directory_not_pwd_or_symlink_alias() {
+    let owned = tempfile::tempdir().unwrap();
+    let actual = owned.path().join("actual");
+    let alias = owned.path().join("alias");
+    std::fs::create_dir(&actual).unwrap();
+    std::os::unix::fs::symlink(&actual, &alias).unwrap();
+    let (endpoint, broker) = server();
+    let output = command(&alias)
+        .env("PWD", "/forged/guest/cwd")
+        .env("SANDBOX_TIC_ENDPOINT", endpoint)
+        .env("SANDBOX_TIC_TOKEN", "test-secret")
+        .arg("list")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(7));
+    let request = broker.join().unwrap();
+    assert_eq!(
+        request.request.cwd,
+        actual.canonicalize().unwrap().to_str().unwrap()
     );
 }

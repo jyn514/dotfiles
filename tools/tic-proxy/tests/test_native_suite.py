@@ -110,9 +110,9 @@ class NativeStoreAcceptance(unittest.TestCase):
         return self.ti(cwd, 'new', '--title', title, '--id-only').stdout.strip()
 
     def launch(self, cwd):
-        from tic_broker import TicBrokerLaunch
-        launch = TicBrokerLaunch(self.build, workspace=cwd, common_dir=self.common,
-            user_name='Broker Fixture', user_email='broker@example.invalid', namespace='tickets')
+        from tic_broker import TicBrokerLaunch, TicRepository
+        launch = TicBrokerLaunch(self.build, repositories=[TicRepository(workspace=cwd, common_dir=self.common, guest_root=cwd,
+            user_name='Broker Fixture', user_email='broker@example.invalid', namespace='tickets')])
         self.addCleanup(launch.stop)
         launch.start()
         self.record(dict(kind='broker-ready', workspace=str(cwd), common_dir=str(self.common),
@@ -121,7 +121,7 @@ class NativeStoreAcceptance(unittest.TestCase):
 
     def exchange(self, launch, argv):
         import socket
-        data = self.json.dumps(dict(token=launch.token, request=dict(version=2, command='tic',
+        data = self.json.dumps(dict(token=launch.token, request=dict(version=3, cwd=launch.config['repositories'][0]['guest_root'], command='tic',
                                     argv=argv, stdin=''))).encode()
         host, port = launch.address.rsplit(':', 1)
         with socket.create_connection((host, int(port)), timeout=40) as connection:

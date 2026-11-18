@@ -52,7 +52,7 @@ def main(mode="ready"):
                     else:
                         with listener.accept()[0] as connection:
                             connection.settimeout(2)
-                            # Match wire 2: consume the bounded frame, not EOF.
+                            # Match wire 3: consume the bounded frame, not EOF.
                             # An open client connection is required by the real
                             # broker while native execution remains in flight.
                             with connection.makefile('rb') as stream:
@@ -66,6 +66,6 @@ def main(mode="ready"):
                             assert len(data) == size
                             request = json.loads(data)
                             assert request["token"] == config["token"]
-                            response = json.dumps({"version": 2, "exit": 0,
+                            response = json.dumps({"version": 3, "exit": 0,
                                                    "stdout": "fixture response", "stderr": ""}).encode()
                             connection.sendall(struct.pack("!I", len(response)) + response)

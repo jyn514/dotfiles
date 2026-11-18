@@ -1,12 +1,12 @@
-//! Version-two typed command wire protocol. One request, one response, then close.
+//! Version-three typed command wire protocol. One request, one response, then close.
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::time::Duration;
 
-pub const WIRE_VERSION: u32 = 2;
+pub const WIRE_VERSION: u32 = 3;
 // Local launcher interfaces are independent of the command transport.
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 2;
 pub const READINESS_VERSION: u32 = 1;
 pub const INSPECT_CONTEXT_VERSION: u32 = 1;
 pub const COMMAND: &str = "tic";
@@ -28,6 +28,7 @@ pub const TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct Request {
     pub version: u32,
     pub command: String,
+    pub cwd: String,
     pub argv: Vec<String>,
     pub stdin: String,
 }
@@ -59,9 +60,24 @@ pub fn validate_request(request: &Request) -> Result<()> {
     if request.version != WIRE_VERSION || request.command != COMMAND {
         bail!("unsupported request version or command");
     }
+    validate_cwd(&request.cwd)?;
     validate_argv(&request.argv)?;
     if request.stdin.len() > MAX_REQUEST {
         bail!("stdin limit exceeded");
+    }
+    Ok(())
+}
+/// Guest paths are selectors only: never resolve them in the host filesystem.
+/// The client obtains a physical cwd; direct callers must use that same form.
+pub fn validate_cwd(cwd: &str) -> Result<()> {
+    if cwd.len() > MAX_ARG
+        || !std::path::Path::new(cwd).is_absolute()
+        || cwd.contains('\0')
+        || cwd.contains("//")
+        || (cwd != "/" && cwd.ends_with('/'))
+        || cwd.split('/').any(|part| part == "." || part == "..")
+    {
+        bail!("cwd must be a normalized absolute guest path");
     }
     Ok(())
 }
@@ -111,7 +127,7 @@ mod tests {
     fn duplicate_unknown_and_trailing_data_fail() {
         for text in [
             r#"{"version":1,"version":1,"command":"tic","argv":[],"stdin":""}"#,
-            r#"{"version":1,"command":"tic","argv":[],"stdin":"","cwd":"/"}"#,
+            r#"{"version":3,"command":"tic","argv":[],"stdin":"","cwd":"/","host_path":"/"}"#,
         ] {
             assert!(serde_json::from_str::<Request>(text).is_err());
         }

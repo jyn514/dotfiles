@@ -277,7 +277,7 @@ def source_identity(root=ROOT):
 
 def build_identity(host_platform, guest_platform, root=ROOT):
     return dict(proxy_source=source_identity(root), native_revision=(root / 'native-revision').read_text().strip(),
-                policy_version=1, wire_version=2, host_platform=host_platform, guest_platform=guest_platform)
+                policy_version=1, wire_version=3, host_platform=host_platform, guest_platform=guest_platform)
 
 
 def validate_identity(value):
@@ -287,7 +287,7 @@ def validate_identity(value):
             or re.fullmatch('[0-9a-f]{64}', value['proxy_source']) is None
             or value['native_revision'] != PIN
             or type(value['policy_version']) is not int or value['policy_version'] != 1
-            or type(value['wire_version']) is not int or value['wire_version'] != 2
+            or type(value['wire_version']) is not int or value['wire_version'] != 3
             or value['host_platform'] not in ('linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64')
             or value['guest_platform'] not in ('linux/amd64', 'linux/arm64')):
         raise ValueError('unsupported bundle build identity')

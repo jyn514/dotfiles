@@ -34,6 +34,14 @@ ti --help
 ti list
 ```
 
+The command targets the launcher-admitted writable repository containing its guest working directory.
+That includes the active project and the launcher dotfiles checkout, using the paths selected for this sandbox.
+Change directory to the other writable checkout before running `ti`; its tickets, author settings, and namespace remain separate.
+Subdirectories work, and nested admitted checkouts select the most specific root.
+Commands outside those roots refuse rather than targeting the active project, even when an unlisted repository is writable to the guest OS.
+Symlink aliases follow the physical guest directory; `PWD` cannot override selection.
+Linked worktrees can share a store while retaining their own invocation settings.
+
 Guest help shows only the admitted commands and options, including native argument conflict rules.
 For example, `ti list --open` shows all open tickets without terminal-height truncation; it conflicts with `--all`, `--status`, `--state`, and `--limit`.
 Conflicts between advertised options name the arguments to remove, without publishing native administrative or editor guidance.
@@ -54,6 +62,10 @@ If its build, repository checks, or broker startup fail, Pi warns and starts wit
 The guest `ti` guard then reports unavailable; it never searches for native TicGit as a fallback.
 `/cd` prepares the destination's container images and TicGit binaries before leaving the current session.
 An unsupported TicGit context warns rather than making Pi startup fail.
+Every admitted repository must pass the checks: an unsupported secondary checkout disables TicGit for the whole session and the warning identifies it.
+The launcher does not omit that checkout or route its commands to another tracker.
+The active project controls whether TicGit is enabled; exposing dotfiles does not enable dotfiles' other optional services.
+Deploy changed repository authority with a rebuilt bundle and a fresh sandbox; `/reload` does not replace the current broker.
 For a disposable acceptance fixture, follow the [Git/JJ root checks](BUILD.md#disposable-normal-pi-acceptance) before running any `ti` command.
 
 ## Failures and trust
@@ -64,7 +76,8 @@ Inspect tickets before retrying creation or promotion, or you may create duplica
 Each connection permits at most one native execution; trailing input cancels the exchange but can arrive after that execution has begun.
 Cleanup does not remove SQLite sidecars or interfere with independent human writers.
 
-The broker checks commands independently of the guest client and fixes the host repository, executable, identity, and namespace for the launch.
+The broker checks commands independently of the guest client and fixes the allowed repository contexts, executable, and each context's identity and namespace for the launch.
+A request cwd only selects among that finite set; it never supplies a host path to open or a different store.
 It runs the native command without a shell, with bounded stdin/output, no terminal, and private per-request UI state.
 Native TicGit still owns parsing, ticket validation, storage, concurrency, and transaction behavior.
 The broker adds no command lock or whole-command transaction.
@@ -75,7 +88,8 @@ The [governing contract](../codex-sandbox/spec/tic-proxy.typ) owns the repositor
 
 ## What has been verified
 
-**The actual Linux functional smoke passed; full acceptance remains incomplete.**
+**The earlier single-context Linux functional smoke passed; full acceptance remains incomplete.**
+Multi-repository selection requires separate actual-provider acceptance; the earlier run does not establish it.
 The latest run through ordinary host `pi` verified that the guest could read and comment on a ticket created from the host's linked worktree.
 Four host and four guest ticket creations succeeded; all eight tickets and their creation histories were read back from both worktrees and checked in the shared SQLite store.
 Host-native `ti` also created a ticket after the owning Pi session exited.

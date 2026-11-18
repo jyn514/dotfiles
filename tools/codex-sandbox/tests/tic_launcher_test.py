@@ -121,7 +121,7 @@ class TicLauncherTest(unittest.TestCase):
             home=self.home, codex_auth_directory=self.home / '.codex',
             uid=1000, gid=1000,
             repository=workspace, host_working_directory=workspace / 'nested',
-            workspaces=[SimpleNamespace(host_root=workspace, common_dir=common)],
+            workspaces=[SimpleNamespace(host_root=workspace, common_dir=common, guest_root=workspace)],
             capabilities={'tic'}, sidecar_image='sha256:helper', image='sha256:agent',
             suffix='first', tic_handle=None, tic_resources=None, tic_environment={})
         self.state.gateway_link_network = 'codex-gateway-link-first'
@@ -221,7 +221,7 @@ class TicLauncherTest(unittest.TestCase):
         host, port = (address or handle.address).rsplit(':', 1)
         with socket.create_connection((host, int(port)), timeout=2) as connection:
             data = json.dumps({'token': handle.token, 'request': {
-                'version': 2, 'command': 'tic', 'argv': ['--help'], 'stdin': ''}}).encode()
+                'version': 3, 'cwd': str(self.state.workspaces[0].guest_root), 'command': 'tic', 'argv': ['--help'], 'stdin': ''}}).encode()
             connection.sendall(struct.pack('!I', len(data)) + data)
             connection.shutdown(socket.SHUT_WR)
             response = bytearray()
@@ -235,6 +235,27 @@ class TicLauncherTest(unittest.TestCase):
         self.assertIn('warning: TicGit unavailable for this session', warning.getvalue())
         self.assertIn(message, warning.getvalue())
         self.assertEqual({}, self.state.tic_environment)
+
+    def test_unsupported_secondary_context_disables_the_whole_tic_service_without_publication(self):
+        secondary = self.root / 'secondary'
+        (secondary / '.git').mkdir(parents=True)
+        self.state.workspaces.append(SimpleNamespace(host_root=secondary, common_dir=secondary / '.git',
+                                                     guest_root=Path('/guest/secondary')))
+        inspected = []
+        def inspect(build, workspace):
+            inspected.append(workspace.host_root)
+            if workspace.host_root == secondary:
+                raise self.launcher['LauncherError']('unsupported repository context')
+            return self.context
+        with self.provider() as runtime, mock.patch.dict(self.globals, inspect_tic_context=inspect):
+            self.assert_tic_unavailable(str(secondary))
+            self.assertEqual([self.state.repository, secondary], inspected)
+            self.assertIsNone(self.state.tic_handle)
+            self.assertIsNone(self.state.tic_resources)
+            self.assertFalse(runtime.present)
+            self.assertFalse(any(event[0] in ('probe', 'container', 'environment') for event in runtime.events))
+            self.assertFalse((self.state.repository / '.git/git-meta.sqlite').exists())
+            self.assertFalse((secondary / '.git/git-meta.sqlite').exists())
 
     def test_opt_in_timings_cover_real_steps_without_replaying_guest_help(self):
         expected = ['bundle', 'context-capture', 'client-staging-mounts',
@@ -510,10 +531,10 @@ class TicLauncherTest(unittest.TestCase):
                     args = self.launcher['start_tic'](self.state)
                     handle = self.state.tic_handle
                     self.assertEqual(LifecycleState.ATTACHED, handle.lifecycle.state)
-                    self.assertEqual(str(self.state.repository), handle.config['workspace'])
-                    self.assertEqual(str(self.state.workspaces[0].common_dir), handle.config['common_dir'])
-                    self.assertNotEqual(str(self.state.host_working_directory), handle.config['workspace'])
-                    self.assertEqual(self.context['user_name'], handle.config['user_name'])
+                    self.assertEqual(str(self.state.repository), handle.config['repositories'][0]['workspace'])
+                    self.assertEqual(str(self.state.workspaces[0].common_dir), handle.config['repositories'][0]['common_dir'])
+                    self.assertNotEqual(str(self.state.host_working_directory), handle.config['repositories'][0]['workspace'])
+                    self.assertEqual(self.context['user_name'], handle.config['repositories'][0]['user_name'])
                     self.assertEqual('fixture response', self.exchange(handle)['stdout'])
                     mount = args[args.index('--mount') + 1]
                     self.assertTrue(mount.endswith('dst=/opt/agent-tools/bin/ti,readonly'))
@@ -531,6 +552,11 @@ class TicLauncherTest(unittest.TestCase):
                     container = next(item[1] for item in runtime.events if item[0] == 'container')
                     self.assertIn('/trusted/bin/sandbox-gateway', container)
                     self.assertIn('--tic-port', container)
+                    self.assertEqual(str(self.state.workspaces[0].guest_root),
+                                     container[container.index('--workdir') + 1])
+                    probe = next(event[1] for event in runtime.events if event[0] == 'probe')
+                    self.assertEqual(str(self.state.workspaces[0].guest_root),
+                                     probe[probe.index('--workdir') + 1])
                     target_port = int(container[container.index('--tic-port') + 1])
                     if mac:
                         self.assertFalse(hasattr(runtime, 'host_bridge'))
@@ -1149,6 +1175,29 @@ class TicLauncherTest(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
                          'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
+    def test_installed_native_inspection_rejects_secondary_before_publishing_any_authority(self):
+        environment = self.install_test_bundle()
+        secondary = self.root / 'unsupported-secondary'
+        subprocess.run(['git', 'init', '-q', str(secondary)], env=environment, check=True, capture_output=True)
+        with (secondary / '.git/config').open('a') as config:
+            config.write('\n[include]\n    path = /must-not-follow-host-include\n')
+        self.state.workspaces.append(SimpleNamespace(host_root=secondary, common_dir=secondary / '.git',
+                                                     guest_root=secondary))
+        with self.provider(context=False) as runtime, mock.patch.dict(os.environ, environment, clear=True):
+            warning = io.StringIO()
+            with mock.patch('sys.stderr', warning):
+                self.assertEqual([], self.launcher['start_tic'](self.state))
+            self.assertIn(str(secondary), warning.getvalue())
+            self.assertIn('unsupported', warning.getvalue())
+            self.assertIsNone(self.state.tic_handle)
+            self.assertIsNone(self.state.tic_resources)
+            self.assertFalse(runtime.present)
+            self.assertFalse(any(event[0] in ('container', 'probe', 'environment') for event in runtime.events))
+            self.assertFalse((self.state.repository / '.git/git-meta.sqlite').exists())
+            self.assertFalse((secondary / '.git/git-meta.sqlite').exists())
+
+    @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
+                         'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
     def test_installed_native_client_broker_roundtrip_with_local_fake_provider_transport(self):
         self.installed_roundtrip(direct=False)
 
@@ -1156,6 +1205,40 @@ class TicLauncherTest(unittest.TestCase):
                          'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
     def test_installed_direct_gateway_native_roundtrip(self):
         self.installed_roundtrip(direct=True)
+
+    @unittest.skipUnless(sys.platform.startswith('linux') and os.environ.get('TIC_LAUNCHER_TEST_BUNDLE'),
+                         'set TIC_LAUNCHER_TEST_BUNDLE to a reviewed local Linux bundle')
+    def test_installed_large_contexts_cross_launcher_broker_and_native_boundaries(self):
+        environment = self.install_test_bundle()
+        secondary = self.root / 'secondary'
+        subprocess.run(['git', 'init', '-q', str(secondary)], env=environment, check=True, capture_output=True)
+        self.state.workspaces.append(SimpleNamespace(host_root=secondary, common_dir=secondary / '.git',
+                                                     guest_root=secondary))
+        contexts = ((self.state.repository, 'main' * 10_000, 'main@example.invalid'),
+                    (secondary, 'linked' * 7_000, 'secondary@example.invalid'))
+        for workspace, name, email in contexts:
+            for key, value in (('user.name', name), ('user.email', email)):
+                subprocess.run(['git', '-C', str(workspace), 'config', key, value],
+                               env=environment, check=True, capture_output=True)
+        with self.provider(context=False) as runtime, mock.patch.dict(os.environ, environment, clear=True):
+            try:
+                self.launcher['start_tic'](self.state)
+                handle = self.state.tic_handle
+                self.assertIsNotNone(handle)
+                config = (handle.directory / 'config.json').read_bytes()
+                self.assertGreater(len(config), 64 * 1024)
+                self.assertEqual([name for _, name, _ in contexts],
+                                 [context['user_name'] for context in json.loads(config)['repositories']])
+                client_environment = dict(SANDBOX_TIC_ENDPOINT=handle.address, SANDBOX_TIC_TOKEN=handle.token)
+                for workspace, _, email in contexts:
+                    created = subprocess.run([str(handle.build.guest_client_executable), 'new', '--title', 'large context', '--json'],
+                                             cwd=workspace, env=client_environment, capture_output=True,
+                                             text=True, timeout=15)
+                    self.assertEqual(0, created.returncode, created.stderr)
+                    self.assertEqual(email, json.loads(created.stdout)['created_by'])
+                    self.assertTrue((workspace / '.git/git-meta.sqlite').is_file())
+            finally:
+                self.stop()
 
     def installed_roundtrip(self, *, direct):
         # Real installed inspection, broker, staged client/wrapper and native;
@@ -1179,6 +1262,20 @@ class TicLauncherTest(unittest.TestCase):
             '[meta]\nnamespace = worktree-fixture\n')
         expected = {'user_name': 'Local Launch Author', 'user_email': 'global-author@example.invalid',
                     'namespace': 'worktree-fixture'}
+        # A genuinely distinct nested repository exercises longest admitted root,
+        # settings capture and native store selection through the same launcher.
+        secondary = self.state.repository / 'nested-repository'
+        subprocess.run(['git', 'init', '-q', str(secondary)], env=environment, check=True, capture_output=True)
+        secondary_context = {'user_name': 'Secondary Author', 'user_email': 'secondary@example.invalid',
+                             'namespace': 'secondary-meta'}
+        for field, key in (('user_name', 'user.name'), ('user_email', 'user.email'), ('namespace', 'meta.namespace')):
+            subprocess.run(['git', '-C', str(secondary), 'config', key, secondary_context[field]],
+                           env=environment, check=True, capture_output=True)
+        self.state.workspaces.append(SimpleNamespace(host_root=secondary, common_dir=secondary / '.git',
+                                                     guest_root=secondary))
+        secondary_database = secondary / '.git/git-meta.sqlite'
+        readonly = self.root / 'unlisted-writable-repository'
+        subprocess.run(['git', 'init', '-q', str(readonly)], env=environment, check=True, capture_output=True)
         database = self.state.workspaces[0].common_dir / 'git-meta.sqlite'
         self.assertFalse(database.exists())
         relay = None
@@ -1209,20 +1306,21 @@ class TicLauncherTest(unittest.TestCase):
             def environment_file(values):
                 runtime.probe_environment = values
                 yield []
-            def client(argv, values=None):
+            def client(argv, values=None, *, cwd=None, input=None):
                 environment = dict(values or self.state.tic_environment)
                 environment['SANDBOX_TIC_ENDPOINT'] = f'127.0.0.1:{relay.port}'
                 return subprocess.run([str(runtime.client), *argv], env=environment,
-                                      cwd=self.state.repository, capture_output=True, text=True, timeout=15)
-            def native_new_with_observed_identity(title, frozen):
+                                      cwd=cwd or self.state.repository, input=input,
+                                      capture_output=True, text=True, timeout=15)
+            def native_new_with_observed_identity(title, frozen, *, cwd=None, store=None):
                 # No wrapper or diagnostic command: briefly block our own store
                 # writer, then inspect the actual owned native executable. Name
                 # and namespace are not exposed by admitted command JSON.
-                lock = sqlite3.connect(database)
+                lock = sqlite3.connect(store or database)
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     try:
                         lock.execute('BEGIN IMMEDIATE')
-                        result = pool.submit(client, ['new', '--title', title, '--json'])
+                        result = pool.submit(client, ['new', '--title', title, '--json'], cwd=cwd)
                         handle = self.state.tic_handle
                         observed = None
                         deadline = time.monotonic() + 2
@@ -1271,7 +1369,7 @@ class TicLauncherTest(unittest.TestCase):
                 try:
                     self.launcher['start_tic'](self.state)
                     self.assertFalse(database.exists(), 'inspection/readiness/help must not open SQLite')
-                    self.assertEqual(expected, {key: self.state.tic_handle.config[key] for key in expected})
+                    self.assertEqual(expected, {key: self.state.tic_handle.config['repositories'][0][key] for key in expected})
                     denied = client(['new', '--title', 'forbidden author override',
                                      '--author', 'guest-author@example.invalid'])
                     self.assertNotEqual(0, denied.returncode)
@@ -1307,6 +1405,45 @@ class TicLauncherTest(unittest.TestCase):
                     self.assertEqual(0, history.returncode, history.stderr)
                     self.assertIn(expected['user_email'], history.stdout)
                     self.assertNotIn('changed@example.invalid', history.stdout)
+                    self.assertFalse(secondary_database.exists(), 'active operations must not open the secondary store')
+                    nested = secondary / 'drafts'
+                    nested.mkdir()
+                    (nested / 'ticket.md').write_text('Secondary file title\n\nsecondary body 雪\n')
+                    secondary_created = client(['new', '-F', 'ticket.md', '--id-only'], cwd=nested)
+                    self.assertEqual(0, secondary_created.returncode, secondary_created.stderr)
+                    secondary_ticket = secondary_created.stdout.strip()
+                    self.assertNotEqual((database.stat().st_dev, database.stat().st_ino),
+                                        (secondary_database.stat().st_dev, secondary_database.stat().st_ino))
+                    # Host settings change after capture; accepted settings stay bound to this repository.
+                    for key in ('user.name', 'user.email', 'meta.namespace'):
+                        subprocess.run(['git', '-C', str(secondary), 'config', key, 'changed-secondary'],
+                                       env=environment, check=True, capture_output=True)
+                    observed = native_new_with_observed_identity('secondary frozen settings', secondary_context,
+                                                                 cwd=nested, store=secondary_database)
+                    self.assertEqual(0, observed.returncode, observed.stderr)
+                    self.assertEqual(secondary_context['user_email'], json.loads(observed.stdout)['created_by'])
+                    alias = self.state.repository / 'alias-to-secondary'
+                    alias.symlink_to(nested, target_is_directory=True)
+                    changed = client(['comment', '--ticket', secondary_ticket, '-F', '-'],
+                                     cwd=alias, input='secondary stdin comment α')
+                    self.assertEqual(0, changed.returncode, changed.stderr)
+                    closed = client(['close', secondary_ticket], cwd=nested)
+                    self.assertEqual(0, closed.returncode, closed.stderr)
+                    secondary_shown = client(['show', secondary_ticket, '--json'], cwd=nested)
+                    self.assertEqual(0, secondary_shown.returncode, secondary_shown.stderr)
+                    self.assertIn('secondary stdin comment α', secondary_shown.stdout)
+                    self.assertIn(secondary_context['user_email'], secondary_shown.stdout)
+                    secondary_listed = client(['list', '--all', '--json'], cwd=nested)
+                    self.assertNotIn('launcher roundtrip', secondary_listed.stdout)
+                    active_listed = client(['list', '--all', '--json'])
+                    self.assertNotIn('Secondary file title', active_listed.stdout)
+                    outside_alias = self.state.repository / 'alias-to-unlisted'
+                    outside_alias.symlink_to(readonly, target_is_directory=True)
+                    for cwd in (readonly, outside_alias):
+                        rejected = client(['new', '--title', 'must not be routed', '--id-only'], cwd=cwd)
+                        self.assertEqual(2, rejected.returncode, rejected.stderr)
+                        self.assertIn('outside launcher-admitted writable repositories', rejected.stderr)
+                    self.assertFalse((readonly / '.git/git-meta.sqlite').exists())
                     installed = self.real_resolver(self.state)
                     human = subprocess.run([str(installed.native_executable), 'list', '--json'],
                                            cwd=self.state.repository, env=environment,
@@ -1336,7 +1473,7 @@ class TicLauncherTest(unittest.TestCase):
                             self.state.suffix = 'literal-' + label
                             self.launcher['prepare_gateway'](self.state)
                             self.launcher['start_tic'](self.state)
-                            self.assertEqual(literal, {key: self.state.tic_handle.config[key] for key in literal})
+                            self.assertEqual(literal, {key: self.state.tic_handle.config['repositories'][0][key] for key in literal})
                             global_config.write_text(
                                 '[user]\nname = Later Author\nemail = later@example.invalid\n'
                                 '[meta]\nnamespace = later-namespace\n')
@@ -1382,10 +1519,10 @@ class TicLauncherTest(unittest.TestCase):
                                 self.assertEqual(size, len(data))
                             request = json.loads(data)
                             self.assertEqual('owned-delay-token', request['token'])
-                            self.assertEqual({'version': 2, 'command': 'tic', 'argv': ['--help'], 'stdin': ''},
+                            self.assertEqual({'version': 3, 'cwd': str(Path.cwd()), 'command': 'tic', 'argv': ['--help'], 'stdin': ''},
                                              request['request'])
                             time.sleep(1.25)
-                            frame = json.dumps({'version': 2, 'exit': 0, 'stdout': 'delayed complete response',
+                            frame = json.dumps({'version': 3, 'exit': 0, 'stdout': 'delayed complete response',
                                                 'stderr': ''}).encode()
                             connection.sendall(struct.pack('!I', len(frame)) + frame)
                             break
@@ -1476,7 +1613,7 @@ class TicLauncherTest(unittest.TestCase):
             second = self.state.tic_handle
             self.assertNotEqual(token, second.token)
             self.assertNotEqual(address, second.address)
-            self.assertEqual(first.config['common_dir'], second.config['common_dir'])
+            self.assertEqual(first.config['repositories'][0]['common_dir'], second.config['repositories'][0]['common_dir'])
             first.stop()
             self.assertEqual('fixture response', self.exchange(second)['stdout'])
 

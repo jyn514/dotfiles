@@ -44,8 +44,8 @@ def until(predicate, message, timeout=5):
     raise AssertionError(message)
 
 
-def frame(argv):
-    data = json.dumps(dict(token=TOKEN, request=dict(version=2, command='tic', argv=argv, stdin=''))).encode()
+def frame(argv, cwd):
+    data = json.dumps(dict(token=TOKEN, request=dict(version=3, cwd=str(cwd), command='tic', argv=argv, stdin=''))).encode()
     return len(data).to_bytes(4, 'big') + data
 
 
@@ -80,9 +80,9 @@ class LocalCancellationProof(unittest.TestCase):
         native_hash = digest(self.native)
         Path(str(self.native) + '.tic-proxy.json').write_text(json.dumps(dict(native_revision=PIN, policy_version=1, sha256=native_hash)))
         config = self.root / 'config.json'
-        config.write_text(json.dumps(dict(version=1, workspace=str(self.repo), common_dir=str(self.repo / '.git'),
-            native_executable=str(self.native), native_sha256=native_hash, user_name='Owned Fixture',
-            user_email='owned@example.invalid', namespace='tickets', token=TOKEN)))
+        config.write_text(json.dumps(dict(version=2, repositories=[dict(workspace=str(self.repo), common_dir=str(self.repo / '.git'),
+            guest_root=str(self.repo), user_name='Owned Fixture', user_email='owned@example.invalid', namespace='tickets')],
+            native_executable=str(self.native), native_sha256=native_hash, token=TOKEN)))
         config.chmod(0o600)
         reader, self.lifetime = os.pipe()
         try:
@@ -171,7 +171,7 @@ class LocalCancellationProof(unittest.TestCase):
     def raw(self, argv, eof=False):
         client = socket.create_connection(self.endpoint, timeout=3)
         self.addCleanup(client.close)
-        client.sendall(frame(argv))
+        client.sendall(frame(argv, self.repo))
         if eof:
             client.shutdown(socket.SHUT_WR)
         return client
@@ -240,7 +240,7 @@ class LocalCancellationProof(unittest.TestCase):
 
     def test_incomplete_frame_fin_through_bridge_executes_nothing(self):
         with socket.create_connection(self.endpoint, timeout=3) as client:
-            client.sendall(frame(['list'])[:-1])
+            client.sendall(frame(['list'], self.repo)[:-1])
             client.shutdown(socket.SHUT_WR)
             # Request EOF is cancellation, never the missing admission step.
             def exact(size):
@@ -253,7 +253,7 @@ class LocalCancellationProof(unittest.TestCase):
             size = int.from_bytes(exact(4), 'big')
             self.assertLessEqual(size, 32 * 1024 * 1024)
             response = json.loads(exact(size))
-            self.assertEqual(2, response['version'])
+            self.assertEqual(3, response['version'])
             self.assertEqual(125, response['exit'])
             self.assertEqual(b'', client.recv(1))
         self.assertEqual([], self.events())

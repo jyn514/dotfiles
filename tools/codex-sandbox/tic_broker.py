@@ -11,7 +11,7 @@ an explicit provider-routable endpoint instead of the loopback broker address.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
@@ -35,7 +35,7 @@ from trusted_services import (
 
 POLICY_VERSION = 1
 READY_LIMIT = 4096
-CONFIG_LIMIT = 64 * 1024
+CONFIG_LIMIT = 1024 * 1024
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _REVISION = re.compile(r"[0-9a-f]{40}\Z")
 _ENDPOINT = re.compile(r"127\.0\.0\.1:([0-9]+)\Z")
@@ -106,33 +106,52 @@ class InstalledTicBuild:
             raise LifecycleError("TicGit guest client must target a supported Linux platform")
 
 
-class TicBrokerLaunch:
-    def __init__(self, build: InstalledTicBuild, *, workspace: Path, common_dir: Path,
-                 user_name: str, user_email: str, namespace: str,
-                 owner: str | None = None, owners: OwnerSet | None = None,
-                 registry: ResourceRegistry | None = None) -> None:
-        build.verify()
-        workspace, common_dir = Path(workspace), Path(common_dir)
-        for path in (workspace, common_dir):
+@dataclass(frozen=True)
+class TicRepository:
+    """Frozen launch authority; guest_root is a selector, never a host path."""
+    workspace: Path
+    common_dir: Path
+    guest_root: Path
+    user_name: str
+    user_email: str
+    namespace: str
+
+    def configuration(self) -> dict:
+        for path in (self.workspace, self.common_dir):
             if not path.is_absolute() or path.resolve(strict=True) != path or not path.is_dir():
                 raise LifecycleError("accepted TicGit repository paths must be canonical directories")
-        for value in (user_name, user_email, namespace):
-            # Native configuration distinguishes a present literal (including
-            # empty/whitespace) from absence. Only the inspector owns defaults.
+        guest = str(self.guest_root)
+        if (not self.guest_root.is_absolute() or guest == '/' or '\0' in guest
+                or any(part in ('.', '..') for part in guest.split('/'))):
+            raise LifecycleError("accepted TicGit guest root must be a normalized absolute directory")
+        for value in (self.user_name, self.user_email, self.namespace):
+            # Present empty/whitespace values are literals. Only inspection owns defaults.
             if not isinstance(value, str) or "\0" in value:
                 raise LifecycleError("invalid accepted TicGit identity/namespace")
             try:
                 value.encode("utf-8")
             except UnicodeEncodeError as error:
                 raise LifecycleError("accepted TicGit identity/namespace is not UTF-8 representable") from error
+        return {key: str(value) if isinstance(value, Path) else value
+                for key, value in asdict(self).items()}
+
+
+class TicBrokerLaunch:
+    def __init__(self, build: InstalledTicBuild, *, repositories: list[TicRepository],
+                 owner: str | None = None, owners: OwnerSet | None = None,
+                 registry: ResourceRegistry | None = None) -> None:
+        build.verify()
+        contexts = [repo.configuration() for repo in repositories]
+        roots = [repo['guest_root'] for repo in contexts]
+        if not roots or len(roots) != len(set(roots)):
+            raise LifecycleError("accepted TicGit guest roots must be nonempty and distinct")
         self.build = build
         self.owner = owner or (registry.owner if registry else secrets.token_hex(16))
         if registry is not None and registry.owner != self.owner:
             raise LifecycleError("TicGit registry owner mismatch")
         self.registry = registry if registry is not None else ResourceRegistry(self.owner)
-        self.config = dict(version=1, workspace=str(workspace), common_dir=str(common_dir),
-                           native_executable=str(build.native_executable), native_sha256=build.native_sha256,
-                           user_name=user_name, user_email=user_email, namespace=namespace)
+        self.config = dict(version=2, repositories=contexts,
+                           native_executable=str(build.native_executable), native_sha256=build.native_sha256)
         adapter_bytes = Path(__file__).read_bytes()
         self.plan = ServicePlan(
             role="tic", family=ServiceFamily.COMMAND_PROXY, scope=ServiceScope.AGENT_LAUNCH,
@@ -177,7 +196,7 @@ class TicBrokerLaunch:
             self.token = secrets.token_hex(32)
             encoded = json.dumps({**self.config, "token": self.token}, ensure_ascii=True).encode("ascii")
             if len(encoded) > CONFIG_LIMIT:
-                raise LifecycleError("TicGit private configuration exceeds 64 KiB")
+                raise LifecycleError("TicGit private configuration exceeds 1 MiB")
             self.directory = Path(tempfile.mkdtemp(prefix="sandbox-tic-"))
             directory = self.directory
             temp_resource = self._register("temporary", lambda: ResourcePresence.OWNED if directory.exists()
@@ -199,7 +218,7 @@ class TicBrokerLaunch:
                 [str(self.build.broker_executable), "--config", str(config_path),
                  "--lifetime-fd", str(read_fd)], stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, pass_fds=(read_fd,),
-                close_fds=True, cwd=self.config["workspace"],
+                close_fds=True, cwd=self.config["repositories"][0]["workspace"],
                 env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "TMPDIR": str(directory)})
             self._register("process", self._process_presence, self._stop_process,
                            (pipe_resource, temp_resource))

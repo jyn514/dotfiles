@@ -302,6 +302,8 @@ class TicCdPreflightTest(unittest.TestCase):
         self.replacements.update({
             'DOTFILES': dotfiles,
             'discover_launch_workspaces': self.launcher['discover_launch_workspaces'],
+            'inspect_tic_context': mock.Mock(return_value={
+                'user_name': 'Fixture', 'user_email': 'fixture@example.invalid', 'namespace': 'meta'}),
         })
         with self.patched():
             code, output, errors = self.prepare()

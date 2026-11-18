@@ -269,7 +269,7 @@ class LinuxAcceptanceNativeComponents(unittest.TestCase):
     def test_pinned_bundle_real_cli_shared_store_and_history_workflow(self):
         sys.path.insert(0, str(acceptance.DOTFILES / 'tools/codex-sandbox'))
         from bundle import stage_cache
-        from tic_broker import InstalledTicBuild, TicBrokerLaunch
+        from tic_broker import InstalledTicBuild, TicBrokerLaunch, TicRepository
         destination = acceptance.DOTFILES / 'target/tic-acceptance/components'
         destination.mkdir(parents=True, exist_ok=True)
         import uuid
@@ -283,8 +283,8 @@ class LinuxAcceptanceNativeComponents(unittest.TestCase):
         host = {'title': 'component host-linked title'}
         host['id'] = fixture.ti(native, fixture.linked, 'new', '--title', host['title'], '--id-only')['stdout'].strip()
         namespace = fixture.git(fixture.main, 'config', 'meta.namespace')
-        launch = TicBrokerLaunch(build, workspace=fixture.main, common_dir=fixture.main / '.git',
-                                 user_name='Component Guest', user_email='component@example.invalid', namespace=namespace).start()
+        launch = TicBrokerLaunch(build, repositories=[TicRepository(workspace=fixture.main, common_dir=fixture.main / '.git',
+                                 guest_root=fixture.main, user_name='Component Guest', user_email='component@example.invalid', namespace=namespace)]).start()
         try:
             environment = dict(fixture.environment, **launch.environment())
             commands = []
