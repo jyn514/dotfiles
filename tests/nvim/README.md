@@ -8,4 +8,4 @@ dev/test-environment python3 tests/nvim/nvim_test.py
 
 The suite requires Neovim and an installed plugin tree.
 It skips its tests when either is missing.
-Follow the [development guide](../../dev/README.md#testing-and-probes) for shared test prerequisites and socket permissions.
+Follow the [development guide](../../dev/testing.md) for shared test prerequisites and socket permissions.

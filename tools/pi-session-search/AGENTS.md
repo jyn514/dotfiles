@@ -17,7 +17,7 @@ Adobe-internal dependencies, no servers, no network calls.
 
 ## Build / test / typecheck
 
-This package is maintained inside dotfiles; the root `AGENTS.md` and `dev/README.md` own repository operations and test isolation.
+This package is maintained inside dotfiles; the root [AGENTS.md](../../AGENTS.md), [change guidelines](../../dev/change-guidelines.md) and [testing guide](../../dev/testing.md) own repository operations and test isolation.
 Run `dev/pytest -q tests/native/test_native_pi_session_search.py` from the dotfiles root.
 The adapter runs the existing `npm test` suite against installed Pi peers in a disposable package copy.
 Install test dependencies and run `npm run typecheck` only in a disposable copy through `dev/test-environment`, not in this authoritative source tree.

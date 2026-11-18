@@ -728,7 +728,7 @@ Usage and recovery instructions remain in this README.
 
 ## Fork development
 
-First follow the repository's [test dependency setup](../../dev/README.md#testing-and-probes).
+First follow the repository's [test dependency setup](../../dev/testing.md).
 From the dotfiles repository root:
 
 ```bash

@@ -7,7 +7,7 @@ Passing them does not prove model retention.
 
 ## Use and reconstruction limits
 
-Follow [replay prerequisites and usage](../../../../dev/README.md#replay-a-compaction).
+Follow [replay prerequisites and usage](../../../../dev/compaction-replay.md).
 **Live replays may cost money.** From the repository root, for example:
 
 ```sh

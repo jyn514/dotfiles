@@ -117,5 +117,5 @@ For prerequisites and the test command, see the [Neovim config test guide](../te
 The profile suite loads complete shell configurations and reads bindings from a private tmux server.
 Its Glide cases import the complete TypeScript configuration with Node's native type stripping and replace browser APIs with fixtures.
 
-See [testing and probes](README.md#testing-and-probes) for common prerequisites, socket permissions, and real-state exceptions.
+See [testing and probes](testing.md) for common prerequisites, socket permissions, and real-state exceptions.
 For installed-Pi-specific test recipes, see the [Pi configuration guide](../config/pi-agent/README.md#testing).

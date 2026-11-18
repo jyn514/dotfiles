@@ -22,7 +22,7 @@ The sandbox exposes the package read-only at the same agent-directory path, so g
 
 See the [extension bundle](pi-extensions/README.md) for loading, reloading,
 compaction, side conversations, and asynchronous questions. Follow the
-[development guide](../../dev/README.md#testing-and-probes) before running tests
+[development guide](../../dev/testing.md) before running tests
 or probes.
 
 Ctrl+G requires tmux and opens the prompt in a new pane while Pi keeps the transcript visible.
@@ -124,7 +124,7 @@ being changed; a test dependency update does not update the running application.
 | --- | --- | --- |
 | Host Pi executable | [Installer](../../libexec/setup/install_pi.py) | `mise run pi-install` rebuilds and installs the fork from any working directory. See the [sandbox installation guide](../../tools/codex-sandbox/README.md#purpose). |
 | Guest tool worker | [Sandbox operator guide](../../tools/codex-sandbox/README.md#purpose) | Fresh sandboxes use the installed host Pi commit; existing workers require the documented restart. |
-| Libraries used by dotfiles tests | [Manifest](../../package.json) and [lockfile](../../package-lock.json) | Update the manifest and lockfile, then install locked dependencies through the [testing guide](../../dev/README.md#testing-and-probes). |
+| Libraries used by dotfiles tests | [Manifest](../../package.json) and [lockfile](../../package-lock.json) | Update the manifest and lockfile, then install locked dependencies through the [testing guide](../../dev/testing.md). |
 | Dotfiles' local extensions | [Extension bundle](pi-extensions/README.md) | Setup links new files; `/reload` loads code changes in Pi. |
 | Maintained extension packages | [Package references](settings.json) and [setup links](../../install.conf.json) | Setup links `tools/pi-link` and the tracked goal, session-search, and subagent packages; `/reload` loads their checkout changes. The latter three use `~/.pi/agent/packages/<name>`. |
 | Dashboard application and bridge | [Source pin and patches](../pi-dashboard-source.json) | Ordinary package setup installs the patched source build; `./setup services` reconciles its machine-local configuration. See [Browser and phone access](#browser-and-phone-access). |
@@ -366,4 +366,4 @@ Check that:
 - Changing the template reaches the child without a matching caller edit.
 
 These checks establish configuration delivery, not model compliance or better task ranking.
-See [testing and probes](../../dev/README.md#testing-and-probes) for shared prerequisites and isolation rules.
+See [testing and probes](../../dev/testing.md) for shared prerequisites and isolation rules.

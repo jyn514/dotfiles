@@ -2,7 +2,7 @@
 
 Use the [operator guide](README.md) for host setup, session commands, safety, and recovery.
 Before running tests or probes, follow the repository
-[testing and isolation rules](../../dev/README.md#testing-and-probes).
+[testing and isolation rules](../../dev/testing.md).
 The startup benchmark below uses the host's real configuration.
 
 ## Lifecycle ownership

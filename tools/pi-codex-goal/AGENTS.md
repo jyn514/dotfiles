@@ -9,7 +9,7 @@ The user settings source is `./packages/pi-codex-goal`; preserve both extension 
 Do not add a second npm, Git, or project-local install: duplicate packages register conflicting goal tools.
 The original standalone checkout is historical, not an installed dependency.
 
-Follow the repository's `dev/README.md` and run tests through `dev/test-environment`.
+Follow the repository's [change guidelines](../../dev/change-guidelines.md) and [testing guide](../../dev/testing.md), and run tests through `dev/test-environment`.
 The native adapter `tests/native/test_native_pi_codex_goal.py` copies this package to disposable storage before running its checks.
 Do not run dependency installation, generated-output checks, or package tests against the authoritative tree as a test fixture.
 

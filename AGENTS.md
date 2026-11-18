@@ -1,7 +1,7 @@
 # Repository instructions
 
 Before editing code, configuration, or tests, read the relevant
-[repository change guidelines](dev/README.md#repository-change-guidelines) for
+[repository change guidelines](dev/change-guidelines.md) for
 layout, language conventions, test placement, and bootstrap or PR requirements.
 For setup operations, read [Setup and configuration](README.md#setup-and-configuration)
 and the relevant setup function before using it on a new machine.
@@ -11,7 +11,7 @@ and the relevant setup function before using it on a new machine.
   [tools reference](tools/README.md) for an existing command.
 - Run tests and ad-hoc Pi probes through `dev/test-environment`.
   Use isolation for tests, not for ordinary repository operations.
-  Read [Testing and probes](dev/README.md#testing-and-probes) for dependencies,
+  Read [Testing and probes](dev/testing.md) for dependencies,
   isolation, and exceptions that require real configuration.
   When probing repository wrappers or launchers, invoke their paths explicitly; isolation can replace bare commands with native tools.
   See [test-environment details](dev/test-environment.md) for entrypoint selection.

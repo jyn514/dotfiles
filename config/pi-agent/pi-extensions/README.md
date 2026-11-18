@@ -468,9 +468,9 @@ Older compactions have no capture ID; inspect their raw entries by native entry 
 
 Luna reads the instructions afresh for each generated checkpoint; instruction-only edits need no reload.
 After changing extension code, use `/reload` as described above.
-Follow the [testing guide](../../../dev/README.md#testing-and-probes) for locked dependencies and offline compaction tests.
+Follow the [testing guide](../../../dev/testing.md) for locked dependencies and offline compaction tests.
 These include native extension loading, persisted-context reconstruction, and recovery of full captures through their visible locators.
-See [compaction replay](../../../dev/README.md#replay-a-compaction) to compare instruction changes against saved sessions.
+See [compaction replay](../../../dev/compaction-replay.md) to compare instruction changes against saved sessions.
 
 ## Side conversations: `/split`
 

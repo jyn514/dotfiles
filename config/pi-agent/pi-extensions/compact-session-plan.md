@@ -91,7 +91,7 @@ Land behavior, tests, and usage documentation together; no separate preparatory 
 
 Use private temporary sessions and a scripted local provider; no paid provider requests or mutation of real sessions is needed.
 Run probes through `dev/test-environment` from the dotfiles root.
-Install the existing locked prerequisites first as documented in [the testing guide](../../../dev/README.md#testing-and-probes).
+Install the existing locked prerequisites first as documented in [the testing guide](../../../dev/testing.md).
 
 - **Actual context replacement:** put a distinct marker in old history, call the tool through an installed-Pi agent turn, and inspect the next provider request.
   It contains the exact report and recovery appendix, but no old marker or orphaned tool-result messages.

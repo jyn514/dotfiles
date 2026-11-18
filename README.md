@@ -77,7 +77,7 @@ focused tests and ad-hoc Pi probes, including `--help` checks. The wrapper uses 
 private HOME and Pi/XDG state; it is not a filesystem sandbox and cannot prevent
 writes to explicit paths outside HOME.
 
-Before running tests, follow the [development guide](dev/README.md#testing-and-probes)
+Before running tests, follow the [development guide](dev/testing.md)
 for dependencies and exceptions that require installed configuration or authentication.
 See [bootstrap maintenance](dev/README.md#bootstrap-maintenance) to update locked
 plugin revisions and release assets.

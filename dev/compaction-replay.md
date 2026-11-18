@@ -3,7 +3,7 @@
 Generating a replay makes a live Luna request and may incur model cost.
 It uses normal Pi authentication or the sandbox model broker; do not run generation through `dev/test-environment`.
 Listing cuts is offline: it creates no model runtime and makes no model request.
-Install the [locked dependencies](README.md#testing-and-probes) first.
+Install the [locked dependencies](testing.md#dependencies-and-setup) first.
 
 List recorded cuts, including cuts on inactive branches:
 
