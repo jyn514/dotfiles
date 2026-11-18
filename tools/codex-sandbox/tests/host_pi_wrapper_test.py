@@ -112,10 +112,11 @@ class HostPiWrapperTest(unittest.TestCase):
         self.assertEqual(["--offline", "--version"], json.loads(result.stdout)["arguments"])
 
     def test_invalid_override_does_not_fall_back_to_installed_cli(self) -> None:
-        result = self.run_wrapper(CODEX_SANDBOX_HOST_PI=str(self.home / "missing"))
+        missing = self.home / "missing"
+        result = self.run_wrapper(CODEX_SANDBOX_HOST_PI=str(missing))
         self.assertNotEqual(0, result.returncode)
         self.assertEqual("", result.stdout)
-        self.assertIn("Host Pi executable is unavailable", result.stderr)
+        self.assertIn(str(missing), result.stderr)
 
     def test_native_child_exit_status_is_preserved(self) -> None:
         result = self.run_wrapper("--mode", "rpc", HOST_PI_FIXTURE_EXIT="17")

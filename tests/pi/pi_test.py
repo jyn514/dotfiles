@@ -18,8 +18,8 @@ class PiWrapperTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         sandbox = self.root / "codex-sandbox"
-        sandbox.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
-        sandbox.chmod(0o755)
+        sandbox.symlink_to(ROOT / "tests/pi/sandbox_fixture.py")
+        self.sandbox_started = self.root / "sandbox-started"
         self.cli = self.root / ".local/share/pi/node/node_modules/.bin/pi"
         self.cli.parent.mkdir(parents=True)
         self.cli.symlink_to(ROOT / "tests/pi/export_fixture.py")
@@ -27,7 +27,8 @@ class PiWrapperTests(unittest.TestCase):
         self.wrapper = self.root / "pi"
         self.wrapper.symlink_to(WRAPPER)
         self.environment = {**os.environ, "HOME": str(self.root),
-                            "PATH": f"{self.root}:{os.environ['PATH']}"}
+                            "PATH": f"{self.root}:{os.environ['PATH']}",
+                            "PI_SANDBOX_FIXTURE_RECORD": str(self.sandbox_started)}
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -43,6 +44,7 @@ class PiWrapperTests(unittest.TestCase):
 
     def test_normal_session_delegates_to_sandbox(self) -> None:
         self.assertEqual(["prompt"], self.run_wrapper("prompt"))
+        self.assertTrue(self.sandbox_started.exists())
 
     def test_dashboard_session_uses_sandbox_from_registered_checkout(self) -> None:
         checkout = self.root / "dashboard-checkout"
@@ -127,13 +129,19 @@ class PiWrapperTests(unittest.TestCase):
 
     def test_missing_native_pi_fails_without_starting_sandbox(self) -> None:
         self.cli.unlink()
+        source = self.root / "session.jsonl"
+        source.write_text("Session content")
+        output = self.root / "export.html"
         result = subprocess.run(
-            [str(self.wrapper), "--export", "session.jsonl"], env=self.environment,
-            capture_output=True, text=True,
+            [str(self.wrapper), "--export", str(source), str(output)],
+            cwd=self.root, env=self.environment, capture_output=True, text=True,
         )
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("Host Pi is not installed", result.stderr)
+        self.assertIn(str(self.cli), result.stderr)
         self.assertEqual("", result.stdout)
+        self.assertFalse(output.exists())
+        self.assertFalse(self.sandbox_started.exists())
+        self.assertEqual("Session content", source.read_text())
 
     def test_export_requires_exact_nonempty_operands_before_invoking_native_pi(self) -> None:
         for operands in ([], [""], ["session.jsonl", ""],
