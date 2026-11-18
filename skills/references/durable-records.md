@@ -8,7 +8,11 @@ Do not use `notes/` as a durable record or handoff.
 Record a finding only when it changes a future decision, prevents repeated investigation, or preserves otherwise-lost rationale.
 Check existing tickets and maintained documentation before creating another record.
 Update the existing owner rather than duplicate it.
-Do not retain routine session recaps, completed-work lists, test-count receipts, or speculative improvements without a concrete consumer.
+Do not retain routine session recaps or completed-work lists; extract only findings that meet those criteria.
+Retain build or test receipts only when an identified decision or investigation needs them, in the owning issue or a supporting report.
+A concrete consumer can justify retaining evidence; it does not make a receipt suitable for maintained documentation.
+Use [documentation placement](documentation-placement.md#keep-session-state-out-of-maintained-documentation) to separate reusable findings from their supporting receipts.
+Do not retain speculative improvements without a concrete decision or task they would inform.
 
 Unresolved work includes bugs, decisions, investigations, validation gaps, and missing documentation.
 “This needs to be documented” is a valid ticket; it does not require writing documentation now.

@@ -57,9 +57,10 @@ Do not copy a successful session command into a guide merely because it worked o
 Use the workflow's supported interfaces and parameters rather than a session's temporary paths or helper scripts.
 Do not turn a temporary helper into a maintained tool just to justify documenting it.
 
-Before retaining session-derived material, identify its use for a reader without access to that session.
-If it has no such use, leave it out of the documentation.
-Use [durable records](durable-records.md) to place necessary investigation and authorization evidence without creating a parallel session history in maintained pages.
+Do not include per-run build or test receipts, test-count summaries, or completion histories in maintained documentation, even when a future reader could use them.
+Extract the reusable finding, limitation or instruction that belongs to the page's purpose.
+Keep necessary supporting receipts in the owning issue or report, and link to them rather than copying them.
+Use [durable records](durable-records.md) to decide which investigation and authorization evidence merits retention and where it belongs.
 
 ## Prose source formatting
 
