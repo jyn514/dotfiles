@@ -766,6 +766,11 @@ function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch (error: any) { return error?.code === "EPERM"; }
 }
 
+function processDefinitelyGone(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return true;
+  try { process.kill(pid, 0); return false; } catch (error: any) { return error?.code === "ESRCH"; }
+}
+
 interface ProcessSnapshot {
   identity: string;
   tokenMatches?: boolean;
@@ -810,9 +815,20 @@ function inspectProcess(pid: number, token?: string): ProcessSnapshot | undefine
   }
 }
 
-function ownershipMatches(ownership: ChildProcessOwnership): boolean {
+// Match verifies the recorded identity and, where available, the token;
+// mismatch proves they do not identify this process. Unknown means inspection
+// could not decide: denial is not proof that the process exited.
+function ownershipStatus(ownership: ChildProcessOwnership): "match" | "mismatch" | "unknown" {
+  const identity = inspectProcess(ownership.pid);
+  if (!identity) return processDefinitelyGone(ownership.pid) ? "mismatch" : "unknown";
+  if (identity.identity !== ownership.processIdentity) return "mismatch";
   const snapshot = inspectProcess(ownership.pid, ownership.token);
-  return snapshot?.identity === ownership.processIdentity && snapshot.tokenMatches !== false;
+  if (!snapshot) return processDefinitelyGone(ownership.pid) ? "mismatch" : "unknown";
+  return snapshot.identity === ownership.processIdentity && snapshot.tokenMatches !== false ? "match" : "mismatch";
+}
+
+function ownershipMatches(ownership: ChildProcessOwnership): boolean {
+  return ownershipStatus(ownership) === "match";
 }
 
 function markActive(agentId: string, kind: "active" | "peek", marker: PeekMarker): void {
@@ -1292,10 +1308,10 @@ export class AgentManager {
   private async waitForOwnedExit(ownership: ChildProcessOwnership, timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (!ownershipMatches(ownership)) return true;
+      if (ownershipStatus(ownership) === "mismatch") return true;
       await delay(25);
     }
-    return !ownershipMatches(ownership);
+    return ownershipStatus(ownership) === "mismatch";
   }
 
   private signalOwnedProcess(ownership: ChildProcessOwnership, signal: NodeJS.Signals): void {
@@ -1311,7 +1327,9 @@ export class AgentManager {
   private async terminateOwnedChild(info: AgentInfo): Promise<void> {
     const ownership = info.childProcess;
     if (!ownership) return;
-    if (!ownershipMatches(ownership)) {
+    const status = ownershipStatus(ownership);
+    if (status === "unknown") throw new Error(`Unable to inspect owned child process for ${info.canonicalName}.`);
+    if (status === "mismatch") {
       this.clearChildOwnership(info, ownership.token);
       return;
     }
@@ -1329,7 +1347,7 @@ export class AgentManager {
         await this.waitForOwnedExit(ownership, 1000);
       }
     }
-    if (ownershipMatches(ownership)) throw new Error(`Unable to terminate owned child process for ${info.canonicalName}.`);
+    if (ownershipStatus(ownership) !== "mismatch") throw new Error(`Unable to confirm exit of owned child process for ${info.canonicalName}.`);
     this.clearChildOwnership(info, ownership.token);
   }
 
@@ -1345,28 +1363,23 @@ export class AgentManager {
         continue;
       }
       try {
-        if (!ownershipMatches(ownership)) {
-          if (info.status === "starting" || info.status === "running") {
-            info.status = "interrupted";
-            info.lastActivity = Date.now();
-            saveInfo(info);
-            this.notifyStatusChange(info);
-          }
-          this.clearChildOwnership(info, ownership.token);
-          continue;
+        // Other live managers own their workers. In particular, a sibling may
+        // lack permission to read the worker environment used to verify its token.
+        if (ownership.ownerPid !== process.pid) {
+          const owner = inspectProcess(ownership.ownerPid);
+          if (owner && (!ownership.ownerProcessIdentity || owner.identity === ownership.ownerProcessIdentity)) continue;
+          if (!owner && !processDefinitelyGone(ownership.ownerPid)) continue;
         }
-        const ownerSnapshot = inspectProcess(ownership.ownerPid);
-        const ownerStillActive = ownership.ownerPid !== process.pid
-          && ownerSnapshot
-          && (!ownership.ownerProcessIdentity || ownerSnapshot.identity === ownership.ownerProcessIdentity);
-        if (ownerStillActive) continue;
+        const child = ownershipStatus(ownership);
+        if (child === "unknown") continue;
+        if (child === "match") await this.terminateOwnedChild(info);
         if (info.status === "starting" || info.status === "running") {
           info.status = "interrupted";
           info.lastActivity = Date.now();
           saveInfo(info);
           this.notifyStatusChange(info);
         }
-        await this.terminateOwnedChild(info);
+        this.clearChildOwnership(info, ownership.token);
       } catch {}
     }
   }

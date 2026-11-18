@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { afterAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
@@ -748,6 +748,104 @@ describe("child process lifecycle", () => {
       if (process.platform !== "win32") expect(fs.existsSync(getSocketPath(running.id))).toBe(false);
     } finally {
       await manager.shutdown();
+      fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test.skipIf(process.platform !== "linux")("live owner survives denied sibling inspection and receives completion", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "denied-sibling-inspection";
+    const owner = new AgentManager();
+    let reconciler: InstanceType<typeof AgentManager> | undefined;
+    let spy: ReturnType<typeof spyOn> | undefined;
+    try {
+      await owner.spawnAgent(spawnParams(parentSessionId, "worker", "slow completion"));
+      const info = owner.getAgentInfo("worker", parentSessionId);
+      info.childProcess!.ownerPid = process.ppid;
+      delete info.childProcess!.ownerProcessIdentity;
+      fs.writeFileSync(info.infoFile, JSON.stringify(info));
+      const realRead = fs.readFileSync;
+      spy = spyOn(fs, "readFileSync").mockImplementation(((file: any, ...args: any[]) => {
+        if (String(file) === `/proc/${info.childProcess!.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+        return (realRead as any)(file, ...args);
+      }) as any);
+      reconciler = new AgentManager();
+      await reconciler.ready();
+      spy.mockRestore(); spy = undefined;
+      expect(owner.getAgentInfo("worker", parentSessionId).status).toBe("running");
+      await waitUntil(() => owner.getAgentInfo("worker", parentSessionId).status === "completed");
+      expect(owner.readAgentResponse("worker", parentSessionId).finalResponse).toBe("response:slow completion");
+    } finally {
+      spy?.mockRestore();
+      await owner.shutdown(); await reconciler?.shutdown();
+      fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test.skipIf(process.platform !== "linux")("preserves a live owner when its identity cannot be inspected", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "unknown-owner-identity";
+    const owner = new AgentManager();
+    let reconciler: InstanceType<typeof AgentManager> | undefined;
+    let spy: ReturnType<typeof spyOn> | undefined;
+    try {
+      await owner.spawnAgent(spawnParams(parentSessionId, "worker", "slow owner"));
+      const info = owner.getAgentInfo("worker", parentSessionId);
+      info.childProcess!.ownerPid = process.ppid;
+      fs.writeFileSync(info.infoFile, JSON.stringify(info));
+      const realRead = fs.readFileSync;
+      spy = spyOn(fs, "readFileSync").mockImplementation(((file: any, ...args: any[]) => {
+        if (String(file) === `/proc/${process.ppid}/stat`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+        return (realRead as any)(file, ...args);
+      }) as any);
+      reconciler = new AgentManager();
+      await reconciler.ready();
+      spy.mockRestore(); spy = undefined;
+      await waitUntil(() => owner.getAgentInfo("worker", parentSessionId).status === "completed");
+      expect(owner.readAgentResponse("worker", parentSessionId).finalResponse).toBe("response:slow owner");
+    } finally {
+      spy?.mockRestore(); await owner.shutdown(); await reconciler?.shutdown();
+      fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test.skipIf(process.platform !== "linux")("unknown orphan ownership is preserved until it can be verified", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "unknown-orphan-ownership";
+    const owner = new AgentManager();
+    let reconciler: InstanceType<typeof AgentManager> | undefined;
+    let recovery: InstanceType<typeof AgentManager> | undefined;
+    let spy: ReturnType<typeof spyOn> | undefined;
+    try {
+      await owner.spawnAgent(spawnParams(parentSessionId, "worker", "hold orphan"));
+      const info = owner.getAgentInfo("worker", parentSessionId);
+      const pid = info.childProcess!.pid;
+      // A reused owner PID does not identify the original owner.
+      info.childProcess!.ownerPid = process.ppid;
+      info.childProcess!.ownerProcessIdentity = "previous-owner";
+      fs.writeFileSync(info.infoFile, JSON.stringify(info));
+      const realRead = fs.readFileSync;
+      spy = spyOn(fs, "readFileSync").mockImplementation(((file: any, ...args: any[]) => {
+        if (String(file) === `/proc/${pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+        return (realRead as any)(file, ...args);
+      }) as any);
+      reconciler = new AgentManager();
+      await reconciler.ready();
+      spy.mockRestore(); spy = undefined;
+      expect(owner.getAgentInfo("worker", parentSessionId).status).toBe("running");
+      expect(owner.getAgentInfo("worker", parentSessionId).childProcess?.pid).toBe(pid);
+      expect(pidAlive(pid)).toBe(true);
+      recovery = new AgentManager();
+      await recovery.ready();
+      expect(recovery.getAgentInfo("worker", parentSessionId).status).toBe("interrupted");
+      await waitUntil(() => !pidAlive(pid));
+      expect(pidAlive(pid)).toBe(false);
+    } finally {
+      spy?.mockRestore();
+      await owner.shutdown(); await reconciler?.shutdown(); await recovery?.shutdown();
       fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
       delete process.env.PI_SUBAGENT_PI_BIN;
     }

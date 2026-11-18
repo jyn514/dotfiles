@@ -465,7 +465,9 @@ The overlay uses the child working directory for tool rendering and synchronizes
 
 Child RPC processes are terminated after completion, failure, or interruption so settled agents do not keep consuming memory.
 An in-flight link admission keeps its process only until the manager reads the routing receipt.
-`steer_subagent` and admitted manager-local peer follow-ups start a fresh child process with the persisted session and continue from there. On startup, the extension also reconciles and terminates validated owned children left behind by an earlier extension process.
+`steer_subagent` and admitted manager-local peer follow-ups start a fresh child process with the persisted session and continue from there.
+On startup, the extension preserves children owned by another live manager and reconciles validated children left behind by an earlier extension process.
+If process ownership cannot be inspected, reconciliation defers the child until a later reconciliation can verify it.
 
 ### Working-copy commit-boundary protection
 
