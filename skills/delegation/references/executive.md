@@ -25,7 +25,11 @@ Question the scheduling frame: which work really depends on which result, who ne
 Check that consequential questions and obligations after first success have owners, and that findings reach their actual consumers.
 Notice when the division of work adds handoffs, conflicting ownership, or unacknowledged work for someone else.
 Keep coherent construction under one builder through its intended consumer.
-Arrange independent preparation without creating overlapping investigation or competing owners.
+Before serializing substantial tasks, distinguish what needs another task's finished result from what can proceed against an existing interface or disposable snapshot.
+A consumer's final acceptance may depend on a producer's completed output without its implementation needing to wait.
+Parallelize implementation, not just research and preparation, when the overlap saves more time than coordination and integration cost.
+Coordinate overlapping writes and assign integration ownership rather than stopping independent work.
+Do not duplicate an assigned investigation or create competing owners for the same outcome.
 
 Do not choose the technical strategy or next substantive task yourself, including by narrowing the strategist's question to your preferred patch.
 This boundary does not require endorsing a technically supported proposal that fails the outcome judgment below.
