@@ -177,7 +177,6 @@ Include relevant corrections with provenance; quote only available exact text.
 Separate observations, failures, and prior attempts from provisional explanations.
 Explain motivation without prescribing the action or conclusion.
 The investigator questions framing, traces causal claims, and compares actions together, not through a separate fact-finding handoff.
-Reuse accumulated context when it matters more than fresh independent judgment.
 
 Without a compatible template, a technical worker may inspect an activity example and outcome evidence within its responsibility, read-only.
 Name unavailable evidence and do not claim independence for this fallback.
