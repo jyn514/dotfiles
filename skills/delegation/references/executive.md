@@ -50,6 +50,12 @@ Retain responsibility for unfinished outcomes, not necessarily the original agen
 Use [fresh-owner replacement](../SKILL.md#replace-a-confused-owner) when corrected confusion makes retaining that owner counterproductive.
 Replacement preserves valid work and evidence; it does not itself require restarting the investigation or repeating valid checks.
 
+When receiving a material gap report, check its issue reference and current disposition under [finding handoffs](../SKILL.md#record-material-findings-when-discovered).
+If the reference or durable evidence is missing, return the recording step to the worker or complete it within your own tracker authority.
+Acknowledge an explicit recording request by arranging an authorized recorder and retain the outstanding action until the issue is updated.
+Do not treat the handoff as complete merely because the finding appears in a message.
+This recording check does not transfer technical investigation to you or require another review round.
+
 Send changed evidence and usable artifacts to their actual consumers, without making yourself a mandatory relay.
 Return technical gaps to their responsible owners even after their first reports.
 Do not perform their work under the label of integration, remaining uncertainty, or parent verification.

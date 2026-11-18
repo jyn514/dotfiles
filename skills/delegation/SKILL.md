@@ -48,6 +48,23 @@ Shared methods or sources do not imply competing ownership: builder-local checks
 Keep observations, interpretations, and proposals distinct.
 Distinguish sent, received, used, and demonstrated; putting an artifact on disk or delivering a message does not establish consumption or success.
 
+## Record material findings when discovered
+
+When you discover a material failure or gap in the requested outcome, update its owning issue before handing off the finding.
+Record the observed failure and decisive evidence while investigation or repair continues; do not wait for the assignment to finish or the cause to be known.
+Follow [durable records](../references/durable-records.md) and the project's tracker procedure.
+Use an existing issue when it owns the gap; create one only when none does and your authority permits it.
+Do not create a separate issue for every example of the same problem.
+
+In a handoff reporting a material gap, include the issue reference and its current disposition, such as unresolved, repaired but unverified, or verified resolved.
+Distinguish the observed failure from a suspected cause or proposed repair.
+Correct the same issue when later evidence changes the finding.
+
+If tracker mutation is outside your authority or unavailable, send an explicit recording request to an authorized owner with the finding, evidence, and remaining action.
+Sending that request does not establish that the issue is recorded.
+Do not delay an urgent warning to complete a tracker update; follow through on recording after sending the warning.
+Recording a finding outside your assignment does not authorize investigating or repairing it.
+
 ## Retain your responsibility
 
 A report can finish an episode while leaving your assigned question with you.

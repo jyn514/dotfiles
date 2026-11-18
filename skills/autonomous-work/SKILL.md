@@ -131,6 +131,19 @@ Do not turn read-only research or review into repository mutations to satisfy an
 
 ## Record decisions and preserve resumable state
 
+### Connect findings to tracked work before reporting them
+
+Apply delegation's [discovery-time recording and finding handoffs](../delegation/SKILL.md#record-material-findings-when-discovered).
+The discovering worker records the gap; the executive checks the record when receiving it, not only when preparing a report to jyn.
+
+An umbrella task such as “finish implementation” does not track a discovered failure unless readers can find that failure and its disposition from the task.
+Keep unresolved gaps open even when their cause is understood, an alternative route works, or their repair belongs to a later stage.
+
+Before reporting “substantial gaps remain,” identify the issues that own those gaps.
+This check does not require a complete loss audit.
+
+### Preserve decisions and resumable state
+
 Record corrections, constraints and their sources, failed approaches, and decision-changing untried alternatives in existing authoritative task state.
 Keep governing requirements distinct from revisable agent choices in saved state; summaries must not promote the latter into user instructions.
 Record user decisions before dependent delegation and reconcile superseded holds, questions, and worker instructions without dropping constraints that still apply.
