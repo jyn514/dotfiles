@@ -1280,6 +1280,11 @@ describe("extension completion delivery and TUI", () => {
       expect(tools.has("wait_all_agents")).toBe(false);
       const waitTool = tools.get("wait_agent");
       expect(waitTool.parameters.properties.until.enum).toEqual(["any", "all"]);
+      expect(waitTool.parameters.properties.timeout_seconds.exclusiveMinimum).toBe(0);
+      for (const timeout_seconds of [0, -1, Infinity, NaN]) {
+        await expect(waitTool.execute("invalid-timeout", { timeout_seconds }, undefined, undefined, ctx))
+          .rejects.toThrow("timeout_seconds must be a positive finite number");
+      }
       expect(waitTool.parameters.required ?? []).toEqual([]);
       // Direct execution also validates before observing steering or entering a manager wait.
       await expect(waitTool.execute("invalid-wait", { until: "invalid" }, undefined, undefined, ctx))

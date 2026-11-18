@@ -282,12 +282,18 @@ A thinking level written into an `enabledModels` pattern, such as `anthropic/cla
 
 A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
 
-`wait_agent({ targets?: string[], until?: "any" | "all" })` selects agents by their current-session-owned task names.
+`wait_agent({ targets?: string[], until?: "any" | "all", timeout_seconds?: number })` selects agents by their current-session-owned task names.
 `until` defaults to `"any"`, returning one completion in `event`; `"all"` returns final responses in `responses` after every selected agent finishes.
 A single target works with either mode.
 For example, `wait_agent({ targets: ["/builder"] })` waits for that agent, and `wait_agent({ targets: ["/builder", "/qa"], until: "all" })` waits for both.
 With `targets` omitted (or empty), `"any"` waits for the next owned completion; `"all"` uses the session's remaining tracked agents, excluding completions already consumed by earlier waits.
-An invalid `until` fails before waiting, including when steering is queued.
+An invalid `until` or non-positive or non-finite timeout fails before waiting, including when steering is queued.
+Omitting `timeout_seconds` leaves the wait unbounded; for example, `timeout_seconds: 900` waits up to 15 minutes.
+A timeout ends only the wait, not the child agents.
+Normal results identify `reason` as `completion`, `timeout`, or `steering`; a timeout includes pending selected task names in `pending`.
+A paused group instead returns the existing `paused` result without consuming completions.
+For `until: "all"`, a timeout also returns already completed responses in `responses` and consumes those completions without duplicate notifications.
+Later completions arrive normally.
 
 The tool returns a normal `{ interrupted: true, message: "..." }` result when steering is already queued or arrives during the wait.
 User and custom messages both wake the wait; follow-up messages do not.

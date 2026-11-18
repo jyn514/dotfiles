@@ -113,10 +113,10 @@ async function fixture() {
         get child() { return getAgent("other", parentId)!; },
       };
     },
-    start(wait: Wait | "invalid", gate = false, nested = false, targets: string[] | null = ["held"]) {
+    start(wait: Wait | "invalid", gate = false, nested = false, targets: string[] | null = ["held"], timeout_seconds?: number) {
       gateEntered = false; gateReleased = !gate;
       if (nested) session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
-      const params = { ...(targets ? { targets } : {}), ...(wait === "default" ? {} : { until: wait }) };
+      const params = { ...(targets ? { targets } : {}), ...(wait === "default" ? {} : { until: wait }), ...(timeout_seconds === undefined ? {} : { timeout_seconds }) };
       const call = nested ? fauxToolCall("codemode", { code: `const result = await tools.wait_agent(${JSON.stringify(params)}); text(result); text("script continued after wait");` })
         : fauxToolCall("wait_agent", params);
       faux.setResponses([fauxAssistantMessage([...(gate ? [fauxToolCall("qa_gate", {})] : []), call], { stopReason: "toolUse" }), respond]);
@@ -161,7 +161,7 @@ for (const wait of waits) for (const role of ["user", "custom"] as const) for (c
       const [result] = f.toolResults("wait_agent");
       expect(result.role === "toolResult" && result.isError).not.toBe(true);
       expect(JSON.parse(text(result.content))).toEqual({
-        message: "Wait interrupted by queued steering. Child agents were not stopped.", interrupted: true,
+        message: "Wait interrupted by queued steering. Child agents were not stopped.", interrupted: true, reason: "steering",
       });
       expect(f.resultBoundaries).toHaveLength(1);
       expect(f.resultBoundaries[0].pending).toBe(true);
@@ -281,6 +281,72 @@ sourceTest("wait_agent until all: partial completion suppressed by wait is relea
 }, 15000);
 
 
+for (const mode of ["any", "all"] as const) {
+  sourceTest(`${mode}: timeout returns pending names and leaves the child running`, async () => {
+    const f = await fixture();
+    try {
+      await f.start(mode, false, false, ["held"], 0.15);
+      const result = JSON.parse(text(f.toolResults("wait_agent")[0].content));
+      expect(result.reason).toBe("timeout");
+      expect(result.pending).toEqual(["/held"]);
+      if (mode === "all") expect(result.responses).toEqual([]);
+      expect(f.child.status).toBe("running");
+      f.releaseChild();
+      await until(() => f.notifications().length === 1, "completion after timeout is delivered");
+      await f.session.waitForIdle();
+      expect(f.notifications()).toHaveLength(1);
+    } finally { await f.close(); }
+  }, 15000);
+}
+
+sourceTest("omitted targets time out with the remaining owned agent", async () => {
+  const f = await fixture();
+  try {
+    await f.start("all", false, false, null, 0.1);
+    const result = JSON.parse(text(f.toolResults("wait_agent")[0].content));
+    expect(result.reason).toBe("timeout");
+    expect(result.pending).toEqual(["/held"]);
+    expect(result.responses).toEqual([]);
+  } finally { await f.close(); }
+}, 15000);
+
+sourceTest("completion before timeout returns the completion", async () => {
+  const f = await fixture();
+  try {
+    const run = f.start("any", false, false, ["held"], 1);
+    await until(() => f.events.some(event => event.type === "tool_execution_start" && event.toolName === "wait_agent"), "wait starts");
+    f.releaseChild();
+    await run;
+    const result = JSON.parse(text(f.toolResults("wait_agent")[0].content));
+    expect(result.reason).toBe("completion");
+    expect(result.event).toMatchObject({ agentName: "/held", status: "completed" });
+    expect(f.notifications()).toHaveLength(0);
+  } finally { await f.close(); }
+}, 15000);
+
+sourceTest("all timeout returns partial responses without duplicating notifications", async () => {
+  const f = await fixture();
+  const other = await f.spawnOther();
+  try {
+    const run = f.start("all", false, false, ["held", "other"], 0.7);
+    await until(() => f.events.some(event => event.type === "tool_execution_start" && event.toolName === "wait_agent"), "wait starts");
+    other.release();
+    await until(() => other.child.status === "completed", "other completes during wait");
+    await run;
+    const result = JSON.parse(text(f.toolResults("wait_agent")[0].content));
+    expect(result.reason).toBe("timeout");
+    expect(result.pending).toEqual(["/held"]);
+    expect(result.responses).toHaveLength(1);
+    expect(result.responses[0]).toMatchObject({ agent_name: "/other", status: "completed" });
+    expect(result.responses[0].finalResponse).toContain("faux:hold-tool:");
+    expect(f.notifications()).toHaveLength(0);
+    f.releaseChild();
+    await until(() => f.notifications().length === 1, "remaining child completion delivered");
+    await f.session.waitForIdle();
+    expect(f.notifications()).toHaveLength(1);
+  } finally { other.release(); await f.close(); }
+}, 15000);
+
 // The public merge must choose the existing wait primitive, not merely accept
 // the new argument. Two held children distinguish any from all without mocks.
 for (const mode of waits) for (const selection of ["explicit", "omitted"] as const) {
@@ -334,6 +400,7 @@ for (const mode of waits) {
       await f.session.waitForIdle();
       await f.start(mode);
       const result = JSON.parse(text(f.toolResults("wait_agent")[0].content));
+      expect(result.reason).toBe("completion");
       const response = mode === "all" ? result.responses[0] : result.event;
       expect(response.finalResponse).toContain("faux:hold-tool:");
       await delay(50);

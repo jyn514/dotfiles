@@ -77,6 +77,32 @@ describe("steering-interruptible waits", () => {
     expect(waitSignal?.aborted).toBe(false);
   });
 
+  test("clears the timeout after completion and preserves the manager result", async () => {
+    let captured: AbortSignal | undefined;
+    const result = await waitWithSteering({ hasPendingSteeringMessages: () => false }, async signal => {
+      captured = signal;
+      return { message: "finished" };
+    }, undefined, 0.02);
+    await delay(75);
+    expect(result).toEqual({ message: "finished" });
+    expect(captured?.aborted).toBe(false);
+  });
+
+  test("parent abort wins before the timeout", async () => {
+    const parent = new AbortController();
+    const reason = new Error("parent stopped");
+    const result = waitWithSteering({ hasPendingSteeringMessages: () => false }, untilAborted, parent.signal, 0.2);
+    parent.abort(reason);
+    await expect(result).rejects.toBe(reason);
+  });
+
+  test("steering wins before the timeout", async () => {
+    let queued = false;
+    const result = waitWithSteering({ hasPendingSteeringMessages: () => queued }, untilAborted, undefined, 0.3);
+    queued = true;
+    expect(await result).toMatchObject({ reason: "steering" });
+  });
+
   test("preserves a pre-existing parent abort even when input is queued", async () => {
     const parent = new AbortController();
     const reason = new Error("parent stopped");

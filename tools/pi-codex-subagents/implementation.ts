@@ -518,20 +518,23 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   pi.registerTool({
     name: "wait_agent",
     label: "Wait Agent",
-    description: "Wait for session-owned agents: until 'any' (default) returns one completion; until 'all' returns every selected agent's final response. Omit targets to use the current session's existing owned-agent selection. Use only when your next action depends on those responses; otherwise continue working and let completions arrive automatically. Queued steering interrupts the wait without stopping child agents.",
+    description: "Wait for session-owned agents: until 'any' (default) returns one completion; until 'all' returns every selected agent's final response. Omit targets to use the current session's existing owned-agent selection. Use only when your next action depends on those responses; otherwise continue working and let completions arrive automatically. Queued steering or an optional timeout ends only the wait, without stopping child agents. The result identifies completion, steering, or timeout; timeout includes pending task names.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Current-session-owned agent task names. Omit for the next owned completion ('any') or the session's remaining tracked agents ('all')." })),
       until: Type.Optional(StringEnum(["any", "all"], { description: "Return after any one target completes (default), or after all targets reach final status." })),
+      timeout_seconds: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "Optional positive finite wait duration in seconds; timeout does not stop agents." })),
     }),
     async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
         const until = params.until === undefined ? "any" : params.until;
         if (until !== "any" && until !== "all") throw new Error("until must be 'any' or 'all'.");
+        if (params.timeout_seconds !== undefined && (typeof params.timeout_seconds !== "number" || !Number.isFinite(params.timeout_seconds) || params.timeout_seconds <= 0)) throw new Error("timeout_seconds must be a positive finite number.");
         const result = await waitWithSteering(ctx,
           waitSignal => until === "all"
             ? manager.waitAllAgents(parentSessionId(ctx), parseTargets(params.targets), waitSignal)
-            : manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), waitSignal), signal);
-        return boundedTextResult(JSON.stringify(result, null, 2), { message: result.message });
+            : manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), waitSignal), signal, params.timeout_seconds);
+        const reported = "reason" in result || ("paused" in result && result.paused) ? result : { ...result, reason: "completion" };
+        return boundedTextResult(JSON.stringify(reported, null, 2), { message: reported.message });
       } catch (error) {
         if (signal?.aborted) throw error;
         throw new Error(`wait_agent failed: ${error instanceof Error ? error.message : String(error)}`);
