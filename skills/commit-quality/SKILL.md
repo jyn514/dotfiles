@@ -18,7 +18,14 @@ Record only what a reader would otherwise have to reconstruct. Do not narrate fi
 
 For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe. Mention verification when it establishes something durable and non-obvious, such as a production reproduction, migration result, compatibility limit, or test environment that future readers might otherwise assume was covered.
 
-Before committing, inspect the complete diff. Then write the message to describe the finished change.
+Before committing, inspect the complete diff and check the repository's existing issue tracker for affected tickets.
+Reconcile their status with the actual acceptance of the change using the tracker's procedures and your existing authority; do not close partial work or initialize a tracker just for this check.
+
+Include affected remote issue references in the commit description, using syntax supported by the hosting platform and a repository-qualified identity when needed.
+Use a closing reference only when the full issue is resolved, and a nonclosing reference for partial or related work; for example, on GitHub use `Fixes #123` or `Refs #123` respectively.
+Closing behavior depends on the platform and merge context; a reference does not establish that an issue is already closed.
+
+Then write the message to describe the finished change.
 
 ## Atomic commits
 
