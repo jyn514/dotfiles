@@ -143,7 +143,6 @@ These specialized Git helpers can change Git history or metadata directly.
 | Decode a QR code from a clipboard image | [`decode-qr`](../bin/decode-qr) uses zbarimg, writes the result to the terminal, and replaces the primary selection. |
 
 - [`copy` and `paste`](copy/README.md) read and write graphical clipboards; copying replaces the selected clipboard contents.
-- [`picker-actions`](picker-actions/) implements `picker-action copy|edit|open|search` for explicit or NUL-delimited selections. Actions may write the clipboard, inject tmux keys, launch an editor, or open a URL.
 
 ### Editors and opening files
 

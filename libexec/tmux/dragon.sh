@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Launch Dragon for direct or NUL-delimited selections."""
+"""Open path arguments in Dragon."""
 
-from pathlib import Path
+import os
 import sys
 
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools/picker-actions"))
+if len(sys.argv) < 2:
+    print("usage: dragon.sh PATH...", file=sys.stderr)
+    sys.exit(2)
 
-from picker_actions.drag import main  # noqa: E402
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+paths = ["./" + value if value.startswith("-") else value for value in sys.argv[1:]]
+try:
+    os.execvp("dragon", ["dragon", "-x", *paths])
+except OSError as error:
+    print(f"dragon: {error}", file=sys.stderr)
+    sys.exit(127)

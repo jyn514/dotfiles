@@ -91,7 +91,7 @@ class SearchRegexTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cannot create socket"):
                 self.tmux_match("src/main.rs:12")
 
-    def test_selected_diagnostic_is_normalized_by_picker_and_open(self) -> None:
+    def test_selected_diagnostic_is_normalized_by_open(self) -> None:
         selection = self.tmux_match("error: src/main.rs:12:5: mismatched types")
         self.assertIsNotNone(selection)
 
@@ -117,8 +117,8 @@ class SearchRegexTest(unittest.TestCase):
             environment = os.environ | {"HOME": str(root), "PATH": path}
 
             result = subprocess.run(
-                [str(ROOT / "bin" / "picker-action"), "open", "--read0"],
-                input=os.fsencode(selection) + b"\0",
+                [str(ROOT / "libexec/tmux/with-selection.py"), "open"],
+                input=os.fsencode(selection),
                 cwd=root,
                 env=environment,
                 capture_output=True,

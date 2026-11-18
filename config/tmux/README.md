@@ -1,5 +1,17 @@
 # tmux
 
+## Selected paths and text
+
+In vi copy mode, `o` opens the selected path with its default application.
+`O` types `$EDITOR <path>` into the current pane.
+Alt+o invokes `hx-hax` directly, reusing a Helix pane in the same window or opening a side-by-side pane.
+`s` opens a Google search for the selection.
+Ctrl+o opens the selected path in Dragon.
+Selections travel on stdin as one value, including any spaces or newlines.
+
+Run `./setup dotfiles` from the repository root to install the helper links.
+Reload bindings with Ctrl+K, then `r`.
+
 ## Pi session restoration
 
 tmux-resurrect saves sandboxed Pi conversations as `pi --session FILE --session-dir DIRECTORY`.

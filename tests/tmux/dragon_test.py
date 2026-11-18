@@ -66,51 +66,23 @@ class CommandIntegrationTests(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             self.assertEqual(2, result.returncode)
-    def test_dragon_wrapper_reads_validated_nul_selections_as_bytes(self) -> None:
+
+    def test_dragon_receives_one_raw_selection_through_stdin_adapter(self) -> None:
         calls = self.directory / "dragon-calls"
         self.executable("dragon", 'printf "%s\\0" "$@" > "$DRAGON_CALLS"\n')
         environment = os.environ | {
             "DRAGON_CALLS": str(calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
         }
-        payload = b"path with spaces\0line\nbreak\0-invalid-\xff\0"
-
+        payload = b"-path with spaces\ninvalid-\xff\n"
         result = subprocess.run(
-            [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
-            input=payload,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
+            [str(ROOT / "libexec/tmux/with-selection.py"),
+             str(ROOT / "libexec/tmux/dragon.sh")],
+            input=payload, capture_output=True, env=environment,
         )
-
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            b"-x\0path with spaces\0line\nbreak\0./-invalid-\xff\0",
-            calls.read_bytes(),
-        )
+        self.assertEqual(b"-x\0./" + payload + b"\0", calls.read_bytes())
 
-        calls.unlink()
-        for payload in (b"missing terminator", b"one\0\0"):
-            malformed = subprocess.run(
-                [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
-                input=payload,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=environment,
-            )
-            self.assertEqual(2, malformed.returncode)
-            self.assertFalse(calls.exists())
-
-        for empty in (b"", b"\0"):
-            cancelled = subprocess.run(
-                [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
-                input=empty,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=environment,
-            )
-            self.assertEqual(0, cancelled.returncode, cancelled.stderr)
-            self.assertFalse(calls.exists())
     def test_dragon_wrapper_propagates_launcher_failure(self) -> None:
         dragon = self.directory / "dragon"
         self.executable("dragon", "exit 37\n")
@@ -132,7 +104,7 @@ class CommandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(37, failed.returncode)
         self.assertEqual(127, missing.returncode)
-        self.assertEqual(b"dragon not found\n", missing.stderr)
+        self.assertIn(b"dragon:", missing.stderr)
 
 
 if __name__ == "__main__":

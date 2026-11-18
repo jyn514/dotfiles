@@ -11,6 +11,7 @@ import tomllib
 import unittest
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -348,108 +349,55 @@ class ProfileContractTests(unittest.TestCase):
             self.assertNotIn("paste-buffer", tmux_calls)
 
     @unittest.skipUnless(shutil.which("tmux"), "tmux is unavailable")
-    def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
-        # Inspect tmux's parsed, quoted command arguments rather than the
-        # configuration's choice of quotes, braces, and line continuations.
-        commands = [argument.removeprefix("cd #{q:pane_current_path}; ")
-                    for line in self.tmux_bindings().splitlines()
-                    for argument in shlex.split(line)
-                    if argument.startswith("cd #{q:pane_current_path}; ")]
-        dragon_commands = [command for command in commands
-                           if command.endswith("~/.config/tmux/dragon.sh --read0")]
-        self.assertEqual(2, len(dragon_commands))
-        actions = {}
-        for action in ("search", "open", "edit"):
-            matches = [command for command in commands
-                       if command.endswith(f"~/.config/tmux/picker-action {action} --read0")]
-            self.assertEqual(1, len(matches), action)
-            actions[action] = matches[0]
+    def test_tmux_selection_bindings_pass_hostile_text_to_the_requested_action(self) -> None:
+        bindings = {}
+        for line in self.tmux_bindings().splitlines():
+            arguments = shlex.split(line)
+            if "copy-mode-vi" not in arguments:
+                continue
+            key = arguments[arguments.index("copy-mode-vi") + 1]
+            if key in ("o", "O", "M-o", "s", "C-o"):
+                bindings[key] = arguments
+        self.assertEqual({"o", "O", "M-o", "s", "C-o"}, bindings.keys())
+        self.assertIn("copy-pipe-and-cancel", bindings["M-o"])
 
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            binaries = root / "bin"
-            binaries.mkdir()
-            calls = root / "calls"
-            marker = root / "injected"
-            payload = f"odd ' $(touch {marker})\nname"
-            for name in ("dragon", "open", "tmux"):
-                executable = binaries / name
-                executable.write_text(
-                    '#!/bin/sh\n'
-                    'case ${0##*/} in\n'
-                    'dragon) [ "$#" = 2 ] || exit 41;;\n'
-                    'open) [ "$#" = 1 ] || exit 42;;\n'
-                    'esac\n'
-                    'printf "%s" "$*" > "$ACTION_CALLS"\n'
-                )
-                executable.chmod(0o755)
+            binaries = Path(directory)
+            calls = binaries / "calls"
+            marker = binaries / "injected"
+            payload = f"odd ' $(touch {marker})\nname\n"
+            for name in ("open", "hx-hax", "tmux", "dragon"):
+                (binaries / name).symlink_to(ROOT / "tests/tmux/fixtures/selection-command.py")
             env = os.environ | {
                 "ACTION_CALLS": str(calls),
+                "ACTION_COMMAND": str(binaries / "action-command"),
                 "PATH": f"{binaries}:{os.environ['PATH']}",
+                "EDITOR": "editor --wait",
             }
-
-            for command in dragon_commands:
-                command = command.replace(
-                    "~/.config/tmux/dragon.sh", str(ROOT / "libexec/tmux/dragon.sh")
-                )
-                result = subprocess.run(
-                    ["/bin/bash", "-c", command],
-                    input=payload,
-                    env=env,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-                self.assertEqual(0, result.returncode, result.stderr)
-                self.assertEqual(f"-x {payload}", calls.read_text())
-
-            command = actions["open"].replace(
-                "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
-            )
-            result = subprocess.run(
-                ["/bin/bash", "-c", command],
-                input=payload,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual(payload, calls.read_text())
-
-            command = actions["edit"].replace(
-                "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
-            )
-            result = subprocess.run(
-                ["/bin/bash", "-c", command],
-                input=payload,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertFalse(marker.exists())
-
-            command = actions["search"].replace(
-                "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
-            )
-            result = subprocess.run(
-                ["/bin/bash", "-c", command],
-                input=payload,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual(
-                "https://www.google.com/search?"
-                "q=odd+%27+%24%28touch+"
-                f"{str(marker).replace('/', '%2F')}%29%0Aname",
-                calls.read_text(),
-            )
-            self.assertFalse(marker.exists())
+            for key, arguments in bindings.items():
+                with self.subTest(key=key):
+                    command, = [argument for argument in arguments
+                                if argument.startswith("cd #{q:pane_current_path}; ")]
+                    command = command.replace("#{q:pane_current_path}", shlex.quote(directory))
+                    command = command.replace("~/.config/tmux/", str(ROOT / "config/tmux") + "/")
+                    result = subprocess.run(
+                        ["/bin/sh", "-c", command], input=payload, env=env,
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    received = json.loads(calls.read_text())
+                    expected_command = {"o": "open", "M-o": "hx-hax", "O": "tmux",
+                                        "s": "open", "C-o": "dragon"}[key]
+                    self.assertEqual(expected_command, (binaries / "action-command").read_text())
+                    if key in ("o", "M-o"):
+                        self.assertEqual([payload], received)
+                    elif key == "C-o":
+                        self.assertEqual(["-x", payload], received)
+                    elif key == "O":
+                        self.assertEqual(["editor", "--wait", payload], shlex.split(received[5]))
+                    else:
+                        self.assertEqual({"q": [payload]}, parse_qs(urlsplit(received[0]).query))
+                    self.assertFalse(marker.exists())
 
     @unittest.skipUnless(shutil.which("zsh"), "Zsh is unavailable")
     def test_zsh_sudo_preserves_current_input_and_uses_history_only_when_empty(self) -> None:

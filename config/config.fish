@@ -283,7 +283,7 @@ function fzf_action
 		case tab
 			commandline -i $escaped_selection
 		case ctrl-y
-			printf '%s\0' "$selection" | picker-action copy --read0
+			printf '%s' "$selection" | copy
 		case ctrl-o
 			commandline -r open
 			commandline -i " $escaped_selection"

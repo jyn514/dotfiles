@@ -1,0 +1,1 @@
+../../libexec/tmux/edit-selection.py

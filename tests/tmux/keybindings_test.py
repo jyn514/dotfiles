@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import re
@@ -66,8 +67,10 @@ class KeybindingTests(unittest.TestCase):
             ("bind-key -T copy-mode-vi v ", "# https://stackoverflow.com/a/53745309/7669110"),
             ('bind-key t new-window -c ', "# like ctrl+o in vscode"),
             ("# Plain Page Up scrolls tmux history", "# keep emacs bindings in vi mode"),
+            ("# copy-mode o: xdg-open", "# save buffer and retype into the shell"),
         ):
             config += source[source.index(start):source.index(end)] + "\n"
+        config = config.replace("~/.config/tmux/", str(ROOT / "config/tmux") + "/")
         file = self.directory / "bindings.conf"
         file.write_text(config)
         # Seed the replaced root bindings to verify removal on config reload.
@@ -122,6 +125,25 @@ class KeybindingTests(unittest.TestCase):
 
     def press(self, *keys):
         self.tmux("send-keys", "-K", "-c", self.client, *keys)
+
+    def test_alt_o_invokes_hx_hax_without_typing_in_current_pane(self):
+        calls = self.directory / "hx-calls"
+        for name in ("hx-hax", "open"):
+            (self.directory / name).symlink_to(ROOT / "tests/tmux/fixtures/selection-command.py")
+        command = self.directory / "action-command"
+        self.tmux("set-environment", "ACTION_CALLS", str(calls))
+        self.tmux("set-environment", "ACTION_COMMAND", str(command))
+        self.tmux("copy-mode")
+        self.tmux("send-keys", "-X", "history-top")
+        self.tmux("send-keys", "-X", "start-of-line")
+        self.tmux("send-keys", "-X", "select-word")
+        self.press("M-o")
+        self.wait_for(calls.exists)
+
+        self.assertEqual(["line"], json.loads(calls.read_text()))
+        self.assertEqual("hx-hax", command.read_text())
+        self.assertEqual("0", self.value("#{pane_in_mode}"))
+        self.assertEqual(b"", self.input_log.read_bytes())
 
     def test_page_up_enters_history_and_page_down_pages_in_copy_mode(self):
         self.press("PPage")
