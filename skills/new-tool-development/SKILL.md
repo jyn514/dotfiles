@@ -104,8 +104,9 @@ You may perform experiments or develop prototypes to inform your decisions, but 
 You may not refer to experiments in the specification.
 If crucial evidence depends on an experiment, document it elsewhere in the repo and refer to that documentation.
 
-An implementation specification should be complete enough that an implementor does not need to make any design decisions.
-Continue revising your spec until it meets this criterion.
+An implementation-ready specification settles required behavior, interfaces, invariants, and consequential design choices, including architecture and algorithms needed for correctness.
+It leaves no incompatible observable behaviors for implementers to choose between, but may leave local implementation choices open where those contracts determine correctness.
+Completeness does not require exhaustive optional behavior or guarantees stronger than governing requirements.
 Judge readiness by the specified candidate space, evidence and validation rules, limits, and no-results/error outcomes—not by whether a preimplementation probe finds a feasible alternative or explains every sampled case. A probe's gap blocks readiness only if it exposes a missing design decision or shows the specified approach cannot meet an approved requirement; otherwise record the gap as evidence and leave the search to implementation.
 
 ### Implementation plan

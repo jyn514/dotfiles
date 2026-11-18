@@ -1,6 +1,6 @@
 # Non-narrowing check
 
-Check whether a downstream contract rejects cases upstream permits, including permitted explanation modes.
+Check whether a downstream contract rejects cases, implementations, or results upstream permits, including permitted explanation modes.
 This focused check does not start a full specification review.
 Use the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-substantial-approach) when tracing approval.
 
@@ -8,7 +8,7 @@ Use the shared [decision-authority rule](~/.agents/shared.md#before-selecting-a-
 
 Read the approved brief, incorporated policy, and explicitly approved product decisions—not just downstream documents that may repeat the same restriction.
 Draft definitions and source labels cannot authorize themselves.
-Record otherwise-valid permitted cases, their origins, and the minimum evidence that observably suffices for each permitted explanation mode.
+Record otherwise-valid permitted cases, implementations or results, their origins, and the minimum evidence that observably suffices for each permitted explanation mode.
 
 For example, suppose a spelling system inherits a mapping from `night` to `nite`.
 Its approved brief permits inherited mappings that cannot be derived from a rule and explicitly counts them as memorized exceptions.
@@ -23,8 +23,8 @@ Checking only the more restricted group cannot establish the other's permission.
 
 ## 2. Trace rejection conditions
 
-Inspect definitions, examples, and acceptance criteria for eligibility rules and evidence burdens.
-For each stronger condition, identify its authority and why enforcing that authority needs it.
+Inspect definitions, examples, and acceptance criteria for eligibility rules, evidence burdens, and stronger promises that exclude otherwise-conforming implementations or results.
+For each stronger condition, identify the governing obligation or actual consumer need and why it requires that condition; the draft's own promise cannot authorize itself.
 Preserve the source's population, conditions, and phase:
 
 - Does a restriction on new forms now reject inherited forms too?
@@ -34,12 +34,17 @@ Preserve the source's population, conditions, and phase:
 In the spelling example, inability to derive `nite` does not by itself mean lack of an explanation: the brief permits memorization.
 Check what evidence that mode needs rather than treating derivation as the only possible justification.
 
+For example, a requirement permits optional transforms A and B but does not require exhaustive alternatives.
+An implementation that offers A and B individually without composing them can satisfy that requirement.
+A downstream promise to enumerate every repeated combination of A and B would exclude it even if all required inputs remain accepted.
+Check whether an upstream scope or actual consumer contract requires that closure before treating it as mandatory.
+
 ## 3. Compare plausible readings
 
 Compare “explained,” “justified,” “supported,” and “valid” with the evidence established in step 1.
-Apply competing meanings to the same otherwise-valid upstream case.
-If the readings admit different cases, report a material ambiguity even without a literal contradiction.
-Identify the condition rejecting the case or leaving acceptance unresolved.
+Apply competing meanings to the same otherwise-valid upstream case, implementation, or result.
+If the readings admit different cases or implementations, report a material ambiguity even without a literal contradiction.
+Identify the condition rejecting the case or implementation, or leaving acceptance unresolved.
 
 ## 4. Follow authority, not stricter defaults
 
