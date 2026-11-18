@@ -1,15 +1,21 @@
 #!/bin/sh
 
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
 case "$#:${1:-}" in
 	1:--version|1:-v)
 		# Informational output cannot execute tools or access the repository.
-		script=$(realpath -- "$0") || exit
+		script=$(realpath "$invoked_path") || exit
 		root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
 		exec "$root/tools/codex-sandbox/sandbox-host-pi" "$@"
 		;;
 	*:--export)
 		# Standalone exports need no guest worker or sandbox startup.
-		script=$(realpath -- "$0") || exit
+		script=$(realpath "$invoked_path") || exit
 		root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
 		exec "$root/tools/codex-sandbox/sandbox-host-pi" "$@"
 		;;
@@ -17,7 +23,7 @@ esac
 if [ -n "${PI_DASHBOARD_SPAWN_TOKEN:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]; then
 	# Dashboard has already created the backing window. Move it before the new
 	# Pi can influence destination eligibility; ordinary CLI calls stay unchanged.
-	script=$(realpath -- "$0") || exit
+	script=$(realpath "$invoked_path") || exit
 	root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
 	python3 "$root/libexec/tmux/place-dashboard-pi.py"
 	# The Dashboard registers this wrapper by absolute checkout path. Keep its

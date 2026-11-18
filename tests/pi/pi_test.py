@@ -83,6 +83,14 @@ class PiWrapperTests(unittest.TestCase):
         self.run_wrapper("--export", str(source), str(self.root / "export.html"))
         self.assertFalse(record.exists())
 
+    def test_native_version_and_export_with_busybox_realpath(self) -> None:
+        busybox = shutil.which("busybox")
+        if busybox is None:
+            self.skipTest("BusyBox is not installed")
+        (self.root / "realpath").symlink_to(busybox)
+        self.test_version_uses_native_pi_without_starting_sandbox()
+        self.test_export_writes_requested_file_without_starting_sandbox()
+
     def test_version_with_other_arguments_still_uses_sandbox(self) -> None:
         self.assertEqual(["--version", "prompt"], self.run_wrapper("--version", "prompt"))
 

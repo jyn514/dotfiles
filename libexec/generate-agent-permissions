@@ -1,7 +1,13 @@
 #!/bin/sh
 set -eu
 
-DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
+DOTFILES=$(realpath "$(dirname -- "$(realpath "$invoked_path")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 
 case ${1:-}:$# in

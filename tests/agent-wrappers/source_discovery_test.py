@@ -102,6 +102,62 @@ class SourceDiscoveryTest(unittest.TestCase):
                         "--help",
                     ], result.stdout.splitlines())
 
+    def test_source_discovery_with_busybox_realpath(self) -> None:
+        busybox = shutil.which("busybox")
+        if busybox is None:
+            self.skipTest("BusyBox is not installed")
+        (self.commands / "realpath").unlink()
+        (self.commands / "realpath").symlink_to(busybox)
+        (self.private / "nvim").symlink_to(ROOT / "bin/nvim")
+        copy_verified(FIXTURES / "source_backend.sh", self.backend / "nvim")
+        result = self.run_wrapper("nvim", "relative-chain", "--version")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stderr)
+        self.assertEqual(["--version"], result.stdout.splitlines())
+        for command in ("rg", "java", "bb"):
+            for mode in ("direct", "relative-chain"):
+                with self.subTest(command=command, mode=mode):
+                    result = self.run_wrapper(command, mode, "--version")
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("", result.stderr)
+                    self.assertIn("--version", result.stdout.splitlines())
+        for configured_bb in (False, True):
+            result = self.run_wrapper("bb", "relative-chain", "agent-split", "--help",
+                                      configured_bb=configured_bb)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stderr)
+            self.assertIn(str(ROOT / "tools/agent-split/src/scripts/agent-split.clj"),
+                          result.stdout.splitlines())
+
+    def test_source_discovery_with_filename_only_realpath(self) -> None:
+        (self.commands / "realpath").unlink()
+        copy_verified(FIXTURES / "plain_realpath.sh", self.commands / "realpath")
+        for command in ("rg", "java", "bb"):
+            for mode in ("direct", "relative-chain"):
+                entry = self.entry(command, mode)
+                # A dash-prefixed relative invocation must not become an option.
+                relative = self.root / ("--" + command)
+                relative.unlink(missing_ok=True)
+                relative.symlink_to(entry)
+                for invocation in (str(entry), "./" + relative.name, relative.name):
+                    with self.subTest(command=command, mode=mode, invocation=invocation):
+                        env = dict(self.env)
+                        env["PATH"] = str(self.root) + os.pathsep + env["PATH"]
+                        result = subprocess.run(
+                            ["/bin/sh", "--", invocation, "--version"], cwd=self.root, env=env,
+                            text=True, capture_output=True, check=False, timeout=5,
+                        )
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        self.assertEqual("", result.stderr)
+                        self.assertIn("--version", result.stdout.splitlines())
+        for configured_bb in (False, True):
+            result = self.run_wrapper("bb", "relative-chain", "agent-split", "--help",
+                                      configured_bb=configured_bb)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stderr)
+            self.assertIn(str(ROOT / "tools/agent-split/src/scripts/agent-split.clj"),
+                          result.stdout.splitlines())
+
     def test_failed_realpath_output_never_reaches_a_backend(self) -> None:
         (self.commands / "realpath").unlink()
         copy_verified(ROOT / "tests/fixtures/wrapper_realpath_failure.sh",

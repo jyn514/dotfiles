@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
 
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
 original_path=$PATH
 if [ -n "${BB_REAL:-}" ]; then
 	if [ ! -x "$BB_REAL" ]; then
@@ -9,7 +15,7 @@ if [ -n "${BB_REAL:-}" ]; then
 	fi
 	real_bb=$BB_REAL
 else
-	source_path=$(realpath -- "$0") || exit 1
+	source_path=$(realpath "$invoked_path") || exit 1
 	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" bb
@@ -31,7 +37,7 @@ if [ "${1:-}" = agent-split ]; then
 	shift
 	root=${BB_SOURCE_ROOT:-${root:-}}
 	if [ -z "$root" ]; then
-		source_path=$(realpath -- "$0") || exit 1
+		source_path=$(realpath "$invoked_path") || exit 1
 		root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	fi
 	exec "$real_bb" ${tmpdir_opt:+"$tmpdir_opt"} "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"

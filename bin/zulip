@@ -1,11 +1,17 @@
 #!/bin/sh
 set -eu
 
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
 if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
 	exec /tools/zulip-proxy/client "$@"
 fi
 
-script=$(realpath -- "$0")
+script=$(realpath "$invoked_path")
 bin_dir=$(dirname -- "$script")
 root=$(dirname -- "$bin_dir")
 exec "$root/tools/zulip-proxy/client" "$@"

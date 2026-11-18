@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
 
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
 # Track option values without changing argv. In particular, a glob whose value
 # is -e must not disguise a following executable option as a literal pattern.
 value_pending=false
@@ -83,7 +89,7 @@ if [ -n "${RG_REAL:-}" ]; then
 else
 	# Locate support beside the script target, but remove the invoked PATH entry.
 	# Using the target for both would leave public symlinks free to recurse.
-	source_path=$(realpath -- "$0") || exit 1
+	source_path=$(realpath "$invoked_path") || exit 1
 	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" rg

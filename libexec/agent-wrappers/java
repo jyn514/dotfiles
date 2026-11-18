@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
 
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
 if [ -n "${JAVA_REAL:-}" ]; then
 	if [ ! -x "$JAVA_REAL" ]; then
 		printf '%s\n' "java wrapper: configured real java is not executable" >&2
@@ -8,7 +14,7 @@ if [ -n "${JAVA_REAL:-}" ]; then
 	fi
 	REAL=$JAVA_REAL
 else
-	source_path=$(realpath -- "$0") || exit 1
+	source_path=$(realpath "$invoked_path") || exit 1
 	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" java

@@ -1,6 +1,12 @@
 #!/bin/sh
 
-. "$(dirname -- "$(realpath -- "$0")")/../lib/shell/lib.sh"
+# BusyBox realpath has no option marker; an absolute path cannot be an option.
+case $0 in
+	/*) invoked_path=$0 ;;
+	*) invoked_path=$PWD/$0 ;;
+esac
+
+. "$(dirname -- "$(realpath "$invoked_path")")/../lib/shell/lib.sh"
 shim_resolve "$0" nvim
 
 if [ -e Session.vim ]; then f=Session.vim; elif [ -e .session.vim ]; then f=.session.vim; fi
