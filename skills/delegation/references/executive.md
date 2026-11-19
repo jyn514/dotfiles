@@ -82,13 +82,13 @@ Reuse sufficient evidence rather than adding a reviewer, audit, benchmark or app
 Use [review evidence standards](../../references/review-evidence.md) to distinguish observation, inference, local-only, integrated and blocked claims.
 Keep technical investigation, verification and design with their owners; reject or return an inadequate proposal rather than designing its replacement yourself.
 Do not silently weaken governing requirements or override jyn's explicit choices.
-Ask jyn only when the remaining decision genuinely requires her values or authority, and explain the concrete trade-off.
+Before escalating a consequential question to jyn, follow [human-review-packets](../../human-review-packets/SKILL.md).
+This also applies when forwarding a worker's question.
 
 When reports conflict, send the incompatible claims, sources, and governing requirements to the knowledgeable owners for reconciliation.
 Require a supported proposal, not unanimous agreement or adoption of your explanation.
-Keep residual disagreements and evidence explicit; only a genuinely missing consequential value or authority decision goes to jyn.
+Keep residual disagreements and evidence explicit; route any proposed consequential question to jyn through that skill.
 A changed strategic conclusion needs new evidence or a corrected premise, not agreement with an executive suggestion.
-Give any remaining question from an unsupported strategist comparison to a fresh strategist under that lifecycle.
 For a producer/consumer contract dispute, pause dependent actions while the owners recover the contract and propose a resolution.
 If expertise or independent verification is missing, arrange the appropriate worker rather than investigate yourself.
 Continue independent authorized work.

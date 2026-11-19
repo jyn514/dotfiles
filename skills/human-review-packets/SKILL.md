@@ -33,6 +33,17 @@ Separate open, settled, and deferred decisions, and identify decisions that are 
 Resolve factual and procedural questions from records and tools you can access before asking for human judgment.
 When a decision depends on how a rule or category applies, follow [Rule scope and applicability](references/rule-scope.md).
 
+Before asking jyn to decide a consequential question covered by this skill, consult a fresh strategist.
+Provide the original objective, governing requirements, available evidence, and relevant prior answers without prescribing a conclusion or response format.
+Consider its response against the original objective before deciding whether a question for jyn remains.
+Resolve accessible factual questions through records, tools, and responsible owners.
+If a decision still requires jyn's judgment or authority, ask her as the fallback.
+If a strategist is unavailable, explain the unavailability and ask jyn as the fallback.
+Do not skip consultation because you expect the question to require human judgment or expect the strategist to be unhelpful.
+A builder's findings or the caller's own comparison do not substitute for this consultation.
+Follow delegation's [one-off strategist lifecycle](../delegation/SKILL.md#before-assigning-a-worker).
+Simple preferences, routine confirmations, and missing-fact questions remain outside this requirement.
+
 Before asking jyn a question, imagine plausible follow-up questions she could ask about its premises: “Why is that necessary?”, “Didn't we already decide this?”, or “Why doesn't the existing mechanism handle it?”
 Use them to expose false premises, agent-selected restrictions presented as requirements, settled choices, or options that don't address the problem.
 Investigate follow-up questions that available evidence can answer.
