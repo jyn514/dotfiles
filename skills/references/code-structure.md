@@ -57,6 +57,29 @@ Do not paraphrase statements or repeat what names, types, or straightforward cod
 Prefer clearer names and simpler code when those can remove the confusion; retain reasoning that code alone cannot express.
 Keep operator instructions and cross-component guarantees in their canonical documentation rather than duplicating them in comments.
 
+In tests, use comments to explain what the case demonstrates, not to narrate its setup.
+For example, “The child overrides the retry count but inherits the root timeout” explains the distinction under test.
+“Create root and child configs” repeats the setup.
+Omit the comment when the test name and assertions already make that distinction clear.
+
+Follow the repository's mechanical conventions, such as wrap width and punctuation, without copying clipped or confusing prose.
+Write complete sentences and state the connection between facts rather than making punctuation carry the reasoning.
+For example, this comment leaves the competing operation and timing implicit:
+
+```rust
+// Check again: race with another writer.
+```
+
+Spell out why the second check is needed:
+
+```rust
+// Another writer may create the cache while we wait for the lock, so check for it
+// again after acquiring the lock.
+```
+
+Clear names and control flow can show that the check follows lock acquisition, but the comment explains why that ordering matters.
+Retain that reason even if the code becomes easier to read.
+
 Before recommending reuse or implementing nontrivial solved-problem logic, use [Use a library](../use-a-library/SKILL.md) to check the supported interface at its actual pinned version and the cost of private-source integration.
 
 ## Choose functions, helpers, and modules
