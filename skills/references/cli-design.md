@@ -1,7 +1,7 @@
 # CLI design
 
 Read when designing or changing command structure, arguments, defaults, parsing, help, output, noninteractive execution, or wrapper argument forwarding.
-Start from the caller's tasks and the command's supported behavior.
+Apply the [shared actual-use judgment](~/.agents/shared.md#trace-a-proposed-change-through-actual-use) to command proposals and their acceptance.
 Distinguish behavior that must remain supported from interface details that may be redesigned, following the [compatibility policy](code-structure.md#compatibility).
 Use [language boundaries](language-boundaries.md) for accepted input, parser authority, argument interpretation, and encoding.
 Use [failures and recovery](failures-and-recovery.md#diagnosability) for failure evidence, partial progress, unknown outcomes, and safe recovery.
@@ -21,7 +21,8 @@ For an inherited or replacement interface, inspect actual scripts, documented us
 Do not treat every existing flag or required argument as a requirement for the new interface.
 Preserve the contracts those callers need; simplify details within the authorized change rather than copying the old invocation unexamined.
 
-Check each representative invocation from preparation through the result.
+For each representative invocation, resolve the actual inputs selected by explicit arguments, defaults, and inherited configuration.
+Follow those inputs through execution to the produced result.
 What must someone locate, prepare, type, and understand to complete the task?
 Where setup is necessary, provide a repeatable setup operation using stable paths rather than documenting session-specific temporary files.
 Keep network access and other setup effects explicit; a shorter command does not justify hiding them in ordinary execution.

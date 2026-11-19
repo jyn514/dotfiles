@@ -14,7 +14,7 @@ The direct task owner compares actions unless priority is assigned elsewhere; in
 
 ## Start with the activity that needs to improve
 
-Trace an example of the requested activity through the nearest existing route to its intended consumer.
+Use the [shared actual-use judgment](~/.agents/shared.md#trace-a-proposed-change-through-actual-use) to establish the activity whose improvement the routes must deliver.
 What already works, what obstacle remains, and how would the proposed step help overcome it?
 If an example is unavailable, name the evidence gap rather than inventing a failure.
 

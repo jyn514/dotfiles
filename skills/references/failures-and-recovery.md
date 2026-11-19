@@ -20,7 +20,7 @@ A comment cannot justify an unnecessarily broad catch or a clamp that hides inva
 
 When a requested or selected mechanism proves unavailable, compare the fallback with the required observable behavior before implementing it.
 State which guarantees it preserves, changes, or leaves unverified, including applicable precedence, persistence, ownership, and failure behavior.
-Apply the [shared scope rule](~/.agents/shared.md#before-changing-behavior-or-scope) to any changed guarantee outside existing authorization.
+Apply the [shared scope rule](~/.agents/shared.md#trace-a-proposed-change-through-actual-use) to any changed guarantee outside existing authorization.
 Pause dependent implementation until that decision is resolved; continue independent investigation.
 An equivalent implementation within the authorized behavior does not need renewed approval.
 

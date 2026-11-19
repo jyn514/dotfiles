@@ -69,18 +69,13 @@ When workers own all remaining work and no outcome judgment, dispatch, schedulin
 
 ## Judge outcome value and ratify alignment
 
-Before endorsing a consequential proposal, expanding its application or reporting success, judge whether it advances the original outcome enough to justify its costs.
-Compare the proposed or observed result with existing useful behavior, not only with the assignment or newly written specification.
+Apply the [shared actual-use judgment](~/.agents/shared.md#trace-a-proposed-change-through-actual-use) when ratifying proposals and results.
+Retain responsibility for that judgment when workers satisfy narrower assignments.
+Judge whether the proposed or observed gains justify the costs for the original outcome.
 Use concrete gains, lost capabilities, effort and maintenance costs where they can change that judgment.
 Consider leaving the behavior unchanged or a simpler approach when either is a credible alternative.
 Do not require every change to improve every measure; explain why the trade-off serves the governing outcome.
-
-Passing tests, satisfying a specification and implementing an approved mechanism establish different things from a useful result.
-Prior approval does not make newly discovered consequences acceptable.
-When a locally valid decision harms the intended outcome, reopen the approach before further costly dependent work.
-An explanation of which rule caused a loss is not a justification for accepting it.
 Request the missing causal evidence or alternatives from their knowledgeable owners.
-Do not leave jyn to discover the mismatch or decide whether an agent-selected restriction has any purpose.
 
 Use evidence from the responsibilities already assigned: builder integration and acceptance checks, independent QA findings, or a strategist's comparison.
 Reuse sufficient evidence rather than adding a reviewer, audit, benchmark or approval round by default.

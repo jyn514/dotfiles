@@ -155,7 +155,18 @@ Choose a case that can expose weaknesses in the approach, not merely the easiest
 Use that feedback to decide whether to expand, revise, or stop.
 Reuse applicable evidence when the approach is already established; do not add a pilot or human approval step by default.
 
-### Before changing behavior or scope
+### Trace a proposed change through actual use
+
+Before endorsing a consequential proposal, expanding its application or reporting success, start with an actual operation jyn performs.
+Follow how the proposed or observed change affects its inputs, preparation, behavior, and usable result.
+Compare that result with existing useful behavior and the governing outcome, not only the assigned component or newly written specification.
+Keep the same concrete operation through proposal review and final acceptance.
+
+Passing tests, satisfying a specification and implementing an approved mechanism establish different things from a useful result.
+Prior approval does not make newly discovered consequences acceptable.
+When a locally valid decision harms the intended outcome, reopen the approach before further costly dependent work.
+An explanation of which rule caused a loss is not a justification for accepting it.
+Do not leave jyn to discover the mismatch or decide whether an agent-selected restriction has any purpose.
 
 Check for additional missing context when a decision changes behavior, scope, ownership, or preservation requirements.
 If that context could materially change the action, use the same record-checking, question, and pause rules as when selecting an approach.

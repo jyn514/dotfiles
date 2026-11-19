@@ -111,6 +111,8 @@ Use `architecture-design` if test partitioning exposes an unsettled production o
 
 ### Build integration tests through real interfaces
 
+Select the workflow using the operation established in the [shared actual-use judgment](~/.agents/shared.md#trace-a-proposed-change-through-actual-use).
+
 - Start integration testing with one small workflow through the normal production entrypoint and a fresh disposable fixture.
   Reuse automatic build and artifact selection when the entrypoint already provides it.
   Do not ask the tester to reconstruct private cache paths or pass manual selection flags instead.

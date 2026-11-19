@@ -5,7 +5,7 @@ description: Check whether a completed substantial owned change fulfills the ori
 
 # Completion audit
 
-Connect each promised outcome to evidence from the finished change.
+Apply the [shared actual-use judgment](~/.agents/shared.md#trace-a-proposed-change-through-actual-use) to connect final evidence to the promised outcome.
 A multi-component refactor or persisted-data migration needs this audit; a documented keybinding change needs diff review and native config validation.
 
 Audit after owned edits are complete, while the patch is uncommitted.
