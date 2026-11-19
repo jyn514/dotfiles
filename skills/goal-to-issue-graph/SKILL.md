@@ -118,7 +118,13 @@ Require every executable task to have a specific deliverable, explicit scope and
 A title and acceptance criteria do not bound a task if completing it still requires deciding which substantial work to include or what counts as enough.
 Recursively split unbounded tasks into smaller outcome tasks, checking each child by the same rule until every executable leaf is bounded.
 Preserve the parent's required outcome across the children, including integration; narrowing each child must not silently discard required work.
-Stop splitting when the leaf can be completed and checked without another substantial scope or decomposition decision.
+A finite feature list settles scope, not whether the work forms one useful delivery.
+When grouping substantial outcomes, ask: if the hardest part remains unfinished, can another part still deliver an accepted useful result?
+Prefer separate executable children for those independently deliverable outcomes.
+Keep them together when correctness, consumer dependencies or disproportionate coordination cost justify combined delivery.
+Shared files, one owner and eventual inclusion in the same product do not by themselves establish a need for combined delivery.
+Keep cases together when they jointly establish one promised behavior.
+Stop splitting when the leaf delivers a useful outcome and can be completed and checked without another substantial scope or decomposition decision.
 Do not substitute arbitrary time limits, one-file tasks or isolated implementation phases for useful bounded outcomes.
 
 Tracking parents may aggregate broad outcomes, but are not executable assignments.
@@ -133,9 +139,11 @@ Keep the remaining parent explicitly pending that decomposition; calling it prov
 Already-authorized bounded tasks need not wait for decomposition of independent branches.
 Do not invent speculative implementation children merely to make the graph look complete.
 
-For example, “improve import support” is not a bounded assignment.
+For example, “improve import support” leaves scope undefined.
+“Add CSV import, JSON import, resumable import and duplicate handling” defines scope but may still group independently deliverable outcomes.
 “Support the documented CSV dialect through the import consumer, including its malformed-row cases” can be one bounded child.
-If the parent requires other formats too, retain those obligations and continue decomposing them; completing CSV support does not complete the parent.
+Its valid-input and malformed-row cases stay together because both establish the promised dialect behavior.
+Retain the other required formats and capabilities in the parent and continue decomposing them; completing CSV support does not complete the parent.
 
 When an early decision can materially change decomposition, distinguish ready assignments from provisional downstream work.
 Fully specify the decision and architecture-independent outcomes first; revise affected downstream tickets after the choice.

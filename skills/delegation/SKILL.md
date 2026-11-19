@@ -76,6 +76,16 @@ A new peer message supplies evidence or a question, not permission for a differe
 When nothing useful within your responsibility can advance, wait; retained ownership does not require constant activity or routine status messages.
 Retire the responsibility when its obligation is discharged or superseded, not merely because a turn ended.
 
+## Integrate independently useful results
+
+For authorized implementation, distinguish the assignment's full acceptance from the unit ready to integrate.
+A ticket may own several behaviors without requiring one combined delivery.
+When an independently useful behavior passes its required integration checks, integrate it without waiting for unfinished sibling features.
+Those checks include intended-consumer evidence and any independent verification required before integration.
+Commit that result when commits are authorized.
+Keep the whole assignment open until all governing acceptance conditions pass.
+Do not separate changes whose correctness depends on being delivered together.
+
 ## Replace a confused owner
 
 Reassess ownership when an agent repeats a corrected misunderstanding, returns to a rejected premise, treats its own earlier choice as a requirement, or cannot distinguish current instructions from superseded ones.
