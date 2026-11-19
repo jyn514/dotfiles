@@ -88,10 +88,18 @@ Merely marking the check “unverified” does not satisfy this requirement.
 
 ### Reproduction
 
-Reduce to the smallest verified operation retaining the failure; keep the original application when its behavior matters.
+Start with the smallest operation likely to reproduce the failure; do not build a broader harness by default.
+When reliable verification requires a larger harness, treat the maintainer-facing reproduction as a separate output: the harness that proves the diagnosis is not automatically the reproduction to embed in the report.
+After confirming the failure, perform another reduction pass: name the exact broken invariant or observable operation and remove servers, credentials, configuration, process setup, and unrelated product layers one at a time.
+Keep the original application only when a smaller case cannot establish the same defect or its reported consequence.
+
+A mechanism-level case is sufficient when it demonstrates the broken invariant and a behavioral check separately confirms that the invariant causes the visible failure.
+Put the small case in the main report; summarize the behavioral result and attach or link the larger harness only when maintainers need it for integration verification.
+Do not embed a complete investigation harness merely because it is executable.
+For example, if a full runtime and WebSocket harness confirms that session replacement loses registration, but a short ownership-helper comparison directly shows why one replacement reason is rejected, use the short comparison as the main reproduction and retain the full run as supporting evidence.
+
 Remove unrelated setup and update prerequisites accordingly.
-After simplifying the reproducer, revisit the whole report.
-Remove setup, caveats, and verification details that mattered only to the discarded configuration.
+After simplifying the reproducer, revisit the whole report and remove setup, caveats, and verification details that mattered only to the discarded configuration.
 Include useful working controls: one picker order failing while the reverse works can replace redundant checks.
 
 Give the installation or invocation, relevant inputs and configuration, and point of failure.
@@ -99,6 +107,8 @@ Include cursor position and keystrokes when relevant.
 Use numbered steps for multiple actions or when required by the template.
 For machine-specific identifiers, give a discovery command and explain which result to select.
 Distinguish tested steps from proposals and runnable reproducers from illustrations with placeholders or omitted setup.
+When a trace combines events from multiple components, label each event's source and explain placeholders, annotations for missing events, and observer-ordering effects.
+Do not present explanatory comments or reconstructed ordering as literal captured output.
 
 Name required hardware, unavailable inputs, or inaccessible infrastructure; distinguish the observed failure from any missing portable or minimized reproducer.
 Include useful failing artifacts even before minimization, and screenshots for visual failures.
@@ -135,6 +145,8 @@ Use `#123` for issues and pull requests in the same GitHub repository.
 
 Separate expected behavior from the visible failure and its consequence; explain the cause only if established.
 Without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
+When the report asks for a specific behavior distinction or upstream change beyond the obvious expected result, state that request near the opening—after the visible failure and before detailed reproduction or diagnosis.
+Do not make the maintainer infer the requested outcome from the cause analysis or a closing question.
 A supported fix suggestion is optional, not an implementation plan.
 Describe the requested behavior without adding unrequested design constraints or compatibility promises.
 Keep optional preferences optional: “Ideally it would save my place,” not a requirement to preserve reading position.
@@ -147,12 +159,14 @@ When a related issue or PR helps distinguish the request from existing work, lin
 Use `<details>` for supporting setup, source tracing, and output.
 Unless the template requires otherwise, collect versions, provenance, dependencies, and source analysis in a final `<details>` block.
 Repeat versions only to distinguish results; do not repeat hashes supplied by permalinks.
-Preserve output verbatim in fenced blocks; label excerpts and older-version output.
+Preserve output claimed as verbatim in fenced blocks; label excerpts and older-version output.
+Label normalized or combined traces as reconstructions, identify their event sources, and explain placeholder identifiers and explicit missing-event markers.
 Put each bare GitHub permalink on its own line immediately after its supported claim.
 
 ## Check and deliver
 
 Compare the body with contribution requirements, the template, and jyn's latest evidence.
+Confirm that the requested outcome is visible near the opening and that the main reproduction is the smallest verified case available, not merely the harness used to investigate it.
 Check commands against reported tests and links against inspected revisions and lines.
 Check each research, clean-environment, and latest-version attestation against evidence.
 Preserve required template text, disclosure, and quoted output verbatim.
