@@ -1,13 +1,21 @@
 ---
 name: tighten-prose
-description: Polish wording, diction, sentence rhythm, repetition, and local clarity in existing prose. Use for explicit local edits to sentences or short passages within an established explanation, including docs, reports, specifications, prompts, instructions, and skills. Do not use for whole-artifact editorial judgment, restructuring, developing missing explanations, or consolidating policies. Do not apply to code, generated files, or machine-owned data.
+description: Polish wording, diction, sentence rhythm, repetition, and local clarity in existing prose. Use for explicit local edits to sentences or short passages within an established explanation, including comments and docstrings, docs, reports, specifications, prompts, instructions, and skills. Also use for bounded, fact-supported corrections to diagnostic or help text. Do not use for whole-artifact editorial judgment, restructuring, developing missing explanations, or consolidating policies. Do not apply to executable code, generated assets, or machine-owned data.
 ---
 
 # Tighten prose
 
-Improve the requested passage within its established purpose, meaning, and explanation.
+Improve the requested passage within its established purpose and explanation; preserve its meaning except for an authorized, fact-supported local correction.
 Local scope limits the changes, not the context you may read to make them well.
+A prose-only edit in a source file does not itself require a coding workflow or authorize changes to behavior or guarantees.
+For documenting a helper during implementation or changing a caller contract, use [coding judgement](../coding-judgement/SKILL.md) and its code-structure route.
 A polished passage does not establish that the whole artifact works.
+
+When error or diagnostic wording involves explaining a failure or suggesting recovery, consult [diagnostic design](../references/diagnostic-design.md).
+When CLI help wording involves invocation or behavior, consult [CLI design](../references/cli-design.md).
+A spelling or punctuation correction alone needs neither reference.
+For a requested local correction to misleading diagnostic or help content, use established facts to correct the text within that scope.
+These checks do not authorize changing command behavior or guarantees.
 
 ## Revise locally
 
@@ -15,18 +23,19 @@ A polished passage does not establish that the whole artifact works.
    Do not expand a local request into a document-wide rewrite.
 2. Improve the wording and cadence; remove repetition, vague phrasing, and canned rhetoric where they weaken the passage.
    Join, split, or rewrite sentences when they read better, not merely to shorten them.
+   Avoid [telegraphic compression](../holistic-writing/references/editorial-pass.md#3-revise-then-cut) that leaves necessary relationships implicit.
    Preserve useful emphasis, precise domain terms, deliberate casing, fragments, and idiom.
    Apply vocabulary bans by meaning rather than word matching.
    Distinguish timing (for example, “while” or “after”) from cause (“because,” “causes,” or “therefore”).
    When evidence establishes causation, name the action and consequence rather than leaving their relationship implicit in temporal wording.
    Do not infer causation from sequence or coincidence alone.
-3. Preserve meaning, conditions, authority, warnings, exact tokens, quoted output, commands, paths, and links.
+3. Preserve meaning except for an authorized, fact-supported local correction; preserve conditions, authority, warnings, exact tokens, quoted output, commands, paths, and links.
    Do not remove evidence or requirements, invent facts, move sections, or change the explanatory plan.
 4. Read the complete revised passage in context and compare it with the original as prose.
    Restore anything that sounded better before; leave the passage unchanged if no edit earns its cost.
    Explain consequential choices and any unresolved issue, not an edit count.
 
-If the problem requires different content, organization, or a developed explanation, flag the broader work rather than trying to solve it through wording alone.
+If the problem requires broader content changes, reorganization, or a developed explanation, flag the broader work rather than trying to solve it through wording alone.
 Use a dedicated skill when it owns the requested work; otherwise use `holistic-writing`.
 Do not claim the whole artifact has passed editorial review.
 

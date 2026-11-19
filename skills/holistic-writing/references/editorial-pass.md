@@ -125,6 +125,10 @@ Cut repeated claims, investigation narration, defensive qualifications, announce
 Keep the request, concrete motivation, decisive evidence, and qualifications that change the conclusion or next action.
 Keep rationale, rejected alternatives, and examples that guide a future choice or prevent a likely mistake.
 Restore anything whose loss makes the reader reconstruct a necessary connection.
+Do not make prose telegraphic by cutting subjects, verbs, articles, or words that express necessary conditions or causes.
+Listing facts or joining them with punctuation does not explain their relationship.
+Preserve deliberate fragments and voice, and keep labels and headings concise where they serve the reader.
+See the [constructed cache example](reading-examples.md#compression-can-hide-the-condition-and-actor).
 
 Preserve requirements, authority, priority, defaults, conditions, exceptions, commands, paths, and validation.
 Moving an unconditional rule under “When tests fail” makes it conditional even if its words stay the same.

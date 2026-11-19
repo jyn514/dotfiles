@@ -29,5 +29,6 @@ These routes apply to prose-only work; they do not require a coding workflow or 
 
 For documentation-specific forms, prerequisites, commands, and reader workflows, read the [documentation checks](references/documentation.md).
 For placement alone, use [documentation placement](../references/documentation-placement.md).
-Use `readme-writing` for documentation whose audience is new to the project, regardless of filename or stage of use.
+Use [readme-writing](../readme-writing/SKILL.md) for audience guidance when documentation serves project newcomers, regardless of filename or stage of use.
+When a technical skill owns the work, retain its factual and technical checks; combine the guidance with one task setup and one shared editorial pass.
 Existing page splits, renames, and navigation belong to `reorganize-docs`.

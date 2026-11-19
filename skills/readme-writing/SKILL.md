@@ -11,6 +11,7 @@ For review-only work, report findings without editing.
 
 When another skill owns technical analysis, operating behavior, or design decisions, leave those responsibilities there.
 Use its established facts and decisions to explain the result to newcomers; reuse the reader setup and shared editorial pass rather than repeating them.
+For a current-codebase guide, [architecture-writing](../architecture-writing/SKILL.md) owns tracing and factual checks regardless of filename; apply this skill's audience guidance alongside it.
 
 ## Find the reader's reason to care
 

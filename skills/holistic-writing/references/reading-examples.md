@@ -399,6 +399,23 @@ Here, the requested specification did not require an investigation narrative or 
 
 These exercises use invented examples.
 
+### Compression can hide the condition and actor
+
+In this constructed build tool, a cache entry pairs an input fingerprint with generated output.
+The build compares the fingerprint with the current inputs before deciding whether to run a Rust generator.
+
+**Compressed explanation**
+
+> Warm hit; skip Rust.
+
+**A revision that states the relationship**
+
+> If the cached fingerprint matches the current inputs, the build reuses the cached output and skips the Rust generator.
+
+The compressed version leaves the reader to infer what counts as a hit, who skips the generator, and why.
+The revision names the condition and the build's actions without changing the facts.
+A short label such as “Warm hit” can still be useful where its meaning is already established; the problem is using it in place of an explanation the reader needs.
+
 ### Reach the distinction without an abstract detour
 
 > SQLite’s in-process architecture, for example, represents a different paradigm from a daemon-based database design.

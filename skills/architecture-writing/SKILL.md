@@ -1,6 +1,6 @@
 ---
 name: architecture-writing
-description: Write, substantially revise, or review a descriptive ARCHITECTURE document or codebase guide for developers. Use for a current-system mental model, code and dataflow map, boundaries, invariants, and where to make changes, whether or not the file is named ARCHITECTURE. Not for selecting or critiquing a proposed architecture (use architecture-design), requirements or implementation specifications, implementation plans, introductory READMEs, or a bounded prose edit.
+description: Write, substantially revise, or review a descriptive ARCHITECTURE document or codebase guide for developers. Use for a current-system mental model, code and dataflow map, boundaries, invariants, and where to make changes, whether or not the file is named ARCHITECTURE. Not for selecting or critiquing a proposed architecture (use architecture-design), requirements or implementation specifications, implementation plans, or a bounded prose edit.
 ---
 
 # Architecture writing
@@ -8,9 +8,10 @@ description: Write, substantially revise, or review a descriptive ARCHITECTURE d
 Help a developer understand the implementation well enough to find the relevant code and reason about a change.
 A descriptive guide explains the system that exists; it does not choose a new design or turn implementation details into product requirements.
 A review request authorizes findings, not edits.
-Use [holistic-writing](../holistic-writing/SKILL.md) for the whole guide: establish its reader and purpose, develop the explanation, and follow its editorial pass and documentation checks.
-Reuse the context established here rather than repeating the task setup.
-For an unresolved design choice use [architecture-design](../architecture-design/SKILL.md); for an introductory README use [readme-writing](../readme-writing/SKILL.md).
+For a guide to the current codebase, this skill owns tracing and factual checks regardless of filename or audience.
+For project newcomers, also use [readme-writing](../readme-writing/SKILL.md) for audience guidance.
+Establish the task once and follow the [shared editorial pass](../holistic-writing/references/editorial-pass.md) and [documentation checks](../holistic-writing/references/documentation.md) once; reuse that setup across skills.
+For an unresolved design choice use [architecture-design](../architecture-design/SKILL.md).
 
 ## Establish the guide's job
 

@@ -87,7 +87,8 @@ Use it for reports, essays, instructions, prompts, and substantial revisions whe
 When a dedicated skill owns that work, start there and use its editorial-pass route instead of a second workflow.
 [Tighten prose](tighten-prose/SKILL.md) is for local wording, rhythm, repetition, and clarity when the surrounding explanation already works.
 
-[README writing](readme-writing/SKILL.md) introduces a project to someone deciding whether or how to use it.
+[README writing](readme-writing/SKILL.md) helps readers new to a project understand its concepts, codebase, contribution process, or troubleshooting.
+Use it regardless of filename or stage of use; readers may already know the domain.
 For tutorials, how-to guides, references, and explanations, consult the [documentation checks](holistic-writing/references/documentation.md)
 for prerequisites, warnings, and the routes readers need to complete a task.
 [Reorganize docs](reorganize-docs/SKILL.md) changes the arrangement of existing documentation: splits, consolidation, navigation, and archives.
