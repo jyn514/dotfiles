@@ -99,6 +99,18 @@ Advance acceptance and integration only when governing prerequisites and require
 
 Use [delegation](../delegation/SKILL.md) for shared responsibility, evidence handoffs, and ownership conflicts; organizers follow its executive route for assignments and worker lifecycles.
 
+### Maintain a forecast
+
+Keep either a current completion estimate or an owned, ticketed path to obtaining one throughout an active run.
+Use [work-estimation](../work-estimation/SKILL.md) for the estimate and its assumptions, including required verification and repair.
+When a useful estimate is not yet supported, track the uncertain premise, the concrete check that resolves it, its owner and dependencies, and when the estimate will be reassessed.
+Give that discovery work its own forecast where feasible; distinguish execution time from external waiting.
+Use the existing permitted tracker and reuse delivery tickets when they already own the resolving work.
+If ticket recording is unavailable or outside the run's authority, request authorized recording and retain the discovery details in permitted session or goal state until it is recorded.
+Do not create a new tracker or expand mutation authority to satisfy this requirement.
+A statement such as “estimate after the full build” is incomplete without ownership of both the build and the resulting estimate.
+Revise the forecast or its discovery path when findings change the remaining route.
+
 ## For implementation work only
 
 Builders and QA use these companion procedures for implementation when their conditions apply.
@@ -125,6 +137,13 @@ Where acceptance permits partial results, keep unsupported cases explicitly held
 This does not narrow the milestone or certify held cases.
 Reuse producer outputs that remain valid for the required consumer and repair the failing boundary; regenerate only invalidated or missing work.
 Record implementation results as integrated, local-only, or blocked with the exact check and evidence.
+
+When executing a candidate reveals the remaining problems, distinguish failures that prevent acceptance or publication from failures that prevent further diagnostic work.
+Continue useful, authorized independent work and collect its findings together.
+A failed prerequisite need stop only the work that depends on it.
+If repeated runs reveal only one discrepancy each, use work-selection to reassess the feedback path before repairing discrepancies individually.
+Retain required validation and publication checks; diagnostic progress does not authorize publishing invalid or partial output.
+Detailed error-collection behavior belongs to the implementation's owning contract, not a universal fail-fast or continue-on-error policy.
 
 Commit only when the task or repository policy authorizes repository changes and commits; use [commit-quality](../commit-quality/SKILL.md).
 For authorized implementation runs, commit integrated results rather than waiting until the end of the session.
@@ -191,8 +210,23 @@ Check current artifacts, pending workers, and evidence freshness; do not replay 
 ## Ask, block, pause, or finish honestly
 
 "Autonomous" does not mean jyn is gone; it means she is not actively paying attention.
-Use `ask_user` when available for missing decisions and continue independent authorized work while awaiting an answer.
+Ask jyn for decisions that require her judgment and for advice when the requested outcome gets stuck.
+Use `ask_user` when available.
 Do not guess missing semantics, invent approval, or certify held results.
+
+Work is stuck when the available evidence no longer supports a credible way to advance the required outcome, even if more actions remain.
+Repeated repairs without useful results, findings that undermine the approach, or substantial regressions without a credible recovery plan call for reassessment.
+Another possible repair, an active worker or passing local checks does not by itself show that the required outcome is advancing.
+Use [work-selection](../work-selection/SKILL.md) to reassess the route.
+If that reassessment leaves no justified next step, ask jyn before extending the repair effort.
+Do not wait until you have exhausted every technical alternative.
+
+- **Ordinary repair:** a test exposes a specific bug, an established fix applies, and a focused check can verify recovery.
+- **Ask for advice:** successive fixes produce new losses or costs, and the reason to continue is increasingly “there are still things to try.”
+
+Explain what stopped progressing, what you tried, the strongest available alternatives, and what judgment you need help with.
+Asking for advice does not mean the whole goal is blocked.
+Continue independent authorized work while awaiting an answer.
 
 Before declaring the run blocked, compare the dependency with the full objective and governing requirements.
 Record what it prevents, supporting evidence, the input or decision needed, and independent work that can proceed.
