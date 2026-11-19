@@ -64,6 +64,16 @@ Preserve exact tokens in commands, interfaces, quoted output, and paths.
 
 ## Select detail by the reader's task
 
+Keep specification material out of the README unless the reader needs it to choose or complete a task taught there.
+A README introduces use; it is not the canonical home for exhaustive schemas, algorithm rules, internal invariants, report-field catalogs, or acceptance protocols.
+For each such block, identify the reader decision or action it enables.
+If it only defines the implementation or an exact contract, link to its inspected specification, reference, or code owner instead.
+Putting task-oriented headings above a specification does not make it a usage guide.
+
+Keep the minimum operational detail needed for the task, including prerequisites, important defaults, failure recovery, and warnings at the point of action.
+For an input-directory README, show how to obtain inputs, choose the file to change, and use it; link to exact schemas and source-policy details rather than reproducing them.
+Preserve source provenance, licenses, and operative constraints when moving material; do not delete them merely to shorten the README.
+
 For the queue's introductory use, the shared database explains how the processes cooperate and the repeated-handler warning guides safe use.
 A tracing callback catalog serves readers configuring tracing; give those details an appropriate lookup destination.
 Select details for the account you've chosen and describe the operations accurately.
