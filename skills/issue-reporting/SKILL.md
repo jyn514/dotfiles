@@ -143,9 +143,14 @@ For example, write `shows “Offline” instead of “Request access”`, not `h
 Quote those terms in titles when Markdown is unavailable, format them distinctly in the body, and define unfamiliar terms on first use.
 Use `#123` for issues and pull requests in the same GitHub repository.
 
-Separate expected behavior from the visible failure and its consequence; explain the cause only if established.
-Without a template-prescribed order, use **Expected behavior**, **Actual behavior**, then **Reproduction**.
-When the report asks for a specific behavior distinction or upstream change beyond the obvious expected result, state that request near the opening—after the visible failure and before detailed reproduction or diagnosis.
+For bug reports, separate expected behavior from the visible failure and its consequence; explain the cause only if established.
+Without a prescribed template, choose a structure that fits the report:
+- Bug reports: **Expected behavior**, **Actual behavior**, then **Reproduction**.
+- Feature requests: the requested capability, a concrete consumer use case, and what existing APIs or workarounds leave the consumer responsible for.
+
+Include reproductions or experiments when they establish a disputed behavior or limitation.
+When the report asks for a specific behavior distinction or upstream change beyond the obvious expected result, state that request near the opening, before detailed reproduction or diagnosis.
+For bug reports, place it after the visible failure.
 Do not make the maintainer infer the requested outcome from the cause analysis or a closing question.
 A supported fix suggestion is optional, not an implementation plan.
 Describe the requested behavior without adding unrequested design constraints or compatibility promises.
@@ -166,7 +171,8 @@ Put each bare GitHub permalink on its own line immediately after its supported c
 ## Check and deliver
 
 Compare the body with contribution requirements, the template, and jyn's latest evidence.
-Confirm that the requested outcome is visible near the opening and that the main reproduction is the smallest verified case available, not merely the harness used to investigate it.
+Confirm that the requested outcome is visible near the opening.
+When a reproduction is included, confirm that it is the smallest verified case available, not merely the harness used to investigate it.
 Check commands against reported tests and links against inspected revisions and lines.
 Check each research, clean-environment, and latest-version attestation against evidence.
 Preserve required template text, disclosure, and quoted output verbatim.
