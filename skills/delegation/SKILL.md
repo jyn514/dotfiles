@@ -183,7 +183,8 @@ An agent finishing its turn does not establish issue completion.
 
 Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
 State permitted effects, resource limits, ownership, and protected work.
-Name accessible canonical procedures instead of reproducing stable methods the selected role already receives.
+Do not repeat guidance the worker already receives.
+Link task-specific procedures or evidence when the worker needs them to understand or perform the assignment.
 The advertised role hint names only role-specific additions to this packet.
 Do not assume a worker inherits the parent's prompt or prior reads; generic workers still need the task's responsibility framing.
 Supply actual inputs and evidence entrypoints for the requested activity, not only files for your preferred mechanism.
