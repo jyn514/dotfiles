@@ -1,13 +1,14 @@
 ---
 name: youtube-captions
-description: Read YouTube captions or transcripts with youtube-transcript-api, with yt-dlp as a retrieval fallback, to understand, summarize, quote, or discuss a linked video's spoken content. Use for requests to read a YouTube video or retrieve its subtitles, including when the watch page is inaccessible. Not for video metadata alone, downloading media, speech-to-text transcription, or inspecting visual content.
+description: Read YouTube captions or transcribe audio to understand, summarize, quote, discuss, or extract references from a linked video's spoken content. Use for requests to read a YouTube video or retrieve existing subtitles, including when the watch page is inaccessible or captions are absent. Prefer caption retrieval with youtube-transcript-api and yt-dlp; use local speech-to-text when understanding the video requires it. Not for video metadata alone, standalone media downloads, or inspecting visual content.
 ---
 
 # YouTube captions
 
-Retrieve the captions and read them before discussing a video's argument.
-A failed watch-page fetch does not establish that the transcript is unavailable.
-This workflow retrieves subtitle text, not audio or video.
+Retrieve readable text and read it before discussing a video's spoken content.
+Prefer existing captions; a failed watch-page fetch does not establish that they are unavailable.
+A request to understand a video can also use local audio transcription when captions are absent.
+A request for existing subtitles alone should return those subtitles or report their absence, without substituting a new transcription.
 
 ## Use upstream tools
 
@@ -47,6 +48,8 @@ Use `--exclude-manually-created` only when the task specifically needs the gener
 For a single video, JSON output contains one outer list whose element is the video's list of segments.
 Each segment has `text`, `start`, and `duration`; times are in seconds.
 Check the output contains nonempty transcript segments, not an error message or empty result.
+Check their coverage against the requested interval.
+For whole-video work, assess beginning and ending coverage and report any missing or unknown range before claiming completeness.
 Keep the video URL, selected language, supplied/generated/translated status, and timestamps with your working evidence.
 
 The tool returns text without VTT markup and decodes HTML entities.
@@ -93,11 +96,14 @@ Use bounded reads for long files and continue from the last line actually return
 State the unread range if you cannot finish it; search snippets do not substitute for the rest of the argument.
 
 Ground the answer in the retrieved passage and give timestamps for consequential claims or short quotations.
-Say that you read captions rather than watched the video.
+Say whether you read captions or transcribed audio rather than watched the video.
 Automatic captions can mishear names, negation, and technical terms; verify wording before relying on an uncertain exact quote.
 Captions may omit on-screen quotations, diagrams, demonstrations, and nonverbal sequences.
 Inspect the relevant frames through an available visual workflow when the question depends on them, or identify the specific missing evidence.
 Do not infer what a silent interval shows.
+
+For reference extraction, distinguish explicitly cited resources from incidental project mentions.
+Label an inferred search match as a candidate until the destination is confirmed.
 
 ## Handle retrieval failures
 
@@ -107,7 +113,10 @@ For extractor failures, check the installed version and the project's current tr
 Do not add browser credentials or bypass access restrictions to repair a public-caption request.
 For rate limits, stop requests rather than switching tools to continue them.
 Retain any files already retrieved.
-If no captions exist, report that; audio transcription is a separate task, not an automatic fallback.
+If no captions exist and the task is to understand the video, follow [Local audio transcription](references/audio-transcription.md).
+Do not make the requester supply a transcript when local transcription can complete the task.
+For an existing-subtitles-only request, report that no track exists.
+The transcription route preserves the same access and rate-limit stopping conditions.
 
 Missing yt-dlp JavaScript-runtime, impersonation, or media-format warnings do not by themselves establish caption failure.
 Check the subtitle result before installing extra runtimes, FFmpeg, or browser tooling.
