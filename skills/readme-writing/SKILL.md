@@ -1,23 +1,27 @@
 ---
 name: readme-writing
-description: Write, substantially revise, or review a repository, package, or tool-entrypoint README that introduces a project and helps readers decide whether or how to use it. Use for introductory READMEs, including those for libraries, integrations, books, and non-executable collections. Not for API-reference-only tasks, general documentation restructuring, implementation, or verification of product claims.
+description: Write, substantially revise, or review documentation for readers new to a project. Use when the document must introduce project-specific concepts, explain how its parts fit together, or help readers choose and perform tasks without prior project context, regardless of filename. Readers may already know the domain. Specialized skills retain technical analysis and design decisions; this skill owns explaining the result to newcomers. Not for bounded wording or command corrections, documentation restructuring alone, implementation, or verification of product claims.
 ---
 
-# Write a README for someone arriving
+# Write for someone new to the project
 
-Help the reader decide whether this project serves them, then explain how to begin.
+Help readers understand the project well enough to make the choices or perform the tasks the document serves.
 Use the source's facts to build an account for that reader.
 For review-only work, report findings without editing.
 
+When another skill owns technical analysis, operating behavior, or design decisions, leave those responsibilities there.
+Use its established facts and decisions to explain the result to newcomers; reuse the reader setup and shared editorial pass rather than repeating them.
+
 ## Find the reader's reason to care
 
-Read the brief and complete existing README, if present.
+Read the brief and complete existing document, if present.
 Establish which files you may change or create; leave others unchanged.
-Inspect supplied repository context for facts you need; resolve copied input's links from the original README location.
+Inspect supplied repository context for facts you need; resolve copied input's links from the original document location.
 
 Keep the human's audience and purpose.
 Without a stated audience, write for a project newcomer who has not read related documentation.
-Establish what the reader already understands.
+New to the project does not mean new to its domain; establish what the reader already understands.
+Someone who has installed the project may still need an introduction to its concepts, codebase, contribution process, or troubleshooting.
 Someone choosing among background-job libraries may know the category and want to understand what this particular one offers.
 Explain its value and introduce its private names through their meaning.
 
@@ -64,10 +68,11 @@ Preserve exact tokens in commands, interfaces, quoted output, and paths.
 
 ## Select detail by the reader's task
 
-Keep specification material out of the README unless the reader needs it to choose or complete a task taught there.
-A README introduces use; it is not the canonical home for exhaustive schemas, algorithm rules, internal invariants, report-field catalogs, or acceptance protocols.
-For each such block, identify the reader decision or action it enables.
-If it only defines the implementation or an exact contract, link to its inspected specification, reference, or code owner instead.
+Select technical detail by what the newcomer needs to understand, choose, or do.
+Introduce project-specific relationships before relying on them.
+Link to the canonical owners of exhaustive schemas, algorithm rules, internal invariants, report-field catalogs, and acceptance protocols rather than reproducing them without a reader need.
+For each such block, identify the understanding, choice, or action it enables.
+If it only catalogs implementation details or exact contracts without developing that understanding, link to its inspected specification, reference, or code owner instead.
 Putting task-oriented headings above a specification does not make it a usage guide.
 
 Keep the minimum operational detail needed for the task, including prerequisites, important defaults, failure recovery, and warnings at the point of action.
@@ -100,7 +105,7 @@ Keep repository names, filenames, and other identifiers consistent across relate
 
 ## Read the whole result, then follow its links
 
-Deliver the complete README without placeholders or process commentary.
+Deliver the complete document without placeholders or process commentary.
 Read through the ending and retained reference sections.
 Compare the reading with your intentions: what can the reader now explain, choose, or do?
 How does each section contribute, and where does the reader need more development or a clearer connection?
@@ -110,9 +115,9 @@ Cut repeated explanations and revise awkward or delayed relationships so the pro
 The [shared editorial pass](../holistic-writing/references/editorial-pass.md) can guide this reading without restarting the task.
 Use the [documentation reference](../holistic-writing/references/documentation.md) for documentation-specific checks and `tighten-prose` for local polish.
 
-Judge the README before borrowing explanations from linked pages.
+Judge the document before borrowing explanations from linked pages.
 For optional source-blind review, supply it without the source or drafting rationale.
 Then inspect links relevant to the selected use or changed documentation, judging each page by its task.
-Report README prose findings separately from supporting-page and navigation findings, not as a combined score.
-Report unread material, unresolved facts, and unperformed checks separately from the README.
+Report prose findings for the document separately from supporting-page and navigation findings, not as a combined score.
+Report unread material, unresolved facts, and unperformed checks separately from the reviewed document.
 Prose review does not establish rendering, working links, or product behavior.

@@ -29,4 +29,5 @@ These routes apply to prose-only work; they do not require a coding workflow or 
 
 For documentation-specific forms, prerequisites, commands, and reader workflows, read the [documentation checks](references/documentation.md).
 For placement alone, use [documentation placement](../references/documentation-placement.md).
-An introductory README belongs to `readme-writing`; existing page splits, renames, and navigation belong to `reorganize-docs`.
+Use `readme-writing` for documentation whose audience is new to the project, regardless of filename or stage of use.
+Existing page splits, renames, and navigation belong to `reorganize-docs`.

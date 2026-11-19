@@ -42,8 +42,8 @@ substantial revision, or editorial review, including documentation usability or
 correctness reviews and prose outside documentation.
 Its [documentation reference](../holistic-writing/references/documentation.md)
 covers documentation-specific reader tasks, forms, prerequisites, and workflow checks.
-Use `readme-writing` independently for an introductory README; no sequence of writing
-skills is required.
+Use `readme-writing` for documentation whose audience is new to the project, regardless of filename or stage of use.
+No sequence of writing skills is required.
 
 ## Documentation is for humans, skills are for agents
 
