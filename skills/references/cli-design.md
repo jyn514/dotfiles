@@ -1,9 +1,36 @@
 # CLI design
 
-Read when changing command parsing, help, output, noninteractive execution, or wrapper argument forwarding.
-Start from the command's supported interfaces and callers; preserve existing authorized semantics and the [compatibility policy](code-structure.md#compatibility).
+Read when designing or changing command structure, arguments, defaults, parsing, help, output, noninteractive execution, or wrapper argument forwarding.
+Start from the caller's tasks and the command's supported behavior.
+Distinguish behavior that must remain supported from interface details that may be redesigned, following the [compatibility policy](code-structure.md#compatibility).
 Use [language boundaries](language-boundaries.md) for accepted input, parser authority, argument interpretation, and encoding.
 Use [failures and recovery](failures-and-recovery.md#diagnosability) for failure evidence, partial progress, unknown outcomes, and safe recovery.
+
+## Design around tasks
+
+When creating or revising an interface, sketch representative invocations before specifying its options: the main task, a small custom input, and a relevant advanced operation.
+Use the tasks to choose commands, arguments, and defaults rather than exposing each implementation parameter as a required flag.
+A narrow parsing fix does not require redesigning the surrounding interface.
+
+Separate routine choices from overrides.
+Give stable project resources sensible defaults and keep their paths overridable.
+Require arguments for choices the caller needs to make, not facts the program already knows.
+Make the selected defaults discoverable in help.
+
+For an inherited or replacement interface, inspect actual scripts, documented uses, and independently maintained callers to establish the required compatibility.
+Do not treat every existing flag or required argument as a requirement for the new interface.
+Preserve the contracts those callers need; simplify details within the authorized change rather than copying the old invocation unexamined.
+
+Check each representative invocation from preparation through the result.
+What must someone locate, prepare, type, and understand to complete the task?
+Where setup is necessary, provide a repeatable setup operation using stable paths rather than documenting session-specific temporary files.
+Keep network access and other setup effects explicit; a shorter command does not justify hiding them in ordinary execution.
+
+For example, a dictionary generator might require paths for vocabulary, pronunciation data, rules, and an output directory.
+If the project supplies stable vocabulary and rules and most runs use the same pronunciation source, default those inputs while retaining explicit overrides.
+Then the routine invocation can be `cocoa-dictionary --output-dir target/my-dictionary`, and a small custom run adds `--words my-words.json`.
+If public pronunciation data needs downloading, make preparation a repeatable explicit operation rather than requiring the caller to reconstruct a download command and temporary path.
+The output directory remains an explicit choice in this example; another tool's tasks may justify a different default.
 
 ## Help before ordinary execution
 
