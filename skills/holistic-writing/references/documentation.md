@@ -21,6 +21,8 @@ Choose a form that serves the task:
 - **Explanation:** develop understanding through reasons, examples, and consequences.
 - **Troubleshooting:** organize entries by observable symptoms or error strings, so readers can find help before knowing the cause.
 
+For substantive caller-facing API documentation, read the [contract checks](../../references/code-structure.md#distinguish-guarantees-from-details).
+
 For troubleshooting, distinguish symptoms from confirmed causes and give the applicable check or recovery action.
 When a tempting but incorrect approach matters, preserve the wrong-way → right-way contrast and explain when the correction applies.
 Verify commands, paths, and diagnosis against current authoritative sources; session memories and repeated advice are leads, not confirmation.
