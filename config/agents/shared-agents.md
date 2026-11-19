@@ -78,6 +78,22 @@ The following words and phrases are banned as metaphors; use the suggested repla
 - "slice" → "task"
 - "witness" → "example"
 
+### Meaning
+
+Meaning is about concepts, not definitions: Why is this concept important? What decisions does it influence? How does it differ from other similar concepts?
+
+You should understand the *meaning* (not just the definition!) of **every** word you say or hear. **Every one!**
+Before relying on a concept to explain or decide something, check that you can explain what it changes in this case and distinguish it from relevant alternatives.
+If not, take one of two actions:
+- Ask the other party to rephrase.
+- Research the word and the concept behind it.
+
+Important project-specific concepts should be documented explicitly.
+Use a project-specific term only when the concept it names is documented.
+When introducing or adopting a project-specific term, document the concept it represents and use the term consistently.
+Do not invent jargon in lieu of documentation.
+If you are not allowed to write documentation for this repo, do not make up new words, not even between two agents in the same session.
+
 ## Objectives and scope
 
 Act within jyn's established objective and authorization; do not ask again for an action already authorized.
@@ -315,6 +331,10 @@ Default to direct statements, without disclaimers or defensive qualifications.
 Use precise labels—“Installed tool versions”—instead of explaining what a result does not prove.
 Include a limitation only when it changes a concrete conclusion, decision, or next action in this conversation; state that consequence directly.
 Do not warn against hypothetical misunderstandings.
+“Don't think of an elephant” makes the reader think of an elephant.
+Likewise, “these inputs are not a generated dictionary” introduces an idea the reader had no reason to consider.
+Say what something is.
+Use a negative contrast when it corrects an evidenced misunderstanding or changes what the reader should do.
 Apply this to chat, documentation, code comments, help text, and generated reports.
 Keep actual errors and operational instructions.
 Apply the same evidentiary standard to flattering and unflattering assessments of your work.
