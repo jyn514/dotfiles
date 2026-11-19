@@ -67,6 +67,8 @@ Recording a finding outside your assignment does not authorize investigating or 
 
 ## Retain your responsibility
 
+Strategists follow the one-off lifecycle in [Before assigning a worker](#before-assigning-a-worker), not the continuing ownership below.
+
 A report can finish an episode while leaving your assigned question with you.
 Revisit it when relevant evidence, implementation, or requirements change, within the same authority.
 Return missing evidence or an inadequate proposal to its owner instead of treating its first report as a transfer of responsibility.
@@ -110,6 +112,14 @@ When tools preserve authored work and reject a conflicting operation, accept a r
 Hold only the conflicting operation, release it with the resulting revision IDs, and continue independent authorized work.
 
 ## Before assigning a worker
+
+Strategists are categorically one-off.
+Give each strategist one assignment in a fresh conversation, without forking another agent's context.
+Never reuse, resume, or send follow-up questions to a strategist, even to clarify or revisit its original assignment.
+Every follow-up requires a new strategist with fresh context.
+Do not arrange callbacks or peer updates that reopen a strategist; send later evidence to its caller.
+Provide the relevant original request, evidence and prior findings in its assignment rather than continuing the previous conversation.
+This rule overrides continuing-ownership and worker-resumption guidance, including role-specific guidance.
 
 Start a fresh agent with fresh context for every new task.
 A different outcome or review question is a new task, even when the subsystem and artifacts are the same.

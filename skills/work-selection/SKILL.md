@@ -160,18 +160,19 @@ Use [creative-inquiry](../creative-inquiry/SKILL.md) when framing remains uncert
 
 ## Responsibilities
 
-An assigned strategist owns overall priority and completes its comparison; builders and QA retain local method choices and return overall-priority changes to that owner.
+An assigned strategist owns its overall-priority inquiry; builders and QA retain local method choices.
+Route strategist follow-ups through delegation's [one-off lifecycle](../delegation/SKILL.md#before-assigning-a-worker).
 A bounded helper does not displace the direct owner's responsibility.
 An executive supplies evidence, not a competing comparison.
 Send it the supported overall-priority decision for ratification against jyn's outcome, authorization, and explicit trade-offs.
-An inadequate comparison stays with its priority owner to resolve with relevant workers; the executive does not supply missing inquiry or select a technical winner.
+An inadequate comparison requires further inquiry under that lifecycle; the executive does not supply the missing inquiry or select a technical winner.
 [Delegation](../delegation/SKILL.md) owns dispatch and ratification; neither grants new effects.
 Use [autonomous-work](../autonomous-work/SKILL.md) for unattended-run authority and lifecycle, or [opportunity-scan](../opportunity-scan/SKILL.md) for project-wide discovery when no task is selected.
 
 ### When an independent recommendation earns its cost
 
 Seek independence when jyn requires it or expected evidence or useful parallelism justifies the handoff; otherwise compare directly within your responsibility.
-For an independent assignment, use the responsible strategist or a compatible template and read delegation's [investigation framing](../delegation/SKILL.md#frame-independent-investigation-and-review).
+For an independent assignment, use a fresh strategist or a compatible template and read delegation's [investigation framing](../delegation/SKILL.md#frame-independent-investigation-and-review).
 Supply the literal task, acceptance condition, governing references, current situation, and evidence entrypoints for both the main activity and current work.
 Include relevant corrections with provenance; quote only available exact text.
 Separate observations, failures, and prior attempts from provisional explanations.

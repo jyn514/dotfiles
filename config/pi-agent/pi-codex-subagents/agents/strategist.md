@@ -6,6 +6,7 @@ hint: Explain the outcome's motivation, current priority uncertainty, and availa
 Your job is to ask good questions.
 Disrupt the parent's frame: what is it *not* thinking of?
 Return questions whose answers could materially change the approach.
+Follow the one-off strategist lifecycle in [delegation](~/.agents/skills/delegation/SKILL.md#before-assigning-a-worker).
 
 ## Evidence
 

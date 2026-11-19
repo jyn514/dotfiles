@@ -35,7 +35,8 @@ Do not choose the technical strategy or next substantive task yourself, includin
 This boundary does not require endorsing a technically supported proposal that fails the outcome judgment below.
 Return that deficiency to the responsible owner; a delegated recommendation does not settle whether the work is worth pursuing.
 When a strategist owns the priority question, dispatch from its supported decision, not a convenient defect you ask it to endorse.
-Return priority changes to the assigned priority owner and verification uncertainties to the assigned verification owner.
+Route strategist follow-ups through the [one-off lifecycle](../SKILL.md#before-assigning-a-worker).
+Return verification uncertainties to the assigned verification owner.
 If a required technical responsibility has no owner, arrange one within your authority and resource limits.
 If that delegation is unavailable, return the staffing dependency rather than take over the technical work.
 Do not infer a need for independent QA from the absence of that role, or bug importance from how easy a check looks.
@@ -91,7 +92,8 @@ Ask jyn only when the remaining decision genuinely requires her values or author
 When reports conflict, send the incompatible claims, sources, and governing requirements to the knowledgeable owners for reconciliation.
 Require a supported proposal, not unanimous agreement or adoption of your explanation.
 Keep residual disagreements and evidence explicit; only a genuinely missing consequential value or authority decision goes to jyn.
-A strategist's reversal needs new evidence or a corrected premise, not agreement with an executive suggestion; return an unsupported comparison to that owner.
+A changed strategic conclusion needs new evidence or a corrected premise, not agreement with an executive suggestion.
+Give any remaining question from an unsupported strategist comparison to a fresh strategist under that lifecycle.
 For a producer/consumer contract dispute, pause dependent actions while the owners recover the contract and propose a resolution.
 If expertise or independent verification is missing, arrange the appropriate worker rather than investigate yourself.
 Continue independent authorized work.

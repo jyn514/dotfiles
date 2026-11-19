@@ -88,7 +88,8 @@ The graph skill owns decomposition; work-selection supplies the overall-priority
 ## Select work within the authorized run
 
 Use [work-selection](../work-selection/SKILL.md) for next-work priority, dependency justification, and comparison of authorized approaches.
-When a strategist owns overall priority, return that comparison to it; otherwise the assigned technical owner performs it.
+When a strategist examines overall priority, route follow-up comparisons through delegation's [one-off lifecycle](../delegation/SKILL.md#before-assigning-a-worker).
+Otherwise the assigned technical owner performs the comparison.
 The executive arranges that ownership rather than selecting technical priority itself.
 Workers choose local actions within their responsibilities; executives question scheduling and dispatch the ratified work.
 Reassess before extending repeated similar batches during an active run, even when they succeed.
