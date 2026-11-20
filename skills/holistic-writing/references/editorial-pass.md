@@ -41,6 +41,11 @@ Choose what background to assume and which relationships need attention.
 Let those choices determine the material, depth, and order; keep existing prose that serves that purpose.
 
 Make the title and opening intelligible without session context.
+For an essay or explanation, compare the opening with the example or argument that does most of the work.
+Does the opening establish the interest of this particular piece, or only the importance of its broad subject?
+If the body develops a more specific difficulty or observation, try introducing it earlier.
+See the [build-system opening comparison](reading-examples.md#introduce-the-particular-difficulty) for an opening that names the difficulty developed by the example.
+
 What needs explaining before this reader can follow the next passage?
 Define unfamiliar terms before consequential use, but keep deliberate concrete-to-general development.
 Needing a concept later does not mean its name must precede the example that teaches it.
@@ -114,7 +119,7 @@ Preserve effective voice, deliberate casing, fragments, idiom, and precise terms
 Voice also lives in what the author notices and connects, not only verbal personality.
 Apply vocabulary bans by meaning, not word matching.
 
-Prefer familiar words and active verbs with concrete subjects: “the launcher calls Python,” not “Python is called.”
+For wording and paragraph flow within a settled explanation, consult the [local techniques](../../tighten-prose/SKILL.md#local-techniques).
 Name actors when responsibility or evidence matters, without inventing one to eliminate passive voice.
 Distinguish a deliberately skipped check from one blocked by missing access or inputs.
 Give the reason when it changes the conclusion or next action.
@@ -145,6 +150,13 @@ For skills, preserve discovery triggers and check references and examples.
 
 Read the complete result as prose before defending individual edits, then compare it with the original.
 Restore anything that reads better there.
+
+Read the ending beside the earlier passage that most closely expresses the same thought.
+What does the ending add?
+If it only restates that passage, compare ending earlier with an ending that develops a consequence, application, or unresolved question.
+Keep a summary when gathering the preceding material serves the reader.
+See the [build-system ending comparison](reading-examples.md#compare-the-ending-with-the-earlier-explanation) for a conclusion that repeats an earlier explanation and an alternative that applies it.
+
 Skim headings and read changed sections independently: can readers still find their actions and constraints?
 Check terms, numbers, examples, and single or composed cases for consistency.
 For instructions, can the reader act without inventing policy?

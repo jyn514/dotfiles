@@ -20,6 +20,7 @@ Leave specialized decisions with their owners; prose work does not authorize sel
 
 ## Write and revise
 
+Reconsider the piece's selection, emphasis, order, and explanatory approach; individually polished passages may still need replacing.
 Read and follow the [shared editorial pass](references/editorial-pass.md).
 Dedicated skills also call that pass directly; do not restart this entry point when they have established the task.
 

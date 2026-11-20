@@ -22,8 +22,12 @@ These checks do not authorize changing command behavior or guarantees.
 1. Read the requested passage and enough surrounding text to understand its reader, intended voice, and role.
    Do not expand a local request into a document-wide rewrite.
 2. Improve the wording and cadence; remove repetition, vague phrasing, and canned rhetoric where they weaken the passage.
+   For individually clear sentences that form a difficult paragraph, [follow the paragraph's thread](#follow-the-paragraphs-thread).
+   For an important word that feels approximate or merely adequate, [explore its meanings](#explore-an-adequate-word).
+   For a sentence that sounds like a maxim, insight, or takeaway, use the [paraphrase test](#test-apparent-takeaways).
    Join, split, or rewrite sentences when they read better, not merely to shorten them.
-   Avoid [telegraphic compression](../holistic-writing/references/editorial-pass.md#3-revise-then-cut) that leaves necessary relationships implicit.
+   Prefer familiar words and verbs that name the action.
+   Avoid [telegraphic compression](../holistic-writing/references/reading-examples.md#compression-can-hide-the-condition-and-actor) that leaves necessary relationships implicit.
    Preserve useful emphasis, precise domain terms, deliberate casing, fragments, and idiom.
    Apply vocabulary bans by meaning rather than word matching.
    When a sentence hides an action in a noun, try naming who does what.
@@ -43,6 +47,32 @@ These checks do not authorize changing command behavior or guarantees.
 If the problem requires broader content changes, reorganization, or a developed explanation, flag the broader work rather than trying to solve it through wording alone.
 Use a dedicated skill when it owns the requested work; otherwise use `holistic-writing`.
 Do not claim the whole artifact has passed editorial review.
+
+## Local techniques
+
+### Follow the paragraph's thread
+
+When sentences are individually clear but the paragraph is difficult to follow, underline their openings and inspect the sequence of subjects.
+What does each sentence pick up from the preceding one, and what does it introduce?
+Try placing the connection near the beginning and the important new information at the sentence's grammatical completion.
+Compare the resulting paragraph with the original; do not impose this order where another progression works better.
+Choose subject and voice partly by what the reader is already following.
+Passive voice can preserve that connection; changing to active voice does not automatically improve the passage.
+See the [early-cutoff comparison](../holistic-writing/references/reading-examples.md#follow-the-unchanged-output) for a paragraph that follows the output from one sentence to the next.
+
+### Explore an adequate word
+
+When an important word feels approximate or merely adequate, consult its dictionary definitions rather than just a synonym list.
+Use the meanings to explore a better word or phrase, then compare the alternatives in context.
+Keep the original when it does more; definitions can inform figurative wording without forbidding it.
+See the [dictionary keepers](../holistic-writing/references/reading-examples.md#keep-words-that-earn-their-place) for two lookups that support leaving the wording alone.
+
+### Test apparent takeaways
+
+When a sentence sounds like a maxim, insight, or takeaway, restate it in plain, literal words.
+Does it explain something, or merely give the preceding material the sound of a conclusion?
+If its contribution disappears in paraphrase, compare the passage without it.
+See the [caching-paragraph comparison](../holistic-writing/references/reading-examples.md#paraphrase-the-takeaway) for a fluent sentence whose apparent insight disappears when restated.
 
 ## Example: name the distinction directly
 

@@ -395,6 +395,133 @@ An unresolved contradiction that changes how callers use an interface needs to r
 A request for a bug-compatible replacement can require the exact accidental behavior in a characterization report.
 Here, the requested specification did not require an investigation narrative or preservation of defects.
 
+## A polished takeaway and ending can repeat what the reader already knows
+
+This agent-written explainer concerns a hypothetical application whose help text is converted into generated source and compiled into an executable.
+The build fails to regenerate the source after a text edit because that dependency is missing.
+The comparisons apply the paraphrase test and ending advice in Stephanie Zinn's [Habits of AI writing, and what to do about them](https://a16zfrontier.com/posts/article/ai-writing-hallmarks-for-founders/).
+
+### Paraphrase the takeaway
+
+The explainer compares the cost of checking cached results with the cost of recomputing them:
+
+> Tracking dependencies and checking cached results take time too.
+> For an expensive compilation, even considerable bookkeeping can be cheaper than running the compiler again.
+> For a calculation as small as adding two cells, the bookkeeping can cost more than the work it saves.
+> Choosing what to cache means deciding which work is worth avoiding.
+
+**A reading that accepts the fluency:** the last sentence gives the examples a concise general conclusion.
+
+**A plain paraphrase:** cache the work worth caching.
+
+The preceding comparison already explains when caching pays off.
+The final sentence sounds like a further insight but adds no criterion for choosing what to cache.
+End the paragraph after the two-cell calculation; the concrete comparison has done the work.
+The paraphrase is a way to inspect the thought, not replacement wording that must appear in the prose.
+
+### Compare the ending with the earlier explanation
+
+The help-screen example already established:
+
+> The build knew that the executable depended on the generated source, but not that the generated source depended on the text file.
+> It could rebuild the application from scratch; it couldn't correctly rebuild it after an edit.
+
+The explainer later ends:
+
+> A clean build throws away the old answers and asks every question again.
+> When it succeeds, it tells you that the commands can produce the right result.
+> The broken incremental build is telling you something else.
+> The commands work; the rules for deciding when to run them are incomplete.
+
+**A reading that accepts the ending in isolation:** the distinction between working commands and incomplete dependency rules is clear and useful.
+
+**A reading that compares the passages:** the earlier example has already made that distinction.
+The ending repeats its lesson rather than giving the reader something further to do or consider.
+One replacement applies the explanation:
+
+> After recording the missing dependency, fix another typo and rebuild without deleting anything.
+> The updated help text should reach the executable without a clean build.
+
+The replacement uses the same example to show how to exercise the repaired dependency.
+It does not establish that every ending needs an instruction.
+A summary can help readers gather a long argument, and a return to an earlier passage can change its meaning or emotional effect.
+Here, the repeated distinction does neither.
+
+## Three methods applied to a build-system explainer
+
+These passages come from the same agent-written explainer as the caching and ending comparisons above.
+The first two decisions improve an established passage; the third reconsiders what the opening promises about the piece as a whole.
+
+### Follow the unchanged output
+
+The original early-cutoff paragraph explains why a changed generator need not force recompilation:
+
+> Now suppose you change the generator itself, but its output happens to stay identical.
+> Perhaps you improved an error message that this input never triggers.
+> The generator has to run before the build system can discover that its output is unchanged.
+> The compiler's input hasn't changed, so it has no new work to do.
+> By comparing the regenerated output with the old one, the build system can skip compilation.
+> This is called early cutoff.
+
+The sentences are individually clear, but the explanation moves between the generator, its output, the compiler's input, and the build system.
+The reader has to connect those different descriptions of the same generated source.
+A local revision follows that source through the steps:
+
+> Now suppose you improve an error message in the generator.
+> The message never appears with this input, so running the generator produces the same source code as before.
+> The build system can compare that source with the old version.
+> If they match, the compiler's input hasn't changed, so compilation can be skipped.
+> This is called early cutoff.
+
+The sequence is error message, unchanged source, comparison, then skipped compilation.
+Each sentence takes up something the preceding one introduced.
+The revision keeps the passage's purpose and mechanism while replacing a general hypothetical change with the concrete change already supplied.
+The final clause of the fourth sentence puts the consequence, skipped compilation, where the sentence completes.
+This applies the information-order advice in Gopen and Swan's [The Science of Scientific Writing](https://www.gatsby.ucl.ac.uk/~pel/misc/gopen_swan.pdf).
+Exercises C–E in Norman Ramsey's [Teaching Technical Writing Using the Engineering Method](https://www.cs.tufts.edu/~nr/pubs/eng.pdf) turn that advice into ways to inspect familiar and new information and sentence openings.
+
+### Keep words that earn their place
+
+John McPhee's [Draft No. 4](https://www.newyorker.com/magazine/2013/04/29/draft-no-4) describes using dictionary definitions to explore alternatives to adequate words, sometimes finding a phrase rather than a synonym.
+A lookup can also support keeping the original.
+
+The explainer uses *stale* for an output that no longer reflects its inputs.
+The computing sense of [stale](https://en.wiktionary.org/wiki/stale) concerns data being out of date or unsynchronized with the newest copy.
+The word expresses the relation compactly without requiring specialized vocabulary.
+Replacing it with a longer explanation at each occurrence would add little.
+
+Another passage reads:
+
+> A shell command is less forthcoming.
+> It can read a file, an environment variable, or the contents of a directory without telling the build system.
+
+[Forthcoming](https://en.wiktionary.org/wiki/forthcoming) can describe willingness to cooperate or provide information.
+The first sentence lightly treats the command as an uncooperative participant; the next states the actual behavior.
+Replacing it with “shell commands have implicit dependencies” would lose the joke without adding an explanation.
+The definitions help assess the choices; they do not require literal wording or a replacement after every lookup.
+
+### Introduce the particular difficulty
+
+The explainer opens by showing that a shell script can run every command in order on a first build.
+Its next paragraph asks:
+
+> The difference appears when you change one file.
+> You want the new result, but you would rather not pay for all the work again.
+> Some of the old results are still good.
+> Which ones?
+
+This establishes the broad efficiency question.
+The help-screen example then develops a particular difficulty: the build finishes successfully but leaves the old typo in the application because a dependency is missing.
+The opening can bring that difficulty forward:
+
+> On the next build, you can save time by leaving some commands out.
+> Leave out the wrong one, and a successful build can produce an out-of-date application.
+
+The revision identifies why this piece is worth following, beyond the general usefulness of avoiding repeated work.
+It applies the distinction in Harvard College Writing Center's [Introductions](https://writingcenter.fas.harvard.edu/introductions) between a subject's broad importance and the interest of a particular essay.
+The choice requires reading the body, not merely polishing the opening in isolation.
+It does not require manufacturing suspense or making an instruction manual begin with a puzzle.
+
 ## Smaller revision exercises
 
 These exercises use invented examples.
