@@ -45,7 +45,16 @@ covers documentation-specific reader tasks, forms, prerequisites, and workflow c
 Use `readme-writing` independently for an introductory README; no sequence of writing
 skills is required.
 
-## Keep session state out of maintained documentation
+## Documentation is for humans, skills are for agents
+
+Keep project policies in human-facing documentation.
+Keep procedures in `AGENTS.md`, skills, or skill references.
+Reuse existing supported commands or scripts for human-executed procedures.
+Creating missing automation requires implementation authorization.
+Document an overview of what the command or script does and why.
+If the procedure cannot be scripted, use `ask_user` to ask what to do.
+
+### Keep session state out of maintained documentation
 
 Document reusable behavior, current contracts, adopted decisions and their rationale in impersonal terms.
 Describe the resulting rule, not who approved it or the conversation that selected it.
@@ -72,5 +81,5 @@ Try to keep those source lines under 150 columns wide.
 ## Agent instruction files
 
 Treat `AGENTS.md` as an early routing and correction layer.
-Include only rules that always apply within its scope, routes to canonical task documentation,
-and constraints that must change the agent's plan before further work.
+Keep agent operating instructions, task routes, and execution constraints here.
+Link to canonical project policies instead of copying them into agent instructions.
