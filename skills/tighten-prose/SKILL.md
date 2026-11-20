@@ -26,6 +26,11 @@ These checks do not authorize changing command behavior or guarantees.
    Avoid [telegraphic compression](../holistic-writing/references/editorial-pass.md#3-revise-then-cut) that leaves necessary relationships implicit.
    Preserve useful emphasis, precise domain terms, deliberate casing, fragments, and idiom.
    Apply vocabulary bans by meaning rather than word matching.
+   When a sentence hides an action in a noun, try naming who does what.
+   Keep the noun form when it provides useful emphasis or names an established concept.
+   For example, “The migration took twelve minutes” keeps attention on the migration's duration rather than who performed it.
+   Unpack stacked nouns and unfamiliar word combinations when readers must guess how their parts relate.
+   Preserve established technical terms; flag missing meaning rather than inventing a relationship.
    Distinguish timing (for example, “while” or “after”) from cause (“because,” “causes,” or “therefore”).
    When evidence establishes causation, name the action and consequence rather than leaving their relationship implicit in temporal wording.
    Do not infer causation from sequence or coincidence alone.

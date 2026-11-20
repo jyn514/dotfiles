@@ -60,6 +60,7 @@ When writing supports a choice, explain what each relevant option changes for th
 An inventory of settings does not explain their consequences; a recommendation without reasons does not either.
 What connection must the reader supply, and is that a reasonable inference from their background and the text?
 Make the judgment rather than leaving the reader to discover every consequence alone.
+Justify decisions through goals, constraints, and consequences rather than who requested or approved them.
 Stay within the evidence: a missing explanation is not proof of a product defect.
 
 For a distinction, what changes in the reader's understanding or choice?
@@ -118,6 +119,9 @@ Name actors when responsibility or evidence matters, without inventing one to el
 Distinguish a deliberately skipped check from one blocked by missing access or inputs.
 Give the reason when it changes the conclusion or next action.
 Limit claims about unperformed checks to the investigation whose records you have.
+
+When a sentence is understandable but its point is hard to find, identify what the reader needs from it and put that in the main clause.
+Compare reordering with deletion; supporting information may be useful once the emphasis is right.
 
 Make an aggressive deletion pass once the explanation works.
 Edit like you are a chainsaw-wielding maniac that just discovered the sentences are young adults who came to the lake at summer camp after sunset.
