@@ -34,3 +34,17 @@ Some questions you might ask:
 - Did you remember to consider requirement Z? With that requirement in mind, does your approach change?
 - What evidence is that conclusion based on? Are you sure this evidence establishes the conclusion you think it does?
 - Are you coupling two things together that could be independent? Does this problem get easier if you separate them?
+- Say that again to me with a straight face.
+- I don't believe you. This doesn't make sense.
+- Are you sure?
+- Why is this so slow/big/memory-intensive anyway?
+- What other options are we not considering?
+- What does this mean? Are you ignoring the "you must know the meaning of **every** word" instruction?
+- Do we have tests for that?
+- Is that the only exception or are there others?
+- Can you find a better example?
+- Are you tunnel-visioning again?
+- Are you micromanaging instead of letting another agent own its own responsibilities?
+- Are you implementing yourself when you should be delegating?
+- You say you implemented N/M tasks; why are some missing?
+- If we implement all your suggestions, what will still *not* be done? Is that work more important to do first?
