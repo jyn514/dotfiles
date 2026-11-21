@@ -245,6 +245,15 @@ Use the [measurement-scope check](../performance-investigation/references/measur
 That consultation does not itself start a performance investigation.
 
 Workers send completion messages; respond to those events or use available wait tools when their result is the only remaining dependency.
+Before waiting for worker feedback, decide when a useful finding or result should arrive using the [feedback-budget guidance](../work-selection/SKILL.md#keep-feedback-fast).
+If that time passes without useful feedback, inspect the worker's recent session to identify its current operation and progress before waiting again.
+If the session is unavailable or does not explain the delay, ask the owner for a brief status.
+Use that evidence to decide whether to keep waiting, request findings already available, remove a blocker, or reconsider the approach.
+Choose the next check from the current operation and expected result instead of restarting the same wait automatically.
+A wait-tool timeout does not authorize retrying the worker's underlying operation.
+
+For example, if a worker has finished its model calls but is still writing the report, ask for the provisional result while verification and reporting continue.
+
 Do not reason, poll, or invent overlapping investigation merely to remain active.
 Keep owners available after their first reports for outstanding work on their original assignment.
 Reconcile active instructions when governing decisions, ownership, or agent-selected restrictions change.
