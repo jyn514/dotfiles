@@ -23,7 +23,13 @@ A request such as “anything we forgot?” or “do you suggest changes to docs
 Reuse an existing completion audit if its requirements, implementation, and validation conditions are unchanged.
 If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
 
-For work not covered by an existing audit, use [completion review](../completion-audit/SKILL.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
+Audit every session-owned change, including committed changes, in the context of the finished result.
+Check separately whether it helps the intended use, agrees with authoritative sources and actual system behavior, and follows applicable project rules.
+Inspect what the intended consumer encounters, not just the edited lines or test results.
+
+For work not covered by an existing audit, use [completion review](../completion-audit/SKILL.md) for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit.
+Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it.
+Build a compact ledger covering:
 
 - each explicit requirement and later correction;
 - the final implementation or document state;
