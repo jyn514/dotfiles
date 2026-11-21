@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create or evaluate portable agent skills, including existing or proposed discovery triggers, scope, workflows, and supporting package structure. Use for substantive skill changes, skill critique, replacing instructions with a skill route, changing when a caller invokes a skill, or diagnosing ambiguous guidance, bad routing, and missing decision rules. Not for an isolated missed instruction or localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. Use holistic-writing for whole-artifact editorial review and tighten-prose for bounded local polishing.
+description: Create or evaluate portable agent skills, including existing or proposed discovery triggers, scope, workflows, and supporting package structure. Use before adding, removing, or changing instructions that alter when a skill loads or what an agent is expected to do, even for a one-line edit. Also use when diagnosing ambiguous guidance, bad routing, or missing decision rules. Not for wording, formatting, paragraph moves, or link fixes that preserve both discovery and the actions an agent is instructed to take, or for an isolated failure to follow an existing instruction. Use holistic-writing for whole-artifact editorial review and tighten-prose for bounded local polishing.
 ---
 
 # Skill authoring
