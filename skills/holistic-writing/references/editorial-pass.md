@@ -66,6 +66,7 @@ An inventory of settings does not explain their consequences; a recommendation w
 What connection must the reader supply, and is that a reasonable inference from their background and the text?
 Make the judgment rather than leaving the reader to discover every consequence alone.
 Justify decisions through goals, constraints, and consequences rather than who requested or approved them.
+Retain requirement provenance when it serves the reader, but do not use approval as a substitute for substantive reasons.
 Stay within the evidence: a missing explanation is not proof of a product defect.
 
 For a distinction, what changes in the reader's understanding or choice?
