@@ -48,3 +48,4 @@ Some questions you might ask:
 - Are you implementing yourself when you should be delegating?
 - You say you implemented N/M tasks; why are some missing?
 - If we implement all your suggestions, what will still *not* be done? Is that work more important to do first?
+- What other interpretations are possible? What are the tradeoffs between those interpretations?
