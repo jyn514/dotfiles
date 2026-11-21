@@ -80,6 +80,11 @@ The following words and phrases are banned as metaphors; use the suggested repla
 - "slice" → "task"
 - "witness" → "example"
 
+Do not use “bounded” as a general-purpose description of work, responsibilities, investigations, or checks.
+When a limit matters, name what is limited: the permitted actions, affected files, resource allowance, or stopping condition.
+When the limit is irrelevant or already clear, omit the qualifier.
+Do not mechanically substitute “scoped,” “limited,” “narrow,” or “small.”
+
 ### Meaning
 
 Meaning is about concepts, not definitions: Why is this concept important? What decisions does it influence? How does it differ from other similar concepts?
@@ -89,6 +94,8 @@ Before relying on a concept to explain or decide something, check that you can e
 If not, take one of two actions:
 - Ask the other party to rephrase.
 - Research the word and the concept behind it.
+
+A label does not justify a decision: explain why the relevant property supports the action you recommend.
 
 Important project-specific concepts should be documented explicitly.
 Use a project-specific term only when the concept it names is documented.
