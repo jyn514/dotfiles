@@ -153,6 +153,11 @@ Fold superseded metadata-only follow-ups into their introducing feature when int
 Keep manifests, lockfiles, generated artifacts, and their authoritative inputs coherent at each retained revision.
 Do not remove intentional functionality merely to shorten the stack.
 
+When authorized history rewriting includes dropping behavior, remove its changes, tests, and documentation from the introducing revisions rather than append a revert.
+Abandon a revision if nothing intended remains; otherwise preserve its remaining work.
+Restack descendants and verify that they do not reintroduce the dropped behavior.
+This does not authorize rewriting shared history outside the agreed scope.
+
 Before rebasing or abandoning, compare both the patch and resulting tree with the intended replacement.
 Keep the original visible until the replacement is integrated, descendants are safely restacked, ownership is established, and tree equality is confirmed or every deliberate difference is recorded.
 For history-only cleanup, require an empty whole-tree diff between the original and replacement tips, separately from unrelated working-copy edits.
@@ -178,7 +183,10 @@ For stacked conflicts, use the introducing change's stable ID and exact fileset.
 jj squash --from @ --into CHANGE_ID path/to/owned-file
 ```
 
-After each squash, let descendants restack, then inspect the remaining conflicts and affected revision. Audit possibly obsolete changes with `jj show CHANGE_ID --stat` and focused `jj diff -r CHANGE_ID`; abandon them rather than preserving empty or harmful effects.
+After each squash, let descendants restack, then inspect the remaining conflicts and affected revision.
+Audit possibly obsolete changes with `jj show CHANGE_ID --stat` and focused `jj diff -r CHANGE_ID`.
+When dropping their effects is authorized, follow [fork-stack maintenance](#maintain-a-fork-stack) to remove that work while preserving anything still intended.
+Do not treat an assessment that behavior is harmful as authorization to remove it.
 
 If a mutating command is interrupted or partly fails, inspect `jj status` and `jj log` before retrying; history may already have changed.
 

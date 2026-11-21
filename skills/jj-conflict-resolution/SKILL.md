@@ -62,6 +62,19 @@ Marker order may vary. Parse both forms:
 
 Marker lengths may exceed seven characters. Do not identify sections by fixed-width markers.
 
+## Separate parallel resolution from history integration
+
+For a stack with several conflicts, distinguish conflicts each revision introduces from conflicts inherited from ancestors.
+Resolving an ancestor can eliminate an inherited conflict; do not assign both as independent work.
+Parallelize investigation and patch preparation when neither resolution depends on a decision made by the other and the overlap saves more time than coordination costs.
+Different files alone do not establish independence: a caller resolution depends on the chosen function signature even when they occupy separate files.
+Settle shared contracts before parallel preparation that relies on them.
+
+Prepare independent resolutions against fixed revisions in separate disposable workspaces or as standalone patches.
+Keep rewrites of overlapping ancestor/descendant histories with one integration owner: squashing into an ancestor also rewrites descendants.
+Integrate in dependency order, then inspect restacked descendants before applying prepared resolutions.
+Recheck both the proposal's assumptions and the combined behavior; an earlier resolution may have changed the conflict or eliminated it.
+
 ## Resolve one file
 
 For each conflict, record:
@@ -86,6 +99,13 @@ Preserve the destination's control flow and helper placement unless a required f
 Do not reverse that ordering just to preserve an old race fixture.
 Test the required state, not merely the callback mechanism, using the [testing guidance on concurrent lifecycles](../references/testing.md#test-failures-and-concurrent-lifecycles).
 If preserving the fork contract requires changing destination policy, ask before dependent edits rather than treating the old test setup as authority.
+
+When the sides promise different behavior, identify what each behavior gives its callers, which governing requirements establish it, and its costs.
+Tests establish existing behavior; they do not by themselves establish that preserving it serves the requested outcome.
+If preservation imposes a material cost without an established caller need, explain the tradeoff and obtain authorization before dropping the behavior.
+For example, a test may require cancellation to wait for resource cleanup even when callers need prompt cancellation and cleanup can continue in the background.
+Check whether any caller needs cleanup to finish before cancellation returns rather than treating the test's ordering as sufficient justification.
+Use [jj-workflow](../jj-workflow/SKILL.md#maintain-a-fork-stack) to remove authorized dropped work from the candidate history.
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.
 
