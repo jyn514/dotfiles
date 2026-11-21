@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { waitWithSteering } from "./wait.js";
+import subagentExtension from "./implementation.js";
 
 function untilAborted(signal: AbortSignal): Promise<never> {
   return new Promise((_resolve, reject) => {
@@ -9,7 +10,86 @@ function untilAborted(signal: AbortSignal): Promise<never> {
   });
 }
 
-describe("steering-interruptible waits", () => {
+describe("wait_agent registration", () => {
+  test("only direct interrupted results request follow-up delivery", async () => {
+    const tools = new Map<string, any>();
+    const handlers = new Map<string, Function>();
+    const pi: any = {
+      events: { on() {}, emit() {} },
+      on(name: string, handler: Function) { handlers.set(name, handler); },
+      registerTool(tool: any) { tools.set(tool.name, tool); },
+      registerMessageRenderer() {}, registerCommand() {}, registerShortcut() {},
+    };
+    subagentExtension(pi);
+    const wait = tools.get("wait_agent");
+    const context = { sessionManager: { getSessionId: () => "wait-test" }, isDirectToolCall: true,
+      hasPendingSteeringMessages: () => false, hasPendingMessages: () => true };
+    try {
+      const direct = await wait.execute("direct", {}, undefined, undefined, context);
+      expect(direct.yieldToFollowUps).toBe(true);
+      expect(JSON.parse(direct.content[0].text).reason).toBe("follow-up");
+      const steering = await wait.execute("steering", {}, undefined, undefined, { ...context, hasPendingSteeringMessages: () => true });
+      expect(steering.yieldToFollowUps).toBe(true);
+      expect(JSON.parse(steering.content[0].text).reason).toBe("steering");
+      const nested = await wait.execute("nested", {}, undefined, undefined, { ...context, isDirectToolCall: false, hasPendingSteeringMessages: () => true });
+      expect(nested.yieldToFollowUps).toBeUndefined();
+      const completed = await wait.execute("completed", { until: "all" }, undefined, undefined, { ...context, hasPendingMessages: () => false });
+      expect(JSON.parse(completed.content[0].text).reason).toBe("completion");
+      expect(completed.yieldToFollowUps).toBeUndefined();
+      const timeout = await wait.execute("timeout", { timeout_seconds: 0.01 }, undefined, undefined, { ...context, hasPendingMessages: () => false });
+      expect(JSON.parse(timeout.content[0].text).reason).toBe("timeout");
+      expect(timeout.yieldToFollowUps).toBeUndefined();
+      await expect(wait.execute("error", { targets: ["missing"] }, undefined, undefined, { ...context, hasPendingMessages: () => false })).rejects.toThrow("Agent not found");
+    } finally {
+      await handlers.get("session_shutdown")?.({ reason: "shutdown" }, context);
+    }
+  });
+});
+
+describe("interruptible waits", () => {
+  test("direct waits return immediately for a prequeued follow-up", async () => {
+    let called = false;
+    const result = await waitWithSteering({ isDirectToolCall: true, hasPendingSteeringMessages: () => false, hasPendingMessages: () => true }, async () => { called = true; });
+    expect(result).toMatchObject({ interrupted: true, reason: "follow-up" });
+    expect(called).toBe(false);
+  });
+
+  test("a newly queued follow-up cancels a direct wait without cancelling its parent", async () => {
+    let queued = false;
+    const parent = new AbortController();
+    const result = waitWithSteering({ isDirectToolCall: true, hasPendingSteeringMessages: () => false, hasPendingMessages: () => queued }, untilAborted, parent.signal);
+    queued = true;
+    expect(await result).toMatchObject({ reason: "follow-up" });
+    expect(parent.signal.aborted).toBe(false);
+  });
+
+  test("a manager completion claimed during follow-up cancellation is not lost", async () => {
+    let queued = false;
+    const completion = { message: "finished", event: { id: "claimed" } };
+    const result = waitWithSteering({ isDirectToolCall: true, hasPendingSteeringMessages: () => false, hasPendingMessages: () => queued }, async signal => {
+      try { await untilAborted(signal); } catch { return completion; }
+    });
+    queued = true;
+    expect(await result).toBe(completion);
+  });
+
+  test("nested waits ignore follow-ups and still return the manager's completion", async () => {
+    const completion = { message: "finished" };
+    const result = await waitWithSteering({ isDirectToolCall: false, hasPendingSteeringMessages: () => false, hasPendingMessages: () => true }, async () => {
+      await delay(80);
+      return completion;
+    });
+    expect(result).toBe(completion);
+  });
+
+  test("steering takes precedence when both queues contain input", async () => {
+    const result = await waitWithSteering({ isDirectToolCall: true, hasPendingSteeringMessages: () => true, hasPendingMessages: () => true }, untilAborted);
+    expect(result).toMatchObject({ reason: "steering" });
+  });
+
+  test("direct waits require the all-input predicate", async () => {
+    await expect(waitWithSteering({ isDirectToolCall: true, hasPendingSteeringMessages: () => false }, untilAborted)).rejects.toThrow("hasPendingMessages() support");
+  });
   test("requires an explicit core capability rather than trusting an older all-input predicate", async () => {
     let called = false;
     await expect(waitWithSteering({}, async () => { called = true; })).rejects.toThrow("hasPendingSteeringMessages() support");

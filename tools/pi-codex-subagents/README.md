@@ -43,7 +43,7 @@ Children still use the resource-discovery rules described under [Agent templates
 | Tool | Purpose |
 |---|---|
 | `spawn_agent` | Spawn a child Pi process, optionally from bounded native session history |
-| `wait_agent` | Wait for any selected completion (default) or all selected agents with `until: "all"`; queued steering returns early |
+| `wait_agent` | Wait for any selected completion (default) or all selected agents with `until: "all"`; queued input can return early |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
 | `read_agent_response` | Read an agent's latest final raw text response |
 | `steer_subagent` | Steer a running agent or start another turn when settled |
@@ -306,20 +306,21 @@ With `targets` omitted (or empty), `"any"` waits for the next owned completion; 
 An invalid `until` or non-positive or non-finite timeout fails before waiting, including when steering is queued.
 Omitting `timeout_seconds` leaves the wait unbounded; for example, `timeout_seconds: 900` waits up to 15 minutes.
 A timeout ends only the wait, not the child agents.
-Normal results identify `reason` as `completion`, `timeout`, or `steering`; a timeout includes pending selected task names in `pending`.
+Normal results identify `reason` as `completion`, `timeout`, `steering`, or `follow-up`; a timeout includes pending selected task names in `pending`.
 A paused group instead returns the existing `paused` result without consuming completions.
 For `until: "all"`, a timeout also returns already completed responses in `responses` and consumes those completions without duplicate notifications.
 Later completions arrive normally.
 
 The tool returns a normal `{ interrupted: true, message: "..." }` result when steering is already queued or arrives during the wait.
-User and custom messages both wake the wait; follow-up messages do not.
+A direct model-issued call also returns early for queued follow-ups; a call nested in codemode or another tool wakes only for steering.
+Steering takes priority when both kinds are queued.
 Interruption leaves the queued messages intact and does not stop the parent run or its child agents.
 If the manager has already returned a completion, the tool returns that completion rather than replacing it with an interruption.
-The parent processes steering after the enclosing tool batch finishes, so parallel sibling tools and surrounding codemode code can still delay delivery.
+The parent processes queued input after the enclosing tool batch finishes, so parallel sibling tools and surrounding codemode code can still delay delivery.
 
 Interruptible waits require Pi's `ExtensionContext.hasPendingSteeringMessages()` API.
-An older core produces an upgrade/restart error instead of silently missing custom messages or waking for follow-ups.
-Restart with the updated Pi core when deploying this extension change.
+Follow-up interruption also requires a Pi core supporting direct tool call identification and follow-up yielding; older cores retain steering-only waits.
+Restart with the updated Pi core and reload the extension to activate follow-up interruption.
 
 ## Peer conversations
 

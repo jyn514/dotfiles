@@ -570,7 +570,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
   pi.registerTool({
     name: "wait_agent",
     label: "Wait Agent",
-    description: "Wait for session-owned agents: until 'any' (default) returns one completion; until 'all' returns every selected agent's final response. Omit targets to use the current session's existing owned-agent selection. Use only when your next action depends on those responses; otherwise continue working and let completions arrive automatically. Queued steering or an optional timeout ends only the wait, without stopping child agents. The result identifies completion, steering, or timeout; timeout includes pending task names.",
+    description: "Wait for session-owned agents: until 'any' (default) returns one completion; until 'all' returns every selected agent's final response. Omit targets to use the current session's existing owned-agent selection. Use only when your next action depends on those responses; otherwise continue working and let completions arrive automatically. Queued steering, a follow-up during a direct call, or an optional timeout ends only the wait, without stopping child agents. Nested calls only wake for steering. The result identifies completion, steering, follow-up, or timeout; timeout includes pending task names.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Current-session-owned agent task names. Omit for the next owned completion ('any') or the session's remaining tracked agents ('all')." })),
       until: Type.Optional(StringEnum(["any", "all"], { description: "Return after any one target completes (default), or after all targets reach final status." })),
@@ -586,7 +586,10 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join(
             ? manager.waitAllAgents(parentSessionId(ctx), parseTargets(params.targets), waitSignal)
             : manager.waitAgent(parentSessionId(ctx), parseTargets(params.targets), waitSignal), signal, params.timeout_seconds);
         const reported = "reason" in result || ("paused" in result && result.paused) ? result : { ...result, reason: "completion" };
-        return boundedTextResult(JSON.stringify(reported, null, 2), { message: reported.message });
+        return {
+          ...boundedTextResult(JSON.stringify(reported, null, 2), { message: reported.message }),
+          ...(ctx.isDirectToolCall && "interrupted" in result && result.interrupted ? { yieldToFollowUps: true } : {}),
+        };
       } catch (error) {
         if (signal?.aborted) throw error;
         throw new Error(`wait_agent failed: ${error instanceof Error ? error.message : String(error)}`);
