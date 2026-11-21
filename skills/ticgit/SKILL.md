@@ -11,6 +11,16 @@ Use `--json` for programmatic queries and `--markdown` when the full ticket hist
 Use explicit ticket and writeup IDs; do not rely on current-ticket defaults.
 Native Markdown can suggest commands unavailable through the proxy; follow the supported workflows below instead.
 
+Select the fields needed for the question before displaying JSON results.
+For finding affected tickets, start with IDs, titles, and descriptions; omit comments.
+
+```sh
+ti list --search 'renderer' --json |
+  jq 'map({id, title, description})'
+```
+
+This filters the displayed output; `--json` still retrieves complete records.
+
 ## Inspect a ticket
 
 Start with the ticket's current description, not its full comment history.
