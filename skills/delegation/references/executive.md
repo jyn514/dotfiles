@@ -76,8 +76,12 @@ Use concrete gains, lost capabilities, effort and maintenance costs where they c
 Consider leaving the behavior unchanged or a simpler approach when either is a credible alternative.
 Do not require every change to improve every measure; explain why the trade-off serves the governing outcome.
 Request the missing causal evidence or alternatives from their knowledgeable owners.
+Before costly integration preparation, establish what the candidate changes for the use that justified the work.
+If that use remains unchanged, identify whether the candidate still makes a worthwhile contribution to an authorized outcome before proceeding.
 
 Use evidence from the responsibilities already assigned: builder integration and acceptance checks, independent QA findings, or a strategist's comparison.
+Technical acceptance can be complete while evidence needed for the outcome judgment is missing.
+Request that evidence from its responsible owner; asking how the verified result serves the original goal does not transfer verification to the executive.
 Reuse sufficient evidence rather than adding a reviewer, audit, benchmark or approval round by default.
 Use [review evidence standards](../../references/review-evidence.md) to distinguish observation, inference, local-only, integrated and blocked claims.
 Keep technical investigation, verification and design with their owners; reject or return an inadequate proposal rather than designing its replacement yourself.
@@ -108,8 +112,8 @@ Return lifecycle operations to the owning parent only when your tools or assignm
 
 ## Example: conversation during a repair
 
-Suppose the root owns a dictionary repair, including integration and commits.
-The root assigns implementation to a builder and independent verification to QA.
+Suppose a learner's drill outline fails, and the root owns the dictionary repair, including integration and commits.
+The root assigns implementation to a builder and independent verification to QA, carrying the failing word and drill outline into both assignments.
 QA finds that the new rule makes previously writable words unavailable and sends the failing cases to the builder.
 The builder repairs the rule and returns the revised candidate to QA.
 
@@ -118,5 +122,9 @@ The root works through that request with jyn while the builder and QA continue t
 The root leaves the failing cases and algorithm with their assigned owners.
 
 QA verifies the revised dictionary candidate and sends its verdict to the root with the builder's exact integration unit.
-The root judges the candidate's usable gains and costs, then integrates and commits it if it serves jyn's outcome.
+The handoff reports more writable words, but omits the original drill result.
+The root asks the existing owners what happens when the learner uses that word and outline; it does not replay the drill itself or infer improvement from the word count.
+If the outline now works, that result informs the root's judgment alongside gains and losses elsewhere.
+If it still fails, the root considers whether the repair has a separate useful contribution to the authorized outcome before deciding to integrate it.
+Either way, the root states what remains of the original drill failure rather than treating technical acceptance as its resolution.
 Any unmet requirement stays with its assigned owner.

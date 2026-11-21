@@ -150,6 +150,7 @@ When assigning archivist coverage, select the `archivist` template on Pi; on oth
 Split work only when independent execution saves time, independent evidence is needed, or ownership or capability constraints require it.
 Count the cost of producing, reading, and reconstructing context across the handoffs as well as the work that can overlap.
 Name each assignment's question or decision, usable output, evidence need, and stopping condition.
+When a concrete use or failure motivates the work, carry that case into the assignment so component responsibilities retain the reason for doing it.
 Distinct role names do not make two unbounded versions of the same inquiry independent.
 An intentionally independent check can revisit the same question; make its purpose explicit.
 
@@ -167,8 +168,10 @@ Keep implementation, integration, and intended-consumer checks assigned through 
 Keep coupled creation and integration coherent.
 When work passes to a separate integrator, agree at dispatch on an independently useful candidate they can integrate.
 The handoff identifies the exact candidate, any required verification verdict and its evidence, and the candidate's benefits, costs and remaining obligations.
+For a motivating use or failure carried into the assignment, explain what the candidate changes in that case and what remains unresolved.
+Component metrics support that account; they do not replace evidence about the motivating case.
 For overlapping edits, identify the included paths or hunks and any coupled changes, so unfinished work stays separate from the verified candidate.
-Use the normal handoff message to link existing issues and artifacts.
+Use the normal handoff message to link existing issues and artifacts; reuse existing evidence rather than creating a separate report or repeating checks.
 For coupled changes, name an integration owner and use the [shared-contract check](references/shared-contracts.md).
 Accountability does not require that agent to perform every task; separate files do not establish independence.
 Preserve required independent verification.
