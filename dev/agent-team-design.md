@@ -97,6 +97,8 @@ The executive's coordination does not take integration away from the builder.
 
 Use the [designer template](../config/pi-agent/pi-codex-subagents/agents/designer.md) when substantial unsettled human-facing work needs sustained ownership through changing commands, screens, terminology, examples, and documentation.
 The designer constructs and maintains a coherent account of how a person should understand and perform the activity.
+[UX design](../skills/ux-design/SKILL.md) owns the reusable method for developing that account; direct owners and builders can load it without assigning a designer.
+The role adds sustained responsibility and coordination, not a separate design procedure.
 It supplies concrete workflows, interaction alternatives, explanations, and their evidence—not another general usability verdict.
 Small or settled design remains builder work.
 A distinct artifact alone does not justify separation: the benefit is sustained attention to a coherent model while implementation changes.

@@ -102,6 +102,8 @@ The executive ratifies alignment with jyn's outcome and values or returns an ina
 It does not choose the technical winner, select the next substantive task, or investigate remaining uncertainty itself.
 The builder owns integration and ordinary consumer checks; QA owns independent verification.
 Builder creation includes design and explanation; small or settled design stays with it.
+[UX design](../../skills/ux-design/SKILL.md) supplies the method for unsettled human-facing choices to direct owners as well as assigned designers.
+[UI design](../../skills/ui-design/SKILL.md) owns concrete rendered interfaces and their verification; writing skills own developing the explanation.
 Assign a designer only for sustained ownership of a coherent interaction and learning model through changing human-facing artifacts.
 Designer is not a mandatory approver or another general usability reviewer, and its title supplies no user evidence or human expertise.
 QA checks the original activity and available observations rather than derive its entire oracle from a designer's proposal.

@@ -1,6 +1,6 @@
 ---
 name: ui-design
-description: "Design, implement, debug, or review frontend screens, interactions, and browser-rendered output. Use for UI/UX work and rendering or interaction verification, including server-rendered HTML, Markdown displays, and UI claims in completion audits or session closeout. Ground checks in real components, styles, fixtures, and supported viewports. Not for backend-only work, prose-only edits, or mechanical changes that require no rendered-behavior judgment. Review and mockup requests do not authorize production changes."
+description: "Design, implement, debug, or review concrete rendered interfaces and controls, including browser and terminal output. Use for layout, styling, mockups, and rendering or interaction verification, including server-rendered HTML, Markdown displays, and UI claims in completion audits or session closeout. Ground checks in real components, styles, fixtures, and supported viewports. Not for backend-only work, prose-only edits, or mechanical changes that require no rendered-behavior judgment. Review and mockup requests do not authorize production changes."
 license: MIT
 ---
 
@@ -72,7 +72,7 @@ For a typography-only change, a matched rendered comparison may suffice without 
 ## Verify the rendered result
 
 Choose cases from the task and affected contracts, not an arbitrary number of screenshots or a universal score.
-Inspect the result in a real browser when making claims about rendering or interaction.
+Inspect the result through the product's actual rendering surface: a browser for web interfaces, or a terminal or native TUI renderer for terminal interfaces.
 If that check is unavailable, identify what remains unverified rather than treating a source inspection as a rendered pass.
 
 Check the affected user path, including relevant loading, empty, error, success, and cancellation states.

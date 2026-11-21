@@ -55,9 +55,14 @@ Use it when one-time installation, recurring data refresh, publication, code upd
 It traces existing commands and state before adding deployment machinery; settled workflows only needing explanation belong to the writing skills.
 Architecture design handles structural or authority choices the operating workflow exposes, while new-tool development handles development stages.
 
-[UI design](ui-design/SKILL.md) designs or reviews frontend screens and interactions using the existing product and matched real-component comparisons.
+[UX design](ux-design/SKILL.md) works out how someone should understand and perform an activity.
+Use it when choices about workflow, information priority, grouping, terminology, feedback, or learning remain unsettled.
+It develops concrete alternatives from the activity and available evidence, whether the result is an interface, command workflow, or explanation.
+Direct owners and assigned designers use the same method; loading it does not require a separate agent.
+
+[UI design](ui-design/SKILL.md) designs and checks concrete rendered interfaces and controls using the existing product and matched real-component comparisons.
+It covers browser and terminal surfaces, styling, mockups, and rendered interaction checks.
 It distinguishes public guidance, human choices, observed behavior, product conventions, and unvalidated proposals.
-Use it for mockups, redesigns, and usability reviews, not trivial styling corrections or backend architecture.
 
 [Creative inquiry](creative-inquiry/SKILL.md) questions the framing of the task itself.
 Use it when exploring possibilities, examining assumptions, or asking whether the current approach solves the right problem.
