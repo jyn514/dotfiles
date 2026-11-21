@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, spyOn, test } from "bun:test";
-import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_COMPACTION_SETTINGS, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { listCuts, main, replayInput } from "../../dev/replay-compaction";
 import { COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
 import { checkpointText, COMPACTION_INSTRUCTIONS } from "../../config/pi-agent/pi-extensions/checkpoint-capture";
@@ -297,9 +297,8 @@ describe("compaction replay", () => {
       let options;
       const modelLimit = mode === "default" ? 999999 : 123;
       output = await main(args, async () => ({
-        find(provider, id) {
-          expect({ provider, id }).toEqual(COMPACTION_MODEL);
-          return { provider, id, maxTokens: modelLimit };
+        getAvailable() {
+          return [{ provider: "configured-test", id: COMPACTION_MODEL.id, maxTokens: modelLimit }];
         },
         async complete(model, context, settings) {
           request = context;
@@ -322,6 +321,8 @@ describe("compaction replay", () => {
       expect(metadata.input.sha256).toBe(digest(readFileSync(join(output, "input.txt"), "utf8")));
       expect(metadata.instructions).toEqual({ path: mode === "default" ? COMPACTION_INSTRUCTIONS : instructionsPath, sha256: digest(expected) });
       expect(metadata.settings).toEqual({ maxTokens: options.maxTokens, reasoningEffort: options.reasoningEffort, cacheRetention: options.cacheRetention, timeoutMs: 180000 });
+      expect(metadata.model).toEqual({ provider: "configured-test", id: COMPACTION_MODEL.id });
+      expect(metadata.requestedModel).toEqual({ provider: null, id: COMPACTION_MODEL.id });
       expect(readFileSync(path, "utf8")).toBe(source);
     } finally {
       log.mockRestore(); error.mockRestore();
@@ -330,8 +331,175 @@ describe("compaction replay", () => {
     }
   });
 
+  test.each([
+    { name: "sole configured provider", available: ["subscription"], provider: undefined, selected: "subscription" },
+    { name: "explicit configured provider", available: ["subscription", "api-key"], provider: "subscription", selected: "subscription" },
+    { name: "ambiguous configured providers", available: ["subscription", "api-key"], provider: undefined, error: "Multiple configured providers" },
+    { name: "no configured provider", available: [], provider: undefined, error: "unavailable with configured Pi credentials" },
+    { name: "explicit unavailable provider", available: ["subscription"], provider: "api-key", error: "api-key/" },
+    { name: "configured provider auth failure", available: ["subscription", "api-key"], provider: "subscription", selected: "subscription", requestFailure: true, error: "credential refresh failed" },
+  ])("replay model selection: $name", async ({ available, provider, selected, error: expectedError, requestFailure }) => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-provider-test-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let output;
+    let requests = 0;
+    try {
+      const path = join(temporary, "source.jsonl");
+      writeFileSync(path, jsonl(entries));
+      const args = [...(provider ? ["--provider", provider] : []), path, "second"];
+      const run = () => main(args, async () => ({
+        getAvailable: () => [
+          ...available.map(provider => ({ provider, id: COMPACTION_MODEL.id, maxTokens: 123 })),
+          { provider: "unrelated", id: "another-model", maxTokens: 456 },
+        ],
+        // The catalog may know an unconfigured provider. It must not select it
+        // or borrow credentials from another provider to make that pin work.
+        find: () => { throw new Error("unconfigured catalog lookup forbidden"); },
+        async complete(model, context, settings) {
+          requests++;
+          expect(model.provider).toBe(selected);
+          expect(model.id).toBe(COMPACTION_MODEL.id);
+          expect(settings).not.toHaveProperty("apiKey");
+          expect(context.messages[0].content[0].text).toBe(replayInput(jsonl(entries), "second").prompt);
+          if (requestFailure) throw new Error("credential refresh failed");
+          return { stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\nFixture" }], usage: { input: 1, output: 1 } };
+        },
+      }));
+      if (expectedError) {
+        let failure;
+        try { await run(); } catch (error) { failure = error; }
+        expect(failure?.message).toContain(expectedError);
+        // Exercise the advertised recovery locator as the CLI's consumer does.
+        output = failure.message.split("replay inputs retained at ")[1];
+        expect(output).toBeTruthy();
+        expect(requests).toBe(requestFailure ? 1 : 0);
+        // A thrown request or failed selection never supplies a returned reply.
+        for (const name of ["response.json", "new.md", "usage.json"]) expect(existsSync(join(output, name))).toBe(false);
+        expect(log).not.toHaveBeenCalled();
+      } else {
+        output = await run();
+        expect(requests).toBe(1);
+        expect(diagnostic.mock.calls[0][0]).toContain(`${selected}/${COMPACTION_MODEL.id}`);
+      }
+      const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
+      expect(metadata.requestedModel).toEqual({ provider: provider ?? null, id: COMPACTION_MODEL.id });
+      expect(metadata.model).toEqual(selected ? { provider: selected, id: COMPACTION_MODEL.id } : null);
+      expect(readFileSync(path, "utf8")).toBe(jsonl(entries));
+      expect(readFileSync(join(output, "input.txt"), "utf8")).toBe(replayInput(jsonl(entries), "second").prompt);
+    } finally {
+      log.mockRestore(); diagnostic.mockRestore();
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("default CLI loads the installed public runtime without overriding its credential backend", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-installed-runtime-"));
+    let output;
+    try {
+      const packageDir = join(temporary, "installed-pi");
+      const callsPath = join(temporary, "calls.json");
+      const source = jsonl(entries);
+      const sourcePath = join(temporary, "source.jsonl");
+      const instructionsPath = join(temporary, "frozen.md");
+      writeFileSync(sourcePath, source);
+      writeFileSync(instructionsPath, "Frozen instructions 🐟\n");
+      // A public SDK fixture exercises production discovery and CLI wiring,
+      // without reading a real keychain or making a provider request.
+      mkdirSync(packageDir);
+      writeFileSync(join(packageDir, "package.json"), JSON.stringify({
+        name: "@earendil-works/pi-coding-agent", version: "fixture-native", type: "module",
+        exports: { ".": { import: "./sdk.js" } },
+      }));
+      writeFileSync(join(packageDir, "sdk.js"), `
+        import { writeFileSync } from "node:fs";
+        export class ModelRuntime {
+          static async create(options) { return { options }; }
+        }
+        export class ModelRegistry {
+          constructor(runtime) { this.runtime = runtime; }
+          getAvailable() { return [{ provider: "native-fixture", id: "${COMPACTION_MODEL.id}", maxTokens: 321 }]; }
+          async complete(model, context, options) {
+            writeFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ runtimeOptions: this.runtime.options, model, context, options }));
+            return { stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\\nNative fixture" }], usage: { input: 1, output: 1 } };
+          }
+        }
+      `);
+      const result = Bun.spawnSync([resolve("dev/replay-compaction"), "--instructions", instructionsPath, sourcePath, "second"], {
+        env: { ...process.env, PI_PACKAGE_DIR: packageDir },
+      });
+      expect(result.exitCode).toBe(0);
+      output = result.stdout.toString().split("Saved comparison to ")[1]?.split("\n")[0];
+      expect(output).toBeTruthy();
+      const calls = JSON.parse(readFileSync(callsPath, "utf8"));
+      expect(calls.runtimeOptions).toEqual({ allowModelNetwork: false });
+      expect(calls.model).toEqual({ provider: "native-fixture", id: COMPACTION_MODEL.id, maxTokens: 321 });
+      expect(calls.context.systemPrompt).toBe("Frozen instructions 🐟\n");
+      expect(calls.context.messages[0].content[0].text).toBe(replayInput(source, "second").prompt);
+      expect(calls.options).toMatchObject({ maxTokens: 321, reasoningEffort: "low", cacheRetention: "none" });
+      expect(calls.options).not.toHaveProperty("apiKey");
+      const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
+      expect(metadata.runtime).toEqual({ directory: packageDir, entrypoint: join(packageDir, "sdk.js"), version: "fixture-native", credentials: "installed-pi-default" });
+      expect(metadata.settings.timeoutMs).toBe(180000);
+      expect(readFileSync(join(output, "input.txt"), "utf8")).toBe(calls.context.messages[0].content[0].text);
+      expect(readFileSync(join(output, "instructions.md"), "utf8")).toBe(calls.context.systemPrompt);
+      expect(readFileSync(sourcePath, "utf8")).toBe(source);
+      // An explicit invalid installation must fail, not fall back to locked auth.
+      writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "wrong-package" }));
+      const invalid = Bun.spawnSync([resolve("dev/replay-compaction"), sourcePath, "second"], { env: { ...process.env, PI_PACKAGE_DIR: packageDir } });
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr.toString()).toContain("no public SDK entry");
+      const failedOutput = invalid.stderr.toString().split("replay inputs retained at ")[1]?.trim();
+      expect(failedOutput).toBeTruthy();
+      for (const name of ["response.json", "new.md", "usage.json"]) expect(existsSync(join(failedOutput, name))).toBe(false);
+      if (failedOutput) rmSync(failedOutput, { recursive: true, force: true });
+    } finally {
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  test("locked runtime fixture reads explicit disposable credential storage without moving credentials into replay artifacts", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-native-auth-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let complete;
+    let output;
+    try {
+      const authPath = join(temporary, "auth.json");
+      const modelsPath = join(temporary, "models.json");
+      const path = join(temporary, "source.jsonl");
+      writeFileSync(path, jsonl(entries));
+      writeFileSync(authPath, JSON.stringify({ "fixture-provider": { type: "api_key", key: "fixture-credential-not-for-network-use" } }));
+      writeFileSync(modelsPath, JSON.stringify({ providers: { "fixture-provider": {
+        baseUrl: "https://fixture.invalid/v1", api: "openai-completions",
+        models: [{ id: COMPACTION_MODEL.id, name: "Fixture", reasoning: true, input: ["text"], contextWindow: 10000, maxTokens: 123,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+      } } }));
+      const runtime = await ModelRuntime.create({ authPath, modelsPath, allowModelNetwork: false });
+      const registry = new ModelRegistry(runtime);
+      expect(registry.getAvailable().some(model => model.provider === "fixture-provider" && model.id === COMPACTION_MODEL.id)).toBe(true);
+      complete = spyOn(registry, "complete").mockImplementation(async (model, context, settings) => {
+        expect(model.provider).toBe("fixture-provider");
+        expect(settings).not.toHaveProperty("apiKey");
+        return { stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\nFixture" }], usage: { input: 1, output: 1 } } as never;
+      });
+      output = await main(["--provider", "fixture-provider", path, "second"], async () => registry);
+      expect(complete).toHaveBeenCalledTimes(1);
+      const metadata = readFileSync(join(output, "replay.json"), "utf8");
+      expect(JSON.parse(metadata).model).toEqual({ provider: "fixture-provider", id: COMPACTION_MODEL.id });
+      expect(metadata).not.toContain("fixture-credential-not-for-network-use");
+      expect(metadata).not.toContain(authPath);
+    } finally {
+      complete?.mockRestore(); log.mockRestore(); diagnostic.mockRestore();
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
   test("parseArgs rejects ambiguous listing modes, unknown options, and missing instruction values before a request", async () => {
-    for (const args of [[], ["--list-cuts"], ["--list-cuts", "session", "cut"], ["--list-cuts", "--instructions", "candidate", "session"], ["--instructions"], ["--unknown", "session"], ["one", "two", "three"]]) {
+    for (const args of [[], ["--list-cuts"], ["--list-cuts", "session", "cut"], ["--list-cuts", "--instructions", "candidate", "session"], ["--instructions"], ["--provider"], ["--provider", "", "session"], ["--list-cuts", "--provider", "configured-test", "session"], ["--unknown", "session"], ["one", "two", "three"]]) {
       let requested = false;
       await expect(main(args, async () => { requested = true; throw new Error("unexpected runtime"); })).rejects.toThrow();
       expect(requested).toBe(false);

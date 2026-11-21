@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { pathToFileURL } from "node:url";
 import {
-  buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS, ModelRegistry,
-  ModelRuntime, parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
+  buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS,
+  parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import { COMPACTION_MODEL } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
 import { checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/checkpoint-capture.ts";
@@ -44,9 +45,31 @@ export function listCuts(text) {
   });
 }
 
-async function createReplayRegistry() {
+// Keep reconstruction on the locked SDK, but use the installed Pi's public
+// runtime for credentials and provider requests. The locked SDK's auth backend
+// can differ from the installed CLI's backend (for example plaintext vs keychain).
+export async function createReplayRegistry(env = process.env) {
+  const candidates = env.PI_PACKAGE_DIR ? [env.PI_PACKAGE_DIR] : [
+    join(env.HOME ?? "", ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"),
+    "/opt/agent-pi/src/packages/coding-agent",
+  ];
+  const installed = candidates.find(path => existsSync(join(path, "package.json")));
+  if (!installed) throw new Error("Installed Pi SDK not found; set PI_PACKAGE_DIR to the normal Pi package directory");
+  const directory = realpathSync(installed);
+  const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+  const entry = manifest.exports?.["."]?.import;
+  if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof entry !== "string")
+    throw new Error(`Installed Pi package has no public SDK entry: ${directory}`);
+  const entrypoint = join(directory, entry);
+  const { ModelRuntime, ModelRegistry } = await import(pathToFileURL(entrypoint).href);
+  if (typeof ModelRuntime?.create !== "function" || typeof ModelRegistry !== "function")
+    throw new Error(`Installed Pi SDK lacks ModelRuntime/ModelRegistry: ${entrypoint}`);
+  // No authPath or credentials override: the installed runtime owns its normal
+  // default backend, including environment configuration and native keychain.
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
-  return new ModelRegistry(runtime);
+  const registry = new ModelRegistry(runtime);
+  registry.replayRuntime = { directory, entrypoint, version: manifest.version, credentials: "installed-pi-default" };
+  return registry;
 }
 
 const sha256 = text => createHash("sha256").update(text).digest("hex");
@@ -57,10 +80,11 @@ export async function main(args = process.argv.slice(2), createRegistry = create
     help: { type: "boolean", short: "h" },
     "list-cuts": { type: "boolean" },
     instructions: { type: "string" },
+    provider: { type: "string" },
   }, allowPositionals: true });
-  const usage = "Usage: dev/replay-compaction [--instructions FILE] SESSION.jsonl [COMPACTION_ID]\n       dev/replay-compaction --list-cuts SESSION.jsonl";
+  const usage = "Usage: dev/replay-compaction [--instructions FILE] [--provider ID] SESSION.jsonl [COMPACTION_ID]\n       dev/replay-compaction --list-cuts SESSION.jsonl\n\nReplays with the compaction model using normal Pi credentials.\nDefaults to the sole configured provider offering that model; --provider selects one explicitly.";
   if (values.help) { console.log(usage); return; }
-  if (positionals.length < 1 || positionals.length > 2 || (values["list-cuts"] && (positionals.length !== 1 || values.instructions !== undefined))) throw new Error(usage);
+  if (positionals.length < 1 || positionals.length > 2 || values.provider === "" || (values["list-cuts"] && (positionals.length !== 1 || values.instructions !== undefined || values.provider !== undefined))) throw new Error(usage);
   const [sessionPath, entryId] = positionals;
   const source = readFileSync(sessionPath, "utf8");
   if (values["list-cuts"]) {
@@ -79,15 +103,24 @@ export async function main(args = process.argv.slice(2), createRegistry = create
     cut: { id: original.id, timestamp: original.timestamp, parentId: original.parentId, firstKeptEntryId: original.firstKeptEntryId },
     input: { sha256: sha256(prompt), characters: prompt.length },
     instructions: { path: resolve(instructionsPath), sha256: sha256(instructions) },
-    model: COMPACTION_MODEL,
+    requestedModel: { id: COMPACTION_MODEL.id, provider: values.provider ?? null },
+    model: null,
   };
   const saveMetadata = () => writeFileSync(join(output, "replay.json"), JSON.stringify(metadata, null, 2) + "\n");
   saveMetadata();
-  console.error(`Replaying ${sessionPath}, compaction ${original.id}; requesting ${COMPACTION_MODEL.id}.`);
   try {
     const registry = await createRegistry();
-    const model = registry.find(COMPACTION_MODEL.provider, COMPACTION_MODEL.id);
-    if (!model) throw new Error(`${COMPACTION_MODEL.id} is unavailable`);
+    metadata.runtime = registry.replayRuntime ?? { credentials: "injected-test-registry" };
+    saveMetadata();
+    // Availability and request-time auth belong to Pi's registry/runtime. A
+    // provider pin from the extension is not evidence of configured credentials.
+    const candidates = registry.getAvailable().filter(model => model.id === COMPACTION_MODEL.id &&
+      (values.provider === undefined || model.provider === values.provider));
+    if (!candidates.length) throw new Error(`${values.provider ? `${values.provider}/` : ""}${COMPACTION_MODEL.id} is unavailable with configured Pi credentials`);
+    if (candidates.length > 1) throw new Error(`Multiple configured providers offer ${COMPACTION_MODEL.id}: ${candidates.map(model => model.provider).sort().join(", ")}; select --provider ID`);
+    const model = candidates[0];
+    metadata.model = { provider: model.provider, id: model.id };
+    console.error(`Replaying ${sessionPath}, compaction ${original.id}; requesting ${model.provider}/${model.id}.`);
     const settings = {
       maxTokens: Math.min(Math.floor(0.8 * DEFAULT_COMPACTION_SETTINGS.reserveTokens), model.maxTokens || Infinity),
       cacheRetention: "none", reasoningEffort: "low", timeoutMs: 180000,
