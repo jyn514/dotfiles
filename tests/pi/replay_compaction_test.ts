@@ -314,6 +314,12 @@ describe("compaction replay", () => {
       });
       expect(readFileSync(join(output, "instructions.md"), "utf8")).toBe(expected);
       expect(readFileSync(join(output, "new.md"), "utf8")).toBe("## Objective and authority\nTest checkpoint");
+      expect(JSON.parse(readFileSync(join(output, "response.json"), "utf8"))).toEqual({
+        stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\nTest checkpoint" }], usage: { input: 12, output: 3 },
+      });
+      expect(JSON.parse(readFileSync(join(output, "usage.json"), "utf8"))).toEqual({
+        compaction: "second", model: COMPACTION_MODEL.id, replay: { input: 12, output: 3 },
+      });
       const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
       const digest = text => createHash("sha256").update(text).digest("hex");
       expect(metadata.source).toEqual({ path, sha256: digest(source) });
@@ -326,6 +332,52 @@ describe("compaction replay", () => {
       expect(readFileSync(path, "utf8")).toBe(source);
     } finally {
       log.mockRestore(); error.mockRestore();
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    { name: "missing header", stopReason: "stop", text: "Returned checkpoint without the required heading 🐟", error: "missing the Objective and authority header" },
+    { name: "provider error", stopReason: "error", text: "Partial provider output", errorMessage: "Provider rejected completion", error: "Provider rejected completion" },
+    { name: "token limit", stopReason: "length", text: "## Objective and authority\nPartial checkpoint", error: "Invalid summary: length" },
+    { name: "aborted response", stopReason: "aborted", text: "Partial aborted output", error: "Invalid summary: aborted" },
+    { name: "tool call", stopReason: "stop", text: "## Objective and authority\nNot an accepted checkpoint", toolCall: true, error: "Invalid summary: stop" },
+  ])("retains returned diagnostics before rejecting $name without publishing an accepted checkpoint", async ({ stopReason, text, errorMessage, toolCall, error: expectedError }) => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-rejected-response-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let output;
+    try {
+      const path = join(temporary, "source.jsonl");
+      const source = jsonl(entries);
+      writeFileSync(path, source);
+      const content = [{ type: "text", text }, ...(toolCall ? [{ type: "toolCall", id: "call", name: "read", arguments: { path: "fixture.md" } }] : [])];
+      const usage = { input: 123, output: 45, cacheRead: 6, cacheWrite: 0, totalTokens: 174 };
+      let requests = 0;
+      let failure;
+      try {
+        await main([path, "second"], async () => ({
+          getAvailable: () => [{ provider: "fixture", id: COMPACTION_MODEL.id, maxTokens: 321 }],
+          async complete() {
+            requests++;
+            return { content, usage, stopReason, errorMessage, internalRequest: { apiKey: "fixture-secret-not-output" } };
+          },
+        }));
+      } catch (error) { failure = error; }
+      expect(failure?.message).toContain(expectedError);
+      output = failure.message.split("replay inputs retained at ")[1];
+      expect(requests).toBe(1);
+      const receipt = readFileSync(join(output, "response.json"), "utf8");
+      expect(JSON.parse(receipt)).toEqual({ content, usage, stopReason, ...(errorMessage ? { errorMessage } : {}) });
+      expect(receipt).not.toContain("fixture-secret-not-output");
+      expect(existsSync(join(output, "new.md"))).toBe(false);
+      expect(existsSync(join(output, "usage.json"))).toBe(false);
+      expect(log).not.toHaveBeenCalled();
+      expect(readFileSync(join(output, "input.txt"), "utf8")).toBe(replayInput(source, "second").prompt);
+      expect(readFileSync(path, "utf8")).toBe(source);
+    } finally {
+      log.mockRestore(); diagnostic.mockRestore();
       if (output) rmSync(output, { recursive: true, force: true });
       rmSync(temporary, { recursive: true, force: true });
     }

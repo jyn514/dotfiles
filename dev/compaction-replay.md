@@ -40,8 +40,14 @@ Use the same explicit provider for both sides of a prompt comparison.
 
 By default, the command selects the latest compaction on the session's active branch; an entry ID selects a specific one.
 Instructions default to the current production file; `--instructions FILE` supplies its exact UTF-8 text on the same replay path.
-It saves `original.md`, `new.md`, `input.txt`, `instructions.md`, `usage.json`, and `replay.json` in a private temporary directory.
+It saves `original.md`, `input.txt`, `instructions.md`, and `replay.json` in a private temporary directory.
+Once completion returns, it saves `response.json` before checking whether the reply is an acceptable checkpoint.
+This diagnostic sidecar contains returned content blocks, usage, stop reason, and any error message; it does not copy request options or credentials.
+A returned reply can still be rejected for a provider error, token limit, cancellation, tool call, or missing required heading.
+Only an accepted checkpoint produces `new.md` and `usage.json`; an error still exits unsuccessfully and points to the retained directory.
+A failure before completion returns leaves no `response.json` and does not establish whether the provider generated a reply.
 The session file is never modified; failed requests retain the replay inputs.
+Treat returned model content as sensitive when sharing these artifacts.
 `replay.json` records source and instruction paths and SHA-256 hashes, the recorded cut, serialized input hash and length, `requestedModel`, and the effective `model` provider/ID.
 `model` remains null if selection fails.
 After runtime creation, `runtime` records the installed package's real directory, public SDK entrypoint, version, and default-backend selection.
@@ -100,6 +106,8 @@ They inject the model-registry boundary without requests and check native CLI in
 Provider-selection cases cover automatic selection, explicit selection, ambiguity and unavailable credentials.
 A default CLI case resolves a disposable installed-public-SDK fixture and checks that runtime creation receives no credential-backend override; it also checks captured context, settings, runtime provenance, and failure without fallback for an invalid explicit installation.
 A separate locked-runtime case reads explicitly supplied disposable credential storage and intercepts completion before any request.
+Returned-response cases check diagnostic retention across each rejection path while keeping accepted output files exclusive to validated checkpoints.
+Selection, runtime-creation and thrown-request failures leave no completed-response sidecar.
 These offline fixtures do not demonstrate live keychain access or model generation.
 Run them through the isolated test wrapper:
 

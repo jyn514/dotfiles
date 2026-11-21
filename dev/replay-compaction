@@ -135,6 +135,12 @@ export async function main(args = process.argv.slice(2), createRegistry = create
       signal: AbortSignal.timeout(settings.timeoutMs), cacheRetention: settings.cacheRetention,
       sessionId: randomUUID(), reasoningEffort: settings.reasoningEffort,
     });
+    // Retain returned model output before acceptance checks so a rejected reply
+    // remains inspectable. Do not persist runtime/auth/request internals.
+    writeFileSync(join(output, "response.json"), JSON.stringify({
+      content: response.content, usage: response.usage,
+      stopReason: response.stopReason, errorMessage: response.errorMessage,
+    }, null, 2) + "\n");
     if (["error", "length", "aborted"].includes(response.stopReason) || response.content.some(block => block.type === "toolCall")) {
       throw new Error(response.errorMessage || `Invalid summary: ${response.stopReason}`);
     }
