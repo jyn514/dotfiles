@@ -17,7 +17,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Box, Text, type Component } from "@earendil-works/pi-tui";
+import { Box, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import * as crypto from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
@@ -175,12 +175,11 @@ function expansionHint(dim: (text: string) => string): string {
  *
  * The rows come from rendering `content` at the real width, not from splitting the
  * raw string on newlines: one long logical line wraps into many visual rows, and
- * the same message yields different rows in a narrow window. Rendering is Text's
- * job here, cached by (text, width), so the preview stays a slice of the identical
- * output the expanded view shows.
+ * the same message yields different rows in a narrow window. The content component
+ * owns wrapping, so the preview retains the same content rows as the expanded view.
  */
 function messagePreview(
-  content: Text,
+  content: Component,
   dim: (text: string) => string,
 ): Component {
   const hint = new Text("", 0, 0);
@@ -203,6 +202,69 @@ function messagePreview(
       hint.invalidate();
     },
   };
+}
+
+type LinkDisplayMessage = Pick<ChatMsg,
+  "from" | "content" | "id" | "replyTo" | "broadcast" | "fromWorker" | "fromManagedWorker">;
+
+/** Read persisted display records without interpreting sender-controlled message text. */
+function displayMessages(details: unknown): LinkDisplayMessage[] | undefined {
+  if (!details || typeof details !== "object") return;
+  const messages = (details as Record<string, unknown>).messages;
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  const validWorker = (value: unknown): boolean => {
+    if (!value || typeof value !== "object") return false;
+    const worker = value as Record<string, unknown>;
+    return ["taskName", "workerId", "ownerSessionId"].every((key) => typeof worker[key] === "string");
+  };
+  if (!messages.every((value) => {
+    if (!value || typeof value !== "object") return false;
+    const message = value as Record<string, unknown>;
+    return typeof message.from === "string" && typeof message.content === "string"
+      && ["id", "replyTo"].every((key) => message[key] === undefined || typeof message[key] === "string")
+      && (message.broadcast === undefined || typeof message.broadcast === "boolean")
+      && (message.fromWorker === undefined || validWorker(message.fromWorker))
+      && (message.fromManagedWorker === undefined || validWorker(message.fromManagedWorker));
+  })) return;
+  return messages;
+}
+
+/** Choose layout from the entire body at the actual content width, before previewing. */
+function incomingMessage(
+  message: LinkDisplayMessage,
+  expanded: boolean,
+  accent: (text: string) => string,
+  textColor: (text: string) => string,
+  dim: (text: string) => string,
+  ownerName?: string,
+): Component {
+  const header = accent(`⚡ [link] ${message.from}${message.broadcast ? " [broadcast]" : ""}:`);
+  const body = textColor(message.content);
+  const inline = new Text(`${header} ${body}`, 0, 0);
+  const multiline = new Text(`${header}\n${body}`, 0, 0);
+  const annotations: string[] = [];
+  if (message.id !== undefined) annotations.push(`Message ID: ${message.id}`);
+  if (message.replyTo !== undefined) annotations.push(`Reply to ${message.replyTo}`);
+  const worker = message.fromWorker ?? message.fromManagedWorker;
+  if (worker) {
+    const owner = ownerName === undefined ? worker.ownerSessionId : `"${ownerName}" (${worker.ownerSessionId})`;
+    annotations.push(`Worker "${worker.taskName}" (${worker.workerId}), owner session ${owner}`);
+  }
+  const metadata = new Text(annotations.length > 0 ? dim(annotations.join("\n")) : "", 0, 0);
+  const content: Component = {
+    render(width) {
+      const rows = message.content === "" || (!message.content.includes("\n") && inline.render(width).length === 1)
+        ? inline.render(width)
+        : multiline.render(width);
+      return expanded ? [...rows, ...metadata.render(width)] : rows;
+    },
+    invalidate() {
+      inline.invalidate();
+      multiline.invalidate();
+      metadata.invalidate();
+    },
+  };
+  return expanded ? content : messagePreview(content, dim);
 }
 
 // ─── Extension ───────────────────────────────────────────────────────────────
@@ -680,6 +742,14 @@ export default function (pi: ExtensionAPI) {
     return name === terminalName ? ctx?.sessionManager.getSessionId() : terminalSessionIds.get(name);
   }
 
+  function getLinkNameForSession(sessionId: string | undefined): string | undefined {
+    if (sessionId === undefined) return;
+    if (sessionId === ctx?.sessionManager.getSessionId()) return terminalName;
+    for (const [name, id] of terminalSessionIds) {
+      if (id === sessionId) return name;
+    }
+  }
+
   function getContextFor(name: string): ContextSnapshot | null {
     if (name === terminalName) return captureContext() ?? null;
     return terminalContexts.get(name) ?? null;
@@ -749,6 +819,7 @@ export default function (pi: ExtensionAPI) {
         display: true,
         details: {
           batched: true, count: batch.length,
+          messages: inbox.slice(0, batch.length),
           recipientSessionId: ctx.sessionManager.getSessionId(),
           deliveries: inbox.slice(0, batch.length).flatMap((item) => item.id && item.fromSessionId ? [{
             id: item.id, from: item.from, fromSessionId: item.fromSessionId,
@@ -2291,16 +2362,30 @@ export default function (pi: ExtensionAPI) {
   // ── Message renderer ─────────────────────────────────────────────────────
 
   pi.registerMessageRenderer("link", (message, options, theme) => {
+    const box = new Box(options.outputPad, options.outputPadY, (t) => theme.bg("customMessageBg", t));
+    const messages = displayMessages(message.details);
+    if (messages) {
+      for (const [index, item] of messages.entries()) {
+        if (index > 0) box.addChild(new Spacer(options.outputPadY ?? 1));
+        box.addChild(incomingMessage(item, options.expanded,
+          (s) => theme.fg("accent", s), (s) => theme.fg("text", s), (s) => theme.fg("muted", s),
+          getLinkNameForSession((item.fromWorker ?? item.fromManagedWorker)?.ownerSessionId)));
+      }
+      return box;
+    }
+
+    // Older transcripts have no structured bodies; retain their text without guessing boundaries.
     const from =
       (message.details as Record<string, unknown> | undefined)?.from ?? "link";
+    const body = String(message.content);
+    // Compact the generated heading separator, not blank lines in senders' text.
+    const displayBody = options.outputPadY === 0
+      ? body.replace(/^(\[Link: \d+ message\(s\) received\])\n\n/, "$1\n")
+      : body;
     const text =
       theme.fg("accent", `⚡ [${from}] `) +
-      theme.fg("text", String(message.content));
+      theme.fg("text", displayBody);
     const content = new Text(text, 0, 0);
-    // The same panel Pi draws around extension messages by default: returning our own
-    // component bypasses the host's box, so a link message would otherwise sit unframed
-    // among framed ones. `outputPad` is the user's configured output padding.
-    const box = new Box(options.outputPad, 1, (t) => theme.bg("customMessageBg", t));
     box.addChild(
       options.expanded
         ? content

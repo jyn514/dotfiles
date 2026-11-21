@@ -613,15 +613,27 @@ Those 300 seconds are two independent timers, not one synchronized deadline: the
 
 ### Rendering
 
-Delivered link batches render with a styled `⚡ [link]` prefix using the theme's accent color.
-Sender attribution and message IDs appear inside the message body, not in the prefix.
+Each delivered message renders with an accent-colored `⚡ [link] sender:` header and its body in the normal text color.
+A single-line body stays beside the header only when the complete combination fits the available width after horizontal padding.
+Otherwise the body starts below the header.
+The renderer makes this choice before preview truncation and independently of expansion; resizing can change it.
+The full sender name remains visible, including its group, and broadcast senders carry a `[broadcast]` marker.
+There is no visible batch heading for these messages.
 The link status text in Pi's footer uses `theme.fg("dim", ...)` to match Pi's standard footer styling.
 
-Deliveries sit in the same background panel Pi draws around extension messages by default, indented by your configured output padding.
-Message IDs and `Reply to` lines render as part of each message's content, including after session restore.
-The collapsed six-row preview may hide later annotations in a batch; use Pi's expansion shortcut to see the full panel.
+Deliveries sit in Pi's usual extension-message background panel, using `outputPad` and `outputPadY` for horizontal and vertical padding.
+Vertical padding also controls the blank row between messages in a batch; at zero, short messages occupy consecutive rows.
+Sender-authored blank lines remain intact.
+Collapsed views retain the first six wrapped rows of each message independently, followed by an overflow hint when needed.
+Expanding reveals complete bodies and muted metadata below each body: full message IDs, `Reply to` references, and worker task/ID/owner attribution when supplied.
+Worker owners include their current link name beside the stable session ID when the owner is this session or appears in the current link roster; otherwise only the session ID is shown.
 This is correlation, not a nested thread view or a link to the original message.
+The expansion hint names the current `app.tools.expand` binding (`Ctrl+O` by default), or says `bind app.tools.expand to expand` when none is assigned.
 
-A long delivery is previewed rather than printed whole. Collapsed, it shows the first six rows as they wrap at the current window width, followed by `... (N more lines, ctrl+o to expand)`; a message that already fits in six rows shows in full with no hint. Expanding is Pi's own global toggle — `Ctrl+O` unless you have rebound `app.tools.expand`, and the hint always names your actual binding — so it expands every custom message at once, including messages restored from an earlier session. If you have unbound `app.tools.expand` entirely there is no key to name, so both hints read `bind app.tools.expand to expand` instead. Only the display changes: the full text is what reaches the model, what `link_send` delivered, and what the session file keeps.
+`flushInbox()` preserves the original model-visible batch text and saves the selected inbox records in `details.messages` for display after reload or resume.
+These display records include legacy ID-less messages; they grant no reply permission.
+Admission still uses only the minimal references in `details.deliveries` and its recipient-session check.
+The renderer never reconstructs message boundaries from sender-controlled text.
+Older saved entries without usable display records retain their raw text view and existing preview behavior; with `outputPadY: 0`, that fallback removes only the blank line after its generated batch heading.
 
 The same toggle also expands outgoing calls: `link_send` and `link_compact` collapse the message or instructions into a one-line preview — runs of whitespace become single spaces — and keep its first 60 characters, which a narrow terminal may still wrap onto more than one row. Expanding reveals the uncollapsed text with its line breaks and spacing as rendered by Pi. Expanding a call says nothing about delivery — the tool's own result line reports that.

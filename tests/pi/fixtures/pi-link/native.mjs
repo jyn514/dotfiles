@@ -15,6 +15,11 @@ import { fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialSto
 import { Box, Text } from "@earendil-works/pi-tui";
 
 initTheme("dark", false);
+const nativeThemeModule = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
+const nativeTheme = nativeThemeModule.theme;
+initTheme("light", false);
+const lightTheme = nativeThemeModule.theme;
+initTheme("dark", false);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 // This override is explicit fixture input for baseline experiments, never a checkout rewrite.
 const sourcePath = process.env.PI_LINK_TEST_SOURCE || join(root, "tools/pi-link/index.ts");
@@ -37,6 +42,229 @@ const links = (peer) => peer.session.messages.filter((message) => message.role =
 const providerText = (peer) => peer.requests.flatMap((request) => request.messages.map(text)).join("\n");
 const theme = { fg: (_role, s) => s, bg: (_role, s) => s, bold: (s) => s };
 const plainRows = (component, width) => component.render(width).map((row) => row.replace(/\x1b\[[0-9;]*m/g, "").trim());
+
+test("link message panels honor vertical padding in collapsed and expanded views", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-padding-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const loaded = await discoverAndLoadExtensions([sourcePath], directory, directory);
+  assert.deepEqual(loaded.errors, []);
+  const render = loaded.extensions[0].messageRenderers.get("link");
+  const short = { customType: "link", content: "one line", details: { from: "test" } };
+  const long = { ...short, content: Array.from({ length: 12 }, (_, i) => `row ${i}: ${"wrapped text ".repeat(8)}`).join("\n") };
+  for (const width of [38, 140]) {
+    for (const outputPadY of [0, 1]) {
+      for (const expanded of [false, true]) {
+        const options = { expanded, outputPad: 2, outputPadY };
+        const rows = plainRows(render(short, options, theme), width);
+        assert.deepEqual(rows, outputPadY === 0 ? ["⚡ [test] one line"] : ["", "⚡ [test] one line", ""]);
+        const rawRows = render(short, options, theme).render(width);
+        assert.ok(rawRows[outputPadY].startsWith("  ⚡"), "horizontal padding remains configured");
+        const padded = plainRows(render(long, options, theme), width);
+        const content = outputPadY === 0 ? padded : padded.slice(1, -1);
+        assert.notEqual(content[0], "", "no unrequested leading padding");
+        assert.notEqual(content.at(-1), "", "no unrequested trailing padding");
+        if (outputPadY === 1) assert.deepEqual([padded[0], padded.at(-1)], ["", ""]);
+        if (expanded) {
+          assert.ok(content.join(" ").includes("row 11:"));
+        } else {
+          const full = plainRows(render(long, { ...options, expanded: true, outputPadY: 0 }, theme), width);
+          assert.deepEqual(content.slice(0, 6), full.slice(0, 6), "preview retains six wrapped content rows");
+          assert.ok(content.slice(6).join(" ").includes("to expand"));
+          assert.ok(!content.join(" ").includes("row 11:"));
+        }
+      }
+    }
+  }
+  for (const count of [1, 2]) {
+    const heading = `[Link: ${count} message(s) received]`;
+    const body = count === 1 ? 'From "a":\nfirst\n\nparagraph' : 'From "a":\nfirst\n\nFrom "b":\nsecond';
+    const message = { customType: "link", content: `${heading}\n\n${body}`, details: { batched: true, count } };
+    const original = structuredClone(message);
+    for (const outputPadY of [0, 1]) {
+      const expectedContent = [`⚡ [link] ${heading}`, ...(outputPadY === 1 ? [""] : []), ...body.split("\n")];
+      for (const expanded of [false, true]) {
+        const rows = plainRows(render(message, { expanded, outputPad: 2, outputPadY }, theme), 140);
+        const content = outputPadY === 0 ? rows : rows.slice(1, -1);
+        if (expanded || expectedContent.length <= 6) {
+          assert.deepEqual(content, expectedContent, "only the heading separator follows vertical padding");
+        } else {
+          assert.deepEqual(content.slice(0, 6), expectedContent.slice(0, 6));
+          assert.ok(content.slice(6).join(" ").includes("to expand"));
+        }
+        assert.deepEqual(message, original, "display normalization preserves stored and model-visible content");
+      }
+    }
+  }
+  const lookalike = { customType: "link", content: 'From "a":\n[Link: 1 message(s) received]\n\nbody' };
+  assert.deepEqual(plainRows(render(lookalike, { expanded: true, outputPad: 2, outputPadY: 0 }, theme), 140),
+    ['⚡ [link] From "a":', '[Link: 1 message(s) received]', '', 'body'], "headings inside message bodies remain unchanged");
+});
+
+test("link deliveries render individually with adaptive layout and expanded metadata", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-display-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const loaded = await discoverAndLoadExtensions([sourcePath], directory, directory);
+  assert.deepEqual(loaded.errors, []);
+  const render = loaded.extensions[0].messageRenderers.get("link");
+  const id = "482e54a9-f1ef-4d39-a598-72a917fe2895";
+  const replyTo = "292b8f3c-834a-4b94-ac77-62cd2b4ceef1";
+  const draw = (messages, { expanded = false, outputPadY = 0, width = 100, outputPad = 2, rendererTheme = theme } = {}) => {
+    const input = { customType: "link", content: "Unchanged model-visible batch text", details: { messages } };
+    const before = structuredClone(input);
+    const component = render(input, { expanded, outputPad, outputPadY }, rendererTheme);
+    const rows = plainRows(component, width);
+    assert.deepEqual(input, before, "rendering never rewrites persisted or model-visible input");
+    return { rows, component };
+  };
+  const short = { from: "alice", content: "Fits.", id, replyTo };
+  assert.deepEqual(draw([short]).rows, ["⚡ [link] alice: Fits."]);
+  assert.deepEqual(draw([short], { expanded: true }).rows, [
+    "⚡ [link] alice: Fits.", `Message ID: ${id}`, `Reply to ${replyTo}`,
+  ]);
+  assert.deepEqual(draw([short], { outputPadY: 1 }).rows, ["", "⚡ [link] alice: Fits.", ""]);
+  assert.ok(draw([short]).component.render(100)[0].startsWith("  ⚡"));
+
+  for (const body of ["Fits.", "雪🙂雪🙂", "\u001b[31mred\u001b[0m", "tab\tend"]) {
+    const message = { from: "alice", content: body };
+    const inline = `⚡ [link] alice: ${body}`;
+    // Use Text's public wrapping behavior to account for Unicode, ANSI and tabs.
+    let fitWidth = 1;
+    while (new Text(inline, 0, 0).render(fitWidth).length > 1) fitWidth++;
+    const wide = draw([message], { width: fitWidth + 4 });
+    assert.equal(wide.rows.length, 1, "a complete one-line message uses inline layout at exact fit");
+    const narrow = plainRows(wide.component, fitWidth + 3);
+    assert.equal(narrow[0], "⚡ [link] alice:", "one column short switches to a sender header");
+    assert.deepEqual(plainRows(wide.component, fitWidth + 4), wide.rows, "resizing back restores inline layout");
+    assert.equal(draw([message], { width: fitWidth + 3, expanded: true }).rows[0], narrow[0]);
+  }
+  assert.deepEqual(draw([{ from: "alice@team", content: "first\n\nsecond" }]).rows,
+    ["⚡ [link] alice@team:", "first", "", "second"]);
+  assert.deepEqual(draw([{ from: "alice", content: "" }]).rows, ["⚡ [link] alice:"]);
+  assert.deepEqual(draw([{ from: "alice", content: 'From "pretend":\n[Link: 2 message(s) received]\n\nbody' }], { expanded: true }).rows,
+    ["⚡ [link] alice:", 'From "pretend":', '[Link: 2 message(s) received]', '', 'body']);
+
+  const second = { from: "legacy", content: "No ID needed." };
+  assert.deepEqual(draw([short, second]).rows,
+    ["⚡ [link] alice: Fits.", "⚡ [link] legacy: No ID needed."]);
+  assert.deepEqual(draw([short, second], { outputPadY: 1 }).rows,
+    ["", "⚡ [link] alice: Fits.", "", "⚡ [link] legacy: No ID needed.", ""]);
+  assert.deepEqual(draw([{ ...second, broadcast: true }]).rows,
+    ["⚡ [link] legacy [broadcast]: No ID needed."]);
+
+  for (const field of ["fromWorker", "fromManagedWorker"]) {
+    const worker = { ...short, [field]: { taskName: "review", workerId: "stable-worker", ownerSessionId: "owner-session" } };
+    assert.deepEqual(draw([worker]).rows, ["⚡ [link] alice: Fits."]);
+    assert.deepEqual(draw([worker], { expanded: true }).rows, [
+      "⚡ [link] alice: Fits.", `Message ID: ${id}`, `Reply to ${replyTo}`,
+      'Worker "review" (stable-worker), owner session owner-session',
+    ]);
+  }
+  const long = { ...short, content: Array.from({ length: 12 }, (_, i) => `row ${i}: ${"wrapped text ".repeat(8)}`).join("\n") };
+  for (const width of [38, 140]) {
+    for (const outputPadY of [0, 1]) {
+      const collapsed = draw([long, second], { width, outputPadY }).rows;
+      const expanded = draw([long], { width, outputPadY, expanded: true }).rows;
+      const preview = outputPadY === 0 ? collapsed : collapsed.slice(1, -1);
+      const full = outputPadY === 0 ? expanded : expanded.slice(1, -1);
+      assert.deepEqual(preview.slice(0, 6), full.slice(0, 6), "preview uses the full body's layout before truncation");
+      assert.ok(preview.slice(6).join(" ").includes("to expand"));
+      assert.ok(preview.includes("⚡ [link] legacy: No ID needed."), "one long entry cannot hide the next sender");
+      assert.ok(!preview.join(" ").includes("row 11:"));
+      assert.ok(!preview.join(" ").includes(id));
+      assert.ok(full.join(" ").includes("row 11:"));
+      assert.ok(full.join("").replace(/\s/g, "").includes(id), "expanded view retains the complete UUID through wrapping");
+    }
+  }
+  for (const messages of [[short], [second], [long, second], [{ from: "long-sender-name@team", content: "" }]]) {
+    for (const width of [20, 100]) {
+      for (const expanded of [false, true]) {
+        for (const rendererTheme of [nativeTheme, lightTheme]) {
+          assert.deepEqual(draw(messages, { width, expanded, rendererTheme }).rows,
+            draw(messages, { width, expanded }).rows, "theme styling does not add rows or change layout");
+        }
+      }
+    }
+  }
+  const manager = SessionManager.create(directory, join(directory, "sessions"));
+  const storedText = `[Link: 2 message(s) received]\n\nFrom "alice" (Message ID: ${id})\nFits.\n\nFrom "legacy":\nNo ID needed.`;
+  const details = { messages: [short, second], recipientSessionId: manager.getSessionId(),
+    deliveries: [{ id, from: "alice", fromSessionId: "author-session" }] };
+  manager.appendCustomMessageEntry("link", storedText, true, details);
+  manager.appendMessage(fauxAssistantMessage("Persist the disposable session."));
+  const restored = SessionManager.open(manager.getSessionFile());
+  const restoredMessage = restored.buildSessionContext().messages.find((entry) => entry.role === "custom" && entry.customType === "link");
+  assert.equal(restoredMessage.content, storedText, "session restore preserves the original model-visible batch");
+  assert.deepEqual(restoredMessage.details, details, "display records and admission references stay separate across restore");
+  assert.deepEqual(plainRows(render(restoredMessage, { expanded: false, outputPad: 2, outputPadY: 0 }, nativeTheme), 100),
+    ["⚡ [link] alice: Fits.", "⚡ [link] legacy: No ID needed."]);
+  const colored = { customType: "link", content: "raw", details: { messages: [second] } };
+  assert.deepEqual(plainRows(render(colored, { expanded: true, outputPad: 2, outputPadY: 0 }, nativeTheme), 100),
+    ["⚡ [link] legacy: No ID needed."], "a colored empty metadata string must not add a blank row");
+  for (const messages of [undefined, [], [{ from: "a", content: 42 }], [{ ...short, fromWorker: {} }]]) {
+    const legacy = { customType: "link", content: "legacy raw body", details: { messages } };
+    assert.deepEqual(plainRows(render(legacy, { expanded: true, outputPad: 2, outputPadY: 0 }, theme), 100),
+      ["⚡ [link] legacy raw body"], "entries without usable display records retain readable raw text");
+  }
+});
+
+test("expanded worker metadata resolves the owner's current link name by session ID", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-owner-name-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const previousEnv = { PI_LINK_NAME: process.env.PI_LINK_NAME, PI_LINK_PARENT_IDENTITY: process.env.PI_LINK_PARENT_IDENTITY };
+  delete process.env.PI_LINK_NAME;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const loaded = await discoverAndLoadExtensions([sourcePath], directory, directory);
+  assert.deepEqual(loaded.errors, []);
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const provider = fauxProvider({ provider: "link-owner-fixture", api: "anthropic-messages" });
+  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null,
+    modelsStorePath: join(directory, "models-store.json"), allowModelNetwork: false, refreshOnCreate: false });
+  modelRuntime.registerNativeProvider(provider.provider);
+  const loader = new DefaultResourceLoader({ cwd: directory, agentDir: directory, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionsOverride: () => loaded, systemPrompt: "Offline owner-name rendering fixture." });
+  await loader.reload();
+  const sessionManager = SessionManager.create(directory, join(directory, "sessions"));
+  const { session } = await createAgentSession({ cwd: directory, agentDir: directory, settingsManager, modelRuntime,
+    resourceLoader: loader, sessionManager, model: provider.getModel(), tools: [] });
+  const runner = session.extensionRunner;
+  t.after(async () => {
+    await runner.emit({ type: "session_shutdown" });
+    session.dispose();
+  });
+  runner.setFlagValue("link", false); // Bind the real local session without opening sockets.
+  session.setSessionName("owner@team");
+  await session.bindExtensions({ onError: (error) => assert.fail(JSON.stringify(error)) });
+  const render = runner.getMessageRenderer("link");
+  const ownerId = sessionManager.getSessionId();
+  for (const field of ["fromWorker", "fromManagedWorker"]) {
+    const message = { customType: "link", content: "unchanged raw text", details: { messages: [{
+      from: "worker@team", content: "Ready.", [field]: { taskName: "review", workerId: "stable-worker", ownerSessionId: ownerId },
+    }] } };
+    const options = { expanded: true, outputPad: 2, outputPadY: 0 };
+    assert.deepEqual(plainRows(render(message, options, nativeTheme), 200), [
+      "⚡ [link] worker@team: Ready.", `Worker "review" (stable-worker), owner session "owner@team" (${ownerId})`,
+    ]);
+    assert.deepEqual(plainRows(render(message, { ...options, expanded: false }, nativeTheme), 200),
+      ["⚡ [link] worker@team: Ready."], "collapsed output does not gain owner metadata");
+    const unknown = structuredClone(message);
+    unknown.details.messages[0][field].ownerSessionId = "unknown-owner";
+    assert.deepEqual(plainRows(render(unknown, options, nativeTheme), 200), [
+      "⚡ [link] worker@team: Ready.", 'Worker "review" (stable-worker), owner session unknown-owner',
+    ], "unknown owners retain their ID rather than guessing from the worker name");
+  }
+  await runner.getCommand("link-name").handler("renamed@team", runner.createCommandContext());
+  const message = { customType: "link", content: "raw", details: { messages: [{ from: "worker@team", content: "Ready.",
+    fromManagedWorker: { taskName: "review", workerId: "stable-worker", ownerSessionId: ownerId } }] } };
+  assert.ok(plainRows(render(message, { expanded: true, outputPad: 2, outputPadY: 0 }, nativeTheme), 200)
+    .includes(`Worker "review" (stable-worker), owner session "renamed@team" (${ownerId})`),
+  "expanding uses the current name after an owner rename");
+});
 
 async function network(t, names = ["hub", "alice", "bob"], { startup = false, disconnected = [], identities = {} } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "pi-link-native-"));
@@ -449,6 +677,9 @@ test("legacy wire frames and historic entries render with genuine Text/Box at na
     const entry = await received(receiver, body);
     assert.ok(text(entry).includes(`From "legacy":\n${body}`), "old ID-less wire frame remains accepted under authoritative sender name");
     assert.ok(!text(entry).includes("Message ID:"));
+    assert.equal(entry.details.messages[0].from, "legacy");
+    assert.equal(entry.details.messages[0].content, body, "ID-less frames still have independent display bodies");
+    assert.deepEqual(entry.details.deliveries, [], "display records do not grant reply authority");
   }
   const longBody = Array.from({ length: 12 }, (_, i) => `row ${i}: ${"rendered text ".repeat(10)}`).join("\n");
   const replyTo = "292b8f3c-834a-4b94-ac77-62cd2b4ceef1";
@@ -461,12 +692,16 @@ test("legacy wire frames and historic entries render with genuine Text/Box at na
   assert.ok(restoredEntry, "native session restore retains the incoming custom message");
   assert.equal(text(restoredEntry), text(incoming), "restore preserves full ID/reply annotations without reinterpretation");
   assert.ok(text(restoredEntry).includes(`Reply to ${replyTo}`));
+  assert.deepEqual(restoredEntry.details.messages, incoming.details.messages, "display records survive real session restore");
+  assert.equal(incoming.details.messages[0].content, longBody);
+  assert.equal(incoming.details.messages[0].id, id);
+  assert.equal(incoming.details.messages[0].replyTo, replyTo);
   const render = alice.session.extensionRunner.getMessageRenderer("link");
   const historic = { customType: "link", content: 'From "historic":\n' + longBody, details: { batched: true, count: 1 }, display: true };
   for (const entry of [incoming, restoredEntry, historic]) {
     for (const width of [38, 140]) {
-      const expanded = render(entry, { expanded: true, outputPad: 2 }, theme);
-      const collapsed = render(entry, { expanded: false, outputPad: 2 }, theme);
+      const expanded = render(entry, { expanded: true, outputPad: 2, outputPadY: 1 }, theme);
+      const collapsed = render(entry, { expanded: false, outputPad: 2, outputPadY: 1 }, theme);
       // Jiti's loaded CJS class and this ESM import have different identities;
       // compare rendered output rather than implementation class identity.
       // Remove Box's top/bottom padding, but keep blank content rows: those
@@ -481,9 +716,13 @@ test("legacy wire frames and historic entries render with genuine Text/Box at na
         const joined = all.join("").replace(/\s/g, "");
         assert.ok(joined.includes(id), "expanded narrow/wide view retains every UUID character");
         assert.ok(joined.includes(`Replyto${replyTo}`), "expanded reply annotation survives wrapping");
-        if (width === 140) assert.ok(preview.join(" ").includes(`Reply to ${replyTo}`), "reply annotation within six visual rows is not hidden");
+        assert.ok(!preview.join(" ").includes("Reply to"), "reply metadata is expanded-only");
+        assert.ok(!preview.join(" ").includes(id), "message IDs are expanded-only");
       }
-      const content = new Text(theme.fg("accent", "⚡ [link] ") + theme.fg("text", String(entry.content)), 0, 0);
+      const expectedText = entry === historic
+        ? `⚡ [link] ${entry.content}`
+        : `⚡ [link] hub:\n${longBody}\nMessage ID: ${id}\nReply to ${replyTo}`;
+      const content = new Text(expectedText, 0, 0);
       const expectedBox = new Box(2, 1, (s) => theme.bg("customMessageBg", s));
       expectedBox.addChild(content);
       assert.deepEqual(plainRows(expanded, width), plainRows(expectedBox, width), "loaded Box expansion matches genuine native Text/Box wrapping");

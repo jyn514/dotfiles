@@ -342,9 +342,25 @@ With the manager/child bridge installed, worker-authored questions retain worker
 #### Incoming messages
 
 Messages reaching a root enter its inbox.
-Nearby arrivals are usually delivered as one `[Link: N message(s) received]` block, in arrival order.
-Each message includes its sender and full ID; replies include `Reply to <original-message-id>`, and broadcasts are marked.
-These fields appear in both model-visible text and the transcript panel.
+The transcript shows each message separately, in arrival order, without a batch heading:
+
+```text
+⚡ [link] builder: Implementation is ready.
+⚡ [link] reviewer: Checking cancellation now.
+```
+
+A complete single-line message appears beside its sender when it fits the terminal width.
+Longer or multiline messages put the sender on its own line.
+Resizing can change that layout; expanding a preview does not.
+Collapsed messages show up to six wrapped rows each, so a long message does not hide the next sender.
+Use Pi’s expansion shortcut (`Ctrl+O` by default) to see the full bodies and their message IDs, reply references, and worker attribution.
+Worker attribution includes the owner’s link name beside its session ID when the name is known locally or from the current link roster.
+Broadcast senders carry a `[broadcast]` marker in both views.
+Panels honor `outputPad` and `outputPadY`; with vertical padding zero, adjacent short messages need only one row each.
+
+The model still receives the complete `[Link: N message(s) received]` block with full sender and ID annotations.
+The stored text stays unchanged; separate display records preserve the quieter layout after reload or resume.
+Older saved entries without those records retain their raw text layout.
 Older direct-message peers may omit IDs or session attribution.
 The batching window, caps, and compaction holds are described in [Inbox](design.md#inbox).
 
