@@ -17,6 +17,25 @@ The proxy uses its accepted workspace authorship identity, not a separate identi
 Assignment and explicit ticket IDs do not reserve work for an agent.
 Filter assignments explicitly with `ti list --assigned <email>`.
 
+## Record agent ownership
+
+When dispatching authorized agent work, record the executing agent in `agent_owner` metadata.
+Record the independent reviewer in `qa_owner` when verification has a separate owner.
+Use references that identify the responsible agents in the active team.
+Keep the native `assigned` field for the human assignee; do not use `claim` merely to identify an agent worker.
+
+```sh
+ti meta agent_owner '/dictionary-builder' -t <id>
+ti meta qa_owner '/dictionary-qa' -t <id>
+```
+
+On transfer, replace the relevant ownership value with the new agent's reference.
+When an assignment ends without a replacement, set its ownership field to `none`, meaning no current owner.
+
+```sh
+ti meta agent_owner none -t <id>
+```
+
 ## File input
 
 For proxy calls, the guest client reads input files relative to its own cwd and sends their UTF-8 contents to the host as stdin.
