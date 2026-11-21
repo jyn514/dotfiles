@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
-import validateSkill, { createValidateSkillTool } from "../../config/pi-agent/pi-extensions/validate-skill";
+import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import validateSkill, { createValidateSkillTool, validateSkillWorker } from "../../config/pi-agent/pi-extensions/validate-skill";
 
 let cwd: string;
 beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), "validate-skill-test-")); });
@@ -24,21 +24,25 @@ function skill(contents = "---\nname: example\ndescription: An example skill.\n-
 describe("validate_skill", () => {
   test("registers the tool", () => {
     const tools: unknown[] = [];
-    validateSkill({ registerTool: (tool: unknown) => tools.push(tool) } as never);
+    validateSkill({ registerTool: (tool: unknown) => tools.push(tool), events: new EventEmitter(), on() {} } as never);
     expect(tools).toHaveLength(1);
     expect((tools[0] as { name: string }).name).toBe("validate_skill");
   });
 
-  test("Pi loads the bundle and exposes a working validate_skill tool", async () => {
-    const loaded = await discoverAndLoadExtensions(
-      [resolve("config/pi-agent/pi-extensions/index.ts")], cwd, join(cwd, "agent"),
-    );
-    expect(loaded.errors).toEqual([]);
-    const tool = loaded.extensions[0]?.tools.get("validate_skill")?.definition;
-    expect(tool).toBeDefined();
-    skill();
-    const result = await tool!.execute("test", { path: "SKILL.md" }, undefined, undefined, { cwd } as never);
-    expect(result.details).toEqual({ loaded: true, name: "example", diagnostics: [] });
+  test("worker uses its supplied Pi module and execution environment", async () => {
+    const modulePath = join(cwd, "worker-pi.mjs");
+    writeFileSync(modulePath, `
+      export function loadSkills(options) {
+        return { skills: [{ name: options.cwd + ':' + options.agentDir + ':' + options.skillPaths[0] }], diagnostics: [{ type: 'warning', message: 'worker diagnostic' }] };
+      }
+      export function truncateHead() { return { content: 'worker truncation', truncated: true }; }
+    `);
+    const result = await validateSkillWorker({ path: "@SKILL.md" }, {
+      cwd, agentDir: "/guest-agent", piModule: modulePath, model: null, session: null,
+      signal: new AbortController().signal, onUpdate() {},
+    });
+    expect(result.details).toEqual({ loaded: true, name: `${cwd}:/guest-agent:SKILL.md`, diagnostics: [{ type: "warning", message: "worker diagnostic" }] });
+    expect(result.content[0].text).toBe("worker truncation\n[Output truncated; full diagnostics are in result details.]");
   });
 
   test("loads relative and absolute paths without changing the file", async () => {

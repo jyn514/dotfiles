@@ -143,8 +143,11 @@ class DotfileSetupTests(unittest.TestCase):
                       and entry["source"] == "./packages/pi-codex-subagents"]
         self.assertEqual(["index.ts"], subagents["extensions"])
         self.assertEqual([], subagents["skills"])
-        # Keep resource discovery focused on the three migrated packages.
-        settings = {"packages": selected}
+        search, = [entry for entry in selected if isinstance(entry, dict)
+                   and entry["source"] == "./packages/pi-session-search"]
+        self.assertEqual([], search["extensions"])
+        # Select the installed search adapter, not the package extension.
+        settings = {"packages": selected, "extensions": ["./pi-extensions/session-tools.ts"]}
         (agent / "settings.json").unlink()
         (agent / "settings.json").write_text(json.dumps(settings))
         result = subprocess.run(

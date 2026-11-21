@@ -133,6 +133,15 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
 const { default: guestTools, createGuestAttachment, waitForGuestToolReady } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
+const { default: validateSkill } = await import("../../../config/pi-agent/pi-extensions/validate-skill.ts");
+
+function guestApi(overrides: Record<string, any>) {
+  return {
+    events: sdk.createEventBus(), getSettings: () => ({}), getAllTools: () => [],
+    getActiveTools: () => [], setActiveTools() {},
+    ...overrides,
+  };
+}
 
 test("guest routing projects session-tool results at request time and reverses their selectors", async () => {
   const env = {
@@ -143,7 +152,7 @@ test("guest routing projects session-tool results at request time and reverses t
   Object.assign(process.env, env);
   try {
     const hooks = new Map<string, (event: any) => any>();
-    guestTools({ registerTool() {}, on(name: string, hook: (event: any) => any) { hooks.set(name, hook); } } as any);
+    guestTools(guestApi({ registerTool() {}, on(name: string, hook: (event: any) => any) { hooks.set(name, hook); } }));
     const input = { sessionFile: "/guest/subagents/parent/child.jsonl" };
     hooks.get("tool_call")!({ toolName: "read_session", input });
     expect(input.sessionFile).toBe("/host/subagents/parent/child.jsonl");
@@ -203,6 +212,7 @@ test.skipIf(!readerPackage)("native session tools round-trip guest paths through
     expect(loaded.errors).toEqual([]);
     const reader = loaded.extensions.find((extension: any) => extension.tools.has("read_session"));
     expect(reader).toBeDefined();
+    loaded.runtime.getSettings = () => ({});
     const runner = new sdk.ExtensionRunner(loaded.extensions, loaded.runtime, hostProject, sdk.SessionManager.inMemory(hostProject), undefined);
     const errors: unknown[] = [];
     runner.onError((error: unknown) => errors.push(error));
@@ -330,8 +340,8 @@ test("child cwd reaches the native guest worker through the bound connector", as
     expect(worker.exitCode, errors).toBeNull();
     const tools = new Map<string, any>();
     const hooks = new Map<string, any>();
-    guestTools({ registerTool: (tool: any) => tools.set(tool.name, tool),
-      on: (name: string, hook: any) => hooks.set(name, hook) } as any);
+    guestTools(guestApi({ registerTool: (tool: any) => tools.set(tool.name, tool),
+      on: (name: string, hook: any) => hooks.set(name, hook) }));
     const spawnInput = { cwd: child };
     hooks.get("tool_call")({ toolName: "spawn_agent", input: spawnInput });
     expect(spawnInput.cwd).toBe("/host/project/child project");
@@ -359,8 +369,9 @@ test("child cwd reaches the native guest worker through the bound connector", as
     expect(launchContext).not.toHaveProperty("cwd");
     const launchResult = await attachment.call("bash", { command: "pwd" }, launchContext);
     expect(launchResult.content[0].text.trim()).toBe(guest);
-    const skill = await attachment.call("validate_skill", { path: "@SKILL.md" }, attachment.context(ctx as any));
-    expect(skill).toMatchObject({ loaded: true, name: "child-skill", diagnostics: [] });
+    validateSkill(guestApi({ registerTool: (tool: any) => tools.set(tool.name, tool), on() {} }));
+    const skill = await tools.get("validate_skill").execute("skill", { path: "@SKILL.md" }, undefined, undefined, ctx);
+    expect(skill.details).toMatchObject({ loaded: true, name: "child-skill", diagnostics: [] });
     let output = "";
     const human = hooks.get("user_bash")({}, ctx);
     expect((await human.operations.exec("pwd", guest, {
@@ -412,8 +423,8 @@ test("registered tools and human bash snapshot their own public invocation conte
   const tools = new Map<string, any>();
   const hooks = new Map<string, any>();
   try {
-    guestTools({ registerTool: (tool: any) => tools.set(tool.name, tool),
-      on: (name: string, hook: any) => hooks.set(name, hook) } as any);
+    guestTools(guestApi({ registerTool: (tool: any) => tools.set(tool.name, tool),
+      on: (name: string, hook: any) => hooks.set(name, hook) }));
     let sessionId = "session-a";
     let sessionFile: string | undefined = "/host/sessions/a.jsonl";
     const ctx = { cwd: "/host/project/child-a", model: { provider: "provider-a", id: "model-a" }, sessionManager: {
@@ -491,7 +502,7 @@ test("registered tools and human bash snapshot their own public invocation conte
     process.env.CODEX_SANDBOX_TOOL_CONNECT = connector;
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({ "/host/sessions": "/new/sessions" });
     const reloaded = new Map<string, any>();
-    guestTools({ registerTool: (tool: any) => reloaded.set(tool.name, tool), on() {} } as any);
+    guestTools(guestApi({ registerTool: (tool: any) => reloaded.set(tool.name, tool), on() {} }));
     await expect(reloaded.get("bash").execute("new-owner", {}, undefined, undefined, ctx))
       .rejects.toThrow("guest tool transport ended (1)");
   } finally {

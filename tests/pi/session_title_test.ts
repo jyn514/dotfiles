@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
+import sessionTools, { readSessionWorker } from "../../config/pi-agent/pi-extensions/session-tools.ts";
 import sessionTitle, {
   editHistoricSessionTitles,
   normalizeSessionTitle,
@@ -156,6 +158,70 @@ describe("historic session title editing", () => {
       path: "/sessions/two.jsonl",
       error: "disk full",
     });
+  });
+
+  test("the configured session adapter registers both tools and routes the reader", async () => {
+    const tools = new Map<string, any>();
+    const pi = { events: new EventEmitter(), on() {}, getSettings: () => ({}),
+      registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {} };
+    sessionTools(pi as never);
+    expect([...tools.keys()].sort()).toEqual(["read_session", "search_sessions"]);
+    const root = await mkdtemp(join(tmpdir(), "host-reader-"));
+    try {
+      const file = join(root, "session.jsonl");
+      await writeFile(file, [JSON.stringify({ type: "session", id: "host", cwd: root, timestamp: "2026-01-01T00:00:00Z" }),
+        JSON.stringify({ type: "message", timestamp: "2026-01-01T00:00:01Z", message: { role: "user", content: "host content" } })].join("\n") + "\n");
+      const result = await tools.get("read_session").execute("host", { sessionFile: file }, undefined, undefined, { cwd: root });
+      expect(result.content[0].text).toContain("host content");
+      expect(result.details.toolExecution).toEqual({ target: "host", source: "default" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("guest reader supplies title metadata alongside the normal result", async () => {
+    const root = await mkdtemp(join(tmpdir(), "guest-reader-"));
+    try {
+      const file = join(root, "session.jsonl");
+      const sdk = join(root, "sdk.mjs");
+      await writeFile(file, [JSON.stringify({ type: "session", id: "guest", cwd: root, timestamp: "2026-01-01T00:00:00Z" }),
+        JSON.stringify({ type: "message", timestamp: "2026-01-01T00:00:01Z", message: { role: "user", content: "guest content" } })].join("\n") + "\n");
+      await writeFile(sdk, `export const SessionManager = { open: () => ({ getSessionName: () => 'Guest title' }) };`);
+      const ctx = { cwd: root, agentDir: root, piModule: sdk, model: null, session: null,
+        signal: new AbortController().signal, onUpdate() {} };
+      const result = await readSessionWorker({ sessionFile: file }, ctx);
+      expect(result.content[0].text).toContain("guest content");
+      expect(result.structuredContent).toBe(result.content[0].text);
+      expect(result.details).toMatchObject({ sessionTitleFound: true, sessionTitle: "Guest title" });
+      const missing = await readSessionWorker({ sessionFile: join(root, "missing") }, ctx);
+      expect(missing.isError).toBe(true);
+      expect(missing.content[0].text).toContain("read_session failed in guest:");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("guest title results use supplied metadata without reading host paths", async () => {
+    let hook: ((event: any, ctx: any) => Promise<any>) | undefined;
+    const warnings: string[] = [];
+    sessionTitle({
+      registerTool() {},
+      on(name: string, handler: typeof hook) { if (name === "tool_result") hook = handler; },
+    } as never);
+    const ctx = { ui: { notify: (message: string) => warnings.push(message) } };
+    const event = {
+      toolName: "read_session", input: { sessionFile: "/guest-only/missing.jsonl" },
+      content: [{ type: "text", text: "transcript" }], structuredContent: "transcript", isError: false,
+      details: { sessionFile: "/guest-only/missing.jsonl", toolExecution: { target: "guest", source: "settings" }, sessionTitleFound: true, sessionTitle: "Guest title" },
+    };
+    const result = await hook!(event, ctx);
+    expect(result.content[0].text).toBe("Session title: Guest title");
+    expect(result.structuredContent).toBe("transcript");
+    expect(warnings).toEqual([]);
+    const warned = await hook!({ ...event, details: { ...event.details, sessionTitleFound: false, sessionTitleWarning: "guest warning" } }, ctx);
+    expect(warned.content[0].text).toBe("Warning: guest warning");
+    expect(warnings).toEqual(["guest warning"]);
+    expect(await hook!({ ...event, details: { ...event.details, versions: [{}] } }, ctx)).toBeUndefined();
   });
 
   test("registers current and historic title tools", async () => {

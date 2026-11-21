@@ -2,6 +2,7 @@ import { createServer } from "node:net";
 import { writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createEditSuggestionsTool } from "./edit-suggestions-core.ts";
 
 const startupStarted = performance.now();
@@ -61,6 +62,42 @@ async function parseCallCwd(request) {
   return cwd;
 }
 
+function workerError(code, message, cause) {
+  return Object.assign(new Error(message, { cause }), { code });
+}
+
+function parseWorkerEntry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).length !== 2 || typeof value.module !== "string" ||
+      typeof value.export !== "string" || !value.export || value.export.includes("\0")) {
+    throw workerError("INVALID_WORKER_ENTRY", "worker entry requires a file module URL and an export name");
+  }
+  try {
+    const url = new URL(value.module);
+    if (url.protocol !== "file:" || url.search || url.hash) throw new Error("not a local file module");
+    fileURLToPath(url);
+  } catch (error) {
+    throw workerError("INVALID_WORKER_ENTRY", "worker entry module must be a local file URL without query or fragment", error);
+  }
+  return value;
+}
+
+async function runWorkerEntry(entry, params, context) {
+  context.signal.throwIfAborted();
+  let executionModule;
+  try {
+    executionModule = await import(entry.module);
+  } catch (error) {
+    throw workerError("WORKER_MODULE_LOAD_FAILED",
+      `could not import worker module ${entry.module}: ${error instanceof Error ? error.message : String(error)}`, error);
+  }
+  if (!Object.hasOwn(executionModule, entry.export) || typeof executionModule[entry.export] !== "function") {
+    throw workerError("WORKER_EXPORT_MISSING", `worker module ${entry.module} has no callable export ${entry.export}`);
+  }
+  context.signal.throwIfAborted();
+  return executionModule[entry.export](params, context);
+}
+
 function send(socket, message) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
@@ -106,7 +143,7 @@ const server = createServer((socket) => {
         if (!request || typeof request !== "object" ||
             typeof request.tool !== "string" || !request.params ||
             typeof request.params !== "object" || Array.isArray(request.params) ||
-            Object.keys(request).some(key => !["tool", "params", "model", "session", "cwd", "id"].includes(key))) {
+            Object.keys(request).some(key => !["tool", "params", "model", "session", "cwd", "id", "entry"].includes(key))) {
           throw new Error("invalid tool request");
         }
         const model = parseCallModel(request.model);
@@ -124,24 +161,21 @@ const server = createServer((socket) => {
           return env;
         };
         let result;
-        if (request.tool === "commit_boundary_checkpoint") {
+        if (Object.hasOwn(request, "entry")) {
+          const entry = parseWorkerEntry(request.entry);
+          const { getAgentDir } = await loadToolModule();
+          // Entry selection belongs to the host registration, not model params.
+          // Keep request.tool intact for policy, diagnostics and legacy calls.
+          result = await runWorkerEntry(entry, request.params, {
+            cwd, agentDir: getAgentDir(), piModule: toolModule, model, session,
+            signal: controller.signal,
+            onUpdate: (partialResult) => send(socket, { kind: "update", result: partialResult }),
+          });
+        } else if (request.tool === "commit_boundary_checkpoint") {
           if (Object.keys(request.params).length !== 0) throw new Error("invalid checkpoint request");
           // Older host attachments still request captures. The feature is off;
           // acknowledge without creating a checkpoint or intercepting writes.
           result = { revision: null };
-        } else if (request.tool === "validate_skill") {
-          const { getAgentDir, loadSkills } = await loadToolModule();
-          if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
-              Object.keys(request.params).some(key => key !== "path")) {
-            throw new Error("invalid skill path request");
-          }
-          const { skills, diagnostics } = loadSkills({
-            cwd,
-            agentDir: getAgentDir(),
-            skillPaths: [request.params.path.replace(/^@/, "")],
-            includeDefaults: false,
-          });
-          result = { loaded: skills.length > 0, name: skills[0]?.name, diagnostics };
         } else if (request.tool === "user_bash") {
           const { createLocalBashOperations } = await loadToolModule();
           if (typeof request.params.command !== "string") throw new Error("invalid bash command");
@@ -168,7 +202,9 @@ const server = createServer((socket) => {
           const spawnHook = context => ({
             ...context, env: callEnv(context.env),
           });
-          if (!Object.hasOwn(toolFactories, request.tool)) throw new Error("unknown tool");
+          if (!Object.hasOwn(toolFactories, request.tool)) {
+            throw workerError("UNSUPPORTED_OPERATION", `unsupported guest operation: ${request.tool}; no worker entry was supplied`);
+          }
           const shellOptions = request.tool === "bash" || request.tool === "powershell"
             ? { spawnHook } : undefined;
           const tool = guarded?.tool ?? toolFactories[request.tool](cwd, shellOptions);
@@ -179,7 +215,8 @@ const server = createServer((socket) => {
         }
         reply({ kind: "result", result });
       } catch (error) {
-        reply({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+        reply({ kind: "error", message: error instanceof Error ? error.message : String(error),
+          ...(typeof error?.code === "string" ? { code: error.code } : {}) });
       } finally {
         settled = true;
         socket.end();

@@ -124,6 +124,7 @@ async function readCodexSessionTitle(threadId: string): Promise<SessionTitleLook
 export async function readSessionTitle(
   sessionFile: string,
   sessionsRoot = sessionSearchRoot(),
+  sessionManager: Pick<typeof SessionManager, "open"> = SessionManager,
 ): Promise<SessionTitleLookup> {
   const path = resolveReadSessionPath(sessionFile, sessionsRoot);
   const header = await readSessionHeader(path);
@@ -131,7 +132,7 @@ export async function readSessionTitle(
     throw new Error("Session header has no format type");
   }
   if (header.type === "session") {
-    return { found: true, title: SessionManager.open(path).getSessionName()?.trim() || undefined };
+    return { found: true, title: sessionManager.open(path).getSessionName()?.trim() || undefined };
   }
   if (header.type !== "session_meta") throw new Error("Unrecognized session format");
   const payload = "payload" in header ? header.payload : undefined;
@@ -140,6 +141,15 @@ export async function readSessionTitle(
     throw new Error("Codex session header has no thread ID");
   }
   return readCodexSessionTitle(payload.id);
+}
+
+export async function sessionTitleMetadata(sessionFile: string, sessionManager?: Pick<typeof SessionManager, "open">) {
+  try {
+    const lookup = await readSessionTitle(sessionFile, sessionSearchRoot(), sessionManager);
+    return lookup.found ? { sessionTitleFound: true, sessionTitle: lookup.title } : {};
+  } catch (error) {
+    return { sessionTitleWarning: `Could not read session title for ${sessionFile}: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 export function normalizeSessionTitle(title: string): string | undefined {
@@ -278,17 +288,10 @@ export default function sessionTitle(pi: ExtensionAPI) {
     if (Array.isArray(details.versions)) return;
     const sessionFile = typeof details.sessionFile === "string" ? details.sessionFile : event.input.sessionFile;
     if (typeof sessionFile !== "string" || !sessionFile.trim()) return;
-    try {
-      const lookup = await readSessionTitle(sessionFile);
-      if (!lookup.found) return;
-      const title = lookup.title;
-      return {
-        content: [sessionTitleContent(title), ...event.content],
-        structuredContent: event.structuredContent,
-        details: { ...details, sessionTitle: title },
-      };
-    } catch (error) {
-      const warning = `Could not read session title for ${sessionFile}: ${error instanceof Error ? error.message : String(error)}`;
+    const execution = details.toolExecution as { target?: unknown } | undefined;
+    const titleDetails = execution?.target === "guest" ? details : await sessionTitleMetadata(sessionFile);
+    const warning = titleDetails.sessionTitleWarning;
+    if (typeof warning === "string") {
       ctx.ui.notify(warning, "warning");
       return {
         content: [{ type: "text" as const, text: `Warning: ${warning}` }, ...event.content],
@@ -296,5 +299,12 @@ export default function sessionTitle(pi: ExtensionAPI) {
         details: { ...details, sessionTitleWarning: warning },
       };
     }
+    if (!titleDetails.sessionTitleFound) return;
+    const title = typeof titleDetails.sessionTitle === "string" ? titleDetails.sessionTitle : undefined;
+    return {
+      content: [sessionTitleContent(title), ...event.content],
+      structuredContent: event.structuredContent,
+      details: { ...details, sessionTitle: title },
+    };
   });
 }

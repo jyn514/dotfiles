@@ -121,35 +121,39 @@ test("startup listens before loading the Pi tool module", async () => {
   }
 });
 
-test("native skill validation accepts only a path and ignores default skills", async () => {
+test("native skill validation uses the portable entry and ignores default skills", async () => {
+  const entry = { module: pathToFileURL(resolve(here, "../../../config/pi-agent/pi-extensions/validate-skill.ts")).href,
+    export: "validateSkillWorker" };
+  async function validate(path) {
+    const socket = await connect({ tool: "validate_skill", params: { path }, entry }, nativeSocket);
+    const response = await frames(socket);
+    assert.equal(response.length, 1);
+    assert.equal(response[0].kind, "result", JSON.stringify(response));
+    return response[0].result.details;
+  }
   const path = join(directory, "SKILL.md");
   await writeFile(path, "---\nname: worker-skill\ndescription: A worker fixture.\n---\n");
   for (const input of [path, "@SKILL.md"]) {
-    const socket = await connect({ tool: "validate_skill", params: { path: input } }, nativeSocket);
-    assert.deepEqual(await frames(socket), [{ kind: "result", result: {
+    assert.deepEqual(await validate(input), {
       loaded: true, name: "worker-skill", diagnostics: [],
-    } }]);
+    });
   }
   const defaults = join(directory, ".pi/skills/unrelated");
   await mkdir(defaults, { recursive: true });
   await writeFile(join(defaults, "SKILL.md"), "---\nname: unrelated\ndescription: A default skill.\n---\n");
   // A valid default must not turn a missing requested skill into success.
-  const socket = await connect({ tool: "validate_skill", params: { path: "missing.md" } }, nativeSocket);
-  assert.deepEqual(await frames(socket), [{ kind: "result", result: {
+  assert.deepEqual(await validate("missing.md"), {
     loaded: false, diagnostics: [{ type: "warning", message: "skill path does not exist",
       path: join(directory, "missing.md") }],
-  } }]);
-  for (const params of [{}, { path: "" }, { path: 123 }, { path, includeDefaults: true }]) {
-    const invalid = await connect({ tool: "validate_skill", params }, nativeSocket);
-    assert.deepEqual(await frames(invalid), [{ kind: "error", message: "invalid skill path request" }]);
-  }
+  });
 });
 
 test("unknown tools do not execute", async () => {
-  const socket = await connect({ tool: "host_exec", params: {} });
-  assert.deepEqual(await frames(socket), [{ kind: "error", message: "unknown tool" }]);
-  const inheritedName = await connect({ tool: "constructor", params: {} });
-  assert.deepEqual(await frames(inheritedName), [{ kind: "error", message: "unknown tool" }]);
+  for (const tool of ["host_exec", "constructor", "validate_skill"]) {
+    const socket = await connect({ tool, params: {} });
+    assert.deepEqual(await frames(socket), [{ kind: "error", code: "UNSUPPORTED_OPERATION",
+      message: `unsupported guest operation: ${tool}; no worker entry was supplied` }]);
+  }
 });
 
 test("a human shell command streams guest output and exit status", async () => {

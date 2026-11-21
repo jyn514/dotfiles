@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -20,13 +20,35 @@ const loader = new DefaultResourceLoader({
     cwd, agentDir, settingsManager, noContextFiles: true, noThemes: true,
 });
 await loader.reload();
-const { extensions, errors } = loader.getExtensions();
+const { extensions, errors, runtime } = loader.getExtensions();
+runtime.getSettings = () => ({});
 assert.deepEqual(errors, []);
-for (const name of ["pi-codex-goal", "pi-session-search", "pi-codex-subagents"]) {
+for (const name of ["pi-codex-goal", "pi-codex-subagents"]) {
     assert.ok(extensions.some(extension => realpathSync(extension.path).startsWith(
         realpathSync(join(agentDir, "packages", name)) + "/")), name);
 }
+assert.ok(!extensions.some(extension => realpathSync(extension.path).startsWith(
+    realpathSync(join(agentDir, "packages/pi-session-search")) + "/")));
 const toolNames = extensions.flatMap(extension => [...extension.tools.keys()]);
+assert.equal(toolNames.filter(name => name === "read_session").length, 1);
+assert.equal(toolNames.filter(name => name === "search_sessions").length, 1);
+const reader = extensions.find(extension => extension.tools.has("read_session")).tools.get("read_session").definition;
+const transcript = join(cwd, "frozen-session.jsonl");
+writeFileSync(transcript, [
+    JSON.stringify({ type: "session", id: "fixture", cwd, timestamp: "2026-01-01T00:00:00Z" }),
+    JSON.stringify({ type: "message", timestamp: "2026-01-01T00:00:01Z", message: { role: "user", content: "installed reader fixture" } }),
+].join("\n") + "\n");
+const result = await reader.execute("setup-reader", { sessionFile: transcript }, undefined, undefined, { cwd });
+assert.match(result.content[0].text, /installed reader fixture/);
+assert.deepEqual(result.details.toolExecution, { target: "host", source: "default" });
+// Existing live settings still select the original package and the bundle.
+const oldSelection = await discoverAndLoadExtensions([
+    join(agentDir, "pi-extensions/index.ts"), join(agentDir, "packages/pi-session-search"),
+], cwd, agentDir);
+assert.deepEqual(oldSelection.errors, []);
+const oldTools = oldSelection.extensions.flatMap(extension => [...extension.tools.keys()]);
+assert.equal(oldTools.filter(name => name === "read_session").length, 1);
+assert.equal(oldTools.filter(name => name === "search_sessions").length, 1);
 for (const name of ["search_sessions", "read_session", "create_goal", "get_goal", "update_goal"]) {
     assert.ok(toolNames.includes(name), name);
 }

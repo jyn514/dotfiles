@@ -359,6 +359,7 @@ test("guest proxy reaches the packaged suggested edit without host-local mutatio
   ], host, agentDir);
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions[0].tools.has("edit"), false, "native override must not replace guest execution");
+  loaded.runtime.getSettings = () => ({});
   const tool = loaded.extensions[1].tools.get("edit").definition;
   const context = { cwd: host, sessionManager: { getSessionId: () => undefined, getSessionFile: () => undefined } };
   const path = join(cwd, "sample.txt");
@@ -384,6 +385,7 @@ test("guest proxy reaches the packaged suggested edit without host-local mutatio
   const baseline = await fork.createEditToolDefinition(cwd).execute("baseline", { ...input, path: "baseline.txt" });
   assert.deepEqual(result.details, { ...baseline.details,
     patch: baseline.details.patch.replaceAll("baseline.txt", "sample.txt"),
+    toolExecution: { target: "guest", source: "default" },
   });
   await assert.rejects(execute({ path: "absent.txt", edits: [{ oldText: "x", newText: "y" }] }), /ENOENT/);
   const abort = new AbortController();

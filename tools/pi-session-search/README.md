@@ -60,7 +60,10 @@ npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.0.2
 
 Use the dotfiles [setup commands](../../README.md#setup-and-configuration) to install or refresh configuration links and Pi dependencies.
 Setup links `~/.pi/agent/packages/pi-session-search` to this directory.
-Pi settings select `./packages/pi-session-search`; the package declares `index.ts` as its extension and `cli.ts` as the `pi-session-search` command.
+Dotfiles settings retain `./packages/pi-session-search` with its extension disabled and load [`session-tools.ts`](../../config/pi-agent/pi-extensions/session-tools.ts) separately.
+That adapter registers the normal tools and supports [host/guest reader placement](../../config/pi-agent/pi-extensions/README.md#host-and-guest-execution).
+The package still declares `index.ts` as its standalone host extension and `cli.ts` as the `pi-session-search` command.
+Standalone installations can select the package extension directly; do not load it alongside the dotfiles adapter.
 Reload Pi or restart after setup.
 No separate clone, `pi install` call, or machine-specific checkout path is required.
 The npm package and original repositories do not select this maintained copy.

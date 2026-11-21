@@ -50,6 +50,7 @@ function setEnvironment(t, values) {
 async function loadTool(cwd) {
   const loaded = await discoverAndLoadExtensions([extension], cwd, join(cwd, "agent"));
   assert.deepEqual(loaded.errors, []);
+  loaded.runtime.getSettings = () => ({});
   const tool = loaded.extensions[0]?.tools.get("validate_skill")?.definition;
   assert.ok(tool, "the installed Pi must load the actual validation extension");
   return tool;
@@ -59,8 +60,10 @@ async function check(tool, cwd, path, signal) {
   const result = await tool.execute("validation-test", { path }, signal, undefined, {
     cwd, sessionManager: SessionManager.inMemory(cwd),
   });
-  assert.deepEqual(JSON.parse(result.content[0].text), JSON.parse(JSON.stringify(result.details)));
-  return result.details;
+  const { toolExecution, ...details } = result.details;
+  assert.deepEqual(toolExecution, { target: process.env.CODEX_SANDBOX_TOOL_CONTAINER ? "guest" : "host", source: "default" });
+  assert.deepEqual(JSON.parse(result.content[0].text), JSON.parse(JSON.stringify(details)));
+  return details;
 }
 
 // The worker and connector are real production code. Only the host's filesystem

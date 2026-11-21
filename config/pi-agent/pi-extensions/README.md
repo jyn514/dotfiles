@@ -257,9 +257,53 @@ conversation and active tool schemas. Its source labels use current base prompt
 inputs; extension additions appear in the remainder rather than as separate rows.
 These are local estimates, not provider token accounting.
 
+## Host and guest execution
+
+Set `sandbox.toolExecution` in Pi's user or trusted-project settings to select where an adapted tool executes.
+For example, this makes the normal reader open guest files:
+
+```json
+{
+  "sandbox": {
+    "toolExecution": {
+      "read_session": "guest"
+    }
+  }
+}
+```
+
+Reload Pi after changing settings.
+The tool description shows the selected environment and whether it comes from settings or the default.
+Reader and validation results retain that call's placement in `details.toolExecution`, including when settings later change.
+
+Without an override, `read_session` stays on the host.
+The seven sandbox built-ins and `validate_skill` use the attached guest; outside a sandbox, validation uses the host.
+An explicit guest route requires an attachment and never falls back to host execution.
+Unknown tool names produce a warning; invalid targets and guest placement for an unadapted tool fail.
+
+Placement does not activate a disabled tool or grant permission.
+The sandbox built-ins reject host placement; use the existing [reviewed host-command workflow](host-bash.md) for host commands.
+A guest reader sees only files and session roots already available in the guest.
+A host search result can therefore fail to open in the guest even though search found it on the host.
+
+Dotfiles settings load `session-tools.ts` separately and suppress the session package's own extension.
+Do not load both reader registrations.
+Older settings can still load the original standalone package, which remains host-only.
+Refresh the [setup links and settings](../../../README.md#setup-and-configuration) to select the routed adapter.
+
+Extension authors use [`registerRoutedTool`](../../../libexec/pi-tool-execution.ts) with a normal Pi tool definition and a file-URL/export descriptor.
+The worker reconstructs the selected cwd, agent directory, cancellation signal and progress callback.
+Registration, schemas, rendering and live Pi state remain on the host.
+See the [selected design](guest-tools-design.md) for the execution and compatibility contracts.
+
+Portable entries require an updated guest worker.
+Follow the existing [sandbox update and recovery procedure](../../../tools/codex-sandbox/README.md#common-commands); host `/reload` alone does not replace it.
+Once the worker supports an entry, changing its placement needs no worker restart.
+
 ## Session titles
 
 `session-title.ts` adds the saved title to successful `read_session` transcript results.
+For guest reads, the worker supplies title and warning metadata; the host hook never opens the returned guest path.
 The reader should return the resolved absolute path in `details.sessionFile`, including for ID-only reads.
 The hook prefers that path and falls back to the input's `sessionFile` for older reader versions.
 It does not resolve session IDs itself or pick a file from a version list.
@@ -331,11 +375,12 @@ when accepted, and Pi's `diagnostics`. Warnings do not necessarily prevent loadi
 This checks only the supplied path, not whether the current session discovers or
 uses the skill. It does not reload or change the session.
 
-In a sandbox, validation runs through the attached guest worker's Pi loader.
+By default, sandbox validation runs through the attached guest worker's Pi loader.
 Absolute paths, `~/` paths, symlinks, and diagnostics use the guest filesystem;
-relative paths use the worker's working directory. Outside a sandbox, validation
-uses the local Pi loader and session working directory. Guest attachment or
-transport failures return tool errors, never host validation results.
+relative paths use the invoking session's mapped working directory.
+Outside a sandbox, validation uses the local Pi loader and session working directory.
+The [execution setting](#host-and-guest-execution) can explicitly select either supported environment.
+Guest attachment or transport failures return tool errors, never host validation results.
 
 Updating guest validation requires a new worker. Close existing sandbox panes
 and start a new sandbox to deploy the host extension and worker together;

@@ -1192,6 +1192,22 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 	}
 }
 
+/** Format a read as the registered tool's text, structured content, and metadata. */
+export async function readSessionToolResult(params: ReadSessionOptions, signal?: AbortSignal) {
+	try {
+		const result = await readSession({ ...params, signal });
+		const { text, ...details } = result;
+		const structuredContent = result.view === "edit_candidates" ? {
+			view: result.view, sessionFile: result.sessionFile!, candidates: result.candidates!,
+			nextCursor: result.nextCursor!, hasMore: result.hasMore, skippedRecords: result.skippedRecords,
+			incomplete: result.incomplete!,
+		} : text;
+		return { content: [{ type: "text" as const, text }], details, structuredContent };
+	} catch (e) {
+		return { content: [{ type: "text" as const, text: `read_session failed: ${(e as Error).message}` }], details: {}, isError: true as const };
+	}
+}
+
 /** Compatibility renderer for existing programmatic callers. */
 export async function readSessionWindow(opts: ReadSessionOptions): Promise<string> {
 	return (await readSession(opts)).text;
@@ -1421,34 +1437,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
-			try {
-				const result = await readSession({
-					view: params.view,
-					sessionFile: params.sessionFile,
-					sessionId: params.sessionId,
-					tail: params.tail as boolean | undefined,
-					after: params.after as string | undefined,
-					aroundEntryId: params.aroundEntryId as string | undefined,
-					aroundTimestamp: params.aroundTimestamp as string | undefined,
-					contextMessages: params.contextMessages as number | undefined,
-					maxMessages: params.maxMessages as number | undefined,
-					signal,
-				});
-				const { text, ...details } = result;
-				// Codemode keeps its existing string result for ordinary reads.
-				const structuredContent = result.view === "edit_candidates" ? {
-					view: result.view, sessionFile: result.sessionFile!, candidates: result.candidates!,
-					nextCursor: result.nextCursor!, hasMore: result.hasMore, skippedRecords: result.skippedRecords,
-					incomplete: result.incomplete!,
-				} : text;
-				return { content: [{ type: "text", text }], details, structuredContent };
-			} catch (e) {
-				return {
-					content: [{ type: "text", text: `read_session failed: ${(e as Error).message}` }],
-					details: {},
-					isError: true,
-				};
-			}
+			return readSessionToolResult(params, signal);
 		},
 	});
 

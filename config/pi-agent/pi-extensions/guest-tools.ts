@@ -1,10 +1,8 @@
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { lstat, watch } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { expandInstructionFile } from "./pi-instruction-includes.ts";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool, createEditTool, createEditToolDefinition, createFindTool, createGrepTool,
   createLsTool, createReadTool, createWriteTool,
@@ -14,190 +12,13 @@ import {
   parsePiResourcePaths, resourcePath, rewritePiResourcePaths, guestToolInputToHost,
   sessionToolMetadataToGuest, sessionToolTextToGuest,
 } from "./guest-tools-core.ts";
-import type { BoundaryMetadata } from "./commit-boundary.ts";
-
-type CallModel = { provider: string; modelId: string } | null;
-
-type CallContext = {
-  cwd?: string;
-  model: CallModel;
-  session: { id: string; file: string | null } | null;
-};
-
-function callContext(ctx: ExtensionContext, resourcePaths: Record<string, string>, launchCwd: string | undefined): CallContext {
-  const model = ctx.model;
-  const id = ctx.sessionManager.getSessionId();
-  const file = ctx.sessionManager.getSessionFile();
-  const cwd = resourcePath(ctx.cwd, resourcePaths);
-  return {
-    // Old workers reject unknown fields. Keep their launch-directory request
-    // shape until a caller actually needs per-call cwd support.
-    ...(cwd === launchCwd ? {} : { cwd }),
-    model: model ? { provider: model.provider, modelId: model.id } : null,
-    session: id ? { id, file: file ? rewritePiResourcePaths(file, resourcePaths) : null } : null,
-  };
-}
-
-type GuestFrame =
-  | { kind: "update"; result: unknown }
-  | { kind: "data"; data: string }
-  | { kind: "result"; result: any; boundary?: BoundaryMetadata }
-  | { kind: "error"; message: string; boundary?: BoundaryMetadata };
-
-type BoundaryCall = {
-  onBoundary: (metadata: BoundaryMetadata | undefined) => void;
-};
-
-export async function waitForGuestToolReady(path?: string): Promise<void> {
-  if (!path) return;
-  const inspect = async () => {
-    try {
-      const metadata = await lstat(path, { bigint: false });
-      if (!metadata.isFile() || metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600) {
-        throw new Error("guest tool worker published invalid readiness");
-      }
-      return true;
-    } catch (error: any) {
-      if (error?.code === "ENOENT") return false;
-      throw error;
-    }
-  };
-  if (await inspect()) return;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const events = watch(dirname(path), { signal: controller.signal });
-    if (await inspect()) return;
-    for await (const event of events) {
-      if (event.filename === basename(path) && await inspect()) return;
-    }
-  } catch (error: any) {
-    if (error?.name === "AbortError") throw new Error("guest tool worker did not become ready");
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-  throw new Error("guest tool worker readiness watch ended");
-}
-
-function boundaryReply(metadata: BoundaryMetadata | undefined) {
-  if (metadata === undefined) return undefined;
-  if (!metadata || Object.keys(metadata).length !== 1 || typeof metadata.error !== "string") {
-    throw new Error("invalid guest boundary error");
-  }
-  return metadata;
-}
-
-function callGuest(
-  attachment: { connector?: string; container: string; command?: string },
-  tool: string,
-  params: Record<string, unknown>,
-  context: CallContext,
-  signal?: AbortSignal,
-  onUpdate?: (result: any) => void,
-  onData?: (data: Buffer) => void,
-  boundary?: BoundaryCall,
-): Promise<any> {
-  const { connector, container, command } = attachment;
-  if (!connector) {
-    return Promise.reject(new Error("guest tool attachment is unavailable"));
-  }
-  return new Promise((resolve, reject) => {
-    // Keep ordinary child environment current, but never select a different
-    // worker/engine halfway through this extension runtime's attachment.
-    const child = spawn("python3", [connector], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CODEX_SANDBOX_TOOL_CONTAINER: container, CODEX_SANDBOX_TOOL_COMMAND: command },
-    });
-    let pending = "";
-    let errorText = "";
-    let terminal: GuestFrame | undefined;
-    let protocolError: Error | undefined;
-    const abort = () => child.kill("SIGTERM");
-    child.stdin.on("error", (error) => { protocolError = error; });
-    child.on("error", (error) => { protocolError = error; });
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) abort();
-    child.stdin.write(`${JSON.stringify({ tool, params, ...context })}\n`);
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (data: string) => {
-      pending += data;
-      if (pending.length > 32 * 1024 * 1024) {
-        protocolError = new Error("guest tool response is too large");
-        child.kill("SIGTERM");
-        return;
-      }
-      let newline: number;
-      while ((newline = pending.indexOf("\n")) >= 0) {
-        const line = pending.slice(0, newline);
-        pending = pending.slice(newline + 1);
-        try {
-          const frame = JSON.parse(line) as GuestFrame;
-          if (frame.kind === "update") onUpdate?.(frame.result);
-          else if (frame.kind === "data") onData?.(Buffer.from(frame.data, "base64"));
-          else if (frame.kind === "result" || frame.kind === "error") {
-            if (terminal) throw new Error("duplicate guest tool result");
-            terminal = frame;
-            child.stdin.end();
-          } else throw new Error("unknown guest tool response");
-        } catch (error) {
-          protocolError = error instanceof Error ? error : new Error(String(error));
-          child.kill("SIGTERM");
-          return;
-        }
-      }
-    });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (data: string) => {
-      errorText = (errorText + data).slice(-4096);
-    });
-    child.on("close", (status) => {
-      signal?.removeEventListener("abort", abort);
-      if (signal?.aborted) reject(new Error("guest tool cancelled"));
-      else if (protocolError) reject(protocolError);
-      else if (pending || !terminal) reject(new Error(errorText || `guest tool transport ended (${status})`));
-      else {
-        try {
-          if (boundary && (terminal.kind === "result" || terminal.kind === "error")) {
-            boundary.onBoundary(boundaryReply(terminal.boundary));
-          }
-          if (terminal.kind === "error") reject(new Error(terminal.message));
-          else if (terminal.kind === "result") resolve(terminal.result);
-        } catch (error) {
-          reject(error);
-        }
-      }
-    });
-  });
-}
-
-/** Bind only launch-selected resources, once per extension initialization/reload.
- * Cwd and model/session identity are copied from Pi at each invocation, never here.
- */
-export function createGuestAttachment(env: NodeJS.ProcessEnv) {
-  const container = env.CODEX_SANDBOX_TOOL_CONTAINER;
-  if (!container) return undefined;
-  const transport = {
-    container,
-    connector: env.CODEX_SANDBOX_TOOL_CONNECT,
-    command: env.CODEX_SANDBOX_TOOL_COMMAND,
-  };
-  const resourcePaths = parsePiResourcePaths(env.CODEX_SANDBOX_PI_RESOURCE_PATHS);
-  const readyPath = env.CODEX_SANDBOX_TOOL_READY_HOST;
-  const launchCwd = env.CODEX_SANDBOX_GUEST_CWD;
-  return {
-    cwd: launchCwd,
-    repository: env.CODEX_SANDBOX_GUEST_REPO,
-    previousCwd: env.CODEX_SANDBOX_PREVIOUS_CWD,
-    resourcePaths,
-    workingDirectory: (ctx: Pick<ExtensionContext, "cwd">) => resourcePath(ctx.cwd, resourcePaths),
-    context: (ctx: ExtensionContext) => callContext(ctx, resourcePaths, launchCwd),
-    ready: () => waitForGuestToolReady(readyPath),
-    call: callGuest.bind(undefined, transport),
-  };
-}
+import {
+  createGuestAttachment, initializeToolExecution, isRoutedTool, registerRoutedTool, toolExecutionMetadata,
+} from "../../../libexec/pi-tool-execution.ts";
+export { createGuestAttachment, waitForGuestToolReady } from "../../../libexec/pi-tool-execution.ts";
 
 export default function guestTools(pi: ExtensionAPI) {
+  initializeToolExecution(pi);
   const attachment = createGuestAttachment(process.env);
   if (!attachment) return;
   const { cwd, repository, resourcePaths, previousCwd } = attachment;
@@ -212,9 +33,11 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!repository) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
-  // Session tools and subagent launch run on the host. Translate their path
-  // inputs without changing transcript contents or decoding opaque cursors.
-  pi.on("tool_call", (event) => guestToolInputToHost(event.toolName, event.input, resourcePaths));
+  // Routed tools normalize only after their call's placement is captured.
+  // Unadapted host tools retain the existing path mapping.
+  pi.on("tool_call", (event) => {
+    if (!isRoutedTool(pi, event.toolName)) guestToolInputToHost(event.toolName, event.input, resourcePaths);
+  });
   const hostRepository = Object.entries(resourcePaths)
     .find(([, guestPath]) => guestPath === repository)?.[0];
   const instructionFiles = [
@@ -262,12 +85,7 @@ export default function guestTools(pi: ExtensionAPI) {
     createWriteTool(cwd), createGrepTool(cwd), createFindTool(cwd), createLsTool(cwd),
   ];
   for (const tool of tools) {
-    pi.registerTool({
-      ...tool,
-      async execute(id, params, signal, onUpdate, ctx) {
-        return attachment.call(tool.name, params as Record<string, unknown>, attachment.context(ctx), signal, onUpdate);
-      },
-    });
+    registerRoutedTool(pi, tool, { guest: "builtin", sandboxDefault: "guest", hostInSandbox: false });
   }
   pi.on("user_bash", (_event, ctx) => {
     const context = attachment.context(ctx);
@@ -320,7 +138,8 @@ export default function guestTools(pi: ExtensionAPI) {
           };
         }
         if (message.role === "toolResult" &&
-          (message.toolName === "search_sessions" || message.toolName === "read_session")) {
+          (message.toolName === "search_sessions" || message.toolName === "read_session") &&
+          toolExecutionMetadata(message.details)?.target !== "guest") {
           return {
             ...message,
             details: sessionToolMetadataToGuest(message.details, resourcePaths),

@@ -14,12 +14,16 @@
   "theme": "light/dark",
   "defaultTools": ["+codemode"],
   "extensions": [
-    "./pi-extensions/index.ts"
+    "./pi-extensions/index.ts",
+    "./pi-extensions/session-tools.ts"
   ],
   "packages": [
     "./pi-link",
     "./packages/pi-codex-goal",
-    "./packages/pi-session-search",
+    {
+      "source": "./packages/pi-session-search",
+      "extensions": []
+    },
     {
       "source": "./packages/pi-codex-subagents",
       "extensions": [
