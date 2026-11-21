@@ -234,6 +234,90 @@ describe("compaction replay", () => {
     }
   });
 
+  test.each(["requested", "completed"])("selection closeout %s supplies purpose, correction context and the correct raw boundary evidence", mode => {
+    const source = historicalFixture(`selection-closeout-${mode}`);
+    const { prompt, original } = replayInput(source);
+    expect(original.id).toBe(`fixture-closeout-${mode}`);
+    const records = source.trim().split("\n").map(line => JSON.parse(line));
+    // Guard the supplied records and speakers, not generated checkpoint wording.
+    const exchange = [
+      ["e73806d6", "assistant"], ["a45e08ed", "user"],
+      ["b77d0c1b", "assistant"], ["399ea8f6", "assistant"],
+      ["022cb4b8", "user"], ["9412c524", "assistant"],
+      ["08b6dbde", "user"], ["8f8fb181", "assistant"],
+      ["bf81f38b", "assistant"], ["ce170cd4", "user"], ["e925e8a5", "assistant"],
+      ["5618ef52", "user"], ["b624f3e7", "assistant"],
+      ["0e11b521", "user"], ["dae47aa5", "assistant"], ["73ab57ef", "user"],
+      ["ac881b14", "user"], ["3318a604", "user"],
+      ...(mode === "completed" ? [["e9541cf1", "assistant"], ["e140d1d8", "assistant"], ["8a43a114", "assistant"], ["cfb299bb", "assistant"]] : []),
+    ];
+    expect(records.filter(entry => entry.type === "message" && entry.id !== "fixture-retained-suffix")
+      .map(entry => [entry.id, entry.message.role])).toEqual(exchange);
+    let preceding = -1;
+    for (const [id, role] of exchange) {
+      const text = records.find(entry => entry.id === id).message.content[0].text;
+      const position = prompt.indexOf(`[${role === "user" ? "User" : "Assistant"}]: ${text}`);
+      expect(position).toBeGreaterThan(preceding);
+      preceding = position;
+    }
+    for (const clause of [
+      "i'll edit the picture prose", "21 `src/` paths plus `curriculum/coverage.json`",
+      "collision and writing-cost work stays open in `ccf0da`",
+      "make sure it ends up in @tools/prepare_dictionary_inputs.py",
+      "prescribing test methods and run order", "Root retained the issue description and state",
+      "Keep:** own scope, task-record accuracy, and the final completion judgment",
+      'pronounciation records for "splunge"', "start running closeout",
+    ]) expect(prompt).toContain(clause);
+    expect(prompt).not.toContain("<previous-checkpoint>");
+    expect(prompt).not.toContain(checkpointText(original));
+    expect(prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
+    expect(source).not.toMatch(/\/(?:home|Users)\//);
+    if (mode === "requested") {
+      for (const later of ["No pronunciation record for `splunge` made it", "a3323defd581bb9fc1f5c269276f5767a2fbcd3f", "Closeout is complete for the work since the previous closeout"])
+        expect(prompt).not.toContain(later);
+    } else {
+      for (const later of ["No pronunciation record for `splunge` made it", "SPHRUPBG/KWHE", "compact build report does not retain a per-word ordinary-route diagnosis", "All 14 protected `src/` files", "Closeout is complete for the work since the previous closeout"])
+        expect(prompt).toContain(later);
+    }
+  });
+
+  test("selection evidence pair exposes a complete record versus a serializer-truncated record, not an output oracle", () => {
+    const complete = replayInput(historicalFixture("selection-evidence-complete"));
+    const truncated = replayInput(historicalFixture("selection-evidence-truncated"));
+    const observation = "The ordinary build completed and its exported pair passed the native writing check.";
+    const report = "Ordinary offline build and native writing check pass for the added source.";
+    for (const { prompt, original } of [complete, truncated]) {
+      expect(prompt).toContain(`[Assistant]: ${observation}`);
+      expect(prompt).toContain("allocation tracing, then a smaller diagnostic word set");
+      expect(prompt).toContain("partial-report.json, which is incomplete");
+      expect(prompt).toContain('path="target/source-check/progress.md"');
+      expect(prompt).toContain("Leave the curriculum alone; I am editing it.");
+      expect(prompt).not.toContain(checkpointText(original));
+      expect(prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
+    }
+    expect(complete.prompt).toContain(`[Tool result]: ${report}`);
+    expect(complete.prompt).toContain("Full attempt logs and exact input identities follow in the archived issue source-check.");
+    expect(complete.prompt).not.toContain("more characters truncated");
+    // Both source files have the same conclusion. Only one delivers it through
+    // the SDK serializer; a named path alone cannot establish its contents.
+    expect(historicalFixture("selection-evidence-truncated")).toContain(report);
+    expect(truncated.prompt).not.toContain(report);
+    expect(truncated.prompt).not.toContain("Full attempt logs and exact input identities");
+    expect(truncated.prompt).toContain("more characters truncated");
+    const prefix = text => text.split("[Tool result]:")[0];
+    expect(prefix(complete.prompt)).toBe(prefix(truncated.prompt));
+  });
+
+  test.each(["selection-closeout-requested", "selection-closeout-completed", "selection-evidence-complete", "selection-evidence-truncated"])("native offline listing exposes the selection case %s without generation", name => {
+    const path = resolve(`tests/pi/fixtures/compaction-replay/${name}.jsonl`);
+    const source = readFileSync(path, "utf8");
+    const result = Bun.spawnSync([resolve("dev/replay-compaction"), "--list-cuts", path]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe("");
+    expect(JSON.parse(result.stdout.toString())).toEqual(listCuts(source)[0]);
+    expect(readFileSync(path, "utf8")).toBe(source);
+  }, 60000);
+
   test("defaults to the latest compaction on the active branch, with explicit selection of another branch", () => {
     const branched = jsonl([...entries, user("resumed", "first", "Resumed another branch")]);
     expect(replayInput(branched).original.id).toBe("first");

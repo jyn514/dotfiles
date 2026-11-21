@@ -1,7 +1,8 @@
 # Manual compaction replay fixtures
 
-Six cases cover persistent corrections, conditional permission,
-investigation-only authority, paused work, repeated compaction, accepted evidence versus newer experiments, and ownership/commit uncertainty.
+The historical and synthetic cases cover persistent corrections, conditional permission,
+investigation-only authority, paused work, repeated compaction, accepted evidence versus newer experiments, ownership/commit uncertainty,
+and [content selection around closeout and recorded evidence](#content-selection).
 Offline tests check **input reconstruction only**, never generated replies or semantic scores.
 Passing them does not prove model retention.
 
@@ -34,6 +35,7 @@ exports or complete original model inputs:
   tool signatures, caller snapshots, or unrelated inventories are retained.
 - Provenance lists session basenames and **entry dates**, which can differ from
   filenames after inheritance. Checklists below are for humans, not reply oracles.
+  The content-selection cases specify their different synthetic boundaries and metadata below.
 
 ## Persistent corrections
 
@@ -240,3 +242,121 @@ Offline tests protect these inputs and boundaries, not the judgments below.
 - [ ] **Later:** report unresolved ownership/commit coverage and recover provenance before cleanup.
       Do not invent the absent raw edits, confirm another author, or assert a blanket “do not commit remaining work” constraint.
 - [ ] Preserve broker/authentication protection and latest discussion-only authority without importing later logging approval or ownership corrections.
+
+## Content selection
+
+These cases guide judgment about **what to keep**, alongside the earlier authority-preservation cases.
+They do not require a fixed checkpoint, wording, section length or keyword count.
+Read the effective `input.txt` before applying the checklist; source metadata can contain facts the serializer does not expose.
+
+### Purpose, corrections and closeout
+
+`selection-closeout-requested.jsonl`; cut `fixture-closeout-requested`.
+`selection-closeout-completed.jsonl`; cut `fixture-closeout-completed`.
+
+Both are **new reconstructions from historical text**, not original compaction cuts or reproductions of a historical model failure.
+Source: `2026-11-19T13-48-54-039Z_01a1f411-4196-738f-9559-3a3999432475.jsonl`.
+Their model-visible context includes later clarification of the motivating problem that the November 20 historical compactions never received.
+Do not use them to judge what those earlier compactions should have known.
+
+The selected records, in source order:
+
+- **November 20:** `e73806d6` and `a45e08ed` establish the four drill corrections and jyn's retained picture-prose work.
+  `b77d0c1b` reports the bounded dictionary closeout, excluded dirty paths and unresolved work;
+  `399ea8f6` declares that closeout complete at **16:28:49.473 UTC**, with collision/writing-cost and whole-book work still open.
+- `022cb4b8` requests Wiktionary in `tools/prepare_dictionary_inputs.py`.
+  `9412c524`, `08b6dbde` and `8f8fb181` preserve a progress report, the challenge about taking over responsibilities and the withdrawal of prescribed methods.
+- **November 21:** `bf81f38b`, `ce170cd4`, `e925e8a5` and `5618ef52` establish the stale ticket description and ensuing question.
+  `b624f3e7`, `0e11b521`, `dae47aa5` and `73ab57ef` distinguish technical judgment from Root's unchanged scope, recordkeeping and completion responsibilities.
+- `ac881b14` asks whether the motivating `splunge` pronunciation problem benefited.
+  `3318a604` requests a new closeout at **07:52:34.886 UTC**; the first fixture stops there.
+  No answer to the word-specific question or completed new closeout is supplied at that boundary.
+- Only the completed fixture adds `e9541cf1` (the word-specific worker report), `e140d1d8` (the answer),
+  `8a43a114` (commit report with protected changes and unresolved findings) and `cfb299bb` (completed closeout at **08:01:34.579 UTC**).
+
+Text messages retain their complete text but omit non-text blocks, including the coordination calls in `8f8fb181` and the audit assignment in `e140d1d8`.
+Worker callback `final_response` bodies become assistant text prefixed with the recorded worker name; they remain **reports**, not fresh verification.
+Other records, original checkpoints, tool results, signatures and repository captures are omitted.
+Parent chains are rebuilt, both cuts and suffixes are synthetic, and `tokensBefore: 0` means no historical token estimate is claimed.
+Cut/suffix timestamps copy the last selected entry's timestamp; nested message timestamps are synthetic zeroes.
+Header session identity and record IDs/entry timestamps preserve provenance; header cwd becomes `/owned`.
+Neither cut inherits a generated or historical checkpoint answer.
+The SDK does not print entry IDs/timestamps in these text messages: reviewers can use IDs to recover source, but must not demand that a generated checkpoint invent them.
+The completed declaration's text, recorded commit and evidence paths can identify the boundary within the available input.
+
+Replay either file with the ordinary runner, for example:
+
+```sh
+dev/replay-compaction tests/pi/fixtures/compaction-replay/selection-closeout-requested.jsonl fixture-closeout-requested
+```
+
+- [ ] **Both:** separate the missing-pronunciation problem, including `splunge`, from the implementation action of adding Wiktionary.
+  Retain the concrete example without inventing a requirement that this source must cover that word.
+- [ ] **Requested:** the most recent completed closeout is the earlier dictionary closeout, not the latest request to start another.
+  The new closeout and word-specific result remain unresolved at this cut.
+  Do not import the later spelling-route result or final commit.
+- [ ] **Completed:** the new closeout is complete and supersedes the earlier compression boundary.
+  Retain the reported result: no added `splunge` IPA, an existing working spelling route, and no demonstrated new ordinary pronunciation route.
+  Keep the worker's evidence limit: the compact accepted build report lacks a per-word ordinary-route diagnosis.
+- [ ] **Both:** abbreviate completed delivery inventories and repeated correction incidents.
+  Preserve unresolved collision/writing-cost and whole-book obligations, excluded changes, jyn's prose ownership and no deployment/default-selection authority.
+  The earlier count of 21 dirty `src/` paths is historical; the completed fixture later reports 14 protected paths.
+  Do not make either count a current independent status observation.
+- [ ] Preserve the desired division of work: Root coordinates scope, keeps task records accurate and judges completion;
+  builder and QA retain technical methods and judgments.
+  Do not turn the takeover correction into Root withdrawing from delivery, or positive coordination language into permission to choose QA's methods.
+  Preserve jyn's prose boundary with its original force.
+- [ ] Keep current conclusions and evidence limits inline, with useful recorded references such as `ccf0da`, `b757fd` and the supplied handoff/control paths.
+  Do not repeat test inventories or claim to have independently inspected an issue or artifact just because a report names it.
+
+### Complete versus incomplete evidence
+
+`selection-evidence-complete.jsonl`; cut `fixture-evidence-complete`.
+`selection-evidence-truncated.jsonl`; cut `fixture-evidence-truncated`.
+
+These are **entirely synthetic**, not historical records.
+IDs, timestamps, tool outputs, issue `source-check` and `target/source-check/` paths exist only inside the fixture scenario.
+They exercise the same ordinary-build/reporting distinction without inheriting the Cocoa result as an answer.
+The shared prefix gives an investigation request, an assistant's observations and a read call for its named progress record.
+Only the returned report differs: one puts its conclusion first; the other puts it after a long allocation log.
+Both raw files contain the conclusion, but SDK serialization removes the latter's tail after 2000 characters and visibly marks truncation.
+The truncated variant models an **incomplete model-visible read**, not proof that the underlying file is missing or incomplete.
+All cuts, parent chains, session metadata and suffixes are synthetic; `tokensBefore: 0` is not a measured token count.
+
+- [ ] **Both:** ordinary offline use reportedly works; expanded diagnostic reporting remains unresolved.
+  Preserve the pending question about the incomplete `target/source-check/partial-report.json` and the investigation-only phase.
+  Curriculum remains jyn-owned; installation and publication remain prohibited.
+  Neither a successful component check nor a finished ordinary build resolves reporting or expands authority.
+- [ ] **Complete:** retain the current conclusion, pending partial-report question and exact recovery reference.
+  Allocation-tracing and reduced-word-set history can stay with the report; no pending choice requires copying that failed-attempt sequence.
+- [ ] **Truncated:** mark the report read incomplete and preserve the relevant otherwise-lost observations with their assistant-report status.
+  Do not discard them merely because a report path is named, or promote them to independently verified report contents.
+  Do not assert that the unseen issue contains exact input identities or that a complete report has been read.
+  Retain the recovery pointer without pretending the missing tail is available.
+
+### Check the checklist's discrimination
+
+Use the following **deliberately authored decision contrasts**, not model replies or complete reference checkpoints.
+For each replay, identify the source turn and concrete continuation error before marking a failure.
+A checkpoint can express the acceptable decision in different words or combine it with another bullet.
+
+| Contrast | Plausible wrong retention choice | Decision the checklist should permit |
+| --- | --- | --- |
+| Purpose versus a new requirement | “Wiktionary is accepted, so the pronunciation problem is solved”; or “delivery requires a new ordinary outline for splunge” | Keep the motivation and its unknown/requested-cut or unresolved/completed-cut outcome, without imposing word coverage as a new requirement. |
+| Request versus completed boundary | At the requested cut, “the latest closeout is complete; only work after it matters” | Keep the earlier completed boundary, while carrying the new closeout and unanswered word check as unfinished. At the completed cut, advance the boundary without erasing surviving obligations. |
+| Compression versus withdrawal | “Do not take over QA; wait for QA to update the issue and decide all closeout work” | Root continues coordination, issue accuracy and completion judgment without prescribing technical methods. A concise paraphrase is enough; repeated incidents are unnecessary. |
+| Positive guidance versus a hard limit | “Coordinate delivery by editing the picture prose or installing the accepted pair” | Preserve jyn's prose ownership and deployment limits alongside the desired coordination work. |
+| Reference versus evidence | “See the named report; omit all findings” despite an incomplete read | Keep the operational conclusion, evidence status and pending partial-report question inline. Move detailed history to the record only where its availability is established. |
+| Detail versus a decision | Copy every failed diagnostic attempt, test count and old commit, while losing the unresolved whole-book question | Preserve remaining obligations and useful recovery references. Omit inventories that change no pending decision. |
+
+These contrasts demonstrate the **intended distinction**, not measured model sensitivity or reviewer agreement.
+There is no semantic CI assertion: a header-valid but wrong checkpoint can still pass the infrastructure suite.
+To claim model sensitivity, generate through the normal replay path, inspect the actual input, and apply these source-backed distinctions to the replies.
+A generation/authentication failure is inconclusive, not a semantic pass.
+Stop a bounded case check once the relevant decision and nearby preservation control are assessable; repeat ambiguous results before claiming consistent behavior.
+
+Offline tests enforce the ingredients needed for that review: complete selected text, speakers/order, cut exclusions, absence of target-summary leakage,
+and which report content actually reaches the SDK serializer.
+Native CLI listing and the existing all-fixture hook test exercise the new cases through the same replay and extension consumers.
+They remain reachable through `dev/test --native` via `tests/native/test_native_pi_bun.py`; they do not freeze the current prompt prose.
+When adding or changing cases, update the source mapping and checklist, rerun the focused replay/hook tests, and inspect `input.txt` again before judging replies.

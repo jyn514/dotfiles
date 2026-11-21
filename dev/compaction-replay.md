@@ -68,7 +68,10 @@ The replay applies the extension's required-header check to generated output; it
 Use the source-backed [retention cases](../tests/pi/fixtures/compaction-replay/README.md) to compare compaction retention.
 They cover persistent corrections, conditional permissions, paused work, investigation-only authority, and repeated compaction.
 They also compare accepted evidence versus newer experiments.
-Their checklists require human comparison against recorded source turns, not a score for prose quality.
+The [content-selection cases](../tests/pi/fixtures/compaction-replay/README.md#content-selection) add motivating problems versus implementation progress,
+requested versus completed closeouts, corrections with unchanged responsibilities, and complete versus truncated evidence reads.
+Their checklists and deliberately wrong decision contrasts require human comparison against source turns, not a score for prose quality.
+Offline tests protect those inputs and their boundaries; they do not reject a semantically wrong generated checkpoint.
 The saved historical summary is not an oracle for what the source authorized.
 
 Evaluate the summary together with retained messages and recovery pointers.
