@@ -164,7 +164,11 @@ Ask jyn when the missing criterion depends on her intent; do not require approva
 Reuse an already demonstrated approach rather than imposing a pilot on mechanical work.
 
 Keep implementation, integration, and intended-consumer checks assigned through completion, not merely through an isolated patch.
-Keep coupled creation and integration coherent; establish the format of a separately useful output early enough for its preparation to overlap consumption.
+Keep coupled creation and integration coherent.
+When work passes to a separate integrator, agree at dispatch on an independently useful candidate they can integrate.
+The handoff identifies the exact candidate, any required verification verdict and its evidence, and the candidate's benefits, costs and remaining obligations.
+For overlapping edits, identify the included paths or hunks and any coupled changes, so unfinished work stays separate from the verified candidate.
+Use the normal handoff message to link existing issues and artifacts.
 For coupled changes, name an integration owner and use the [shared-contract check](references/shared-contracts.md).
 Accountability does not require that agent to perform every task; separate files do not establish independence.
 Preserve required independent verification.

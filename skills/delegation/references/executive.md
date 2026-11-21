@@ -105,3 +105,18 @@ Return the ratified outcome or proposal, responsible workers' evidence and artif
 Do not claim completion while required integration or consumer checks remain unresolved.
 Retain, wake, or retire responsibilities using delegation's lifecycle procedure; a finished turn does not transfer their judgment to you.
 Return lifecycle operations to the owning parent only when your tools or assignment cannot support them.
+
+## Example: conversation during a repair
+
+Suppose the root owns a dictionary repair, including integration and commits.
+The root assigns implementation to a builder and independent verification to QA.
+QA finds that the new rule makes previously writable words unavailable and sends the failing cases to the builder.
+The builder repairs the rule and returns the revised candidate to QA.
+
+Meanwhile, jyn asks the root to shorten a sentence in an unrelated skill without changing its meaning.
+The root works through that request with jyn while the builder and QA continue the dictionary repair.
+The root leaves the failing cases and algorithm with their assigned owners.
+
+QA verifies the revised dictionary candidate and sends its verdict to the root with the builder's exact integration unit.
+The root judges the candidate's usable gains and costs, then integrates and commits it if it serves jyn's outcome.
+Any unmet requirement stays with its assigned owner.
