@@ -154,6 +154,7 @@ Report only new information not already apparent from tool output or earlier mes
 - required or recommended follow-ups;
 - material benefits and costs of the process, including steps to omit, narrow, or replace in future work, or why costly steps were justified;
 - whether you believe the work done was, as a whole, an improvement compared to the baseline before your changes;
+- *questions* i asked you (not instructions i gave you) that materially changed your approach. only include questions whose meaning is not currently present in the strategist role;
 - anything else that would be hard for another agent to recover without reading the session log.
 
 Do not report commits or successful verification unless the user explicitly asks.
