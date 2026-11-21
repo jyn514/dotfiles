@@ -471,6 +471,12 @@ Late transport replies resolve only their original in-process request; they neve
 
 ## Commands and TUI
 
+Commentary notifications show the agent name and a Markdown preview of up to six rendered lines.
+Expand tool output (Ctrl+O by default) or click the notification in fullscreen mode to show its raw notification payload, matching expanded completions.
+Collapsing restores the readable preview.
+Saved commentary from before this renderer was added uses the same presentation when its notification payload is intact.
+Older, truncated payloads without separate commentary details keep Pi's default rendering.
+
 On Pi versions with historical message renderer support, collapsed completion headings show the colored status and agent name without reading the response body.
 Opening the entry shows the full delivered completion message.
 Older Pi versions keep the normal completion renderer.

@@ -7,11 +7,12 @@ import {
   DEFAULT_MAX_LINES,
   SettingsManager,
   formatSize,
+  getMarkdownTheme,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { Text, matchesKey, truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
+import { Box, Markdown, Text, matchesKey, truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
 import {
   AgentManager,
   getAgentDefinition,
@@ -182,6 +183,9 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
         completionId: event.id,
         agent_name: event.agentName,
         status: event.status,
+        ...(event.commentary !== undefined ? {
+          commentary: truncateHead(event.commentary, { maxBytes: DEFAULT_MAX_BYTES - 1024, maxLines: DEFAULT_MAX_LINES - 4 }).content,
+        } : {}),
         ...(bounded.fullOutputPath ? { fullOutputPath: bounded.fullOutputPath } : {}),
       },
     };
@@ -268,6 +272,51 @@ export default function (pi: ExtensionAPI, startup?: StartupSession): void | Pro
     return new Text(text, 0, 0);
   };
   pi.registerMessageRenderer(completionMessageType, renderCompletion, { renderHistorical: renderCompletion });
+
+  const renderCommentaryHeading: MessageRenderer<{ agent_name?: string }> = (message, { outputPad, outputPadY }, theme) =>
+    new Text(theme.fg("accent", `◌ ${message.details?.agent_name || "subagent"}`) + theme.fg("dim", " · update"), outputPad, outputPadY);
+  const renderCommentary: MessageRenderer<{ agent_name?: string; commentary?: string; fullOutputPath?: string }> = (message, options, theme) => {
+    if (options.expanded && typeof message.content === "string") {
+      const container = new Box(options.outputPad, options.outputPadY);
+      container.addChild(renderCommentaryHeading(message, { ...options, outputPad: 0, outputPadY: 0 }, theme)!);
+      container.addChild(new Text(theme.fg("dim", message.content), 0, 0));
+      return container;
+    }
+    let commentary = message.details?.commentary;
+    if (commentary === undefined && typeof message.content === "string") {
+      // Older saved notifications contain the body only in the model-facing envelope.
+      const prefix = "<subagent_notification>\n";
+      const suffix = "\n</subagent_notification>";
+      if (message.content.startsWith(prefix) && message.content.endsWith(suffix)) {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(message.content.slice(prefix.length, -suffix.length));
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+        if (payload && typeof payload === "object" && "commentary" in payload && typeof payload.commentary === "string") {
+          commentary = payload.commentary;
+        }
+      }
+    }
+    if (commentary === undefined) return undefined;
+    const body = new Markdown(commentary, 0, 0, getMarkdownTheme());
+    const container = new Box(options.outputPad, options.outputPadY);
+    container.addChild(renderCommentaryHeading(message, { ...options, outputPad: 0, outputPadY: 0 }, theme)!);
+    container.addChild({
+      render(width: number) {
+        const lines = body.render(width);
+        if (options.expanded || lines.length <= 6) return lines;
+        return [...lines.slice(0, 6), truncateToWidth(theme.fg("dim", `… ${options.keyHint("app.tools.expand", "to expand")}`), width)];
+      },
+      invalidate() { body.invalidate(); },
+    });
+    if (message.details?.fullOutputPath) {
+      container.addChild(new Text(theme.fg("dim", `Full output: ${message.details.fullOutputPath}`), 0, 0));
+    }
+    return container;
+  };
+  pi.registerMessageRenderer("pi-codex-subagent-commentary", renderCommentary, { renderHistorical: renderCommentaryHeading });
 
   interface SpawnFromContextRequest {
     taskName: string;
