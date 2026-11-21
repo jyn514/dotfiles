@@ -251,7 +251,7 @@ Homebrew installs `gdu-go`; macOS local setup provides the `gdu` alias.
 | Search YouTube playlists | [`youtube_search`](../bin/youtube_search) sends a site-restricted query to ddg. |
 
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
-- [`search-bsky-likes`](search-bsky-likes/) finds media posts by `theotherhappyplace.bsky.social` liked by `jyn.dev`, then opens a temporary local gallery. See the [operator README](search-bsky-likes/README.md).
+- [`search-bsky-likes`](search-bsky-likes/) searches `jyn.dev`'s liked posts by text or link metadata; with no arguments, it opens the existing liked-media gallery. See the [operator README](search-bsky-likes/README.md).
 
 ### Agent session exports and imports
 

@@ -3,4 +3,4 @@ set -eu
 
 script_path=$(realpath "$0")
 tool_dir=$(dirname "$script_path")/../tools/search-bsky-likes
-exec node --experimental-strip-types "$tool_dir/src/search-bsky-likes.ts" "$@"
+exec node --experimental-strip-types "$tool_dir/src/cli.ts" "$@"

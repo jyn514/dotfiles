@@ -5,16 +5,18 @@ See the [development index](README.md) for change guidelines and maintenance tas
 
 ## Dependencies and setup
 
-Before running Pi tests or compaction replays, install the locked dependencies on first setup or after dependency changes.
+Before running native JavaScript suites or compaction replays, install the locked dependencies on first setup or after dependency changes.
 This requires Node/npm; Pi tests and replays also require Bun.
 Run the install before starting tests, not alongside them:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 npm ci --prefix tools/pi-link --ignore-scripts --no-audit --no-fund
+npm ci --prefix tools/search-bsky-likes --ignore-scripts --no-audit --no-fund
 ```
 
 The second command installs the local pi-link fork's locked WebSocket dependency for its native regression tests.
+The third installs the Bluesky likes tool's locked dependencies for its native regression tests.
 This makes tests and replays use the locked Pi SDK instead of Bun's auto-installed or cached version.
 
 Install the Python runtime requirements in `install/python.txt` in the same environment as pytest.

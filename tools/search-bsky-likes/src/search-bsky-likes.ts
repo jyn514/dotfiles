@@ -7,6 +7,8 @@ import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 
 import { Agent, AppBskyFeedPost } from "@atproto/api";
+import type { Options } from "./cli.ts";
+import { formatResult, searchLikes } from "./search.ts";
 import {
   NodeOAuthClient,
   buildAtprotoLoopbackClientMetadata,
@@ -21,9 +23,18 @@ type CallbackUrl =
   | `http://127.0.0.1:${number}/callback`;
 
 const REGISTERED_CALLBACK_URL: CallbackUrl = "http://127.0.0.1/callback";
-const REQUIRED_RPC_SCOPE =
-  "rpc:app.bsky.feed.getAuthorFeed?aud=did:web:api.bsky.app%23bsky_appview";
-const SCOPE = `atproto ${REQUIRED_RPC_SCOPE}`;
+const RPC_SCOPES = {
+  gallery: "rpc:app.bsky.feed.getAuthorFeed?aud=did:web:api.bsky.app%23bsky_appview",
+  search: "rpc:app.bsky.feed.getActorLikes?aud=did:web:api.bsky.app%23bsky_appview",
+};
+const SCOPE = `atproto ${Object.values(RPC_SCOPES).join(" ")}`;
+
+export function canRestoreSession(scope: string): boolean {
+  const granted = scope.split(" ");
+  // Scope is part of the loopback OAuth client ID, so old gallery-only tokens
+  // cannot be refreshed by this client even when opening the gallery.
+  return Object.values(RPC_SCOPES).every(required => granted.includes(required));
+}
 const STORE_PATH = join(
   process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
   "search-bsky-likes",
@@ -184,10 +195,7 @@ async function authorize() {
 async function restoreOrAuthorize() {
   const stored = await loadStore();
   const did = Object.keys(stored.sessions)[0];
-  const grantedScopes = did
-    ? stored.sessions[did].tokenSet.scope.split(" ")
-    : [];
-  if (did && grantedScopes.includes(REQUIRED_RPC_SCOPE)) {
+  if (did && canRestoreSession(stored.sessions[did].tokenSet.scope)) {
     return createClient().restore(did);
   }
   if (did) {
@@ -250,9 +258,23 @@ async function showGallery(posts: GalleryPost[]): Promise<void> {
   openBrowser(url);
 }
 
-async function main(): Promise<void> {
+export async function main(options: Options): Promise<void> {
   const session = await restoreOrAuthorize();
   const agent = new Agent(session);
+  if (options.mode === "search") {
+    try {
+      const matches = searchLikes(agent, ME, options.terms, (scanned, matched) => {
+        console.error(`scanned ${scanned} feed posts; found ${matched} matches`);
+      }, options);
+      for await (const result of matches) {
+        console.log(options.json ? JSON.stringify(result) : `${formatResult(result)}\n`);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Likes search stopped: ${reason}\nResults already printed are partial.`);
+    }
+    return;
+  }
   let postsScanned = 0;
   let likesFound = 0;
   let cursor: string | undefined;
@@ -287,5 +309,3 @@ async function main(): Promise<void> {
 
   await showGallery(likedPosts);
 }
-
-await main();
