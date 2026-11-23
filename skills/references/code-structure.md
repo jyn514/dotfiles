@@ -19,6 +19,15 @@ Choose helpers that let the caller express the operation at a consistent concept
 A shorter caller is not clearer if understanding it requires jumping through trivial wrappers.
 Explain non-obvious invariants and reasons using the comment guidance below; do not narrate each statement.
 
+When readers need to compare related paths, use corresponding stages and names so shared rules and deliberate differences are visible.
+For example, matching discovery, filtering, and output stages can make a missing filter apparent.
+Do not force different behavior into identical structure or merge paths merely because they look alike.
+
+Read the [whole-artifact editorial pass](../holistic-writing/references/editorial-pass.md) and apply its reading, explanation, and comparison questions to the code as a whole, not just its comments.
+Consider how selection, emphasis, order, and data representations develop the reader's understanding of the operation.
+For example, if a file position becomes editor command syntax and is then parsed back into a position, compare keeping the position intact until the output boundary.
+Judge the complete path through a concrete input, rather than stopping when individual names and functions read well.
+
 Apply these choices to the code the task requires you to write or change.
 They do not authorize a surrounding-code cleanup; use [Refactor for clarity](../refactor-for-clarity/SKILL.md) for an authorized existing-code clarity pass.
 
@@ -49,6 +58,8 @@ Document a helper's purpose and non-obvious usage contract beside its declaratio
 Cover relevant setup, lifecycle ordering, side effects, ownership, failure behavior, and what returned observations include or omit.
 For example, explain whether a test harness snapshot includes live state or only persisted entries.
 Describe the contract without making callers understand how the implementation fulfills it.
+Can a caller skip this implementation and still predict the effects and failure outcomes relevant to its task?
+If not, expose the missing contract or reconsider the helper's responsibilities.
 
 Put implementation comments beside the code they explain.
 Explain why a surprising choice exists and what a simpler alternative would break.
@@ -56,6 +67,22 @@ Use higher-level summaries to explain an algorithm's intent or invariant when re
 Do not paraphrase statements or repeat what names, types, or straightforward code already explain.
 Prefer clearer names and simpler code when those can remove the confusion; retain reasoning that code alone cannot express.
 Keep operator instructions and cross-component guarantees in their canonical documentation rather than duplicating them in comments.
+
+Explain relationships that an expert in the language or tools would still need application-specific knowledge to understand.
+A useful explanation can be short: identify the purpose, the relevant distinction, and why it requires this mechanism.
+For example, this comment describes only the mechanics:
+
+```python
+# Start an editor in a new pane, then wait on the tmux lock.
+```
+
+Explain why this operation needs a different lifecycle:
+
+```python
+# Reusing an editor delivers an open request without waiting for completion.
+# Pi needs the completed edit and its exit status, so it uses a dedicated pane.
+# That pane records the status before releasing the waiting process.
+```
 
 In tests, use comments to explain what the case demonstrates, not to narrate its setup.
 For example, “The child overrides the retry count but inherits the root timeout” explains the distinction under test.
