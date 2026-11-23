@@ -70,6 +70,9 @@ For a multi-phase task, say where this skill starts and stops.
 
 Link to the owners of existing rules, standards, decision criteria, and procedures instead of copying them.
 Keep task-specific workflow and application guidance without repeating canonical standards already required by the skill.
+Do not add permission qualifiers to ordinary task steps.
+State a restriction only when a governing instruction or concrete consequence requires it.
+Reuse its existing owner rather than repeating it throughout the workflow.
 Use the [consolidation check](../holistic-writing/references/consolidation.md) to distinguish duplication from useful summaries and point-of-action safeguards.
 Keep a warning beside an action when following that action alone would otherwise be unsafe.
 For uncertainty about supported cases or who may act, consult the [non-narrowing check](../spec-review/references/non-narrowing.md).

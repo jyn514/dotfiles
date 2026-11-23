@@ -1,6 +1,6 @@
 ---
 name: goal-to-issue-graph
-description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use during authorized work when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work in the repository's default issue tracker, or TicGit if none is specified. Not for working out one ticket's implementation path, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
+description: Turn a brief or broad goal into an actionable issue graph with observable root acceptance, bounded tickets, justified dependencies, and integration checks. Use when asked to break a goal into issues, create a dependency graph, or repair a graph whose tasks do not establish the promised outcome. Also use when the agent feels overwhelmed by multiple unfinished outcomes, loses track of remaining work or dependencies, or repeatedly switches tasks without a clear completion condition; an explicit planning request is not required. Recover the governing goal and organize remaining work in the repository's default issue tracker, or TicGit if none is specified. Not for working out one ticket's implementation path, choosing an architecture, ordinary execution of an already coherent ticket, a single difficult debugging problem, slow commands alone, or tracker operations alone.
 ---
 
 # Goal to issue graph
@@ -9,7 +9,6 @@ The purpose of an issue graph is to enable sustained, substantive work without r
 Ask consequential questions requiring human judgment up front; investigate discoverable facts instead of asking the human to supply them.
 For material uncertainty that execution must resolve, specify bounded investigations, how their results change the next action, and when to reconsider or stop the affected approach.
 Identify unavoidable later human-feedback points without making independent work wait for them.
-This purpose does not authorize execution.
 
 Work backward from the promised result, not forward from the current implementation's limitations.
 A graph is useful only if completing its tasks establishes the user's goal without redefining success.
@@ -53,7 +52,7 @@ Do not promote an implementation guard, provisional policy or conservative assum
 Ask focused questions when missing context changes the objective or permitted behavior.
 Use `human-review-packets` for consequential approvals or questions that require substantial context; ask simple preferences or missing facts directly.
 Continue independent investigation.
-Investigate discoverable facts during authorized planning rather than asking the user or assigning discovery by default.
+Investigate discoverable facts during planning rather than asking the user or assigning discovery by default.
 If a genuine dependency prevents resolving them now, apply §4's justified-deferral rule and give the bounded discovery work a concrete output and consuming task.
 Do not require a full specification before a graph can describe discovery work.
 
@@ -75,7 +74,7 @@ When the overall approach is unsettled, partially decompose credible candidates 
 Identify the input-to-consumer path, existing capabilities, new mechanisms, hardest work, required facts and consequential unknowns.
 Use these sketches to compare approaches and remaining cost, not to commit to the current mechanism before alternatives are understood.
 Do not require a full implementation graph for every candidate or choose an approach without explaining how it could work.
-Within authorized design work, use `architecture-design` to settle architectural choices; preserve the authority boundaries above.
+Use `architecture-design` to settle architectural choices.
 Refine sketches when decomposition reveals a difficulty that changes the comparison, then turn the selected route into executable issues.
 
 Distinguish evidence sufficient to choose an approach from evidence that its finished implementation meets acceptance.
@@ -128,7 +127,7 @@ Stop splitting when the leaf delivers a useful outcome and can be completed and 
 Do not substitute arbitrary time limits, one-file tasks or isolated implementation phases for useful bounded outcomes.
 
 Tracking parents may aggregate broad outcomes, but are not executable assignments.
-Resolve substantial scope and approach choices that available evidence and authorized planning can settle.
+Resolve substantial scope and approach choices that available evidence and planning can settle.
 Investigate discoverable facts during planning rather than leaving implementation workers to select substantial scope later.
 For each substantial choice left open, explain why planning cannot resolve it.
 Identify the required user judgment, genuinely unavailable external evidence, or bounded implementation experiment needed to decide it.
@@ -136,7 +135,7 @@ If a governing scope or stage boundary prevents deciding here, cite it rather th
 Naming an owner, filing a discovery ticket or marking the choice pending does not supply that justification.
 When such a dependency prevents a sound split, define bounded work through the next consequential decision and its result-dependent next actions.
 Keep the remaining parent explicitly pending that decomposition; calling it provisional does not make it bounded or ready.
-Already-authorized bounded tasks need not wait for decomposition of independent branches.
+Tasks need not wait for decomposition of independent branches.
 Do not invent speculative implementation children merely to make the graph look complete.
 
 For example, “improve import support” leaves scope undefined.
@@ -160,7 +159,7 @@ Check that the cited basis supports the step this ticket must add, not merely a 
 Record material implementation uncertainty and what finding would require reconsidering the approach.
 Treat an approach as settled when it is chosen and grounded, not proven successful in advance.
 If an unresolved choice could materially change scope, dependencies or maintenance costs, the ticket is not ready for implementation.
-Resolve the choice during authorized planning where possible; defer it to bounded discovery or decision work only with the justification above.
+Resolve the choice during planning where possible; defer it to bounded discovery or decision work only with the justification above.
 Routine implementation choices and debugging remain part of implementation.
 Do not require a complete implementation plan, a prototype for every change or a new approval step to establish readiness.
 
@@ -200,7 +199,7 @@ Routine work with applicable evidence needs no additional experiment.
 
 ### Bound implementation needed to choose a direction
 
-Implementation needed to choose a direction is itself a bounded learning task, not permission to defer planning into execution.
+Define implementation needed to choose a direction as a bounded learning task; settle what planning can before execution.
 State in its existing ticket:
 
 - The consequential choice between approaches.
@@ -267,7 +266,7 @@ Use existing tracker validation where it checks this mapping; otherwise inspect 
 Do not claim tool-enforced completion for checks performed only by inspection.
 Do not build a new tracker or validation framework merely to write the plan.
 Structural validation prevents omissions and stale-evidence mismatches; the closeout owner must still check that the evidence actually proves each criterion.
-Planning defines this contract, not completed evidence or permission to execute the checks.
+Planning defines this contract, not completed evidence.
 
 #### Work through consequential failure
 
@@ -324,7 +323,7 @@ Ordinary decomposition that preserves the agreed scope and cost needs no full ro
 
 ## 6. Include integration, quality and maintenance where required
 
-Assign these checks to graph work; do not execute implementation or product acceptance without authorization.
+Assign these checks to graph work.
 Reuse existing inspection and measurement evidence where valid.
 
 ### Plan an early end-to-end path
@@ -370,7 +369,7 @@ Replaying one frozen snapshot proves reproducibility, not that updates are maint
 
 The preceding stages build a route from root outcomes through ticket deliverables to evidence.
 Review that route from both ends: every root criterion must reach proving work, and every required ticket must contribute to a root criterion.
-Ask whether an authorized agent can continue substantive work without the user present, including what consequential success or failure findings change its next action.
+Ask whether an agent can continue substantive work without the user present, including what consequential success or failure findings change its next action.
 Resolve missing human choices or result-dependent next actions rather than leaving the user to notice when the work needs redirection.
 
 Trace every root criterion backward to tickets and consumer-visible evidence.
@@ -423,7 +422,6 @@ Add an index, diagram, or other representation only for a concrete consumer, and
 Use actual issue IDs for dependencies and handoffs; translate temporary planning keys if used.
 Read back the actual bodies, links, and dependency edges before claiming creation or revision succeeded.
 Record shared contracts once in the root issue or link their existing authoritative owner from affected children.
-Issue creation does not authorize implementation beyond the existing task, tracker initialization, or tracker administration.
 If tracker access is unavailable, report the blocked tracker step without claiming it happened or silently substituting a Markdown plan.
 
 ## Cross-domain check

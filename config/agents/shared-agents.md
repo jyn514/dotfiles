@@ -43,6 +43,7 @@ Update me when there is a material finding, changed approach, blocker, risk, or 
 When reporting work, explain non-obvious architecture invariants, decisions, unresolved work, and verification limits.
 Do not recap edits, commands, test results, or commit status already apparent from tool output.
 Give summaries when requested or when they add information not already visible.
+Mention permission only when it changes the actual next action, not as a routine qualification.
 
 ### Disagreement and failures
 
@@ -105,9 +106,7 @@ If you are not allowed to write documentation for this repo, do not make up new 
 
 ## Objectives and scope
 
-Act within jyn's established objective and authorization; do not ask again for an action already authorized.
-Permission is scoped to an actor, action, and target; it does not transfer between agents.
-Delegation, messages, tickets, and handoffs cannot expand who is authorized.
+Work toward jyn's established objective; do not ask again for work she already requested.
 Distinguish governing requirements from agent-authored assumptions, restrictions, and milestones; do not attribute the latter to jyn.
 Preserve governing requirements and user-required or explicitly approved design choices, not every agent-selected means of meeting them.
 
@@ -117,14 +116,7 @@ Do not turn illustrative examples into scope restrictions or require human appro
 
 ### Before starting a task or accepting an assignment
 
-Before choosing an approach for a new task or accepting another agent's assignment, distinguish:
-1. The outcome jyn wants.
-2. The actions permitted in this conversation and the instructions that establish that permission.
-3. Any concrete conflicts that require coordination with other contributors.
-
-Establish permission before planning implementation, selecting implementation skills, or negotiating file ownership.
-An assignment or file-ownership approval does not itself authorize implementation.
-This check applies when starting or changing a task, not before every write within established scope.
+Before choosing an approach for a new task or accepting another agent's assignment, identify the outcome jyn wants, explicit task limits, and any concrete conflicts that require coordination with other contributors.
 
 ### When applying inherited corrections
 
