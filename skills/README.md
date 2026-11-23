@@ -53,7 +53,7 @@ Use it to critique a proposed architecture or abstraction, choose an API or subs
 [Operational lifecycle](operational-lifecycle/SKILL.md) establishes how someone sets up, runs, updates, and recovers an installed system.
 Use it when one-time installation, recurring data refresh, publication, code updates, or reboot behavior need to be distinguished or designed.
 It traces existing commands and state before adding deployment machinery; settled workflows only needing explanation belong to the writing skills.
-Architecture design handles structural or authority choices the operating workflow exposes, while new-tool development handles development stages.
+Architecture design handles structural or authority choices the operating workflow exposes, while new-tool development connects intended use, design, construction, and verification.
 
 [UX design](ux-design/SKILL.md) works out how someone should understand and perform an activity.
 Use it when choices about workflow, information priority, grouping, terminology, feedback, or learning remain unsettled.
@@ -79,8 +79,8 @@ If you have not selected an improvement, [opportunity scan](opportunity-scan/SKI
 For an area already selected for cleanup, [cleanup triage](cleanup-triage/SKILL.md) prioritizes concrete work.
 [Pain axis](pain-axis/SKILL.md) examines recurring problems in history, issues, and tests before redesigning a failure-prone subsystem.
 
-For a new independently invoked tool or service, [new-tool development](new-tool-development/SKILL.md) coordinates the stages
-from a human-authored product brief through requirements and implementation handoff.
+For a new independently invoked tool or service, [new-tool development](new-tool-development/SKILL.md) connects requirements, design, construction, and verification around intended use.
+It explains how evidence and dependencies determine which work can proceed together, within the authorized scope.
 [Requirements definition](requirements-definition/SKILL.md) drafts requirements from an approved brief.
 These are for developing a new tool, not prerequisites for every feature or script.
 

@@ -21,7 +21,8 @@ Identify the subsystem, problem, constraints, non-goals, compatibility, and requ
 State the minimum observable outcome and its practical purpose before choosing mechanisms.
 Stop and use `opportunity-scan` if no subsystem is selected.
 Read the repository's relevant architecture, ownership, data/effects, testing, and design-document guidance and nearest subsystem instructions.
-For staged new-tool work, contribute to the implementation specification against approved requirements and integration constraints without inventing product scope.
+For new-tool work, develop the design against governing requirements and integration constraints under [new-tool development](../new-tool-development/SKILL.md).
+That workflow distinguishes provisional design from contracts ready to implement; unresolved product choices remain explicit rather than becoming design assumptions.
 
 Use the shared decision-authority rule to distinguish requirements from proposed guarantees.
 Before elaborating a mechanism, name its requirement or hard constraint and the case the existing path cannot satisfy.
@@ -45,6 +46,8 @@ For example, an existing save-and-exit operation and verifiable saved record may
 They cannot acknowledge a specific save while the session continues running.
 Read the [contrasting examples](references/simplicity-examples.md) when a proposed mechanism obscures the simpler complete path.
 
+
+Use the [dependency contrast](../new-tool-development/SKILL.md#let-dependencies-determine-the-order) to distinguish independent work from work awaiting a shared decision.
 ## Decide whether boundary development is needed
 
 If the trace leaves unmet behavior requiring a choice about ownership, dependencies, interface guarantees, or resource lifetimes, read [Develop a boundary design](references/develop-boundaries.md) before developing or critiquing that choice.
