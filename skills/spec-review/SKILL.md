@@ -30,6 +30,13 @@ Flag invented product decisions and identify dependent artifacts or evidence inv
 
 ## Follow promises through cases
 
+Check requirements, mechanisms, and acceptance evidence against the intended consumer activity.
+For example, accurately aligned and colored overlays can still fail coordination review if their source drawings have no useful relationship.
+Trace the gap to the governing purpose without inventing a product obligation.
+
+Identify which promises a finding calls into question and which reviewed contracts it leaves intact.
+Report settled contracts and unresolved dependencies separately; partial review does not establish whole-tool acceptance.
+
 For declared inputs, results, failures, and lifecycle transitions, ask: what is admitted, who acts, what result is promised, and what evidence would establish it?
 Do not demand a full API catalog or implementation plan from a sketch.
 

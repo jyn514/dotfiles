@@ -5,8 +5,9 @@ description: Create or evaluate portable agent skills, including existing or pro
 
 # Skill authoring
 
-A skill changes which work an agent takes on and how it does that work.
-Review what makes the agent load it, what it will do after reading it, and what useful choices it might stop considering.
+A skill guides when an agent takes on a task and how it performs that work.
+Review what makes it load, which actions its instructions are likely to cause, and whether those actions serve the original goal.
+Use concrete conditions and actions, with reasons and contrasting examples where they change the choice.
 
 For review, read the skill and its callers, then use **Review loading and actions** below.
 For creation or revision, start with the task the skill should help an agent perform.
@@ -30,12 +31,15 @@ Keep these criteria in the task's working context, not as a history of correctio
 ### When correcting a failure
 
 Read the recorded decision, the instructions available then, and the alternatives the agent rejected.
-Did it ignore a rule, follow a bad rule, invent a restriction, or lack information needed to choose?
+What did the agent appear to understand its task to be, and what evidence supports that account?
+Distinguish that inference from its recorded actions and explanations.
+A missed action alone establishes neither a missing rule nor a mistaken understanding.
+Consider whether it ignored a rule, followed a bad rule, invented a restriction, or lacked information needed to choose.
 If following the instructions caused the problem, change those instructions rather than adding “use judgment.”
 
 Before recommending an instruction change, identify the concrete decision it should change.
-Compare what the existing guidance and proposed guidance would make the agent do at that point, using the information available then.
-Explain how the agent would recognize the relevant condition and choose differently.
+Compare the actions an agent is likely to take under the existing and proposed guidance, using the information available then.
+Identify the condition that should trigger a different action and explain how that action contributes to the original goal.
 If the existing guidance already requires that action, do not present restating it as prevention; examine why it was missed.
 For example, narrowing an assignment, setting a stopping condition, or reviewing an early result may address a failure without adding another prohibition.
 Distinguish an expected effect from demonstrated improvement.
@@ -100,9 +104,8 @@ Delete generated scaffolding; do not add skill READMEs, changelogs, quick refere
 ### Teach decisions through worked choices
 
 Work through a concrete task the skill should help with and imagine a good result.
-Identify a decision that makes that result fit the task: what information informs it, what action follows, and what that action accomplishes.
-Teach how to find and use that information, with an example that carries the decision through to its result.
-Have the agent make that decision from its task's inputs before taking the actions that depend on it.
+Identify the relevant facts, how to find them, and the action they support.
+Carry the example through to its result so the reader can see why the action serves the task.
 
 For example, a README reader deciding whether to replace pipx brings a familiar workflow.
 A comparison can explain what changes and what stays familiar, helping that reader judge the replacement.
@@ -110,9 +113,10 @@ A reader trying to run their first Python script needs to understand how code, d
 A connected example can develop those relationships in the order the reader encounters them.
 The intended understanding gives the writer a reason to select particular material and arrange it that way.
 
-Vary the task and follow the choice again.
-Can the guidance help the agent develop an approach suited to the new purpose?
-Use that comparison to refine the decision criteria.
+Change a consequential fact and follow the reasoning again.
+Does the guidance support a different action when the circumstances call for it?
+For a worked example, see the [dependency contrast](../new-tool-development/SKILL.md#let-dependencies-determine-the-order).
+Use such contrasts to specify which condition requires waiting and which permits progress.
 
 ### Make the next action clear
 
@@ -157,10 +161,14 @@ For each request, follow the information the agent would actually see:
 
 Explain what each missed or unwanted invocation would cause before recommending broader or narrower triggers.
 
-### What will it make the agent do—or stop doing?
+### What actions is it likely to cause, and do they serve the goal?
 
-Follow each in-scope request from the loading check through the work an agent would infer from the skill's body.
+Follow each in-scope request from the loading check through the work an agent could infer from the skill's body.
 Look beyond explicit commands to the framing, sequence, examples, and assumed defaults.
+Identify what would trigger the desired action and whether competing instructions or prerequisites would prevent it.
+Permission to act does not itself make that action likely.
+Predict whether the resulting work achieves the original goal and name failures the guidance still permits.
+Treat predictions as hypotheses about the text's effect, not demonstrated behavior.
 
 What work would it do that the request never called for?
 Look for added investigations, documents, workers, approvals, and prerequisites.
@@ -213,8 +221,12 @@ For creation or substantive revision, compare the finished main file and affecte
 Check actual content, not just drafting intention or mechanical validity.
 
 For creation or substantive revision, obtain an independent artifact review from a fresh reviewer.
-Provide the governing task, criteria, and finished files without the drafter's rationale.
-Ask the reviewer to check that the criteria follow the task and identify violations in the finished text.
+Provide the original request, motivating failure or task, relevant constraints, and proposed changes.
+Label author-selected criteria separately from governing requirements; do not supply the drafter's preferred conclusion.
+Ask the reviewer to predict what agents following the revised guidance are likely to do in the motivating situation, whether that achieves the original goal, and what failure remains possible.
+The reviewer must challenge criteria that miss the goal and identify unsupported predictions or violations in the finished text.
+Check consistency, preserved constraints, and links separately; passing those checks does not establish that the change achieves the goal.
+Keep predictions distinct from observed behavior; conduct behavioral trials only when requested.
 Address supported findings before declaring the change finished.
 If no independent reviewer is available, report that check as unperformed; self-review is not independent review.
 

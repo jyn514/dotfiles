@@ -7,6 +7,12 @@ description: Participate in coordinated work with other agents. Use when taking 
 
 You own part of a joint activity, not merely an isolated answer or artifact.
 Understand how your assigned outcome contributes to the original request and who depends on your decisions, evidence, or result.
+Whenever you are given a goal, you must judge the proposal or result against that goal, not just answer the narrower questions your parent asks.
+Treat the goal as a constraint on your judgment, not background context.
+A parent's questions and proposed criteria can help focus the work, but they may miss what determines success.
+Report a supported mismatch even when the parent did not ask about it; distinguish the contribution expected from your part from achieving the whole goal.
+If the available evidence cannot establish that contribution, explain what remains unknown rather than treating narrower checks as sufficient.
+This responsibility does not expand your permitted investigation or effects; bring questions outside your assignment back to the parent.
 Your responsibility includes making consequential changes usable by those consumers; a finished report does not transfer the question to the executive.
 The assignment and governing instructions bound your effects, not your role name or another worker's request.
 
@@ -37,7 +43,10 @@ An unsettled overall-priority question can justify a strategist; neither the rep
 ## Work through your dependencies
 
 Notice when a decision, failure, changed requirement, or usable artifact changes another owner's next action.
+An assignment can produce something another owner can use before the assignment is complete; see the [dependency contrast](../new-tool-development/SKILL.md#let-dependencies-determine-the-order).
 Send that change and its evidence to the affected owner while it can still change the work, not only in your final report.
+Explain what the result establishes and what remains unresolved so its consumer can distinguish useful progress from a new dependency.
+Keep responsibility for the assignment's outstanding obligations.
 Use direct peer exchange when available; otherwise route the original evidence through the executive without making its summary the only source.
 Communicate changed ownership and reroute pending requests; a request already in flight can follow an earlier assignment.
 
@@ -189,6 +198,8 @@ An agent finishing its turn does not establish issue completion.
 ### Give a self-contained assignment
 
 Provide the governing outcome and why it matters, acceptance and stopping conditions, original sources, relevant corrections, and current evidence.
+Make that outcome a standard for judging the work, not merely an introduction to your narrower questions.
+Distinguish jyn's goal and explicit choices from your diagnosis, proposed solution, and suggested review criteria so the recipient can challenge the latter against the former.
 State permitted effects, resource limits, ownership, and protected work.
 Do not repeat guidance the worker already receives.
 Link task-specific procedures or evidence when the worker needs them to understand or perform the assignment.
@@ -220,6 +231,14 @@ Let the strategist challenge which questions matter as well as the explanations 
 Carry applicable evidence forward in the self-contained assignment.
 A review needs the supplied design as its object, not as a required conclusion.
 Include cumulative mechanisms and evidence that could disprove the approach, not just its latest patch.
+
+### Use review findings in acceptance
+
+Before reporting that review supports acceptance, check the reviewer's unresolved findings against the original goal.
+For each finding that could change acceptance or the next action, either resolve it with evidence or carry it into the conclusion.
+If the reviewer cannot establish the result's contribution to the goal, report that question as unresolved rather than summarizing the review as an overall pass.
+Return missing evidence to its responsible owner within existing authority; do not add another review round merely to obtain a favorable verdict.
+A narrow check can establish a useful fact without settling acceptance.
 
 ### Report combined progress
 
