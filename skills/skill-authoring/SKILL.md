@@ -143,7 +143,7 @@ For skill reviews, use the [shared editorial pass](../holistic-writing/reference
 
 Read the description alongside each caller that routes work to it.
 Use a request that should load the skill and a nearby request that should not.
-For a general-purpose skill, include a task outside the domain that originally prompted it.
+For a skill covering several kinds of work, include requests from different kinds within its claimed scope.
 
 For each request, follow the information the agent would actually see:
 
@@ -156,7 +156,7 @@ Explain what each missed or unwanted invocation would cause before recommending 
 
 ### What will it make the agent do—or stop doing?
 
-Take a representative request and follow the work an agent would infer from the skill.
+Follow each in-scope request from the loading check through the work an agent would infer from the skill's body.
 Look beyond explicit commands to the framing, sequence, examples, and assumed defaults.
 
 What work would it do that the request never called for?
