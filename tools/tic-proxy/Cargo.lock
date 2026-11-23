@@ -3963,7 +3963,7 @@ dependencies = [
  "clap",
  "gix-config 0.54.0",
  "gix-discover 0.49.0",
- "gix-pack 0.68.0",
+ "gix-pack 0.70.0",
  "nix",
  "serde",
  "serde_json",
@@ -3975,6 +3975,8 @@ dependencies = [
 [[package]]
 name = "ticgit"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d4623163ec99718566e49ea2b7dfb58c4d1f9d4d61176354b5e5d2984d9987d"
 dependencies = [
  "anyhow",
  "clap",
@@ -3999,6 +4001,8 @@ dependencies = [
 [[package]]
 name = "ticgit-lib"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bad203418828b6af5905b572d5b432014ec69b79998d616e5af57384c89905f"
 dependencies = [
  "git-meta-lib",
  "gix 0.81.0",
