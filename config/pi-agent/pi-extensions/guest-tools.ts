@@ -1,7 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { expandInstructionFile } from "./pi-instruction-includes.ts";
+import { guestContextProjection } from "./guest-context.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool, createEditTool, createEditToolDefinition, createFindTool, createGrepTool,
@@ -9,11 +6,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
-  parsePiResourcePaths, resourcePath, rewritePiResourcePaths, guestToolInputToHost,
-  sessionToolMetadataToGuest, sessionToolTextToGuest,
+  rewritePiResourcePaths, guestToolInputToHost,
 } from "./guest-tools-core.ts";
 import {
-  createGuestAttachment, initializeToolExecution, isRoutedTool, registerRoutedTool, toolExecutionMetadata,
+  createGuestAttachment, initializeToolExecution, isRoutedTool, registerRoutedTool,
 } from "../../../libexec/pi-tool-execution.ts";
 export { createGuestAttachment, waitForGuestToolReady } from "../../../libexec/pi-tool-execution.ts";
 
@@ -24,10 +20,7 @@ export default function guestTools(pi: ExtensionAPI) {
   const { cwd, repository, resourcePaths, previousCwd } = attachment;
   if (!cwd) throw new Error("guest working directory is unavailable");
   pi.on("session_start", () => attachment.ready());
-  const sandboxContext = repository
-    ? readFileSync(new URL("../../agents/sandbox-context.md", import.meta.url), "utf8")
-      .replaceAll("{{repository}}", () => repository).trim()
-    : null;
+  const projectContext = guestContextProjection(attachment);
   // Reload can update this extension while the launcher environment stays old.
   // Keep guest tools attached and clear stale facts rather than guessing from cwd.
   if (!repository) {
@@ -38,12 +31,6 @@ export default function guestTools(pi: ExtensionAPI) {
   pi.on("tool_call", (event) => {
     if (!isRoutedTool(pi, event.toolName)) guestToolInputToHost(event.toolName, event.input, resourcePaths);
   });
-  const hostRepository = Object.entries(resourcePaths)
-    .find(([, guestPath]) => guestPath === repository)?.[0];
-  const instructionFiles = [
-    ...(hostRepository ? [join(hostRepository, ".agents/sandbox/AGENTS.md")] : []),
-    join(homedir(), ".agents/sandbox/AGENTS.md"),
-  ];
   const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
   pi.on("session_start", (event, ctx) => {
     const cwd = attachment.workingDirectory(ctx);
@@ -96,78 +83,7 @@ export default function guestTools(pi: ExtensionAPI) {
       },
     };
   });
-  pi.on("context_with_system", async (event, ctx) => {
-    const cwd = attachment.workingDirectory(ctx);
-    const instructions: string[] = [];
-    for (const path of instructionFiles) {
-      if (existsSync(path)) instructions.push(await expandInstructionFile(path));
-    }
-    const sandboxInstructions = instructions.length
-      ? rewritePiResourcePaths(instructions.join("\n\n"), resourcePaths)
-      : null;
-    // Project the guest view for every request, including structured system patches
-    // and resumed history that startup hooks cannot rewrite.
-    const rewriteSystem = (text: string) => rewritePiResourcePaths(text, resourcePaths)
-      .replace(/^Current working directory: .*$/m, () => `Current working directory: ${cwd}`)
-      .replace(/<cwd>\n[^\n]*\n<\/cwd>/g, () => `<cwd>\n${cwd}\n</cwd>`);
-    const rewriteSkill = (text: string) =>
-      /^<skill name="[^"]+" location="[^"]+">\n/.test(text)
-        ? rewritePiResourcePaths(text, resourcePaths)
-        : text;
-    let firstSystem = true;
-    return {
-      messages: event.messages.map((message) => {
-        if (message.role === "system") {
-          const sections = Object.fromEntries(
-            Object.entries(message.sections ?? {}).map(([name, text]) =>
-              [name, text === null ? null : rewriteSystem(text)]),
-          );
-          if (firstSystem || message.sections?.sandbox_context !== undefined) {
-            sections.sandbox_context = sandboxContext;
-          }
-          if (firstSystem || message.sections?.sandbox_instructions !== undefined) {
-            sections.sandbox_instructions = sandboxInstructions;
-          }
-          firstSystem = false;
-          return {
-            ...message,
-            content: typeof message.content === "string"
-              ? rewriteSystem(message.content)
-              : message.content.map((block) => ({ ...block, text: rewriteSystem(block.text) })),
-            ...(sections ? { sections } : {}),
-          };
-        }
-        if (message.role === "toolResult" &&
-          (message.toolName === "search_sessions" || message.toolName === "read_session") &&
-          toolExecutionMetadata(message.details)?.target !== "guest") {
-          return {
-            ...message,
-            details: sessionToolMetadataToGuest(message.details, resourcePaths),
-            content: message.content.map((block) => block.type === "text"
-              ? { ...block, text: sessionToolTextToGuest(message.toolName, block.text, message.details, resourcePaths) }
-              : block),
-          };
-        }
-        // Link identities can contain paths; project only cwd lines, not names or host UI metadata.
-        if (message.role === "toolResult" && message.toolName === "link_list") {
-          return {
-            ...message,
-            content: message.content.map((block) => block.type === "text"
-              ? { ...block, text: block.text.replace(/^([ \t]+cwd: )(.+)$/gm,
-                (_line: string, label: string, path: string) => label + rewritePiResourcePaths(path, resourcePaths)) }
-              : block),
-          };
-        }
-        if (message.role !== "user") return message;
-        return {
-          ...message,
-          content: typeof message.content === "string"
-            ? rewriteSkill(message.content)
-            : message.content.map((block) => block.type === "text"
-              ? { ...block, text: rewriteSkill(block.text) }
-              : block),
-        };
-      }),
-    };
-  });
+  pi.on("context_with_system", async (event, ctx) => ({
+    messages: await projectContext(event.messages, ctx),
+  }));
 }

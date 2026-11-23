@@ -68,19 +68,26 @@ async function fixture(t, { worker = false, enabled = true, systemPrompt = "Pres
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
       additionalExtensionPaths: extensionPaths, systemPrompt,
       extensionFactories: [pi => {
-        pi.registerProvider(faux.provider);
+        pi.registerProvider({ ...faux.provider,
+          streamSimple(model, context, options) {
+            const last = context.messages.at(-1);
+            if (last?.role !== "user" || !strings(last.content).includes("Produce the checkpoint now.")) {
+              return faux.provider.streamSimple(model, context, options);
+            }
+            // Compaction uses the same configured provider stream as the parent,
+            // but must not consume the next scripted parent-turn response.
+            summaries.push({ model, context: structuredClone(context), options });
+            const stream = ai.createAssistantMessageEventStream();
+            stream.push({ type: "done", reason: "stop", message: {
+              ...ai.fauxAssistantMessage(checkpoint), api: model.api, provider: model.provider, model: model.id,
+            } });
+            return stream;
+          },
+        });
         pi.registerTool({ name: "probe", label: "Probe", description: "Disposable output fixture",
           parameters: { type: "object", properties: { which: { type: "string" } }, required: ["which"] },
           execute: async (_id, { which }) => ({ content: [{ type: "text", text: which === "old" ? old : latest }],
             details: { retained: which }, isError: which === "old" }) });
-        pi.on("session_start", (_event, ctx) => {
-          // Only summary generation uses complete(); real worker requests use the
-          // registered faux provider. Never contact a live summarization model.
-          ctx.modelRegistry.complete = async (model, context, options) => {
-            summaries.push({ model, context: structuredClone(context), options });
-            return ai.fauxAssistantMessage(checkpoint);
-          };
-        });
         pi.on("turn_end", event => boundaries.push(structuredClone(event)));
       }],
     });
@@ -117,7 +124,7 @@ describe("tool-output-pruning", () => {
     test(`${worker ? "worker" : "root"}: old output reaches the model once, then only its body changes in actual provider context and after reopen`, async t => {
       const f = await fixture(t, { worker });
       await f.run();
-      assert.equal(f.summaries.length, 0, "successful pruning makes no Luna or fallback-model request");
+      assert.equal(f.summaries.length, 0, "successful pruning makes no checkpoint-generation request");
       assert.ok(text(f.requests[1]).includes(oldOutput), "the model sees the complete output before it becomes eligible");
       const original = f.manager.getEntries().find(entry => entry.type === "message" &&
         entry.message.role === "toolResult" && entry.message.details?.retained === "old");
@@ -193,7 +200,7 @@ describe("tool-output-pruning", () => {
       assert.equal(f.manager.getEntries().filter(entry => entry.type === "context_edit").length, laterPruning ? 1 : 0);
       assert.equal(f.summaries.length, summaries);
       if (summaries) {
-        assert.ok(text(f.summaries[0].context).includes("OLD_OUTPUT_7d1c"), "Luna receives originals, not speculative omission markers");
+        assert.ok(text(f.summaries[0].context).includes("OLD_OUTPUT_7d1c"), "parent compaction receives originals, not speculative omission markers");
         assert.ok(!text(f.summaries[0].context).includes("[Output omitted."));
         assert.ok(text(f.requests[2]).includes(checkpoint.trim().replaceAll("\n", "\\n")));
       } else {

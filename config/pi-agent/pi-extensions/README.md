@@ -435,7 +435,7 @@ An existing internal guest lifecycle capture request may call the same common ca
 
 `compact_session({ report: "..." })` replaces preceding conversation context with a checkpoint written by the active agent, then continues in the same session.
 Read [`compaction.md`](compaction.md) before preparing the report; the tool description points to its source location in the agent's filesystem.
-Sandbox descriptions use the launcher's resource path mapping; host-side Luna reads still use the host source path.
+Sandbox descriptions use the launcher's resource path mapping; host-side checkpoint generation reads the host source path.
 Call the tool alone after other tools finish, not in a parallel batch or through another tool.
 The report is used unchanged, with a caller-produced recovery appendix; no additional summarizer request is made.
 The tool checks the required heading, not the report's accuracy or completeness.
@@ -465,26 +465,58 @@ Raw history and tool-result metadata remain unchanged; unsaved in-memory session
 If pruning cannot meet the target, no proposed omissions are saved, so the existing summarizer still receives the available tool outputs.
 This path does not intercept compaction before a prompt, on resume, or during overflow recovery.
 
-Manual compaction and automatic compaction not avoided by pruning use the Luna extension and [`compaction.md`](compaction.md) to produce one checkpoint covering history and any split-turn prefix.
-Its three sections are **Objective and authority**, **Current work**, and **Recovery**.
+Manual compaction and automatic compaction not avoided by pruning use the active parent model and [`compaction.md`](compaction.md).
+The extension keeps the parent's provider-visible instructions, tools, messages, and request settings, then appends the checkpoint task.
+For example, after a normal parent response, compaction reuses that request prefix, adds the finalized response and any later messages, and finally adds the task.
+The task identifies which messages to summarize and which Pi retains verbatim, including any split-turn boundary.
+The retained tail stays visible to generation, but the checkpoint describes state at the summarized boundary.
+
+[`parent-model-request.ts`](parent-model-request.ts) observes the configured provider stream and keeps a memory-only snapshot of the normal parent request.
+It excludes authentication and request headers; Pi's model registry resolves them afresh for compaction.
+A changed model, thinking level, settings, tool selection, or earlier context invalidates reuse.
+Without a reusable snapshot, it rebuilds the current session projection and applies the bundle's reasoning, web-search, and output-cap transformations.
+Reload, branch navigation, and completed compaction clear the old snapshot.
+The extension never selects a separate summary model or falls back to another model.
+
+If current instructions differ or no earlier base snapshot establishes equality, compaction appends the complete current rendered base rather than reconstructing its individual sections.
+It refreshes ROOT and `@includes` through the same preparation function as a normal turn.
+An opaque `current_parent_instructions` system section carries this update after the retained run sections, including for providers that collapse system messages into one leading message.
+It explicitly supersedes changed or removed source contributions without deleting their history.
+Changed instruction inputs rebuild the request; unchanged warm and thinking-only requests add no redundant authority update.
+This can repeat base instructions on changed or cold requests.
+
+Source refresh uses Pi's public default context-file loader and accepts only complete file records already present in the current rendered base.
+It does not activate disabled context files.
+This covers the normal dotfiles caller; custom programmatic resource-loader overrides are outside this verification.
+
+Attached-guest generated compaction uses the same [`guest-context.ts`](guest-context.ts) projection as normal requests.
+It maps host-routed result metadata and skill paths, leaves guest-produced results and quoted historical content intact, and refreshes sandbox instructions.
+
+Without a matching normal-request snapshot, compaction still uses the active parent and structured history with current instructions.
+This fallback uses raw tool registrations, so after reopening, reloading, or a loadout change its declarations can differ from Pi's prepared codemode descriptions and visibility.
+Self-authored `compact_session` and tool-output pruning keep their existing paths.
+
+The checkpoint's three sections are **Objective and authority**, **Current work**, and **Recovery**.
 Checkpoints carry forward the last established user request when no newer request is recorded.
 Each activity keeps its permission, unmet outcomes or questions, evidence, decisions, owning session or agent, holds, and recorded next action together.
 Generated checkpoints must include an `Objective and authority` Markdown heading; the extension does not evaluate the meaning of their prose.
-If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
-If generation fails, session history is kept.
+Failed, aborted, truncated, empty, or headerless responses leave session history unchanged.
+Returned tool calls also cancel compaction instead of executing.
+Only an accepted checkpoint enters session history; the appended task and temporary generation response do not become conversation turns.
 
-Self-authored and Luna checkpoints append a short `jj status` excerpt, working directory, capture time, and recovery locator, with a recorded-target count when target metadata is available.
+Self-authored and generated checkpoints append a short `jj status` excerpt, working directory, capture time, and recovery locator, with a recorded-target count when target metadata is available.
 Oversized status retains the beginning and end of text fields, marks omissions, and sets `truncated: true`.
 The end preserves revision information without parsing individual status lines.
 Failed captures report unknown state; omitted paths do not establish a clean working copy.
 Status can become stale and is not evidence of task completion.
 
 The complete status remains in `details.repositoryState`; all recorded edit/write targets remain in `details.modifiedFiles`.
-Luna collects targets from tool-call arguments, including failed attempts and already committed work, not from current dirty status.
+Generated compaction collects targets from tool-call arguments, including failed attempts and already committed work, not from current dirty status.
 They do not prove successful edits, authorship, current ownership, or commit coverage.
 Self-authored compaction carries already-recorded targets forward without collecting intervening calls; an absent collection is not an observed empty list.
 Targets from the matching previous checkpoint carry forward, but no target inventory is appended to model-visible context.
-The caller appendix is excluded from later compaction requests using `details.checkpointLength`.
+`details.checkpointLength` separates generated prose from the caller appendix for historical replay.
+Parent-preserving requests retain an earlier checkpoint's appendix when it is already part of the normal parent context.
 Task-specific ownership and uncertain-operation paths still belong beside the relevant activity in the generated checkpoint.
 
 ### Recover a compaction capture
@@ -511,11 +543,18 @@ Use the local path for the raw query; `read_session` omits capture details and d
 A null `recovery.sessionFile` means an in-memory session with no saved file to query.
 Older compactions have no capture ID; inspect their raw entries by native entry ID instead.
 
-Luna reads the instructions afresh for each generated checkpoint; instruction-only edits need no reload.
+The extension reads the instructions afresh for each generated checkpoint; instruction-only edits need no reload.
 After changing extension code, use `/reload` as described above.
 Follow the [testing guide](../../../dev/testing.md) for locked dependencies and offline compaction tests.
 These include native extension loading, persisted-context reconstruction, and recovery of full captures through their visible locators.
-See [compaction replay](../../../dev/compaction-replay.md) to compare instruction changes against saved sessions.
+The installed-SDK request, checkpoint-installation, lifecycle, and failure checks run with:
+
+```sh
+dev/test-environment node --test tests/pi/native_parent_compaction.mjs tests/pi/native_tool_output_pruning.mjs
+```
+
+[Compaction replay](../../../dev/compaction-replay.md) retains the historical flattened-input experiment for instruction comparisons.
+That runner replaces the system prompt and serializes history; its results do not establish parent-prefix preservation or cache reuse.
 
 ## Side conversations: `/split`
 

@@ -8,6 +8,9 @@ Generation also requires the normal installed Pi SDK.
 The runner resolves `PI_PACKAGE_DIR` when set, otherwise the normal `~/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent` installation, then `/opt/agent-pi/src/packages/coding-agent` in the guest.
 An explicit unusable installation fails; the runner never substitutes the locked SDK's credential backend.
 
+This runner retains the historical flattened-input Luna experiment.
+Current [production compaction](../config/pi-agent/pi-extensions/README.md#compaction) preserves the active parent's structured request instead; replay results do not establish production request parity or cache reuse.
+
 List recorded cuts, including cuts on inactive branches:
 
 ```sh
@@ -16,6 +19,7 @@ dev/replay-compaction --list-cuts SESSION.jsonl
 
 The output is one JSON object per cut, in recorded order, with its ID, timestamp, parent, and first retained entry.
 It also reports serialized input characters and whether a previous checkpoint is included.
+These offline counts use the locked SDK serializer, identified by the per-cut `serialization` field; generation uses the selected installed SDK below.
 An unreconstructable boundary is listed with an error instead of hiding that cut.
 A session without compactions produces no output.
 Listing does not accept a compaction ID, `--instructions`, or `--provider`.
@@ -29,7 +33,7 @@ dev/replay-compaction --provider openai-codex --instructions CANDIDATE.md SESSIO
 ```
 
 Replay keeps the compaction model ID (`gpt-6-luna`) and chooses the sole configured provider offering it.
-It does not inherit the extension's provider pin or copy credentials from another provider.
+It does not copy credentials from another provider.
 When more than one configured provider offers that ID, select one with `--provider ID`.
 An explicit unavailable provider fails before generation; the runner never substitutes a different model or provider.
 The installed runtime resolves the selected provider's existing credentials at request time, as in a normal Pi session.
@@ -49,15 +53,21 @@ A failure before completion returns leaves no `response.json` and does not estab
 The session file is never modified; failed requests retain the replay inputs.
 Treat returned model content as sensitive when sharing these artifacts.
 `replay.json` records source and instruction paths and SHA-256 hashes, the recorded cut, serialized input hash and length, `requestedModel`, and the effective `model` provider/ID.
+`reconstruction` identifies the locked SDK version; `input.serialization` identifies the serializer that produced the saved bytes.
+For installed serialization, it records `installed-pi-public-sdk`, the selected package version, and its public entrypoint, matching `runtime`.
+Before installed runtime creation succeeds, retained inputs carry the initial `locked-sdk` serialization label.
 `model` remains null if selection fails.
 After runtime creation, `runtime` records the installed package's real directory, public SDK entrypoint, version, and default-backend selection.
 Once the model is selected, it also records the effective token budget, reasoning effort, cache retention, and timeout.
 Paths are provenance, not archived source; retain the source session and dependency lock separately if later reproduction matters.
 
 Replay uses the recorded cut point and previous checkpoint, not today's retention settings.
-Input reconstruction, authoritative serialization, and the default reserve-token budget use the repository's locked SDK.
-Only model catalog, credentials, and provider completion use the installed SDK.
-This keeps captured input bytes stable without coupling the locked runtime to a newer credential backend; record both the dependency lock and installed runtime version for comparisons.
+Historical branch/cut reconstruction and the default reserve-token budget use the repository's locked SDK.
+Generation converts the reconstructed messages with `convertToLlm`, then calls `serializeConversation`, both from the same installed public SDK selected for model completion.
+With Pi 1.5.0, this conversion omits thinking blocks.
+The user message keeps the previous-checkpoint/conversation envelope; the selected instruction file remains the system prompt.
+The pure `replayInput()` helper defaults to the locked historical-input condition; pass the selected registry's `replaySerialization` to reconstruct generation bytes offline.
+Record both the dependency lock and installed runtime version for comparisons.
 Original custom compaction instructions and generation settings are not recorded and cannot be reconstructed.
 Caller-added repository status is excluded from the comparison and input when saved checkpoint metadata identifies it.
 Older summaries without that metadata remain intact.
@@ -80,7 +90,7 @@ Before calling an omission a regression, identify the concrete wrong belief, los
 Omitting completed work or commit details is not itself a failure.
 
 Before using replay results to tune instructions, compare `input.txt` with the raw session history at the recorded cut.
-The current SDK's compaction `utils.ts` serializer keeps only the first 2000 characters of each tool result, then adds a truncation marker.
+Pi 1.5.0's serializer keeps only the first 2000 characters of each tool result, then adds a truncation marker.
 It does not retain the tail; an authority clause or worker result later in a long tool output may never reach the replay model.
 Keep this SDK behavior rather than replacing the serializer, and distinguish absent model-visible evidence from a retention failure.
 Later turns outside the cut also cannot support a judgment about that reply.
@@ -99,7 +109,10 @@ Replay the same source session and explicit cut for both baseline and candidate.
 Check that paired `input.txt` files match byte-for-byte, and that each captured `instructions.md` matches its corresponding frozen file.
 Use `replay.json` to check source and input hashes, cut identity, installed runtime, model, and generation settings.
 Instruction hashes should differ when testing different prompts; each must match the intended candidate.
-Keep model and settings equal for prompt-only comparisons.
+Keep model, settings, and installed serialization equal for prompt-only comparisons.
+Switching from locked-SDK serialization to installed serialization is a changed-input condition even when source and cut identities stay fixed.
+Preserve existing frozen inputs and responses as observations of their original condition; freeze new installed inputs separately before generation.
+Do not attribute a difference between those conditions to the prompt alone.
 Read the replies against the supplied records yourself, preserving adverse results and uncertainty rather than computing a semantic score.
 Repeat ambiguous cases; a single favorable generation is not evidence of consistent superiority.
 Keep development examples separate from frozen-candidate checks, and distinguish a second cut from the same session from an independent session.
@@ -109,6 +122,10 @@ They inject the model-registry boundary without requests and check native CLI in
 Provider-selection cases cover automatic selection, explicit selection, ambiguity and unavailable credentials.
 A default CLI case resolves a disposable installed-public-SDK fixture and checks that runtime creation receives no credential-backend override; it also checks captured context, settings, runtime provenance, and failure without fallback for an invalid explicit installation.
 A separate locked-runtime case reads explicitly supplied disposable credential storage and intercepts completion before any request.
+An installed-runtime case intercepts its real registry's completion and compares the delivered input byte-for-byte with the installed SDK's public conversion and serialization functions.
+It covers mixed text/thinking, thinking-only output, tool calls, long tool results, previous-checkpoint stripping, source/cut identities, and unchanged historical request envelope/settings.
+The [native parent-compaction tests](../tests/pi/native_parent_compaction.mjs) exercise the production request separately.
+Injected registry fixtures without `replaySerialization` retain the explicitly labeled locked-input test condition.
 Returned-response cases check diagnostic retention across each rejection path while keeping accepted output files exclusive to validated checkpoints.
 Selection, runtime-creation and thrown-request failures leave no completed-response sidecar.
 These offline fixtures do not demonstrate live keychain access or model generation.

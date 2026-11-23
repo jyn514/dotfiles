@@ -9,10 +9,14 @@ import {
   buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS,
   parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { COMPACTION_MODEL } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
+import lockedSdkPackage from "../node_modules/@earendil-works/pi-coding-agent/package.json";
+// Historical flattened-input replay condition; production compaction always uses its parent.
+export const COMPACTION_MODEL = { provider: "openai", id: "gpt-6-luna" } as const;
 import { checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/checkpoint-capture.ts";
 
-export function replayInput(text, entryId) {
+// The default is the locked historical-input condition. Generation supplies the
+// selected installed SDK's public conversion/serialization exports instead.
+export function replayInput(text, entryId, serialization = { convertToLlm, serializeConversation }) {
   // Parse without SessionManager.open, which can migrate and rewrite the source.
   const entries = parseSessionEntries(text).filter(entry => entry.type !== "session");
   const original = entryId
@@ -24,7 +28,7 @@ export function replayInput(text, entryId) {
   if (cut < 0) throw new Error(`Recorded boundary ${original.firstKeptEntryId} is missing from the compaction's parent context`);
   const previous = context[0]?.type === "compaction" ? context[0] : undefined;
   const messages = context.slice(previous ? 1 : 0, cut).flatMap(sessionEntryToContextMessages);
-  const conversation = serializeConversation(convertToLlm(messages));
+  const conversation = serialization.serializeConversation(serialization.convertToLlm(messages));
   const prompt = [
     previous ? `<previous-checkpoint>\n${checkpointText(previous)}\n</previous-checkpoint>` : "",
     `<conversation>\n${conversation}\n</conversation>`,
@@ -37,7 +41,7 @@ export function listCuts(text) {
     const cut = { id: entry.id, timestamp: entry.timestamp, parentId: entry.parentId, firstKeptEntryId: entry.firstKeptEntryId };
     try {
       const { prompt } = replayInput(text, entry.id);
-      return { ...cut, characters: prompt.length, previous: prompt.startsWith("<previous-checkpoint>") };
+      return { ...cut, characters: prompt.length, previous: prompt.startsWith("<previous-checkpoint>"), serialization: { implementation: "locked-sdk", version: lockedSdkPackage.version } };
     } catch (error) {
       // A damaged boundary must not hide a recorded cut or prevent listing others.
       return { ...cut, error: error.message };
@@ -45,8 +49,9 @@ export function listCuts(text) {
   });
 }
 
-// Keep reconstruction on the locked SDK, but use the installed Pi's public
-// runtime for credentials and provider requests. The locked SDK's auth backend
+// Keep historical branch/cut reconstruction on the locked SDK, but use the
+// installed Pi's public serialization and model runtime. This historical replay
+// does not reproduce production parent-prefix compaction. The locked SDK's auth backend
 // can differ from the installed CLI's backend (for example plaintext vs keychain).
 export async function createReplayRegistry(env = process.env) {
   const candidates = env.PI_PACKAGE_DIR ? [env.PI_PACKAGE_DIR] : [
@@ -61,14 +66,16 @@ export async function createReplayRegistry(env = process.env) {
   if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof entry !== "string")
     throw new Error(`Installed Pi package has no public SDK entry: ${directory}`);
   const entrypoint = join(directory, entry);
-  const { ModelRuntime, ModelRegistry } = await import(pathToFileURL(entrypoint).href);
-  if (typeof ModelRuntime?.create !== "function" || typeof ModelRegistry !== "function")
-    throw new Error(`Installed Pi SDK lacks ModelRuntime/ModelRegistry: ${entrypoint}`);
+  const { ModelRuntime, ModelRegistry, convertToLlm, serializeConversation } = await import(pathToFileURL(entrypoint).href);
+  if (typeof ModelRuntime?.create !== "function" || typeof ModelRegistry !== "function" ||
+      typeof convertToLlm !== "function" || typeof serializeConversation !== "function")
+    throw new Error(`Installed Pi SDK lacks ModelRuntime/ModelRegistry/convertToLlm/serializeConversation: ${entrypoint}`);
   // No authPath or credentials override: the installed runtime owns its normal
   // default backend, including environment configuration and native keychain.
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
   const registry = new ModelRegistry(runtime);
   registry.replayRuntime = { directory, entrypoint, version: manifest.version, credentials: "installed-pi-default" };
+  registry.replaySerialization = { convertToLlm, serializeConversation };
   return registry;
 }
 
@@ -91,7 +98,8 @@ export async function main(args = process.argv.slice(2), createRegistry = create
     for (const cut of listCuts(source)) console.log(JSON.stringify(cut));
     return;
   }
-  const { original, prompt } = replayInput(source, entryId);
+  const { original, prompt: historicalPrompt } = replayInput(source, entryId);
+  let prompt = historicalPrompt;
   const instructionsPath = values.instructions ?? COMPACTION_INSTRUCTIONS;
   const instructions = readFileSync(instructionsPath, "utf8");
   const output = mkdtempSync(join(tmpdir(), "compaction-replay-"));
@@ -101,7 +109,8 @@ export async function main(args = process.argv.slice(2), createRegistry = create
   const metadata = {
     source: { path: resolve(sessionPath), sha256: sha256(source) },
     cut: { id: original.id, timestamp: original.timestamp, parentId: original.parentId, firstKeptEntryId: original.firstKeptEntryId },
-    input: { sha256: sha256(prompt), characters: prompt.length },
+    reconstruction: { implementation: "locked-sdk", version: lockedSdkPackage.version },
+    input: { sha256: sha256(prompt), characters: prompt.length, serialization: { implementation: "locked-sdk", version: lockedSdkPackage.version } },
     instructions: { path: resolve(instructionsPath), sha256: sha256(instructions) },
     requestedModel: { id: COMPACTION_MODEL.id, provider: values.provider ?? null },
     model: null,
@@ -111,6 +120,13 @@ export async function main(args = process.argv.slice(2), createRegistry = create
   try {
     const registry = await createRegistry();
     metadata.runtime = registry.replayRuntime ?? { credentials: "injected-test-registry" };
+    if (registry.replaySerialization) {
+      ({ prompt } = replayInput(source, original.id, registry.replaySerialization));
+      metadata.input = { sha256: sha256(prompt), characters: prompt.length, serialization: {
+        implementation: "installed-pi-public-sdk", version: registry.replayRuntime.version, entrypoint: registry.replayRuntime.entrypoint,
+      } };
+      writeFileSync(join(output, "input.txt"), prompt);
+    }
     saveMetadata();
     // Availability and request-time auth belong to Pi's registry/runtime. A
     // provider pin from the extension is not evidence of configured credentials.

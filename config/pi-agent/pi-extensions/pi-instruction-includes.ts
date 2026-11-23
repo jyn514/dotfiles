@@ -88,23 +88,27 @@ export async function expandInstructionIncludes(
   return expanded;
 }
 
+/** Read the bundle's current ROOT and include inputs for a turn or checkpoint.
+ * The caller supplies base context files. Read/include failures propagate before
+ * generation; managed children omit ROOT using the same rule as normal turns.
+ */
+export async function prepareInstructionContext(baseFiles: ContextFile[], cwd: string) {
+  const rootPath = resolve(getAgentDir(), "ROOT.md");
+  const contextFiles = baseFiles.filter((file) => resolve(file.path) !== rootPath);
+  if (!process.env.PI_SUBAGENT_ID) {
+    try {
+      contextFiles.push({ path: rootPath, content: await readUtf8(rootPath) });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return { contextFiles, rootPath, expanded: await expandInstructionIncludes(contextFiles, cwd) };
+}
+
 export default function instructionIncludes(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
-    const rootPath = resolve(getAgentDir(), "ROOT.md");
-    // This hook owns ROOT context. Replace it on each run, including after removal.
-    const contextFiles = event.systemPromptOptions.contextFiles.filter((file) => resolve(file.path) !== rootPath);
-    if (!process.env.PI_SUBAGENT_ID) {
-      try {
-        contextFiles.push({ path: rootPath, content: await readUtf8(rootPath) });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
+    const { contextFiles, expanded } = await prepareInstructionContext(event.systemPromptOptions.contextFiles, event.systemPromptOptions.cwd);
     event.systemPromptOptions.contextFiles = contextFiles;
-    const expanded = await expandInstructionIncludes(
-      contextFiles,
-      event.systemPromptOptions.cwd,
-    );
     if (expanded.length === 0) {
       delete event.systemPromptOptions.sections.instruction_includes;
       return;

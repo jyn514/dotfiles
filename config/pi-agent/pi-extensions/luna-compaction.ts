@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   convertToLlm,
@@ -9,25 +8,16 @@ import {
   type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 
-import { captureCheckpoint, checkpointText, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "./checkpoint-capture.ts";
+import { captureCheckpoint, COMPACTION_INSTRUCTIONS, requireCheckpointHeader } from "./checkpoint-capture.ts";
+import { parentModelRequest } from "./parent-model-request.ts";
 import { toolOutputPruning } from "./tool-output-pruning.ts";
-
-export const COMPACTION_MODEL = {
-  provider: "openai",
-  id: "gpt-6-luna",
-} as const;
 
 function previousCompaction(event: SessionBeforeCompactEvent) {
   const entry = event.branchEntries.findLast((entry) => entry.type === "compaction");
   return entry?.type === "compaction" && entry.summary === event.preparation.previousSummary ? entry : undefined;
 }
 
-function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
-  const entry = previousCompaction(event);
-  return entry ? checkpointText(entry) : event.preparation.previousSummary;
-}
-
-export default function lunaCompaction(pi: ExtensionAPI): void {
+export default function parentCompaction(pi: ExtensionAPI, parent = parentModelRequest(pi)): void {
   pi.on("turn_end", (event, ctx) => {
     if (event.outcome !== "completed" || ctx.signal?.aborted) return;
     // An explicit checkpoint or tool-output-only request owns this boundary,
@@ -42,7 +32,7 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
     if (!pruning) return;
     const tokensBefore = event.entries.length ? pruning.tokensBefore : usage.tokens ?? pruning.tokensBefore;
     if (!shouldCompact(tokensBefore, usage.contextWindow, settings)) return;
-    // All-or-nothing: unsuccessful pruning leaves the original outputs for Luna.
+    // All-or-nothing: unsuccessful pruning leaves the original outputs for checkpoint generation.
     // Do not trust assistant usage measured before these proposed replacements.
     if (!pruning.edits.length || pruning.tokensAfter > 0.2 * usage.contextWindow ||
         shouldCompact(pruning.tokensAfter, usage.contextWindow, settings)) return;
@@ -53,55 +43,39 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
     const { preparation, signal } = event;
     try {
       const instructions = readFileSync(COMPACTION_INSTRUCTIONS, "utf8");
-      const conversation = serializeConversation(convertToLlm([
-        ...preparation.messagesToSummarize,
-        ...preparation.turnPrefixMessages,
-      ]));
-      const previous = previousCheckpoint(event);
-      const prompt = [
-        previous ? `<previous-checkpoint>\n${previous}\n</previous-checkpoint>` : "",
-        `<conversation>\n${conversation}\n</conversation>`,
+      const request = await parent.prepare(ctx);
+      const kept = request.projection.entries.findIndex(entry => entry.sourceEntry.id === preparation.firstKeptEntryId);
+      if (kept < 0) throw new Error("The retained-history boundary is missing from the current projection");
+      const cut = request.prefixOffset + request.projection.entries.slice(0, kept).reduce((count, entry) => count + entry.messages.length, 0);
+      const conversation = convertToLlm(request.current);
+      const summarized = convertToLlm(request.current.slice(0, cut)).filter(message => message.role !== "system");
+      const retained = convertToLlm(request.current.slice(cut)).filter(message => message.role !== "system");
+      const anchor = (message: (typeof conversation)[number] | undefined) => message
+        ? serializeConversation([message]).slice(0, 768) : null;
+      const task = [
+        instructions,
+        "Produce the checkpoint now. Return only checkpoint text; do not call tools.",
+        "Conversation messages are numbered in request order, excluding system instructions. " +
+          "Summarize the range below, including any earlier checkpoint. Later messages remain verbatim; " +
+          "describe state at the summarized boundary, not state after that retained tail.",
+        JSON.stringify({
+          summarizeThroughConversationMessage: summarized.length,
+          retainedConversationMessages: retained.length,
+          lastSummarizedMessageStart: anchor(summarized.at(-1)),
+          firstRetainedMessageStart: anchor(retained[0]),
+          splitTurn: preparation.isSplitTurn,
+        }, null, 2),
         event.customInstructions ? `Additional compaction instructions:\n${event.customInstructions}` : "",
       ].filter(Boolean).join("\n\n");
-      const luna = ctx.modelRegistry.find(COMPACTION_MODEL.provider, COMPACTION_MODEL.id);
-      const models = luna ? [luna] : [];
-      const active = ctx.model;
-      if (active && (!luna || active.provider !== luna.provider || active.id !== luna.id)) {
-        models.push(active);
+      const response = await parent.complete(ctx, request, task, signal);
+      signal.throwIfAborted();
+      if (["error", "length", "aborted"].includes(response.stopReason)) {
+        throw new Error(response.errorMessage || `Compaction ended with ${response.stopReason}`);
       }
-      let checkpoint: string | undefined;
-      let usage;
-      for (const [index, model] of models.entries()) {
-        try {
-          signal.throwIfAborted();
-          const response = await ctx.modelRegistry.complete(model, {
-            systemPrompt: instructions,
-            messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
-          }, {
-            maxTokens: Math.min(Math.floor(0.8 * preparation.settings.reserveTokens), model.maxTokens > 0 ? model.maxTokens : Infinity),
-            signal,
-            cacheRetention: "none",
-            sessionId: randomUUID(),
-            reasoningEffort: "low",
-          });
-          signal.throwIfAborted();
-          if (["error", "length", "aborted"].includes(response.stopReason)) {
-            throw new Error(response.errorMessage || `Compaction ended with ${response.stopReason}`);
-          }
-          if (response.content.some((block) => block.type === "toolCall")) {
-            throw new Error("Compaction attempted to call a tool");
-          }
-          const text = response.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
-          requireCheckpointHeader(text);
-          checkpoint = text;
-          usage = response.usage;
-          break;
-        } catch (error) {
-          if (signal.aborted || index === models.length - 1) throw error;
-          ctx.ui.notify(`Luna compaction failed; using the active model: ${error instanceof Error ? error.message : String(error)}`, "warning");
-        }
-      }
-      if (checkpoint === undefined) throw new Error("No compaction model is available");
+      if (response.content.some(block => block.type === "toolCall")) throw new Error("Compaction attempted to call a tool");
+      const checkpoint = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+      requireCheckpointHeader(checkpoint);
+      const usage = response.usage;
 
       const modified = new Set([...preparation.fileOps.edited, ...preparation.fileOps.written]);
       // The SDK does not inherit file lists from hook-produced compactions.
@@ -116,6 +90,7 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       return {
         compaction: {
           ...captured,
+          details: { ...captured.details, model: { provider: request.model.provider, id: request.model.id }, requestMode: request.mode },
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,

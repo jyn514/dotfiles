@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, spyOn, test } from "bun:test";
-import { DEFAULT_COMPACTION_SETTINGS, ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { listCuts, main, replayInput } from "../../dev/replay-compaction";
-import { COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
+import { buildContextEntries, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, ModelRuntime, parseSessionEntries, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { COMPACTION_MODEL, createReplayRegistry, listCuts, main, replayInput } from "../../dev/replay-compaction";
 import { checkpointText, COMPACTION_INSTRUCTIONS } from "../../config/pi-agent/pi-extensions/checkpoint-capture";
 
 const header = { type: "session", version: 3, id: "0537ee54-642f-4ce4-a67b-ff9b06b39104", timestamp: "2026-10-03T00:00:00Z", cwd: "/owned" };
@@ -550,6 +550,9 @@ describe("compaction replay", () => {
       }));
       writeFileSync(join(packageDir, "sdk.js"), `
         import { writeFileSync } from "node:fs";
+        import { convertToLlm as convert, serializeConversation as serialize } from ${JSON.stringify(import.meta.resolve("@earendil-works/pi-coding-agent"))};
+        export const convertToLlm = convert;
+        export function serializeConversation(messages) { return "Selected fixture serializer: " + serialize(messages); }
         export class ModelRuntime {
           static async create(options) { return { options }; }
         }
@@ -572,16 +575,18 @@ describe("compaction replay", () => {
       expect(calls.runtimeOptions).toEqual({ allowModelNetwork: false });
       expect(calls.model).toEqual({ provider: "native-fixture", id: COMPACTION_MODEL.id, maxTokens: 321 });
       expect(calls.context.systemPrompt).toBe("Frozen instructions 🐟\n");
-      expect(calls.context.messages[0].content[0].text).toBe(replayInput(source, "second").prompt);
+      expect(calls.context.messages[0].content[0].text).toBe(replayInput(source, "second").prompt.replace("<conversation>\n", "<conversation>\nSelected fixture serializer: "));
       expect(calls.options).toMatchObject({ maxTokens: 321, reasoningEffort: "low", cacheRetention: "none" });
       expect(calls.options).not.toHaveProperty("apiKey");
       const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
       expect(metadata.runtime).toEqual({ directory: packageDir, entrypoint: join(packageDir, "sdk.js"), version: "fixture-native", credentials: "installed-pi-default" });
+      expect(metadata.input.serialization).toEqual({ implementation: "installed-pi-public-sdk", version: "fixture-native", entrypoint: join(packageDir, "sdk.js") });
       expect(metadata.settings.timeoutMs).toBe(180000);
       expect(readFileSync(join(output, "input.txt"), "utf8")).toBe(calls.context.messages[0].content[0].text);
       expect(readFileSync(join(output, "instructions.md"), "utf8")).toBe(calls.context.systemPrompt);
       expect(readFileSync(sourcePath, "utf8")).toBe(source);
       // An explicit invalid installation must fail, not fall back to locked auth.
+      const validManifest = readFileSync(join(packageDir, "package.json"), "utf8");
       writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "wrong-package" }));
       const invalid = Bun.spawnSync([resolve("dev/replay-compaction"), sourcePath, "second"], { env: { ...process.env, PI_PACKAGE_DIR: packageDir } });
       expect(invalid.exitCode).toBe(1);
@@ -590,7 +595,98 @@ describe("compaction replay", () => {
       expect(failedOutput).toBeTruthy();
       for (const name of ["response.json", "new.md", "usage.json"]) expect(existsSync(join(failedOutput, name))).toBe(false);
       if (failedOutput) rmSync(failedOutput, { recursive: true, force: true });
+      // A partial public SDK must fail before creating credentials or a request,
+      // rather than silently retaining the older serializer.
+      writeFileSync(join(packageDir, "package.json"), validManifest);
+      for (const missing of ["convertToLlm", "serializeConversation"]) {
+        writeFileSync(join(packageDir, "sdk.js"), `
+          export class ModelRuntime { static async create() { throw new Error("unexpected credential creation"); } }
+          export class ModelRegistry {}
+          ${missing === "convertToLlm" ? 'export function serializeConversation() { return ""; }' : "export function convertToLlm() { return []; }"}
+        `);
+        const unsupported = Bun.spawnSync([resolve("dev/replay-compaction"), sourcePath, "second"], { env: { ...process.env, PI_PACKAGE_DIR: packageDir } });
+        expect(unsupported.exitCode).toBe(1);
+        expect(unsupported.stderr.toString()).toContain("lacks ModelRuntime/ModelRegistry/convertToLlm/serializeConversation");
+        expect(unsupported.stderr.toString()).not.toContain("unexpected credential creation");
+        const retained = unsupported.stderr.toString().split("replay inputs retained at ")[1]?.trim();
+        expect(retained).toBeTruthy();
+        expect(JSON.parse(readFileSync(join(retained, "replay.json"), "utf8")).input.serialization.implementation).toBe("locked-sdk");
+        for (const name of ["response.json", "new.md", "usage.json"]) expect(existsSync(join(retained, name))).toBe(false);
+        rmSync(retained, { recursive: true, force: true });
+      }
     } finally {
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  test("selected installed runtime preserves historical flattened serialization without thinking", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-native-serialization-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let output;
+    let complete;
+    let available;
+    try {
+      const assistant = (id, parentId, content) => ({ type: "message", id, parentId, timestamp: header.timestamp,
+        message: { role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", stopReason: "stop", timestamp: 1 } });
+      const source = jsonl([...entries.slice(0, 5),
+        assistant("mixed", "new", [{ type: "thinking", thinking: "PRIVATE MIXED REASONING" }, { type: "text", text: "Visible assistant text 🐟" },
+          { type: "toolCall", id: "call", name: "read", arguments: { path: "source.md" } }]),
+        { type: "message", id: "result", parentId: "mixed", timestamp: header.timestamp,
+          message: { role: "toolResult", toolCallId: "call", toolName: "read", content: [{ type: "text", text: "x".repeat(2000) + "HIDDEN TOOL TAIL" }], isError: false, timestamp: 1 } },
+        assistant("thinking-only", "result", [{ type: "thinking", thinking: "PRIVATE THINKING ONLY" }]),
+        user("cut", "thinking-only", "Retained suffix"), { ...current, parentId: "cut" }]);
+      const sourcePath = join(temporary, "source.jsonl");
+      writeFileSync(sourcePath, source);
+      const registry = await createReplayRegistry();
+      const sdk = await import(pathToFileURL(registry.replayRuntime.entrypoint).href);
+      expect(registry.replaySerialization.convertToLlm).toBe(sdk.convertToLlm);
+      expect(registry.replaySerialization.serializeConversation).toBe(sdk.serializeConversation);
+      const model = { provider: COMPACTION_MODEL.provider, id: COMPACTION_MODEL.id, maxTokens: 999999 };
+      available = spyOn(registry, "getAvailable").mockReturnValue([model]);
+      const requests = [];
+      complete = spyOn(registry, "complete").mockImplementation(async (model, context, options) => {
+        requests.push({ model, context, options });
+        return { stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\nFixture" }], usage: { input: 1, output: 1 } };
+      });
+      const parsed = parseSessionEntries(source).filter(entry => entry.type !== "session");
+      const context = buildContextEntries(parsed, "cut");
+      const messages = context.slice(1, -1).flatMap(sessionEntryToContextMessages);
+      // This is the historical flattened replay condition. The production
+      // parent-prefix compactor is exercised independently by the native suite.
+      const nativePrompt = [
+        `<previous-checkpoint>\n${checkpointText(previous)}\n</previous-checkpoint>`,
+        `<conversation>\n${sdk.serializeConversation(sdk.convertToLlm(messages))}\n</conversation>`,
+      ].join("\n\n");
+      output = await main([sourcePath, "second"], async () => registry);
+      expect(requests).toHaveLength(1);
+      const delivered = requests[0].context.messages[0].content[0].text;
+      expect(delivered).toBe(nativePrompt);
+      expect(requests[0].context.systemPrompt).toBe(readFileSync(COMPACTION_INSTRUCTIONS, "utf8"));
+      expect(requests[0].context.messages).toHaveLength(1);
+      expect(requests[0].context.messages[0].role).toBe("user");
+      expect(delivered).toStartWith("<previous-checkpoint>\nPrevious checkpoint 🐟\n</previous-checkpoint>\n\n<conversation>\n");
+      expect(delivered).toEndWith("\n</conversation>");
+      for (const text of ["Visible assistant text 🐟", '[Assistant tool calls]: read(path="source.md")', "[... 16 more characters truncated]"]) expect(delivered).toContain(text);
+      for (const text of ["PRIVATE MIXED REASONING", "PRIVATE THINKING ONLY", "[Assistant thinking]", "HIDDEN TOOL TAIL", "Retained suffix", "CALLER STATUS"]) expect(delivered).not.toContain(text);
+      const historical = replayInput(source, "second");
+      expect(historical.prompt).toContain("PRIVATE MIXED REASONING");
+      expect(historical.prompt).toContain("PRIVATE THINKING ONLY");
+      expect(delivered).not.toBe(historical.prompt);
+      expect(readFileSync(join(output, "input.txt"), "utf8")).toBe(delivered);
+      const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
+      const digest = text => createHash("sha256").update(text).digest("hex");
+      expect(metadata.source).toEqual({ path: sourcePath, sha256: digest(source) });
+      expect(metadata.cut).toEqual({ id: current.id, timestamp: current.timestamp, parentId: "cut", firstKeptEntryId: current.firstKeptEntryId });
+      expect(metadata.input).toEqual({ sha256: digest(delivered), characters: delivered.length, serialization: {
+        implementation: "installed-pi-public-sdk", version: registry.replayRuntime.version, entrypoint: registry.replayRuntime.entrypoint,
+      } });
+      expect(metadata.reconstruction).toEqual({ implementation: "locked-sdk", version: "0.84.4" });
+      expect(metadata.settings).toEqual({ maxTokens: 13107, reasoningEffort: "low", cacheRetention: "none", timeoutMs: 180000 });
+      expect(readFileSync(sourcePath, "utf8")).toBe(source);
+    } finally {
+      complete?.mockRestore(); available?.mockRestore(); log.mockRestore(); diagnostic.mockRestore();
       if (output) rmSync(output, { recursive: true, force: true });
       rmSync(temporary, { recursive: true, force: true });
     }
