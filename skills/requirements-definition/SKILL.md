@@ -22,7 +22,7 @@ Otherwise, raise the idea only as a non-normative suggestion.
 Use other sources only when the requester or governing product documentation identifies them as authoritative.
 Do not infer approval from a draft, discussion, ticket, request for ideas, or implementation task.
 
-This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to [design review](../spec-review/SKILL.md). Any later request for an implementation specification returns through `new-tool-development`, not [design review](../spec-review/SKILL.md).
+This skill owns requirements definition. After drafting, route requirements review to [design review](../spec-review/SKILL.md). Any request for an implementation specification returns through `new-tool-development`, not [design review](../spec-review/SKILL.md).
 
 If the brief is missing, approval is unclear, or the request is not explicit, stop and report the missing prerequisite instead of drafting.
 
@@ -141,15 +141,16 @@ Before presenting the draft, verify:
 - material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;
 - wording is observable and solution-neutral;
-- implementation specification has not begun;
 - identifiers, numbers, exact errors, and unresolved uncertainty were preserved.
 
 Report inspected sources, excluded or unresolved items, and any ambiguity that prevents a reliable requirement. Do not claim complete coverage when a source was unavailable or conflicting.
 
-### 7. Require approval and stop
+### 7. Present the requirements for approval
 
-Present the requirements as a draft requiring explicit human approval. Route the draft and review questions to [design review](../spec-review/SKILL.md), then stop pending explicit human approval. Do not proceed to implementation specification or implementation from this skill. If a later implementation-spec request arrives, return it through `new-tool-development`; [design review](../spec-review/SKILL.md) does not own implementation-spec progression. Approval of the requirements is not approval of an implementation.
+Present the requirements as a draft requiring explicit human approval.
+Route the draft and review questions to [design review](../spec-review/SKILL.md).
+Use [new-tool development](../new-tool-development/SKILL.md) to relate settled requirements and open product choices to design and implementation work.
 
 ## Output rules
 
-A valid completion consists of the requirements document plus the human skim packet and an explicit approval request. If prerequisites fail, output only the blocking condition and the precise missing authority or decision. If the work reveals a material unsupported choice affecting a requirement, retain `NEEDS_PRODUCT_DECISION` rather than guessing; keep optional proposals in the non-normative packet.
+If prerequisites fail, output only the blocking condition and the precise missing authority or decision. If the work reveals a material unsupported choice affecting a requirement, retain `NEEDS_PRODUCT_DECISION` rather than guessing; keep optional proposals in the non-normative packet.

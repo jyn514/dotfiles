@@ -15,7 +15,8 @@ Planning alone does not authorize implementation edits.
 For a plan review, check the proposed work against the repository using the sections below.
 Report missing detail and unsupported work; do not rewrite the plan unless asked.
 
-For a staged new-tool workflow, require a ready implementation specification as the design authority.
+For a staged new-tool workflow, use the specification contracts ready for the work being planned as the design authority.
+Use [new-tool development](../new-tool-development/SKILL.md) to assess the relevant contracts rather than waiting for unrelated parts of the specification.
 The plan remains optional; it must not change the requirements or design or require another human approval.
 
 ## Establish the task

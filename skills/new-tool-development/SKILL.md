@@ -1,152 +1,134 @@
 ---
 name: new-tool-development
-description: Orchestrate the lifecycle and stage checks for a newly introduced, independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or governing product brief, requirements, implementation-spec, or implementation handoff work; do not use for substantive requirements, architecture, design, or implementation procedures. Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
+description: Coordinate development of a new independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or coordinating its brief, requirements, design, construction, or implementation handoff; check dependencies, authority, and acceptance against intended use. Specialized skills own substantive requirements, design, and implementation methods. Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
 ---
 
 # New tool development
 
-## Scope and authority
+When coordinating tool development, act as its executive under [delegation](../delegation/SKILL.md) and the [executive policy](../delegation/references/executive.md).
+Organize the work around the original requested outcome.
+Delegate substantive work and run independent work in parallel by default.
 
-Use this skill as the lifecycle orchestrator for a new independently invoked tool, CLI, service, or reusable executable subsystem. It owns stage entry, status, approval, invalidation, routing, and implementation readiness—not the substantive contents of the brief, requirements, or specification.
+Start from the approved product intent and the requested deliverable.
+Identify who uses the result, what they do with it, and what outcome acceptance must establish.
+Use representative inputs and existing consumer evidence; keep unresolved product choices explicit.
+A requested specification can be the finished deliverable.
 
-Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
+## Connect intended use to the contract
 
-Keep three logically separate canonical artifacts:
+Trace the intended use through requirements, design, and acceptance checks.
+For example, an expert comparing source drawings with an overlay needs faithful content, correct alignment, and readable marks from meaningfully related drawings.
+Check shared interfaces along that path: an extracted crop can be correct locally but misplaced during composition if units, origin, or orientation differ.
+Do not invent acceptance thresholds where the brief leaves a product choice open.
 
-- **Product brief — why and scope:** problem, users, intended outcome, boundaries, and non-goals.
-- **Requirements document — observable what:** user-visible behavior, constraints, acceptance conditions, and quality requirements.
-- **Implementation specification — how:** design, interfaces, execution details, operational treatment, and verification plan.
+Keep the reasons for a constraint visible.
+A particular aligner may need a particular input representation; that does not establish that the expert's activity needs that aligner.
+Compare changing the mechanism with satisfying the extra dependencies it introduces.
+Preserve explicit product requirements while reconsidering agent-selected means.
 
-Logical separation does not require separate files. Requirements and implementation may occupy named sections in one document or co-located **Requirements** and **Implementation** sections in per-topic files, regardless of tool size. Requirements must state observable contracts directly, without relying on implementation sections to supply missing behavior; implementation sections may reference requirements. Keep canonical ownership, status, approval, and invalidation scope identifiable for each artifact.
+## Let dependencies determine the order
 
-Do not duplicate normative content across artifacts. Link to the upstream owner instead. Co-location and compaction do not waive review, approval, invalidation, or separate implementation authority.
+Suppose extraction behavior and the shared coordinate convention are settled and reviewed, while registration research continues.
+The implementation owner can build and check extraction without knowing which registration algorithm will win.
+Comparing extracted content with its source establishes useful fidelity evidence, and later registration work can consume the agreed representation.
+The unfinished registration design does not make that extraction contract unfinished.
 
-Do not begin implementation without both a **ready implementation specification** and a **separate explicit implementation authority**. Approval of one artifact never grants authority to implement.
+Change one fact: extraction and registration still disagree about the shared coordinate convention.
+Building them independently now could embed incompatible assumptions throughout both components.
+Resolving and reviewing that convention first can prevent more rework than early construction would reveal.
+More design also wins when a consequential algorithm or interface remains unspecified, or available evidence already shows the proposed mechanism cannot meet a requirement.
+Implementation should not inherit incompatible behaviors or an impossible promise as local choices.
 
-## Initial triage
+When deciding whether work can start, name the unresolved decision that would change its required behavior, shared interface, or correctness-critical mechanism.
+An unfinished document or pending unrelated review is not itself a dependency.
+Hold work affected by a consequential unresolved dependency and continue independent work.
+Keep contract details and dependencies in the existing specification or assignment; do not add a separate readiness table.
+When construction is appropriate, start with a usable path through the intended consumer rather than accumulating disconnected helpers.
+Experiments are optional and should resolve a decision; component success does not establish whole-tool acceptance.
 
-1. Confirm the request concerns a new tool/subsystem or a lifecycle decision for one.
-2. Record the requested activity explicitly: `brief`, `requirements`, `implementation-spec`, optional `implementation-plan`, or `implementation`.
-3. Record known stakeholders, existing artifacts, approved non-goals, dependencies, and unresolved decisions. Distinguish observed facts, assumptions, decisions, and unknowns.
-4. If the requested activity is absent or the safe scope cannot be determined, stop and ask for clarification; do not infer an activity.
-5. Inspect upstream canonical artifacts and their status before drafting or routing downstream work.
+## Check results against intended use
 
-## Status model
+As results arrive, compare them with the sources and required consumer activity:
 
-Use only the statuses needed by each artifact:
+- A source comparison can show that extraction preserves the inspected marks.
+  It leaves cross-drawing alignment and coverage of other drawing families untested.
+  Use it to support extraction decisions, not to declare the overlay tool complete.
+- A rendered overlay can expose unreadable overlapping labels even when every source mark is present and correctly positioned.
+  File validity and geometric correctness do not explain how the expert can make the comparison.
+  Reconsider the presentation mechanism; if the approved acceptance contract leaves interpretability unresolved, raise that requirements decision too.
+  Do not accept unusable output simply because it passes existing tests.
+- An inventory can reveal a required drawing family that the current registration approach cannot handle.
+  Many successful examples from other families do not resolve that omission.
+  Reconsider the approach or the work still needed for coverage, rather than silently excluding the family.
+  If the brief does not settle whether the family belongs, ask for that product decision.
 
-- product brief and requirements: `draft`, `approved`, `blocked`, or `invalidated`;
-- implementation specification: `draft`, `ready`, `blocked`, or `invalidated`.
+Select checks that can distinguish the proposed explanation from a plausible failure.
+For the overlay, comparing output only with another candidate-generated image can repeat the same extraction error.
+Source drawings and independently established expectations give the check a basis outside the candidate.
+Use focused checks for local decisions and assembled consumer checks for interactions and overall usefulness.
+Plan representative real-input checks before expanding repeated work; a successful easy example does not establish coverage.
 
-A `draft` means the artifact exists and is pending review or approval. Use `blocked` only when progress cannot continue because a prerequisite, authority, or blocking decision is missing; ordinary pending approval remains `draft`. Use `ready` only when the implementation specification is complete, required reviews passed, and its prerequisites remain valid. A status names its evidence: reviewer or approver, date, packet or decision record, and unresolved questions.
+An experiment or prototype supplies evidence only for the conditions it exercised.
+Record decisive inputs, findings, and limitations where the design can reference them.
+A prototype may be discarded or developed further; neither disposal nor promotion to production follows from its label.
+Production use still requires the applicable contract, review, and verification.
 
-A draft is not approved. A review request is not authority. Approval permits the next stage but does not automatically create or draft it.
+## Approvals and readiness
 
-When recording a status transition, inspect the full artifact for wording that still describes its former status (for example, “this draft” after approval). Correct editorial wording in agent-editable artifacts; for a human-owned brief, report the mismatch or add a permitted TODO instead. If the correction changes meaning, follow the invalidation and approval rules below before proceeding.
+Apply these boundaries to the affected work, not merely to whole documents:
 
-## Stage gates and routing
+- **Product intent:** a human writes and explicitly approves the brief after agent review.
+  Agents may review it and add `TODO: <summary of suggested changes>` comments, but otherwise may not author or edit it.
+  An approved, current brief is required before requirements drafting.
+- **Requirements:** obtain explicit human approval of affected requirements before implementation.
+  Use [human review packets](../human-review-packets/SKILL.md) for consequential approvals so the behavior, acceptance, and unresolved choices are reviewable.
+  Approval of the brief or agent review does not approve requirements.
+- **Provisional design:** after substantive human feedback on requirements, identify which parts are settled enough to support specification drafting while requirements revision or approval continues.
+  Start drafting those parts if already authorized; otherwise ask to draft them in parallel now, rather than waiting for the whole requirements document to be approved.
+  Specification drafting may also proceed from approved requirements.
+  The brief must remain approved and current; keep unapproved requirements and assumptions explicit.
+- **Implementation:** require an implementation-ready affected contract and explicit implementation authority covering the work.
+  Readiness requires independent technical feedback from at least one other agent, applicable contract review, resolved consequential decisions, settled dependencies, and a concrete verification strategy.
+  Settle required behavior, interfaces, invariants, and correctness-critical mechanisms while leaving ordinary local choices to implementation.
+  Identify expected-result sources and checks that can expose plausible partial implementations, including the first usable consumer result.
+  Plan these checks before implementation; do not require the finished tool as evidence of design readiness.
 
-Each stage below states its entry condition, owner, and permitted next step.
-Approval of an artifact does not itself start the next stage.
+Implementation permission covers reviewed components as they become ready within the agreed scope and resources.
+Do not add formal human approval of the whole specification or each component unless explicitly required.
+Honor explicit waits, start times, stop instructions, and budget boundaries.
 
-### Product brief
+Before waiting for research, review, or approval, check both the current activity and the next development activity for work that can advance without that answer.
+Start work whose dependencies are settled.
+Bring missing approval or implementation-permission decisions forward now, naming the proposed work, resource limits, and unresolved prerequisites.
+Continue independent work while the answer is pending.
 
-Briefs **must be written by a human**.
-Agents may review briefs, and may add `TODO: <summary of suggested changes>` comments, but they must not author or edit the brief otherwise.
+If new evidence changes product scope or outcomes, return the affected intent to the human-owned brief for revision and reapproval.
+If it changes required observable behavior, defaults, errors, or compatibility, revise the affected requirements and obtain human reapproval before dependent implementation.
+Trace the change through shared interfaces and affected review or verification evidence.
+Hold only affected work; technical changes within approved requirements need affected technical review, not another product approval.
 
-Briefs must be explicitly approved by a human before an agent can draft a requirements document.
+## Activities and routing
 
-Briefs must be reviewed by an agent before they can be approved.
-Ask yourself: are the goals of this tool clear? Do you have enough information to draft a requirements document?
-What open questions remain?
+Use the procedure that owns the substantive activity; these routes do not require a separate document, agent, or full team for every topic.
+Keep product intent, observable obligations, and implementation decisions distinguishable, with one canonical home for each promise.
+They may share a file or occupy topic-oriented sections.
+Preserve consequential rationale, uncertainties, and evidence beside the decisions they explain.
 
-### Requirements document
+- For requirements authorship from the approved brief, use [requirements definition](../requirements-definition/SKILL.md).
+- For unsettled mechanisms, subsystem boundaries, or consequential interfaces, use [architecture design](../architecture-design/SKILL.md).
+  Use its [alternatives](../architecture-design/references/alternatives.md) and [boundary-contract questions](../architecture-design/references/boundary-contracts.md) when those choices need analysis.
+  Ordinary API, schema, and implementation choices use [coding judgement](../coding-judgement/SKILL.md) and its topic references.
+- For implementation-spec explanation, use [design-document guidance](../holistic-writing/references/design-documents.md).
+  After substantial drafting, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md).
+  Use [specification review](../spec-review/SKILL.md) to check affected promises against requirements, including when other contracts remain unfinished.
+- For verification strategy, expected results, and consumer checks, use [testing with evidence](../references/testing.md).
+  For proposed third-party dependencies, use [dependency review](../dependency-review/SKILL.md).
+- When interaction or learning choices remain unsettled, use [UX design](../ux-design/SKILL.md).
+  Use [UI design](../ui-design/SKILL.md) for concrete rendered behavior, and [operational lifecycle](../operational-lifecycle/SKILL.md) for setup, updates, recovery, recurring work, and removal.
+- Use [implementation planning](../implementation-plan/SKILL.md) only when a plan is requested; an already actionable contract needs no extra planning artifact.
+  When dividing work, use [delegation](../delegation/SKILL.md) to carry the consumer purpose and changing dependencies to their owners.
 
-Draft only requirements when `requirements` is explicitly requested and the approved brief is current. Route authorship to **`requirements-definition`**. Use **`human-review-packets`** to frame the human approval request. The review packet is a skim packet: a concise summary of scope, observable behaviors, acceptance conditions, constraints, changed assumptions, and unresolved questions, with a link/reference to the canonical requirements artifact.
-
-Require explicit human approval after the skim packet. Do not treat agent review, a comment, or approval of the brief as requirements approval. While approval is pending, keep requirements `draft`; use `blocked` only when review cannot proceed. Without approval, do not start the implementation specification.
-
-### Implementation specification
-
-Draft only the implementation specification when explicitly requested and the approved requirements are current. The specification is mostly agent-owned.
-
-#### Normal contributors
-
-Use these normal contributors:
-
-- [Documentation checks](../holistic-writing/references/documentation.md) cover reader tasks, prerequisites, and operational correctness.
-  Use [design-document guidance](../holistic-writing/references/design-documents.md) for implementation-spec document form.
-- The [shared editorial pass](../holistic-writing/references/editorial-pass.md) covers whole-artifact explanation and reader experience after substantial drafting.
-- [Change guidelines](../coding-judgement/SKILL.md#choose-guidance-at-the-decision) cover ordinary code, API, and schema choices.
-- [Testing guidance](../references/testing.md) covers test strategy.
-- **[Specification audit](../spec-review/SKILL.md)** checks the completed specification's contract against governing requirements.
-
-#### Conditional contributors — use only when the trigger holds
-
-- **`architecture-design`** handles consequential subsystem decomposition or architecture boundaries that need separate analysis.
-- [Design alternatives](../architecture-design/references/alternatives.md) covers unresolved architectural choices.
-- [Boundary-contract questions](../architecture-design/references/boundary-contracts.md) cover unresolved or changed contracts.
-  Reuse the selected design rather than starting another declaration phase.
-- [Complexity justification](../references/complexity-justification.md) applies when a mechanism's necessity or required variability remains unclear.
-- **`dependency-review`** covers proposed third-party dependencies.
-
-Escalation has an explicit authority boundary:
-
-- A change to scope, outcome, or a non-goal requires revision of the brief and explicit human reapproval. Block or invalidate the specification until the approved brief is restored.
-- A change to observable behavior, defaults, errors, or compatibility requires revision of the requirements and explicit human reapproval. Block or invalidate the specification until the approved requirements are restored.
-- High-consequence technical decisions that remain within approved scope, outcomes, non-goals, and requirements may be escalated and resolved within the specification.
-
-Also escalate unresolved security, trust, destructive-boundary, dependency/operational-cost, reusable-framework, or other blocking decisions; record the escalation and decision rather than silently choosing.
-
-Before marking the specification `ready`, make its verification plan concrete:
-connect required behaviors and mechanisms to cases that distinguish correct behavior from plausible partial implementations.
-Identify each case's independent expected-result source and test boundary, including important interactions.
-Identify which real-input/consumer checks run early rather than waiting for feature completion.
-Reuse existing tests and group obligations where appropriate; keep this mapping in the existing verification section, not a separate exhaustive test catalogue.
-These are planned checks, not a requirement to implement or pass tests before implementation is authorized.
-
-A spec becomes `ready` only after required routed work, validation, and resolution of blocking questions. `ready` does not itself authorize implementation.
-
-You may perform experiments or develop prototypes to inform your decisions, but these must be temporary and discarded once the spec is complete.
-You may not refer to experiments in the specification.
-If crucial evidence depends on an experiment, document it elsewhere in the repo and refer to that documentation.
-
-An implementation-ready specification settles required behavior, interfaces, invariants, and consequential design choices, including architecture and algorithms needed for correctness.
-It leaves no incompatible observable behaviors for implementers to choose between, but may leave local implementation choices open where those contracts determine correctness.
-Completeness does not require exhaustive optional behavior or guarantees stronger than governing requirements.
-Judge readiness by the specified candidate space, evidence and validation rules, limits, and no-results/error outcomes—not by whether a preimplementation probe finds a feasible alternative or explains every sampled case. A probe's gap blocks readiness only if it exposes a missing design decision or shows the specified approach cannot meet an approved requirement; otherwise record the gap as evidence and leave the search to implementation.
-
-### Implementation plan
-
-Draft an implementation plan only when `implementation-plan` is explicitly requested and the implementation specification is `ready`. Route the plan to **`implementation-plan`**. It is an optional activity, not an artifact stage and not an approval gate; it must not be created speculatively or treated as implementation authority.
-
-### Implementation handoff
-
-Accept implementation only when:
-
-- brief and requirements are approved and current;
-- the implementation specification is `ready`;
-- no invalidation trigger is outstanding; and
-- a separate human or governing process has granted implementation authority.
-
-If any condition fails, stop at handoff and report the exact missing condition. Route substantive implementation to its own procedure; this skill does not prescribe coding, deployment, or operational execution.
-
-## Invalidation and change control
-
-A normative change to an upstream artifact invalidates all downstream artifacts that depend on the changed content. The same applies when a specification draft proposes a change outside its authority boundary: stop and route the required upstream revision and human reapproval before continuing.
-
-Upstream invalidation rules:
-
-- changed brief invalidates requirements and implementation specification;
-- changed requirements invalidates the implementation specification;
-- changed implementation details invalidate only the affected specification status or review evidence unless they reveal an upstream normative change.
-
-Mark affected artifacts `invalidated`, record the source change, date, impacted sections, and required re-review, then stop downstream work until the gate is re-established. Non-normative editorial changes do not invalidate unless they alter meaning; state that determination explicitly.
-
-## User-facing packets and completion
-
-Every transition request must include a user-facing packet covering current status, requested activity, canonical artifact, evidence and provenance, required approvals, changes since the last gate, unresolved questions, invalidation impact, and the exact next permissible action. Do not defer a requested review or reapproval merely to batch revisions: show each meaningful change in context for independent human approval and commit.
-
-When a concrete improvement could affect the pending decision, put it in a clearly labeled, non-normative **Suggestions** section of the skim/transition packet. Include an example, tradeoff, and decision owner; suggestions are neither approved nor normative by default. If adopted, route the idea through the human-owned brief, requirements, or implementation specification and its applicable approval gate.
-
-Report ambiguity, blocked decisions, skipped checks, and unexamined scope plainly. Completion means the requested activity was drafted or gated exactly as requested, its status and evidence were recorded, downstream stages were not created automatically, and no implementation authority was implied.
+Finish against the requested outcome and its acceptance conditions.
+For a specification, distinguish decisions supported by review or evidence from behavior still awaiting implementation checks.
+For a tool, demonstrate the intended use and required coverage, including the operational obligations its mechanism introduces.
+Report unresolved work without treating document completion, a passing component, or an artifact count as the requested result.

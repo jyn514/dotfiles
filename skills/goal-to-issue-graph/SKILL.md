@@ -19,7 +19,7 @@ Those tickets may change as discovery resolves uncertainty, but their closure mu
 Next connect their outputs with justified dependencies and add applicable integration, quality, and maintenance work (§§5–6); review whether the whole graph can establish the root outcome (§7); create or update it in the selected tracker (§8); then hand it off.
 A ready graph is a plan for product work, not evidence that the product already succeeds.
 
-This skill owns decomposition, graph review, and direct creation or revision of issues in the selected tracker for the authorized project work, not implementation.
+This skill owns decomposition, graph review, and direct creation or revision of issues in the selected tracker, not implementation.
 Use the repository's default issue tracker, or TicGit if none is specified.
 Follow the repository's tracker guidance; for TicGit, use [ticgit](../ticgit/SKILL.md).
 Inspect the existing graph and reuse matching issues.
@@ -301,6 +301,8 @@ Do not sum concurrent allowances into an unsupported completion forecast.
 
 Tickets define deliverables; dependencies explain which deliverable must exist before another can be closed.
 Keep that distinction explicit: dependency edges encode closure prerequisites, while priority and safe concurrent ownership remain separate concerns.
+State separately what is needed to start work; a closure dependency need not prevent concurrent drafting, preparation, or implementation under settled contracts.
+Depend on the affected decision or contract, not completion of an entire requirements or specification document when unrelated content remains open.
 
 State the edge direction: `A → B` means A supplies something needed to close B.
 Explain that output or semantic prerequisite for every edge.
