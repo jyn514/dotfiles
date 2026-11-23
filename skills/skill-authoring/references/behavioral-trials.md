@@ -186,9 +186,14 @@ Do not block that replay solely because a fresh baseline is unavailable.
 ### Verify the tested conditions
 
 Verify the conditions required by the trial through the path the agent actually uses.
+Before paid generation, use an available request capture with submission blocked to check effective instructions, history, model and settings against the frozen trial condition.
+Capture at the normal dispatch boundary; a separately rendered debug request does not establish what will be submitted.
+Reuse matching capture evidence while the relevant inputs and delivery path remain unchanged.
+If request capture is available only during generation, state that limitation before running and inspect the first actual request before further runs.
+If request capture is unavailable, report which effective inputs remain unverified and limit the conclusions accordingly.
+
 Inspect actual actions and outputs; investigate a failed setup check before expanding the replay.
 A setup declaration or successful helper test does not establish that the intended condition reached the agent.
-A separately rendered debug request is not necessarily the request actually submitted to the model.
 Inspect the full relevant continuation, including earlier responses and actions at the tested decision.
 An interface that shows only the latest final response may hide those earlier outputs.
 
