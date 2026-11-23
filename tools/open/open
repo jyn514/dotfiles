@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""Open files and diagnostic locations in an editor or their usual application.
+
+A diagnostic such as "report.py:12:3" names both a file and a position.
+Normalize its spelling, then choose where to open it.
+Keep the position separate until encoding it for the chosen editor; a desktop opener receives only the filename.
+
+The invoked name selects the policy: "open" chooses an application, "hx-hax" uses an editor in tmux, and "editor-hax" runs the editor directly.
+"""
 
 from __future__ import annotations
 
@@ -16,8 +24,8 @@ from urllib.parse import unquote, urlsplit
 
 EDITOR = os.environ.get("REAL_EDITOR") or "nvim"
 EDITOR_BASENAME = Path(EDITOR).name
-DESKTOP = "Helix" if EDITOR_BASENAME == "hx" else EDITOR_BASENAME
-LINE_RE = re.compile(r"^(.+?):([1-9][0-9]*)(?::([1-9][0-9]*))?:?$")
+EDITOR_DESKTOP_NAME = "Helix" if EDITOR_BASENAME == "hx" else EDITOR_BASENAME
+COLON_POSITION_RE = re.compile(r"^(.+?):([1-9][0-9]*)(?::([1-9][0-9]*))?:?$")
 PAREN_POSITION_RE = re.compile(
     r"^(.+?)\(([1-9][0-9]*)(?:,([1-9][0-9]*))?\):?$"
 )
@@ -29,67 +37,66 @@ class InvalidPathspec(ValueError):
     """A diagnostic location cannot be interpreted as a local file."""
 
 
-def cmdexists(command: str) -> bool:
-    return shutil.which(command) is not None
+def main(argv: list[str]) -> int:
+    command_name = Path(sys.argv[0]).name
+    refresh_path_from_profile()
+
+    if argv and argv[0] == "--pi-editor-pane":
+        if len(argv) != 4:
+            return 2
+        return run_pi_editor_pane(argv[1], argv[2], argv[3])
+    if argv and argv[0] == "--pi-editor":
+        if len(argv) != 2:
+            return 2
+        return edit_pi_prompt_in_tmux(argv[1])
+
+    if command_name == "editor-hax":
+        if not argv:
+            os.execvp(EDITOR, [EDITOR])
+            return 0
+        if len(argv) > 1:
+            return 2
+        os.execvp(
+            EDITOR,
+            [EDITOR, *editor_exec_args(editor_args(parse_pathspec(argv[0])))],
+        )
+        return 0
+
+    if command_name == "hx-hax":
+        if len(argv) > 1:
+            return 2
+        if not argv:
+            return open_in_tmux_editor([""])
+        return open_in_tmux_editor(parse_pathspec(argv[0]))
+
+    if not argv:
+        return 1
+
+    return dispatch_open(argv)
 
 
-def run_stdout(argv: list[str], *, check: bool = False) -> str:
-    result = run(argv)
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, argv)
-    return result.stdout
+def dispatch_open(argv: list[str]) -> int:
+    target = expand_tilde(argv[-1])
+    # The desktop opener owns URLs, including file:// URIs with position-like suffixes.
+    if re.search(r"^[a-zA-Z]+://", target):
+        return os_open([expand_tilde(arg) for arg in argv])
+
+    location = parse_pathspec(target)
+    file = location[0]
+    if len(location) > 1:
+        if macos_extensionless_text_file(file) or default_is_editor(default_app(file)):
+            return open_in_tmux_editor(location)
+    elif len(argv) == 1 and macos_extensionless_text_file(file):
+        return open_in_tmux_editor([file])
+
+    return os_open([*map(expand_tilde, argv[:-1]), file])
 
 
-def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        argv,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-
-def trim(value: str | None) -> str | None:
-    if value is None:
-        return None
-    return value.strip()
-
-
-def expand_tilde(path: str) -> str:
-    if path == "~" or path.startswith("~/"):
-        return os.environ.get("HOME", "") + path[1:]
-    return path
-
-
-def canonicalize(path: str) -> str:
-    return str(Path(path).resolve(strict=False))
-
-
-def split_line(value: str) -> list[str]:
+def parse_pathspec(value: str) -> list[str]:
+    """Return a filename followed by any line and column strings."""
     expanded = expand_tilde(value)
-    if Path(expanded).exists():
-        return [canonicalize(expanded)]
-
-    match = LINE_RE.match(value)
-    if not match:
-        return [value]
-
-    parts = list(match.groups())
-    file = parts[0]
-    parsed = urlsplit(file)
-    if parsed.scheme.lower() == "file" and parsed.path != file:
-        if parsed.netloc.lower() not in ("", "localhost"):
-            raise InvalidPathspec(f"unsupported file URI authority: {parsed.netloc!r}")
-        file = unquote(parsed.path)
-
-    file = expand_tilde(file)
-    file = canonicalize(file)
-    parts[0] = file
-    return [part for part in parts if part is not None]
-
-
-def split_pathspec(value: str) -> list[str]:
-    expanded = expand_tilde(value)
+    # An existing file named "report:12" is a filename, not a line reference.
+    # Check before removing whitespace or punctuation that may belong to its name.
     if Path(expanded).exists():
         return [canonicalize(expanded)]
 
@@ -97,7 +104,7 @@ def split_pathspec(value: str) -> list[str]:
     traceback = TRACEBACK_RE.match(candidate)
     if traceback:
         file, line = traceback.groups()
-        return split_line(f"{file}:{line}")
+        return parse_line_position(f"{file}:{line}")
 
     candidate = candidate.strip("\"'`")
 
@@ -108,50 +115,151 @@ def split_pathspec(value: str) -> list[str]:
     if parenthesized:
         file, line, column = parenthesized.groups()
         suffix = f":{column}" if column is not None else ""
-        return split_line(f"{file}:{line}{suffix}")
+        return parse_line_position(f"{file}:{line}{suffix}")
 
     line_word = LINE_WORD_RE.match(candidate)
     if line_word:
         file, line = line_word.groups()
-        return split_line(f"{file}:{line}")
+        return parse_line_position(f"{file}:{line}")
 
     if candidate.endswith("."):
-        undotted = split_line(candidate[:-1])
+        undotted = parse_line_position(candidate[:-1])
         if Path(undotted[0]).is_file():
             return undotted
-    return split_line(candidate)
+    return parse_line_position(candidate)
 
 
-def join_line(parts: list[str]) -> list[str] | str:
-    if len(parts) < 2:
-        return parts[0]
+def parse_line_position(value: str) -> list[str]:
+    expanded = expand_tilde(value)
+    # Apply literal-path precedence again after diagnostic normalization.
+    if Path(expanded).exists():
+        return [canonicalize(expanded)]
 
-    file = parts[0]
-    line = parts[1]
-    column = parts[2] if len(parts) > 2 else ""
+    match = COLON_POSITION_RE.match(value)
+    if not match:
+        return [value]
+
+    file, line, column = match.groups()
+    uri = urlsplit(file)
+    if uri.scheme.lower() == "file" and uri.path != file:
+        if uri.netloc.lower() not in ("", "localhost"):
+            raise InvalidPathspec(f"unsupported file URI authority: {uri.netloc!r}")
+        file = unquote(uri.path)
+
+    file = expand_tilde(file)
+    file = canonicalize(file)
+    return [file, line] if column is None else [file, line, column]
+
+
+def editor_args(location: list[str]) -> list[str]:
+    """Encode a file location as arguments for a new editor process.
+
+    For a running editor, editor_commands encodes the same location as interactive commands.
+    """
+    if len(location) < 2:
+        return [location[0]]
+
+    file = location[0]
+    line = location[1]
+    column = location[2] if len(location) > 2 else ""
 
     if EDITOR_BASENAME == "nvim":
         return [f"+normal!{line}G{column}|", file]
 
+    suffix = f":{column}" if len(location) > 2 else ""
     if EDITOR_BASENAME == "kak":
-        suffix = f":{column}" if len(parts) > 2 else ""
         return [file, f"+{line}{suffix}"]
 
-    suffix = f":{column}" if len(parts) > 2 else ""
-    return f"{file}:{line}{suffix}"
+    return [f"{file}:{line}{suffix}"]
 
 
-def flatten_editor_args(joined: list[str] | str) -> list[str]:
-    if isinstance(joined, list):
-        return joined
-    return [joined]
-
-
-def editor_exec_args(joined: list[str] | str) -> list[str]:
-    args = flatten_editor_args(joined)
+def editor_exec_args(args: list[str]) -> list[str]:
     if args and Path(args[-1]).name.startswith("-"):
         return [*args[:-1], "--", args[-1]]
     return args
+
+
+def open_in_tmux_editor(location: list[str]) -> int:
+    try:
+        pane = find_tmux_editor_pane()
+    except subprocess.CalledProcessError as error:
+        return error.returncode
+
+    if pane is None:
+        result = subprocess.run(
+            [
+                "tmux", "split-window", "-h", "-P", "-F", '"#{pane_id}"',
+                EDITOR, *editor_args(location),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        returncode = result.returncode
+    else:
+        returncode = open_in_existing_tmux_editor(pane, location)
+    if returncode != 0:
+        return returncode
+
+    activate_window_if_needed(pane)
+    return 0
+
+
+def find_tmux_editor_pane() -> str | None:
+    current_window = run_stdout(
+        ["tmux", "display-message", "-p", "#{window_id}"], check=True
+    ).strip()
+    pane_filter = (
+        f"#{{&&:#{{==:#{{window_id}},{current_window}}},"
+        f"#{{==:#{{pane_current_command}},{EDITOR_BASENAME}}}}}"
+    )
+    pane_output = run_stdout(
+        ["tmux", "list-panes", "-a", "-f", pane_filter, "-F", "#{pane_id}"],
+        check=True,
+    )
+    return pane_output.strip() or None
+
+
+def open_in_existing_tmux_editor(pane: str, location: list[str]) -> int:
+    target = ["-t", pane]
+    try:
+        pane_in_mode = run_stdout(
+            ["tmux", "display-message", *target, "-p", "#{pane_in_mode}"],
+            check=True,
+        ).strip()
+    except subprocess.CalledProcessError as error:
+        return error.returncode
+    if pane_in_mode == "1":
+        result = subprocess.run(
+            ["tmux", "send-keys", *target, "-X", "cancel"], check=False
+        )
+        if result.returncode != 0:
+            return result.returncode
+    result = subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
+    if result.returncode != 0:
+        return result.returncode
+    for editor_command in editor_commands(location):
+        result = subprocess.run(
+            ["tmux", "send-keys", *target, editor_command, "Enter"],
+            check=False,
+        )
+        if result.returncode != 0:
+            return result.returncode
+    return subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False).returncode
+
+
+def editor_commands(location: list[str]) -> list[str]:
+    if EDITOR_BASENAME != "nvim":
+        quoted = [json.dumps(arg) if arg else "" for arg in editor_args(location)]
+        return [f": open {' '.join(quoted)}"]
+
+    file = location[0]
+    commands = [f": drop {vim_fnameescape(file)}"]
+    if len(location) > 1:
+        line = location[1]
+        column = location[2] if len(location) > 2 else "1"
+        commands.append(f": call cursor({line}, {column})")
+    return commands
 
 
 def vim_fnameescape(value: str) -> str:
@@ -159,161 +267,15 @@ def vim_fnameescape(value: str) -> str:
     return "".join(f"\\{char}" if char in special else char for char in value)
 
 
-def editor_commands(args: list[str]) -> list[str]:
-    command = "drop" if EDITOR_BASENAME == "nvim" else "open"
-    if EDITOR_BASENAME != "nvim":
-        quoted = [json.dumps(arg) if arg else "" for arg in args]
-        return [f": {command} {' '.join(quoted)}"]
-
-    file = args[-1]
-    commands = [f": {command} {vim_fnameescape(file)}"]
-    if len(args) > 1:
-        match = re.fullmatch(r"\+normal!(\d+)G(\d*)\|", args[0])
-        if match:
-            line, column = match.groups()
-            commands.append(f": call cursor({line}, {column or 1})")
-    return commands
-
-
-def refresh_path_from_profile() -> None:
-    result = run(["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"'])
-    if result.returncode == 0 and result.stdout:
-        os.environ["PATH"] = result.stdout.rstrip("\n")
-
-
-def remove_dir_from_path(directory: str) -> None:
-    paths = os.environ.get("PATH", "").split(os.pathsep)
-    os.environ["PATH"] = os.pathsep.join(path for path in paths if path != directory)
-
-
-def open_in_tmux_editor(args: list[str]) -> int:
-    try:
-        current_window = trim(
-            run_stdout(["tmux", "display-message", "-p", "#{window_id}"], check=True)
-        )
-        pane_raw = run_stdout(
-            [
-                "tmux",
-                "list-panes",
-                "-a",
-                "-f",
-                f"#{{&&:#{{==:#{{window_id}},{current_window}}},#{{==:#{{pane_current_command}},{EDITOR_BASENAME}}}}}",
-                "-F",
-                "#{pane_id}",
-            ],
-            check=True,
-        )
-    except subprocess.CalledProcessError as error:
-        return error.returncode
-    pane = trim(pane_raw)
-    if pane == "":
-        pane = None
-
-    if pane is None:
-        result = subprocess.run(
-            ["tmux", "split-window", "-h", "-P", "-F", '"#{pane_id}"', EDITOR, *args],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            return result.returncode
-    else:
-        target = ["-t", pane]
-        try:
-            pane_in_mode = trim(
-                run_stdout(
-                    ["tmux", "display-message", *target, "-p", "#{pane_in_mode}"],
-                    check=True,
-                )
-            )
-        except subprocess.CalledProcessError as error:
-            return error.returncode
-        if pane_in_mode == "1":
-            result = subprocess.run(
-                ["tmux", "send-keys", *target, "-X", "cancel"], check=False
-            )
-            if result.returncode != 0:
-                return result.returncode
-        result = subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
-        if result.returncode != 0:
-            return result.returncode
-        for editor_command in editor_commands(args):
-            result = subprocess.run(
-                ["tmux", "send-keys", *target, editor_command, "Enter"],
-                check=False,
-            )
-            if result.returncode != 0:
-                return result.returncode
-        result = subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False)
-        if result.returncode != 0:
-            return result.returncode
-
-    activate_window_if_needed(pane)
-    return 0
-
-
-def edit_pi_prompt_in_tmux(file: str) -> int:
-    if "TMUX" not in os.environ:
-        return 2
-
-    channel = f"pi-editor-{os.getpid()}-{secrets.token_hex(8)}"
-    status_file = f"{file}.status"
-    lock = ["tmux", "wait-for", "-L", channel]
-    unlock = ["tmux", "wait-for", "-U", channel]
-    if subprocess.run(lock, check=False).returncode != 0:
-        return 1
-
-    try:
-        split = subprocess.run(
-            [
-                "tmux",
-                "split-window",
-                "-h",
-                "-P",
-                "-F",
-                "#{pane_id}",
-                str(Path(__file__).resolve()),
-                "--pi-editor-pane",
-                channel,
-                status_file,
-                file,
-            ],
-            check=False,
-        )
-        if split.returncode != 0:
-            return split.returncode
-        if subprocess.run(lock, check=False).returncode != 0:
-            return 1
-        try:
-            return int(Path(status_file).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return 1
-    finally:
-        subprocess.run(unlock, check=False)
-
-
-def run_pi_editor_pane(channel: str, status_file: str, file: str) -> int:
-    try:
-        returncode = subprocess.run([EDITOR, file], check=False).returncode
-    except OSError:
-        returncode = 127
-    try:
-        Path(status_file).write_text(str(returncode), encoding="utf-8")
-    finally:
-        subprocess.run(["tmux", "wait-for", "-U", channel], check=False)
-    return returncode
-
-
 def activate_window_if_needed(pane: str | None) -> None:
-    if "DISPLAY" in os.environ and cmdexists("xdotool"):
+    if "DISPLAY" in os.environ and command_exists("xdotool"):
         window_id = os.environ.get("WINDOWID")
         if not window_id:
             return
-        active = trim(run_stdout(["xdotool", "getactivewindow"])) or ""
-        pid = trim(run_stdout(["xdotool", "getwindowpid", active])) or ""
-        tree = run_stdout(["pstree", "-p", pid])
-        if "tmux" not in tree:
+        active_window = run_stdout(["xdotool", "getactivewindow"]).strip()
+        active_pid = run_stdout(["xdotool", "getwindowpid", active_window]).strip()
+        process_tree = run_stdout(["pstree", "-p", active_pid])
+        if "tmux" not in process_tree:
             subprocess.run(
                 [
                     "tmux",
@@ -334,8 +296,67 @@ end tell"""
         subprocess.run(["osascript", "-e", script], check=False)
 
 
+def edit_pi_prompt_in_tmux(file: str) -> int:
+    """Edit a Pi prompt in a dedicated pane and wait for the editor's exit status.
+
+    Ordinary pane reuse returns after delivering the request; Pi prompt editing needs the editor to finish.
+    The pane writes its exit status to a file and releases a tmux lock so this process can resume.
+    """
+    if "TMUX" not in os.environ:
+        return 2
+
+    channel = f"pi-editor-{os.getpid()}-{secrets.token_hex(8)}"
+    status_file = f"{file}.status"
+    lock_command = ["tmux", "wait-for", "-L", channel]
+    unlock_command = ["tmux", "wait-for", "-U", channel]
+    if subprocess.run(lock_command, check=False).returncode != 0:
+        return 1
+
+    try:
+        split_result = subprocess.run(
+            [
+                "tmux",
+                "split-window",
+                "-h",
+                "-P",
+                "-F",
+                "#{pane_id}",
+                str(Path(__file__).resolve()),
+                "--pi-editor-pane",
+                channel,
+                status_file,
+                file,
+            ],
+            check=False,
+        )
+        if split_result.returncode != 0:
+            return split_result.returncode
+        # The pane writes its exit status before unlocking the channel.
+        # Reacquiring the lock waits for that result, even if the pane exits early.
+        if subprocess.run(lock_command, check=False).returncode != 0:
+            return 1
+        try:
+            return int(Path(status_file).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return 1
+    finally:
+        subprocess.run(unlock_command, check=False)
+
+
+def run_pi_editor_pane(channel: str, status_file: str, file: str) -> int:
+    try:
+        returncode = subprocess.run([EDITOR, file], check=False).returncode
+    except OSError:
+        returncode = 127
+    try:
+        Path(status_file).write_text(str(returncode), encoding="utf-8")
+    finally:
+        subprocess.run(["tmux", "wait-for", "-U", channel], check=False)
+    return returncode
+
+
 def os_open(args: list[str]) -> NoReturn:
-    if cmdexists("xdg-open"):
+    if command_exists("xdg-open"):
         command = "xdg-open"
     else:
         remove_dir_from_path(str(Path(__file__).parent))
@@ -343,36 +364,14 @@ def os_open(args: list[str]) -> NoReturn:
     os.execvp(command, [command, *args])
 
 
-def duti_default(file: str) -> str:
-    basename = os.path.basename(file)
-    if "." not in basename:
-        return ""
-    ext = basename.rsplit(".", 1)[1]
-    return run_stdout(["duti", "-x", ext]).split("\n")[0]
-
-
-def xdg_default(file: str) -> str:
-    mime = run_stdout(["xdg-mime", "query", "filetype", file]).rstrip("\n")
-    if cmdexists("gio"):
-        first = run_stdout(["gio", "mime", mime]).split("\n")[0]
-        if not first.startswith("Default "):
-            return ""
-        return re.sub(r"^Default .*: ", "", first)
-    return run_stdout(["xdg-mime", "query", "default", mime])
-
-
 def default_app(file: str) -> str:
-    if cmdexists("duti"):
+    if command_exists("duti"):
         return duti_default(file)
     return xdg_default(file)
 
 
 def default_is_editor(default: str) -> bool:
-    return (
-        f"{DESKTOP}.desktop" in default
-        or DESKTOP in default
-        or "TextEdit" in default
-    )
+    return EDITOR_DESKTOP_NAME in default or "TextEdit" in default
 
 
 def macos_extensionless_text_file(file: str) -> bool:
@@ -392,63 +391,63 @@ def macos_extensionless_text_file(file: str) -> bool:
     return True
 
 
-def xdgopen(argv: list[str]) -> int:
-    target = expand_tilde(argv[-1])
-
-    if not re.search(r"^[a-zA-Z]+://", target):
-        split = split_pathspec(target)
-        if len(split) < 2:
-            if len(argv) == 1 and macos_extensionless_text_file(split[0]):
-                return open_in_tmux_editor([split[0]])
-            return os_open([*map(expand_tilde, argv[:-1]), split[0]])
-        file = split[0]
-        if macos_extensionless_text_file(file) or default_is_editor(default_app(file)):
-            joined = join_line(split)
-            return open_in_tmux_editor(flatten_editor_args(joined))
-        else:
-            return os_open([*map(expand_tilde, argv[:-1]), file])
-
-    return os_open([expand_tilde(arg) for arg in argv])
+def duti_default(file: str) -> str:
+    basename = os.path.basename(file)
+    if "." not in basename:
+        return ""
+    extension = basename.rsplit(".", 1)[1]
+    return run_stdout(["duti", "-x", extension]).split("\n")[0]
 
 
-def main(argv: list[str]) -> int:
-    name = Path(sys.argv[0]).name
-    refresh_path_from_profile()
+def xdg_default(file: str) -> str:
+    mime_type = run_stdout(["xdg-mime", "query", "filetype", file]).rstrip("\n")
+    if command_exists("gio"):
+        default_line = run_stdout(["gio", "mime", mime_type]).split("\n")[0]
+        if not default_line.startswith("Default "):
+            return ""
+        return re.sub(r"^Default .*: ", "", default_line)
+    return run_stdout(["xdg-mime", "query", "default", mime_type])
 
-    if argv and argv[0] == "--pi-editor-pane":
-        if len(argv) != 4:
-            return 2
-        return run_pi_editor_pane(argv[1], argv[2], argv[3])
-    if argv and argv[0] == "--pi-editor":
-        if len(argv) != 2:
-            return 2
-        return edit_pi_prompt_in_tmux(argv[1])
 
-    if name == "editor-hax":
-        if not argv:
-            os.execvp(EDITOR, [EDITOR])
-            return 0
-        if len(argv) > 1:
-            return 2
-        os.execvp(
-            EDITOR,
-            [EDITOR, *editor_exec_args(join_line(split_pathspec(argv[0])))],
-        )
-        return 0
+def refresh_path_from_profile() -> None:
+    result = run(["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"'])
+    if result.returncode == 0 and result.stdout:
+        os.environ["PATH"] = result.stdout.rstrip("\n")
 
-    if name == "hx-hax":
-        if len(argv) > 1:
-            return 2
-        if argv:
-            joined = join_line(split_pathspec(argv[0]))
-            return open_in_tmux_editor(flatten_editor_args(joined))
-        else:
-            return open_in_tmux_editor([""])
 
-    if not argv:
-        return 1
+def remove_dir_from_path(directory: str) -> None:
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(path for path in paths if path != directory)
 
-    return xdgopen(argv)
+
+def expand_tilde(path: str) -> str:
+    if path == "~" or path.startswith("~/"):
+        return os.environ.get("HOME", "") + path[1:]
+    return path
+
+
+def canonicalize(path: str) -> str:
+    return str(Path(path).resolve(strict=False))
+
+
+def run_stdout(argv: list[str], *, check: bool = False) -> str:
+    result = run(argv)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, argv)
+    return result.stdout
+
+
+def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def command_exists(command: str) -> bool:
+    return shutil.which(command) is not None
 
 
 if __name__ == "__main__":

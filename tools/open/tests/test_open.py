@@ -62,7 +62,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_line(f"file://{quote(str(target), safe='/')}:4"),
+            module.parse_line_position(f"file://{quote(str(target), safe='/')}:4"),
             [self.real(target), "4"],
         )
 
@@ -92,6 +92,7 @@ class OpenScriptTest(unittest.TestCase):
                     result = subprocess.run(
                         [str(entrypoint), f"file://{authority}/etc/hosts:3"],
                         env=environment,
+                        cwd=self.root,
                         capture_output=True,
                         text=True,
                         check=False,
@@ -109,7 +110,7 @@ class OpenScriptTest(unittest.TestCase):
         for authority in ("", "localhost", "LOCALHOST"):
             with self.subTest(authority=authority):
                 self.assertEqual(
-                    module.split_pathspec(f"file://{authority}{quote(str(target))}:4:2"),
+                    module.parse_pathspec(f"file://{authority}{quote(str(target))}:4:2"),
                     [self.real(target), "4", "2"],
                 )
 
@@ -121,7 +122,7 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         with chdir(self.root):
             self.assertEqual(
-                module.split_pathspec("file://other-machine/note.txt:3"),
+                module.parse_pathspec("file://other-machine/note.txt:3"),
                 [self.real(target)],
             )
 
@@ -129,7 +130,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
         target = "file://other-machine/etc/hosts:3"
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen([target]), 0)
+            self.assertEqual(module.dispatch_open([target]), 0)
         os_open.assert_called_once_with([target])
 
     def test_join_line_for_nvim_and_kak(self) -> None:
@@ -137,11 +138,11 @@ class OpenScriptTest(unittest.TestCase):
         kak_module = self.load_open_module(real_editor="kak")
 
         self.assertEqual(
-            nvim_module.join_line(["/tmp/note.txt", "4", "2"]),
+            nvim_module.editor_args(["/tmp/note.txt", "4", "2"]),
             ["+normal!4G2|", "/tmp/note.txt"],
         )
         self.assertEqual(
-            kak_module.join_line(["/tmp/note.txt", "4"]),
+            kak_module.editor_args(["/tmp/note.txt", "4"]),
             ["/tmp/note.txt", "+4"],
         )
 
@@ -149,13 +150,13 @@ class OpenScriptTest(unittest.TestCase):
         for name, expected in (
             ("nvim", ["+normal!4G2|", "/tmp/note.txt"]),
             ("kak", ["/tmp/note.txt", "+4:2"]),
-            ("hx", "/tmp/note.txt:4:2"),
-            ("micro", "/tmp/note.txt:4:2"),
+            ("hx", ["/tmp/note.txt:4:2"]),
+            ("micro", ["/tmp/note.txt:4:2"]),
         ):
             for editor in (name, str(self.root / name)):
                 with self.subTest(editor=editor):
                     module = self.load_open_module(real_editor=editor)
-                    self.assertEqual(module.join_line(["/tmp/note.txt", "4", "2"]), expected)
+                    self.assertEqual(module.editor_args(["/tmp/note.txt", "4", "2"]), expected)
 
     @unittest.skipUnless(shutil.which("nvim"), "Neovim is not installed")
     def test_editor_hax_native_nvim_opens_file_and_position_for_absolute_editor(self) -> None:
@@ -207,7 +208,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen(["https://example.test/path:12"]), 0)
+            self.assertEqual(module.dispatch_open(["https://example.test/path:12"]), 0)
 
         os_open.assert_called_once_with(["https://example.test/path:12"])
 
@@ -226,7 +227,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -240,7 +241,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
             mock.patch.object(module, "os_open") as os_open,
         ):
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         editor.assert_called_once_with([self.real(target)])
         os_open.assert_not_called()
@@ -256,7 +257,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
             mock.patch.object(module, "os_open") as os_open,
         ):
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         editor.assert_called_once_with([self.real(target)])
         os_open.assert_not_called()
@@ -271,7 +272,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "open_in_tmux_editor") as editor,
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         editor.assert_not_called()
         os_open.assert_called_once_with([self.real(target)])
@@ -286,7 +287,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "open_in_tmux_editor") as editor,
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         editor.assert_not_called()
         os_open.assert_called_once_with([self.real(target)])
@@ -297,7 +298,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with (
-            mock.patch.object(module, "cmdexists", return_value=True),
+            mock.patch.object(module, "command_exists", return_value=True),
             mock.patch.object(module.os, "execvp") as execvp,
         ):
             module.os_open([str(target)])
@@ -343,7 +344,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen(["--reveal", str(first), str(second)]), 0)
+            self.assertEqual(module.dispatch_open(["--reveal", str(first), str(second)]), 0)
 
         os_open.assert_called_once_with(["--reveal", str(first), self.real(second)])
 
@@ -358,7 +359,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.dict(module.os.environ, {"HOME": str(home)}),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen(["~/note.txt"]), 0)
+            self.assertEqual(module.dispatch_open(["~/note.txt"]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -371,7 +372,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="org.example.Viewer.desktop"),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:7"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:7"]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -384,9 +385,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:10"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:10"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!10G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "10"])
 
     def test_real_editor_as_absolute_path_matches_desktop_basename(self) -> None:
         target = self.root / "note.txt"
@@ -399,9 +400,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:10"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:10"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!10G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "10"])
 
     def test_editor_name_regex_metacharacters_do_not_match_unrelated_default(self) -> None:
         target = self.root / "note.txt"
@@ -412,7 +413,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="axon.desktop"),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:10"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:10"]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -422,7 +423,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:3"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:3"))),
             ["+normal!3G|", "--", self.real(target)],
         )
 
@@ -431,7 +432,7 @@ class OpenScriptTest(unittest.TestCase):
         target.mkdir()
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line(f"{target}:3"), [self.real(target), "3"])
+        self.assertEqual(module.parse_line_position(f"{target}:3"), [self.real(target), "3"])
 
     def test_symlink_path_with_line_is_resolved(self) -> None:
         target = self.root / "note.txt"
@@ -440,22 +441,23 @@ class OpenScriptTest(unittest.TestCase):
         link_target.symlink_to(target)
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line(f"{link_target}:3"), [self.real(target), "3"])
+        self.assertEqual(module.parse_line_position(f"{link_target}:3"), [self.real(target), "3"])
 
     def test_relative_nonexistent_file_with_line_becomes_absolute(self) -> None:
         module = self.load_open_module()
 
-        self.assertEqual(
-            module.split_line("missing-relative.txt:3"),
-            [str(REPO / "missing-relative.txt"), "3"],
-        )
+        with chdir(self.root):
+            self.assertEqual(
+                module.parse_line_position("missing-relative.txt:3"),
+                [str(self.root / "missing-relative.txt"), "3"],
+            )
 
     def test_file_url_localhost_with_line_uses_uri_path(self) -> None:
         target = self.root / "note.txt"
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line(f"file://localhost{target}:3"), [self.real(target), "3"])
+        self.assertEqual(module.parse_line_position(f"file://localhost{target}:3"), [self.real(target), "3"])
 
     def test_multi_dot_extension_uses_last_extension_for_duti(self) -> None:
         target = self.root / "archive.tar.gz"
@@ -488,7 +490,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="org.example.Viewer.desktop"),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen(["--first", "--second", f"{target}:7"]), 0)
+            self.assertEqual(module.dispatch_open(["--first", "--second", f"{target}:7"]), 0)
 
         os_open.assert_called_once_with(["--first", "--second", self.real(target)])
 
@@ -501,7 +503,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module.sys, "platform", "darwin"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
         ):
-            self.assertEqual(module.xdgopen([str(target)]), 0)
+            self.assertEqual(module.dispatch_open([str(target)]), 0)
 
         editor.assert_called_once_with([self.real(target)])
 
@@ -513,9 +515,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:12"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:12"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!12G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "12"])
 
     def test_file_url_without_line_uses_os_open(self) -> None:
         target = self.root / "note.txt"
@@ -523,7 +525,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen([f"file://{target}"]), 0)
+            self.assertEqual(module.dispatch_open([f"file://{target}"]), 0)
 
         os_open.assert_called_once_with([f"file://{target}"])
 
@@ -534,7 +536,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen([f"file://{escaped}:5"]), 0)
+            self.assertEqual(module.dispatch_open([f"file://{escaped}:5"]), 0)
 
         os_open.assert_called_once_with([f"file://{escaped}:5"])
 
@@ -542,7 +544,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
-            self.assertEqual(module.xdgopen(["HTTPS://example.test/path:12"]), 0)
+            self.assertEqual(module.dispatch_open(["HTTPS://example.test/path:12"]), 0)
 
         os_open.assert_called_once_with(["HTTPS://example.test/path:12"])
 
@@ -551,7 +553,7 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line(f"FILE://{target}:5"), [self.real(target), "5"])
+        self.assertEqual(module.parse_line_position(f"FILE://{target}:5"), [self.real(target), "5"])
 
     def test_xdg_mime_failure_falls_back_to_os_open(self) -> None:
         target = self.root / "note.txt"
@@ -562,7 +564,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value=""),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:8"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:8"]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -575,7 +577,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value=""),
             mock.patch.object(module, "os_open", return_value=0) as os_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:8"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:8"]), 0)
 
         os_open.assert_called_once_with([self.real(target)])
 
@@ -588,9 +590,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop\n"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:8"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:8"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!8G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "8"])
 
     def test_gio_default_is_used_when_duti_is_absent(self) -> None:
         target = self.root / "note.txt"
@@ -601,9 +603,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop\n"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:8"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:8"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!8G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "8"])
 
     def test_macos_open_fallback_removes_script_directory_from_path(self) -> None:
         target = self.root / "note.txt"
@@ -611,7 +613,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
         bin_dir = str(PUBLIC_BIN)
         with (
-            mock.patch.object(module, "cmdexists", return_value=False),
+            mock.patch.object(module, "command_exists", return_value=False),
             mock.patch.dict(module.os.environ, {"PATH": f"{bin_dir}{os.pathsep}/usr/bin"}),
             mock.patch.object(module.os, "execvp") as execvp,
         ):
@@ -629,9 +631,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:7:3"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:7:3"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "7", "3"])
 
     def test_tmux_selection_whitespace_is_removed_before_opening(self) -> None:
         target = self.root / "note.txt"
@@ -642,9 +644,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f" {target}:7:3"]), 0)
+            self.assertEqual(module.dispatch_open([f" {target}:7:3"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "7", "3"])
 
     def test_parenthesized_diagnostic_position_is_opened_in_editor(self) -> None:
         target = self.root / "note.ts"
@@ -655,9 +657,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim.desktop"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}(7,3)"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}(7,3)"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "7", "3"])
 
     def test_editor_default_matches_bare_editor_name(self) -> None:
         target = self.root / "note.txt"
@@ -668,9 +670,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="nvim\n"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:7"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:7"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!7G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "7"])
 
     def test_hx_default_matches_helix_desktop(self) -> None:
         target = self.root / "note.txt"
@@ -681,9 +683,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="Helix.desktop\n"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:7"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:7"]), 0)
 
-        tmux_open.assert_called_once_with([f"{self.real(target)}:7"])
+        tmux_open.assert_called_once_with([self.real(target), "7"])
 
     def test_textedit_default_is_treated_as_editor_like(self) -> None:
         target = self.root / "note.txt"
@@ -694,9 +696,9 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "default_app", return_value="TextEdit\n"),
             mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
         ):
-            self.assertEqual(module.xdgopen([f"{target}:7"]), 0)
+            self.assertEqual(module.dispatch_open([f"{target}:7"]), 0)
 
-        tmux_open.assert_called_once_with(["+normal!7G|", self.real(target)])
+        tmux_open.assert_called_once_with([self.real(target), "7"])
 
     def test_trailing_diagnostic_colon_is_not_treated_as_a_column(self) -> None:
         target = self.root / "note.txt"
@@ -704,19 +706,21 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:6:"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:6:"))),
             ["+normal!6G|", self.real(target)],
         )
 
     def test_colon_without_line_number_remains_part_of_filename(self) -> None:
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line("missing:"), ["missing:"])
+        with chdir(self.root):
+            self.assertEqual(module.parse_line_position("missing:"), ["missing:"])
 
     def test_zero_line_number_remains_part_of_filename(self) -> None:
         module = self.load_open_module()
 
-        self.assertEqual(module.split_line("missing:0"), ["missing:0"])
+        with chdir(self.root):
+            self.assertEqual(module.parse_line_position("missing:0"), ["missing:0"])
 
     def test_editor_hax_without_line_execs_editor_with_file_only(self) -> None:
         target = self.root / "note.txt"
@@ -724,7 +728,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(str(target)))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(str(target)))),
             [self.real(target)],
         )
 
@@ -734,7 +738,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_pathspec(f"{target}:417."),
+            module.parse_pathspec(f"{target}:417."),
             [self.real(target), "417"],
         )
 
@@ -743,13 +747,13 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
+        self.assertEqual(module.parse_pathspec(str(target)), [self.real(target)])
 
     def test_editor_hax_preserves_dot_when_undotted_file_is_missing(self) -> None:
         target = self.root / "missing.txt:417."
         module = self.load_open_module()
 
-        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
+        self.assertEqual(module.parse_pathspec(str(target)), [self.real(target)])
 
     def test_pathspec_removes_tmux_context_whitespace(self) -> None:
         target = self.root / "note.txt"
@@ -757,7 +761,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_pathspec(f" {target}:12:3"),
+            module.parse_pathspec(f" {target}:12:3"),
             [self.real(target), "12", "3"],
         )
 
@@ -767,7 +771,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_pathspec(f"({target}(12,3))"),
+            module.parse_pathspec(f"({target}(12,3))"),
             [self.real(target), "12", "3"],
         )
 
@@ -777,7 +781,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_pathspec(f'File "{target}", line 12, in main'),
+            module.parse_pathspec(f'File "{target}", line 12, in main'),
             [self.real(target), "12"],
         )
 
@@ -787,7 +791,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_pathspec(f"{target} line 12:"),
+            module.parse_pathspec(f"{target} line 12:"),
             [self.real(target), "12"],
         )
 
@@ -796,7 +800,14 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
+        self.assertEqual(module.parse_pathspec(str(target)), [self.real(target)])
+
+    def test_quoted_existing_colon_number_filename_wins_over_position(self) -> None:
+        target = self.root / "report:12"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(module.parse_pathspec(f'"{target}"'), [self.real(target)])
 
     def test_editor_hax_without_args_execs_editor(self) -> None:
         module = self.load_open_module()
@@ -838,7 +849,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:4"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:4"))),
             ["+normal!4G|", self.real(target)],
         )
 
@@ -848,7 +859,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"file://{target}:11:2"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"file://{target}:11:2"))),
             ["+normal!11G2|", self.real(target)],
         )
 
@@ -858,7 +869,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module(real_editor="kak")
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:9:5"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:9:5"))),
             [self.real(target), "+9:5"],
         )
 
@@ -868,7 +879,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module(real_editor="kak")
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:9"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:9"))),
             [self.real(target), "+9"],
         )
 
@@ -878,7 +889,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module(real_editor="micro")
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:9:5"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:9:5"))),
             [f"{self.real(target)}:9:5"],
         )
 
@@ -888,7 +899,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module(real_editor="micro")
 
         self.assertEqual(
-            module.editor_exec_args(module.join_line(module.split_line(f"{target}:9"))),
+            module.editor_exec_args(module.editor_args(module.parse_line_position(f"{target}:9"))),
             [f"{self.real(target)}:9"],
         )
 
@@ -901,7 +912,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module.subprocess, "run") as run,
         ):
             run.return_value.returncode = 0
-            self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:3"]), 0)
+            self.assertEqual(module.open_in_tmux_editor([self.real(REPO / 'README.md'), "3"]), 0)
 
         run.assert_has_calls(
             [
@@ -960,7 +971,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module.subprocess, "run") as run,
         ):
             run.return_value.returncode = 0
-            self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:3"]), 0)
+            self.assertEqual(module.open_in_tmux_editor([self.real(REPO / 'README.md'), "3"]), 0)
 
         run.assert_any_call(["tmux", "send-keys", "-t", "%4", "-X", "cancel"], check=False)
 
@@ -984,7 +995,7 @@ class OpenScriptTest(unittest.TestCase):
 
         self.assertEqual(
             [f': open "{escaped_target}:7"'],
-            module.editor_commands([f"{self.real(target)}:7"]),
+            module.editor_commands([self.real(target), "7"]),
         )
 
     def test_nvim_existing_pane_escapes_filename_and_restores_position(self) -> None:
@@ -996,8 +1007,58 @@ class OpenScriptTest(unittest.TestCase):
                 module = self.load_open_module(real_editor=editor)
                 self.assertEqual(
                     [f": drop {escaped_target}", ": call cursor(11, 2)"],
-                    module.editor_commands(["+normal!11G2|", self.real(target)]),
+                    module.editor_commands([self.real(target), "11", "2"]),
                 )
+
+    def test_same_location_in_existing_and_new_tmux_panes(self) -> None:
+        location = ["/tmp/note.txt", "3", "2"]
+        for editor, commands, arguments in (
+            ("nvim", [": drop /tmp/note.txt", ": call cursor(3, 2)"],
+             ["+normal!3G2|", "/tmp/note.txt"]),
+            ("hx", [': open "/tmp/note.txt:3:2"'], ["/tmp/note.txt:3:2"]),
+            ("kak", [': open "/tmp/note.txt" "+3:2"'], ["/tmp/note.txt", "+3:2"]),
+        ):
+            module = self.load_open_module(real_editor=editor)
+            for pane in ("%4\n", ""):
+                with (
+                    self.subTest(editor=editor, pane=pane),
+                    mock.patch.object(module, "run_stdout", side_effect=["@2\n", pane, "0\n"]),
+                    mock.patch.object(module, "activate_window_if_needed"),
+                    mock.patch.object(module.subprocess, "run") as run,
+                ):
+                    run.return_value.returncode = 0
+                    self.assertEqual(module.open_in_tmux_editor(location), 0)
+                    if pane:
+                        expected = [mock.call(["tmux", "send-keys", "-t", "%4", "Escape"], check=False)]
+                        expected.extend(
+                            mock.call(["tmux", "send-keys", "-t", "%4", command, "Enter"], check=False)
+                            for command in commands
+                        )
+                        expected.append(mock.call(["tmux", "select-pane", "-t", "%4", "-Z"], check=False))
+                        self.assertEqual(run.call_args_list, expected)
+                    else:
+                        run.assert_called_once_with(
+                            ["tmux", "split-window", "-h", "-P", "-F", '"#{pane_id}"', editor, *arguments],
+                            check=False, text=True, capture_output=True,
+                        )
+
+    def test_nvim_existing_pane_line_defaults_to_first_column(self) -> None:
+        module = self.load_open_module(real_editor="nvim")
+        self.assertEqual(
+            module.editor_commands(["/tmp/note.txt", "3"]),
+            [": drop /tmp/note.txt", ": call cursor(3, 1)"],
+        )
+
+    def test_hx_hax_passes_parsed_location_to_tmux(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+        target = self.root / "note.txt"
+        with (
+            mock.patch.object(module, "refresh_path_from_profile"),
+            mock.patch.object(module.sys, "argv", ["hx-hax"]),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
+        ):
+            self.assertEqual(module.main([f"{target}:3:2"]), 0)
+        tmux_open.assert_called_once_with([self.real(target), "3", "2"])
 
     def test_hx_hax_rejects_multiple_args(self) -> None:
         module = self.load_open_module(real_editor="hx")
@@ -1019,7 +1080,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module.subprocess, "run") as run,
         ):
             run.return_value.returncode = 0
-            self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:4"]), 0)
+            self.assertEqual(module.open_in_tmux_editor([self.real(REPO / 'README.md'), "4"]), 0)
 
         run.assert_called_once_with(
             [
@@ -1042,7 +1103,7 @@ class OpenScriptTest(unittest.TestCase):
 
         with (
             mock.patch.dict(module.os.environ, {"DISPLAY": ":1", "WINDOWID": "777"}),
-            mock.patch.object(module, "cmdexists", return_value=True),
+            mock.patch.object(module, "command_exists", return_value=True),
             mock.patch.object(module, "run_stdout", side_effect=["999\n", "123\n", "i3---zsh\n"]),
             mock.patch.object(module.subprocess, "run") as run,
         ):
@@ -1058,7 +1119,7 @@ class OpenScriptTest(unittest.TestCase):
 
         with (
             mock.patch.dict(module.os.environ, {"DISPLAY": ":1", "WINDOWID": "777"}),
-            mock.patch.object(module, "cmdexists", return_value=True),
+            mock.patch.object(module, "command_exists", return_value=True),
             mock.patch.object(module, "run_stdout", side_effect=["999\n", "123\n", "i3---tmux---zsh\n"]),
             mock.patch.object(module.subprocess, "run") as run,
         ):
@@ -1071,7 +1132,7 @@ class OpenScriptTest(unittest.TestCase):
 
         with (
             mock.patch.dict(module.os.environ, {"DISPLAY": ":1"}, clear=True),
-            mock.patch.object(module, "cmdexists", return_value=True),
+            mock.patch.object(module, "command_exists", return_value=True),
             mock.patch.object(module.subprocess, "run") as run,
         ):
             module.activate_window_if_needed("%4")
@@ -1102,7 +1163,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module.subprocess, "run") as run,
         ):
             run.return_value.returncode = 0
-            self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:4:2"]), 0)
+            self.assertEqual(module.open_in_tmux_editor([self.real(REPO / 'README.md'), "4", "2"]), 0)
 
         run.assert_called_once_with(
             [
@@ -1142,6 +1203,60 @@ class OpenScriptTest(unittest.TestCase):
             self.assertEqual(module.open_in_tmux_editor(["README.md"]), 28)
 
         activate.assert_not_called()
+
+    def test_hx_hax_stops_at_each_failed_existing_pane_command(self) -> None:
+        module = self.load_open_module()
+        commands = [
+            ["tmux", "send-keys", "-t", "%4", "-X", "cancel"],
+            ["tmux", "send-keys", "-t", "%4", "Escape"],
+            ["tmux", "send-keys", "-t", "%4", ": drop /tmp/note.txt", "Enter"],
+            ["tmux", "send-keys", "-t", "%4", ": call cursor(3, 2)", "Enter"],
+            ["tmux", "select-pane", "-t", "%4", "-Z"],
+        ]
+        for failed_step in range(len(commands)):
+            with (
+                self.subTest(command=commands[failed_step]),
+                mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n", "1\n"]),
+                mock.patch.object(module, "activate_window_if_needed") as activate,
+                mock.patch.object(module.subprocess, "run") as run,
+            ):
+                run.side_effect = [
+                    subprocess.CompletedProcess(command, 31 if step == failed_step else 0)
+                    for step, command in enumerate(commands)
+                ]
+                self.assertEqual(module.open_in_tmux_editor(["/tmp/note.txt", "3", "2"]), 31)
+                self.assertEqual(
+                    run.call_args_list,
+                    [mock.call(command, check=False) for command in commands[:failed_step + 1]],
+                )
+                activate.assert_not_called()
+
+    def test_hx_hax_mode_query_failure_does_not_send_editor_commands(self) -> None:
+        module = self.load_open_module()
+        with (
+            mock.patch.object(
+                module, "run_stdout",
+                side_effect=["@2\n", "%4\n", subprocess.CalledProcessError(32, ["tmux"])],
+            ),
+            mock.patch.object(module.subprocess, "run") as run,
+            mock.patch.object(module, "activate_window_if_needed") as activate,
+        ):
+            self.assertEqual(module.open_in_tmux_editor(["/tmp/note.txt"]), 32)
+        run.assert_not_called()
+        activate.assert_not_called()
+
+    def test_hx_hax_activates_window_after_opening_existing_or_new_pane(self) -> None:
+        module = self.load_open_module()
+        for pane_output, activation_target in (("%4\n", "%4"), ("", None)):
+            with (
+                self.subTest(pane=pane_output),
+                mock.patch.object(module, "run_stdout", side_effect=["@2\n", pane_output, "0\n"]),
+                mock.patch.object(module.subprocess, "run") as run,
+                mock.patch.object(module, "activate_window_if_needed") as activate,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(module.open_in_tmux_editor(["/tmp/note.txt"]), 0)
+                activate.assert_called_once_with(activation_target)
 
     def test_hx_hax_propagates_tmux_split_failure(self) -> None:
         module = self.load_open_module(real_editor="hx")
