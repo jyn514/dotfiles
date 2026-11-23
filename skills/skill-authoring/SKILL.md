@@ -137,6 +137,8 @@ Use `dependency-review` before adding dependencies; keep helper languages in sep
 
 ## Review loading and actions
 
+For skill reviews, use the [shared editorial pass](../holistic-writing/references/editorial-pass.md) alongside the checks below.
+
 ### Will it load for the right requests?
 
 Read the description alongside each caller that routes work to it.
